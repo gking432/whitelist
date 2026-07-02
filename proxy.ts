@@ -40,7 +40,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
+  // Webhook intake authenticates with per-connection credentials, not user
+  // sessions, so it is excluded from the session-refresh middleware.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/integrations|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

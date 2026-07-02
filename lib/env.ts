@@ -33,6 +33,16 @@ export function isSupabaseConfigured() {
   return Boolean(getSupabasePublicEnv());
 }
 
+// Server-only. Never expose through NEXT_PUBLIC_* or browser responses.
+export function getSupabaseServiceRoleKey(): string | null {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY ?? null;
+}
+
+// Server-only 32-byte key (base64) used to encrypt integration secrets at rest.
+export function getSecretsEncryptionKey(): string | null {
+  return process.env.SECRETS_ENCRYPTION_KEY ?? null;
+}
+
 export function getAppUrl() {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 }

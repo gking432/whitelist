@@ -117,12 +117,20 @@ export default function HomePage() {
                   The protected workspace is ready for partner tenancy,
                   memberships, and audit-backed operations.
                 </p>
-                <Button asChild variant="link" className="mt-3 h-auto px-0">
-                  <Link href="/partner">
-                    Open partner area
-                    <ArrowRight aria-hidden="true" />
-                  </Link>
-                </Button>
+                <div className="flex flex-wrap gap-4">
+                  <Button asChild variant="link" className="mt-3 h-auto px-0">
+                    <Link href="/partner">
+                      Open partner area
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                  <Button asChild variant="link" className="mt-3 h-auto px-0">
+                    <Link href="/client">
+                      Client portal
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

@@ -1,9 +1,10 @@
+import Link from "next/link";
 import {
   AlertTriangle,
   BellCheck,
   CheckCircle2,
-  Clock3,
   PlugZap,
+  Plus,
   ShieldAlert,
   UsersRound,
   Workflow,
@@ -11,15 +12,16 @@ import {
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   getPartnerDashboardData,
   PartnerDashboardDataError,
   type AttentionSeverity,
-  type ClientHealth,
-  type ClientStatus,
+  type ClientHealthStatus,
   type PartnerDashboardData,
 } from "@/lib/dashboard/partner-dashboard";
+import { formatDate, formatEnum } from "@/lib/format";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import {
   isAccessError,
@@ -33,24 +35,12 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-const clientStatusLabels: Record<ClientStatus, string> = {
-  onboarding: "Onboarding",
-  active: "Active",
-  paused: "Paused",
-  at_risk: "At risk",
-  archived: "Archived",
-};
-
-const healthLabels: Record<ClientHealth, string> = {
-  healthy: "Healthy",
-  onboarding: "Setup",
-  needs_attention: "Needs attention",
-};
-
-const healthStyles: Record<ClientHealth, string> = {
+const healthStyles: Record<ClientHealthStatus, string> = {
   healthy: "border-emerald-200 bg-emerald-50 text-emerald-800",
   onboarding: "border-sky-200 bg-sky-50 text-sky-800",
-  needs_attention: "border-amber-200 bg-amber-50 text-amber-900",
+  attention: "border-amber-200 bg-amber-50 text-amber-900",
+  failing: "border-red-200 bg-red-50 text-red-900",
+  paused: "border-slate-200 bg-slate-50 text-slate-700",
 };
 
 const attentionStyles: Record<AttentionSeverity, string> = {
@@ -58,31 +48,6 @@ const attentionStyles: Record<AttentionSeverity, string> = {
   warning: "bg-amber-500",
   setup: "bg-sky-500",
 };
-
-const enumLabels: Record<string, string> = {
-  external_crm_only: "External CRM",
-  mirror: "Mirror",
-  assist: "Assist",
-  primary_crm: "Primary CRM",
-  webhook_only: "Webhook only",
-  none: "None",
-  sandbox: "Sandbox",
-  dry_run: "Dry run",
-  live: "Live",
-  paused: "Paused",
-};
-
-function formatEnum(value: string) {
-  return enumLabels[value] ?? value.replaceAll("_", " ");
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-}
 
 function AccessDenied() {
   return (
@@ -159,57 +124,70 @@ export default async function PartnerPage() {
     {
       label: "Client businesses",
       value: dashboard.metrics.totalClients,
-      detail: "Operational client accounts",
+      detail: `${dashboard.metrics.activeClients} active, ${dashboard.metrics.onboardingClients} onboarding`,
       icon: UsersRound,
-    },
-    {
-      label: "Active now",
-      value: dashboard.metrics.activeClients,
-      detail: "Clients in active status",
-      icon: CheckCircle2,
     },
     {
       label: "Needs attention",
       value: dashboard.metrics.clientsNeedingAttention,
-      detail: "Setup, paused, or at-risk",
+      detail: "Clients with operational issues",
       icon: AlertTriangle,
     },
     {
-      label: "Onboarding",
-      value: dashboard.metrics.onboardingClients,
-      detail: "Clients still in setup",
-      icon: Clock3,
+      label: "Open approvals",
+      value: dashboard.metrics.openApprovals,
+      detail: "Waiting for human review",
+      icon: BellCheck,
+    },
+    {
+      label: "Failed runs (7d)",
+      value: dashboard.metrics.failedRuns7d,
+      detail: `${dashboard.metrics.totalRuns7d} total runs this week`,
+      icon: Workflow,
     },
   ];
 
   const operationalSummaries = [
     {
-      label: "Open approvals",
-      value: "0 open",
-      detail: "No approval items are waiting.",
-      icon: BellCheck,
-    },
-    {
-      label: "Failed runs",
-      value: "0 recent",
-      detail: "No workflow failures are recorded.",
+      label: "Active workflows",
+      value: `${dashboard.metrics.activeWorkflows} enabled`,
+      detail:
+        dashboard.metrics.activeWorkflows > 0
+          ? "Automations enabled across clients."
+          : "Enable workflow templates inside a client workspace.",
       icon: Workflow,
     },
     {
       label: "Integration health",
-      value: "No connections",
-      detail: "No integration health signals are recorded.",
+      value:
+        dashboard.metrics.failingConnections > 0
+          ? `${dashboard.metrics.failingConnections} failing`
+          : "No failures",
+      detail:
+        dashboard.metrics.failingConnections > 0
+          ? "Open the affected client's Integrations tab."
+          : "No failing connections are recorded.",
       icon: PlugZap,
+    },
+    {
+      label: "Approvals",
+      value: `${dashboard.metrics.openApprovals} open`,
+      detail:
+        dashboard.metrics.openApprovals > 0
+          ? "Resolve approvals from each client's Approvals tab."
+          : "No approval items are waiting.",
+      icon: BellCheck,
     },
   ];
 
   const displayedClients = dashboard.clients.slice(0, 8);
-  const displayedAttention = dashboard.attentionItems.slice(0, 5);
+  const displayedAttention = dashboard.attentionItems.slice(0, 6);
 
   return (
     <AppShell
       organizationName={dashboard.partner.name}
       userEmail={user.email ?? "Authenticated user"}
+      activeNav="dashboard"
     >
       <div className="space-y-7">
         <header className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-start lg:justify-between">
@@ -226,8 +204,14 @@ export default async function PartnerPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant="outline">{dashboard.partner.status}</Badge>
-            <Badge variant="outline">{access.role}</Badge>
+            <Badge variant="outline">{formatEnum(dashboard.partner.status)}</Badge>
+            <Badge variant="outline">{access.role.replaceAll("_", " ")}</Badge>
+            <Button asChild size="sm">
+              <Link href="/partner/clients/new">
+                <Plus aria-hidden="true" />
+                Add client
+              </Link>
+            </Button>
           </div>
         </header>
 
@@ -268,9 +252,12 @@ export default async function PartnerPage() {
                   Highest-priority clients appear first.
                 </p>
               </div>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {dashboard.clients.length} total
-              </span>
+              <Link
+                href="/partner/clients"
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                All clients
+              </Link>
             </div>
 
             {displayedClients.length === 0 ? (
@@ -283,18 +270,27 @@ export default async function PartnerPage() {
                   Add the first client business to begin tracking operational
                   health and attention.
                 </p>
+                <Button asChild className="mt-5">
+                  <Link href="/partner/clients/new">
+                    <Plus aria-hidden="true" />
+                    Add client
+                  </Link>
+                </Button>
               </div>
             ) : (
               <div className="divide-y">
                 {displayedClients.map((client) => (
                   <div
                     key={client.id}
-                    className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1.3fr)_0.8fr] lg:grid-cols-[minmax(0,1.2fr)_0.75fr_0.8fr_0.65fr]"
+                    className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1.3fr)_0.8fr] lg:grid-cols-[minmax(0,1.2fr)_0.85fr_0.7fr_0.6fr]"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
+                      <Link
+                        href={`/partner/clients/${client.id}`}
+                        className="truncate text-sm font-semibold hover:underline"
+                      >
                         {client.name}
-                      </p>
+                      </Link>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {client.industry ?? "Industry not set"} · Updated{" "}
                         {formatDate(client.updatedAt)}
@@ -307,30 +303,25 @@ export default async function PartnerPage() {
                           variant="outline"
                           className={healthStyles[client.health]}
                         >
-                          {healthLabels[client.health]}
+                          {formatEnum(client.health)}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
-                          {clientStatusLabels[client.status]}
+                          {formatEnum(client.status)}
                         </span>
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">
-                        Operating mode
-                      </p>
-                      <p className="mt-1.5 text-sm font-medium">
-                        {formatEnum(client.crmOperatingMode)}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {formatEnum(client.runtimeMode)} runtime
+                      <p className="text-xs text-muted-foreground">Approvals</p>
+                      <p className="mt-1.5 text-sm font-medium tabular-nums">
+                        {client.pendingApprovals} open
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">
-                        Client portal
+                        Failed (7d)
                       </p>
-                      <p className="mt-1.5 text-sm font-medium">
-                        {client.clientPortalEnabled ? "Enabled" : "Disabled"}
+                      <p className="mt-1.5 text-sm font-medium tabular-nums">
+                        {client.failedRuns7d}
                       </p>
                     </div>
                   </div>
@@ -369,7 +360,11 @@ export default async function PartnerPage() {
             ) : (
               <div className="divide-y">
                 {displayedAttention.map((item) => (
-                  <div key={item.clientId} className="flex gap-3 px-5 py-4">
+                  <Link
+                    key={item.clientId}
+                    href={`/partner/clients/${item.clientId}`}
+                    className="flex gap-3 px-5 py-4 hover:bg-secondary/30"
+                  >
                     <span
                       className={`mt-1.5 size-2 shrink-0 rounded-full ${attentionStyles[item.severity]}`}
                       aria-hidden="true"
@@ -385,7 +380,7 @@ export default async function PartnerPage() {
                         {item.detail}
                       </p>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}

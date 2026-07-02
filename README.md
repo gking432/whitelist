@@ -21,12 +21,30 @@ Copy `.env.example` to `.env.local` and set:
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=   # server-only: webhook intake + run engine
+SECRETS_ENCRYPTION_KEY=      # server-only: openssl rand -base64 32
 ```
 
-Goal 1 adds Supabase migrations and local development seed data:
+Supabase migrations and local development seed data:
 
 - `supabase/migrations/20260621180500_goal_1_tenant_auth_foundation.sql`
+- `supabase/migrations/20260702100000_goal_4_integration_foundation.sql`
+- `supabase/migrations/20260702100100_goal_6_workflow_foundation.sql`
+- `supabase/migrations/20260702100200_goal_8_approvals.sql`
+- `supabase/migrations/20260702100250_goal_9_client_portal_access.sql`
+- `supabase/migrations/20260702100300_goal_10_reports_health.sql`
 - `supabase/seed.sql`
+
+Implemented product surfaces:
+
+- `/partner` — dashboard with health rollups and attention queue.
+- `/partner/clients`, `/partner/clients/new` — client business management.
+- `/partner/clients/[clientId]` — workspace tabs: Overview, Integrations,
+  Workflows, Runs / Logs, Approvals, Reports, Settings, Audit.
+- `/api/integrations/inbound/[connectionId]` — secured inbound webhook intake
+  (per-connection credential, envelope validation, idempotency, rate limit).
+- `/client`, `/client/approvals`, `/client/activity`, `/client/integrations` —
+  optional partner-branded client portal.
 
 Local seed accounts use `local-password-change-me` and `.example.test`
 addresses. They are for a local Supabase instance only.
