@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+:root {
+  --background: #f7f8f5;
+  --foreground: #17201d;
+  --card: #ffffff;
+  --card-foreground: #17201d;
+  --popover: #ffffff;
+  --popover-foreground: #17201d;
+  --primary: #16685b;
+  --primary-foreground: #f8fffc;
+  --secondary: #e7eee9;
+  --secondary-foreground: #25322e;
+  --muted: #edf0eb;
+  --muted-foreground: #5f6d67;
+  --accent: #b85f24;
+  --accent-foreground: #fff8f3;
+  --destructive: #b42318;
+  --destructive-foreground: #fff8f8;
+  --border: #d9dfd8;
+  --input: #d1d9d2;
+  --ring: #218c78;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: #121715;
+  --foreground: #eef4ef;
+  --card: #18201d;
+  --card-foreground: #eef4ef;
+  --popover: #18201d;
+  --popover-foreground: #eef4ef;
+  --primary: #60c5ad;
+  --primary-foreground: #0d1714;
+  --secondary: #26312d;
+  --secondary-foreground: #eef4ef;
+  --muted: #26312d;
+  --muted-foreground: #aab6b0;
+  --accent: #e29a55;
+  --accent-foreground: #180e07;
+  --destructive: #ff6b5f;
+  --destructive-foreground: #180505;
+  --border: #33413b;
+  --input: #3d4a45;
+  --ring: #60c5ad;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(247, 248, 245, 0.98), rgba(241, 244, 239, 0.98)),
+    var(--background);
+  color: var(--foreground);
+  font-family:
+    Arial,
+    Helvetica,
+    sans-serif;
+}
+
+a {
+  text-underline-offset: 4px;
+}
+
+::selection {
+  background: rgba(22, 104, 91, 0.18);
+}
