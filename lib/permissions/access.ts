@@ -202,6 +202,73 @@ export async function requirePrimaryPartnerAccess(
   return toAccessContext(data as MembershipRecord);
 }
 
+// Partner-side access to one client workspace, resolved from the clientId in
+// the URL. Verifies the client belongs to a partner the user is a member of.
+export async function requireClientWorkspaceAccess(
+  userId: string,
+  clientId: string,
+  allowedRoles: readonly PartnerRole[] = PARTNER_ROLES,
+): Promise<AccessContext> {
+  const roles = requireNonEmptyRoles(allowedRoles);
+  const clientScope = await fetchClientScope(clientId);
+  const supabase = await getSupabaseOrThrow();
+  const { data, error } = await supabase
+    .from("memberships")
+    .select("id, user_id, partner_id, client_id, role, status")
+    .eq("user_id", userId)
+    .eq("partner_id", clientScope.partner_id)
+    .is("client_id", null)
+    .eq("status", "active")
+    .in("role", [...roles])
+    .maybeSingle();
+
+  if (error) {
+    lookupFailed(error.message);
+  }
+
+  if (!data) {
+    denied("Client business not found or inaccessible.");
+  }
+
+  return toAccessContext(data as MembershipRecord, clientScope);
+}
+
+// Client-portal access resolved from the signed-in user's own membership,
+// never from a browser-provided id.
+export async function requirePrimaryClientAccess(
+  userId: string,
+  allowedRoles: readonly ClientRole[] = CLIENT_ROLES,
+): Promise<AccessContext> {
+  const roles = requireNonEmptyRoles(allowedRoles);
+  const supabase = await getSupabaseOrThrow();
+  const { data, error } = await supabase
+    .from("memberships")
+    .select("id, user_id, partner_id, client_id, role, status")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .not("client_id", "is", null)
+    .in("role", [...roles])
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    lookupFailed(error.message);
+  }
+
+  if (!data || !data.client_id) {
+    denied("Client access required.");
+  }
+
+  const clientScope = await fetchClientScope(data.client_id);
+
+  if (!clientScope.client_portal_enabled) {
+    denied("The client portal is not enabled for this business.");
+  }
+
+  return toAccessContext(data as MembershipRecord, clientScope);
+}
+
 export async function requireClientAccess(
   userId: string,
   clientId: string,
