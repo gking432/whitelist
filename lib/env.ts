@@ -46,3 +46,26 @@ export function getSecretsEncryptionKey(): string | null {
 export function getAppUrl() {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 }
+
+export function isLocalDevAutoLoginEnabled() {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:")
+  );
+}
+
+export function getLocalDevLoginEmail(nextPath = "/partner") {
+  if (process.env.DEV_AUTO_LOGIN_EMAIL) {
+    return process.env.DEV_AUTO_LOGIN_EMAIL;
+  }
+
+  if (nextPath.startsWith("/client")) {
+    return "client.owner@example.test";
+  }
+
+  return "partner.owner@example.test";
+}
+
+export function getLocalDevLoginPassword() {
+  return process.env.DEV_AUTO_LOGIN_PASSWORD ?? "local-password-change-me";
+}

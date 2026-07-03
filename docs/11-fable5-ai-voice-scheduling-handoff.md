@@ -274,6 +274,154 @@ The partner needs the deeper control plane:
 
 This is where most product complexity belongs.
 
+## Product Decisions To Preserve
+
+### Live Call Assistant UI
+
+The product needs a lightweight real-time UI for staff who are actively on calls.
+
+This is not a full CRM replacement. It is an assistant layer that can appear while the user works in or beside the client's existing CRM/phone system.
+
+For live calls, the UI should eventually show:
+
+- live transcript or running call notes, when provider support allows.
+- caller/customer match.
+- extracted fields.
+- missing intake fields.
+- customer scheduling constraints.
+- valid appointment slot suggestions.
+- next-question suggestions.
+- urgency or risk flags.
+- CRM/calendar sync status.
+
+The live scheduling assistant specifically requires live audio or live transcript access from the phone provider. If a provider only supports post-call recordings/transcripts, the product can still provide post-call notes and follow-up scheduling suggestions, but not the real-time popup assistant.
+
+### AI Activity Visibility
+
+The platform needs a simple way to show what AI assistants are doing.
+
+Visibility can vary by role:
+
+- staff on an active call should see real-time assistance relevant to that call.
+- managers should see active AI work, recent AI actions, failures, approvals, and audit history.
+- client owners may need visibility into AI changes affecting their business records.
+- partners need the deepest monitoring/configuration view across all clients.
+
+When the AI reads, updates, or suggests changes to a client/customer record, the action should be visible in logs and, where appropriate, in the connected CRM as an "AI Assistant" contribution.
+
+### AI As A CRM Contributor
+
+When syncing to a client's existing CRM, AI-generated notes and changes should be attributed to an "AI Assistant" actor rather than hidden as system activity.
+
+Examples:
+
+- AI Assistant summarized a call.
+- AI Assistant extracted missing lead fields.
+- AI Assistant suggested appointment slots.
+- AI Assistant drafted a confirmation message.
+- AI Assistant updated a safe field, if policy allows.
+
+Most CRM changes should start as suggestions or approval-gated actions. If the assistant is allowed to make a direct change, it must leave a note and audit event explaining what changed and why.
+
+### AI Phone Answering Disclosure Modes
+
+AI phone answering and speed-to-lead callback should be configurable per partner/client policy.
+
+Proposed modes:
+
+1. Off.
+2. On with explicit disclosure and opt-out: "Hi, I'm an AI scheduling assistant. I can help book your appointment, but you can press 2 at any time to speak with a human."
+3. On with minimal disclosure, if legally and ethically allowed.
+
+Product default should lean toward explicit disclosure. Before production launch, legal/compliance review should confirm whether AI disclosure is always required for target regions and call types.
+
+### Existing Stack Mode Vs Built-In CRM Mode
+
+The product must support two common client situations.
+
+Some clients already have a real operating stack:
+
+- CRM.
+- phone provider.
+- SMS provider.
+- email provider.
+- calendar.
+- forms/lead sources.
+
+For these clients, the partner platform should act as the AI operations layer on top of their existing systems. The client keeps working in their CRM/tools, while this platform connects, assists, sends/books/syncs where allowed, logs activity, and monitors health.
+
+Other clients do not have a strong operating stack yet. For them, the platform should eventually offer a built-in CRM/client operating mode based on the useful Northstar CRM concepts. In that mode, the AI assistant can work natively against first-party leads, contacts, timeline notes, tasks, appointments, messages, and pipeline records.
+
+Do not force every client into the built-in CRM. Keep CRM operating mode explicit:
+
+- external CRM only.
+- mirror mode.
+- assist mode.
+- primary CRM mode.
+- webhook only.
+
+The partner should choose the mode per client during setup.
+
+### Popup Action Console
+
+The best version of the staff-facing popup is not copy/paste. It is a small action console.
+
+When integrations and permissions allow, the popup should let a user click actions such as:
+
+- send SMS.
+- send email.
+- book appointment.
+- sync to CRM.
+- add CRM note.
+- create task.
+- update safe CRM fields.
+- escalate to manager.
+
+Those actions should call the connected provider APIs, then log/sync the result automatically.
+
+Example:
+
+1. AI drafts appointment confirmation.
+2. User clicks "Send SMS."
+3. Platform sends through the connected SMS provider.
+4. Platform adds a CRM timeline note as "AI Assistant."
+5. Platform records workflow/audit logs.
+6. Popup shows "Sent and synced."
+
+Copy-to-clipboard should exist only as a fallback when provider integrations are missing or unavailable.
+
+### Partner Integration Setup Must Be Simple
+
+Partner setup for a client must be extremely simple.
+
+Target:
+
+- a partner should be able to connect the client's CRM, phone, SMS, email, and calendar APIs in 30 minutes or less for a normal client.
+
+The setup flow should be guided and checklist-based:
+
+1. Add client.
+2. Choose operating mode.
+3. Connect CRM.
+4. Connect phone provider.
+5. Connect SMS/email provider.
+6. Connect calendar.
+7. Map basic fields.
+8. Enable workflow pack.
+9. Set approval/safety rules.
+10. Send a test event/call/message.
+
+Each connection should clearly show:
+
+- connected/not connected.
+- permissions granted.
+- what the AI can do with that provider.
+- what still needs setup.
+- whether live assistance is supported.
+- whether only post-call/post-event processing is supported.
+
+If a native provider adapter is not available, the fallback should be generic webhook/API setup with clear copy/paste instructions and test buttons.
+
 ## What To Pull From Northstar
 
 Use Northstar as a reference for product behavior and logic.
