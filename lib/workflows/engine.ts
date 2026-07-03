@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { redactAuditValue } from "@/lib/audit/redact";
 import {
   templateHandlers,
   type HandlerResult,
@@ -128,7 +129,7 @@ async function executeInstance(
       );
     }
 
-    const result: HandlerResult = handler({
+    const result: HandlerResult = await handler({
       eventType: event.eventType,
       data: event.data,
       settings: instance.settings ?? {},
@@ -141,6 +142,14 @@ async function executeInstance(
     const outputSnapshot: Record<string, unknown> = {
       steps: result.steps,
       output: result.output,
+      // How the output was produced (ai vs deterministic fallback) plus the
+      // redacted context the handler worked from — run detail renders both.
+      ai: result.ai ?? null,
+      context_snapshot: {
+        client_name: clientName,
+        event_type: event.eventType,
+        settings: redactAuditValue(instance.settings ?? {}),
+      },
     };
 
     if (result.approvalDraft && !needsApproval) {

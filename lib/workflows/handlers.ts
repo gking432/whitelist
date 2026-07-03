@@ -1,7 +1,30 @@
-// Template-specific run logic. Handlers are pure: they receive the trigger
-// payload plus instance settings and return steps, output, and an optional
-// approval draft. All drafts are rule-based template text — no external
-// model calls happen in this release.
+// Workflow handlers for the Lead Response Pack. Each handler is AI-capable
+// with a deterministic fallback: if the AI provider is not configured or a
+// call fails, the handler still produces schema-shaped output, labeled
+// status: "fallback" so run detail never presents rule-based output as model
+// output. Handlers receive redacted payloads and stay pure of HTTP concerns.
+
+import {
+  fallbackCustomerDraft,
+  fallbackLeadIntakeAnalysis,
+} from "@/lib/ai/fallbacks";
+import {
+  buildCustomerDraftPrompt,
+  buildLeadIntakePrompt,
+  CUSTOMER_DRAFT_SYSTEM_PROMPT,
+  LEAD_INTAKE_SYSTEM_PROMPT,
+} from "@/lib/ai/prompts";
+import {
+  generateStructured,
+  isAIConfigured,
+} from "@/lib/ai/provider";
+import {
+  CustomerDraftSchema,
+  LeadIntakeAnalysisSchema,
+  type AIExecutionInfo,
+  type CustomerDraft,
+} from "@/lib/ai/schemas";
+import type { z } from "zod";
 
 export type RunStep = {
   name: string;
@@ -21,6 +44,7 @@ export type HandlerResult = {
   steps: RunStep[];
   summary: string;
   output: Record<string, unknown>;
+  ai?: AIExecutionInfo;
   approvalDraft?: ApprovalDraft;
 };
 
@@ -35,132 +59,187 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function renderTemplate(
-  template: string,
-  vars: Record<string, string>,
-): string {
-  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key: string) => {
-    return vars[key] ?? "";
-  });
+// Runs the structured AI call, degrading to the deterministic fallback on
+// missing credentials or any AI failure. Never throws.
+async function structuredWithFallback<T>(args: {
+  taskKey: string;
+  system: string;
+  user: string;
+  schema: z.ZodType<T>;
+  fallback: () => T;
+}): Promise<{ data: T; ai: AIExecutionInfo }> {
+  if (!isAIConfigured()) {
+    return {
+      data: args.fallback(),
+      ai: { status: "fallback", reason: "not_configured" },
+    };
+  }
+
+  try {
+    const result = await generateStructured({
+      taskKey: args.taskKey,
+      system: args.system,
+      user: args.user,
+      schema: args.schema,
+    });
+
+    return {
+      data: result.data,
+      ai: {
+        status: "ai",
+        provider: result.meta.provider,
+        model: result.meta.model,
+        latency_ms: result.meta.latencyMs,
+      },
+    };
+  } catch (error) {
+    return {
+      data: args.fallback(),
+      ai: {
+        status: "fallback",
+        reason: "ai_failed",
+        error:
+          error instanceof Error ? error.message : "AI request failed.",
+      },
+    };
+  }
 }
 
-const DEFAULT_URGENCY_KEYWORDS = [
-  "emergency",
-  "urgent",
-  "asap",
-  "leak",
-  "flood",
-  "storm",
-  "damage",
-  "no heat",
-  "no ac",
-  "burst",
-  "sewage",
-];
+function aiStepDetail(ai: AIExecutionInfo): string {
+  if (ai.status === "ai") {
+    return `AI-generated output (${ai.provider}/${ai.model}).`;
+  }
 
-function handleNewLeadIntake(context: HandlerContext): HandlerResult {
-  const lead = {
-    name: asString(context.data.name) || asString(context.data.full_name),
-    email: asString(context.data.email),
-    phone: asString(context.data.phone),
-    service_type: asString(context.data.service_type),
-    message: asString(context.data.message),
-    source: asString(context.data.source),
-  };
+  return ai.reason === "not_configured"
+    ? "Deterministic fallback output — AI provider is not configured."
+    : `Deterministic fallback output — the AI call failed (${ai.error ?? "unknown error"}).`;
+}
 
+async function handleLeadIntake(context: HandlerContext): Promise<HandlerResult> {
   const configuredKeywords = asString(context.settings.high_urgency_keywords);
-  const keywords = configuredKeywords
+  const urgencyKeywords = configuredKeywords
     ? configuredKeywords
         .split(",")
-        .map((keyword) => keyword.trim().toLowerCase())
+        .map((keyword) => keyword.trim())
         .filter(Boolean)
-    : DEFAULT_URGENCY_KEYWORDS;
+    : undefined;
 
-  const haystack = `${lead.message} ${lead.service_type}`.toLowerCase();
-  const matched = keywords.filter((keyword) => haystack.includes(keyword));
-  const urgency = matched.length > 0 ? "high" : "normal";
-
-  const missing = ["name", "email", "phone"].filter(
-    (field) => !lead[field as keyof typeof lead],
-  );
+  const { data: analysis, ai } = await structuredWithFallback({
+    taskKey: "lead_intake_analysis",
+    system: LEAD_INTAKE_SYSTEM_PROMPT,
+    user: buildLeadIntakePrompt({
+      businessName: context.clientName,
+      eventType: context.eventType,
+      payloadJson: JSON.stringify(context.data, null, 2),
+    }),
+    schema: LeadIntakeAnalysisSchema,
+    fallback: () =>
+      fallbackLeadIntakeAnalysis({
+        eventType: context.eventType,
+        data: context.data,
+        urgencyKeywords,
+      }),
+  });
 
   return {
     steps: [
       { name: "Received event", detail: `Trigger: ${context.eventType}` },
+      { name: "Analyzed lead", detail: aiStepDetail(ai) },
       {
-        name: "Normalized lead fields",
-        detail:
-          missing.length > 0
-            ? `Missing fields: ${missing.join(", ")}`
-            : "All primary contact fields present.",
+        name: "Classified and recommended",
+        detail: `Urgency ${analysis.urgency}, quality ${analysis.lead_quality}.${
+          analysis.missing_fields.length > 0
+            ? ` Missing fields: ${analysis.missing_fields.join(", ")}.`
+            : " All primary fields present."
+        }`,
       },
       {
-        name: "Classified urgency (rule-based)",
-        detail:
-          matched.length > 0
-            ? `Matched keywords: ${matched.join(", ")}`
-            : "No urgency keywords matched.",
+        name: "Suggested follow-up task",
+        detail: `${analysis.suggested_task.title} (${analysis.suggested_task.priority}, due in ${analysis.suggested_task.due_in_minutes} min).`,
       },
     ],
-    summary: `New lead${lead.name ? ` from ${lead.name}` : ""} classified as ${urgency} urgency.`,
-    output: { lead, urgency, matched_keywords: matched },
+    summary: `Lead intake: ${analysis.urgency} urgency, ${analysis.lead_quality} quality. ${analysis.recommended_next_action}`,
+    output: { analysis },
+    ai,
   };
 }
 
-function draftMessageHandler(options: {
+type DraftKind =
+  | "missed_call_rescue"
+  | "estimate_follow_up"
+  | "appointment_confirmation"
+  | "review_request";
+
+function draftHandler(options: {
+  draftKind: DraftKind;
   approvalType: string;
   riskLevel: "low" | "medium" | "high";
-  defaultTemplate: string;
   titlePrefix: string;
-  extraVars?: (data: Record<string, unknown>) => Record<string, string>;
 }) {
-  return (context: HandlerContext): HandlerResult => {
-    const name = asString(context.data.name) || asString(context.data.full_name);
+  return async (context: HandlerContext): Promise<HandlerResult> => {
+    const customTemplate =
+      asString(context.settings.message_template) || undefined;
+
+    const { data: draft, ai } = await structuredWithFallback<CustomerDraft>({
+      taskKey: `${options.draftKind}_draft`,
+      system: CUSTOMER_DRAFT_SYSTEM_PROMPT,
+      user: buildCustomerDraftPrompt({
+        businessName: context.clientName,
+        draftKind: options.draftKind,
+        eventType: context.eventType,
+        payloadJson: JSON.stringify(context.data, null, 2),
+        customTemplate,
+      }),
+      schema: CustomerDraftSchema,
+      fallback: () =>
+        fallbackCustomerDraft({
+          draftKind: options.draftKind,
+          businessName: context.clientName,
+          data: context.data,
+          customTemplate,
+        }),
+    });
+
+    const name =
+      asString(context.data.name) || asString(context.data.full_name);
     const phone = asString(context.data.phone);
     const email = asString(context.data.email);
     const recipient = name || phone || email || "the customer";
 
-    const vars: Record<string, string> = {
-      name: name || "there",
-      business: context.clientName,
-      ...(options.extraVars ? options.extraVars(context.data) : {}),
-    };
-
-    const template =
-      asString(context.settings.message_template) || options.defaultTemplate;
-    const draft = renderTemplate(template, vars);
-
     return {
       steps: [
         { name: "Received event", detail: `Trigger: ${context.eventType}` },
-        {
-          name: "Prepared message draft",
-          detail: "Draft generated from the configured rule-based template.",
-        },
+        { name: "Prepared message draft", detail: aiStepDetail(ai) },
         {
           name: "Queued for approval",
-          detail: "Customer-facing drafts require human review before any send.",
+          detail:
+            "Customer-facing drafts require human review; nothing is sent without an approval and a delivery integration.",
         },
       ],
-      summary: `${options.titlePrefix} draft prepared for ${recipient}.`,
+      summary: `${options.titlePrefix} draft prepared for ${recipient} (${draft.channel.toUpperCase()}).`,
       output: { draft, recipient: { name, phone, email } },
+      ai,
       approvalDraft: {
         type: options.approvalType,
         title: `${options.titlePrefix}: ${recipient}`,
-        summary: `Review the drafted message to ${recipient} for ${context.clientName}.`,
+        summary: `Review the drafted ${draft.channel.toUpperCase()} to ${recipient} for ${context.clientName}. ${draft.internal_note}`,
         riskLevel: options.riskLevel,
-        editableContent: draft,
+        editableContent: draft.body,
         proposedPayload: {
-          channel: phone ? "sms" : "email",
+          channel: draft.channel,
           to: phone || email || null,
-          draft_source: "rule_based_template",
+          subject: draft.subject,
+          draft_source:
+            ai.status === "ai" ? "ai_generated" : "rule_based_template",
         },
       },
     };
   };
 }
 
-function handleSyncFailureAlert(context: HandlerContext): HandlerResult {
+async function handleSyncFailureAlert(
+  context: HandlerContext,
+): Promise<HandlerResult> {
   const system = asString(context.data.system) || "external system";
   const detail =
     asString(context.data.error_message) ||
@@ -170,10 +249,7 @@ function handleSyncFailureAlert(context: HandlerContext): HandlerResult {
   return {
     steps: [
       { name: "Received event", detail: `Trigger: ${context.eventType}` },
-      {
-        name: "Recorded sync issue",
-        detail: `Source: ${system}. ${detail}`,
-      },
+      { name: "Recorded sync issue", detail: `Source: ${system}. ${detail}` },
     ],
     summary: `Sync failure reported by ${system}.`,
     output: {
@@ -189,43 +265,32 @@ function handleSyncFailureAlert(context: HandlerContext): HandlerResult {
 
 export const templateHandlers: Record<
   string,
-  (context: HandlerContext) => HandlerResult
+  (context: HandlerContext) => Promise<HandlerResult>
 > = {
-  new_lead_intake: handleNewLeadIntake,
-  missed_call_rescue: draftMessageHandler({
+  new_lead_intake: handleLeadIntake,
+  missed_call_rescue: draftHandler({
+    draftKind: "missed_call_rescue",
     approvalType: "customer_message",
     riskLevel: "high",
     titlePrefix: "Missed-call follow-up",
-    defaultTemplate:
-      "Hi {{name}}, this is {{business}}. Sorry we missed your call — how can we help? Reply here or call us back anytime.",
   }),
-  appointment_reminder: draftMessageHandler({
-    approvalType: "customer_message",
-    riskLevel: "medium",
-    titlePrefix: "Appointment reminder",
-    defaultTemplate:
-      "Hi {{name}}, a reminder from {{business}} about your upcoming appointment{{appointment_time}}. Reply if you need to reschedule.",
-    extraVars: (data) => {
-      const time = typeof data.appointment_time === "string"
-        ? data.appointment_time
-        : "";
-
-      return { appointment_time: time ? ` on ${time}` : "" };
-    },
-  }),
-  estimate_follow_up: draftMessageHandler({
+  estimate_follow_up: draftHandler({
+    draftKind: "estimate_follow_up",
     approvalType: "customer_message",
     riskLevel: "high",
     titlePrefix: "Estimate follow-up",
-    defaultTemplate:
-      "Hi {{name}}, following up from {{business}} on the estimate we sent. Happy to answer any questions — is there anything holding you back?",
   }),
-  review_request: draftMessageHandler({
+  appointment_reminder: draftHandler({
+    draftKind: "appointment_confirmation",
+    approvalType: "customer_message",
+    riskLevel: "medium",
+    titlePrefix: "Appointment confirmation",
+  }),
+  review_request: draftHandler({
+    draftKind: "review_request",
     approvalType: "customer_message",
     riskLevel: "medium",
     titlePrefix: "Review request",
-    defaultTemplate:
-      "Hi {{name}}, thanks for choosing {{business}}! If you were happy with the work, would you mind leaving us a quick review?",
   }),
   sync_failure_alert: handleSyncFailureAlert,
 };

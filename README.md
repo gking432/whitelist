@@ -23,6 +23,9 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=   # server-only: webhook intake + run engine
 SECRETS_ENCRYPTION_KEY=      # server-only: openssl rand -base64 32
+ANTHROPIC_API_KEY=           # server-only: AI workflow output (optional —
+                             # workflows fall back to labeled rule-based output)
+AI_MODEL=                    # optional model override (default claude-opus-4-8)
 ```
 
 Supabase migrations and local development seed data:

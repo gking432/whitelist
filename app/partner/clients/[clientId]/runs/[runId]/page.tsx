@@ -29,6 +29,15 @@ type RunDetail = {
     steps?: { name: string; detail: string }[];
     output?: Record<string, unknown>;
     note?: string;
+    ai?: {
+      status: "ai" | "fallback";
+      reason?: string;
+      provider?: string;
+      model?: string;
+      latency_ms?: number;
+      error?: string;
+    } | null;
+    context_snapshot?: Record<string, unknown>;
   } | null;
   error_code: string | null;
   error_message: string | null;
@@ -193,10 +202,56 @@ export default async function RunDetailPage({ params }: PageProps) {
             ) : null}
           </section>
 
+          {run.output_snapshot?.ai ? (
+            <section className="rounded-lg border bg-card p-5">
+              <h3 className="text-sm font-semibold">AI execution</h3>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {run.output_snapshot.ai.status === "ai" ? (
+                  <>
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-200 bg-emerald-50 text-emerald-800"
+                    >
+                      AI-generated
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {run.output_snapshot.ai.provider}/
+                      {run.output_snapshot.ai.model}
+                      {run.output_snapshot.ai.latency_ms
+                        ? ` · ${run.output_snapshot.ai.latency_ms}ms`
+                        : ""}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Badge
+                      variant="outline"
+                      className="border-amber-200 bg-amber-50 text-amber-900"
+                    >
+                      Rule-based fallback
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {run.output_snapshot.ai.reason === "not_configured"
+                        ? "AI provider is not configured for this environment."
+                        : `The AI call failed: ${run.output_snapshot.ai.error ?? "unknown error"}`}
+                    </span>
+                  </>
+                )}
+              </div>
+            </section>
+          ) : null}
+
           <section className="space-y-4 rounded-lg border bg-card p-5">
             <h3 className="text-sm font-semibold">Snapshots</h3>
             <SnapshotBlock title="Input (redacted)" value={run.input_snapshot} />
-            <SnapshotBlock title="Output" value={run.output_snapshot?.output} />
+            <SnapshotBlock
+              title="Prompt context (redacted)"
+              value={run.output_snapshot?.context_snapshot}
+            />
+            <SnapshotBlock
+              title="Structured output"
+              value={run.output_snapshot?.output}
+            />
           </section>
         </div>
 
