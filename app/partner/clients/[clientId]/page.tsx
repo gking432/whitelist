@@ -122,8 +122,32 @@ export default async function ClientOverviewPage({ params }: PageProps) {
     },
   ];
 
+  const hasSetupPlan = Boolean(
+    (client.lead_source_profile as { answers?: unknown } | null)?.answers,
+  );
+
   return (
     <div className="space-y-6">
+      {!hasSetupPlan ? (
+        <section className="flex flex-col gap-2 rounded-xl border border-brand-gold/40 bg-brand-gold/8 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">
+              Finish guided setup for {client.name}
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+              Answer a few plain questions about where leads come from and
+              Northstar recommends the simplest connection path.
+            </p>
+          </div>
+          <Link
+            href={`${base}/setup`}
+            className="shrink-0 text-sm font-semibold text-primary hover:underline"
+          >
+            Start setup →
+          </Link>
+        </section>
+      ) : null}
+
       {loadError ? (
         <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Some operational signals could not be loaded. Metrics below may be

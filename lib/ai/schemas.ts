@@ -25,6 +25,41 @@ export const LeadIntakeAnalysisSchema = z.object({
 
 export type LeadIntakeAnalysis = z.infer<typeof LeadIntakeAnalysisSchema>;
 
+// Universal AI intake routing (docs/12): every inbound interaction is
+// classified before workflows act on it.
+export const INTAKE_CATEGORIES = [
+  "sales",
+  "customer_service",
+  "scheduling",
+  "estimate_quote",
+  "urgent_emergency",
+  "billing_admin",
+  "review_reputation",
+  "pr_media",
+  "spam_vendor",
+  "other",
+] as const;
+
+export const IntakeRoutingSchema = z.object({
+  category: z.enum(INTAKE_CATEGORIES),
+  urgency: z.enum(["emergency", "high", "medium", "low"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  summary: z.string(),
+  reasoning: z.string(),
+  recommended_owner: z.enum([
+    "sales",
+    "office_admin",
+    "service_manager",
+    "owner_manager",
+    "billing",
+    "no_action_needed",
+  ]),
+  suggested_next_action: z.string(),
+  requires_human_handoff: z.boolean(),
+});
+
+export type IntakeRouting = z.infer<typeof IntakeRoutingSchema>;
+
 export const CustomerDraftSchema = z.object({
   channel: z.enum(["sms", "email"]),
   subject: z.string().nullable(),

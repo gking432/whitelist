@@ -8,7 +8,6 @@ import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { getAppUrl } from "@/lib/env";
 import { formatDateTime, formatEnum } from "@/lib/format";
 import {
-  INBOUND_WEBHOOK_PROVIDER_KEY,
   inboundWebhookPath,
   type IntegrationConnectionRecord,
   type IntegrationEventRecord,
@@ -30,6 +29,7 @@ type ConnectionRow = IntegrationConnectionRecord & {
     provider_key: string;
     display_name: string;
     category: string;
+    supports_inbound: boolean;
   } | null;
 };
 
@@ -52,7 +52,7 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
     supabase
       .from("integration_connections")
       .select(
-        "*, provider:integration_providers(provider_key, display_name, category)",
+        "*, provider:integration_providers(provider_key, display_name, category, supports_inbound)",
       )
       .eq("id", connectionId)
       .eq("client_id", clientId)
@@ -95,7 +95,7 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
   const secret = secretResult.data;
   const events = (eventsResult.data ?? []) as IntegrationEventRecord[];
   const isInbound =
-    connection.provider?.provider_key === INBOUND_WEBHOOK_PROVIDER_KEY;
+    Boolean(connection.provider?.supports_inbound);
   const endpointUrl = isInbound
     ? `${getAppUrl()}${inboundWebhookPath(connection.id)}`
     : null;

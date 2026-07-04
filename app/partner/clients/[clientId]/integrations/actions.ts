@@ -13,7 +13,6 @@ import {
   secretLastFour,
 } from "@/lib/integrations/secrets";
 import {
-  INBOUND_WEBHOOK_PROVIDER_KEY,
   OUTBOUND_WEBHOOK_PROVIDER_KEY,
   inboundWebhookPath,
   type IntegrationProviderRecord,
@@ -114,8 +113,9 @@ export async function createIntegrationConnection(
     }
 
     const providerRecord = provider as IntegrationProviderRecord;
-    const isInboundWebhook =
-      providerRecord.provider_key === INBOUND_WEBHOOK_PROVIDER_KEY;
+    // Every inbound-capable provider (generic webhook, web chat intake, …)
+    // gets a generated endpoint + credential on the shared intake path.
+    const isInboundWebhook = providerRecord.supports_inbound;
     const isOutboundWebhook =
       providerRecord.provider_key === OUTBOUND_WEBHOOK_PROVIDER_KEY;
 

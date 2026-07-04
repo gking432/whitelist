@@ -6,12 +6,15 @@
 
 import {
   fallbackCustomerDraft,
+  fallbackIntakeRouting,
   fallbackLeadIntakeAnalysis,
 } from "@/lib/ai/fallbacks";
 import {
   buildCustomerDraftPrompt,
+  buildIntakeRoutingPrompt,
   buildLeadIntakePrompt,
   CUSTOMER_DRAFT_SYSTEM_PROMPT,
+  INTAKE_ROUTING_SYSTEM_PROMPT,
   LEAD_INTAKE_SYSTEM_PROMPT,
 } from "@/lib/ai/prompts";
 import {
@@ -20,6 +23,7 @@ import {
 } from "@/lib/ai/provider";
 import {
   CustomerDraftSchema,
+  IntakeRoutingSchema,
   LeadIntakeAnalysisSchema,
   type AIExecutionInfo,
   type CustomerDraft,
@@ -237,6 +241,54 @@ function draftHandler(options: {
   };
 }
 
+// Universal intake router: classifies every inbound interaction so the
+// right people and workflows see it (docs/12 "Universal AI Intake Routing").
+// Internal routing decision only — no customer-facing output, no approval.
+async function handleIntakeRouting(
+  context: HandlerContext,
+): Promise<HandlerResult> {
+  const configuredKeywords = asString(context.settings.urgent_keywords);
+  const urgentKeywords = configuredKeywords
+    ? configuredKeywords
+        .split(",")
+        .map((keyword) => keyword.trim())
+        .filter(Boolean)
+    : undefined;
+
+  const { data: routing, ai } = await structuredWithFallback({
+    taskKey: "intake_routing",
+    system: INTAKE_ROUTING_SYSTEM_PROMPT,
+    user: buildIntakeRoutingPrompt({
+      businessName: context.clientName,
+      eventType: context.eventType,
+      payloadJson: JSON.stringify(context.data, null, 2),
+    }),
+    schema: IntakeRoutingSchema,
+    fallback: () =>
+      fallbackIntakeRouting({
+        eventType: context.eventType,
+        data: context.data,
+        urgentKeywords,
+      }),
+  });
+
+  return {
+    steps: [
+      { name: "Received interaction", detail: `Channel: ${context.eventType}` },
+      { name: "Classified intake", detail: aiStepDetail(ai) },
+      {
+        name: "Routed",
+        detail: `${routing.category.replaceAll("_", " ")} → ${routing.recommended_owner.replaceAll("_", " ")} (${routing.urgency} urgency, ${routing.confidence} confidence).${
+          routing.requires_human_handoff ? " Human handoff required." : ""
+        }`,
+      },
+    ],
+    summary: `Intake routed to ${routing.category.replaceAll("_", " ")} (${routing.urgency}). ${routing.suggested_next_action}`,
+    output: { routing },
+    ai,
+  };
+}
+
 async function handleSyncFailureAlert(
   context: HandlerContext,
 ): Promise<HandlerResult> {
@@ -292,5 +344,6 @@ export const templateHandlers: Record<
     riskLevel: "medium",
     titlePrefix: "Review request",
   }),
+  ai_intake_router: handleIntakeRouting,
   sync_failure_alert: handleSyncFailureAlert,
 };

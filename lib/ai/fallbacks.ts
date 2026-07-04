@@ -1,4 +1,8 @@
-import type { CustomerDraft, LeadIntakeAnalysis } from "@/lib/ai/schemas";
+import type {
+  CustomerDraft,
+  IntakeRouting,
+  LeadIntakeAnalysis,
+} from "@/lib/ai/schemas";
 
 // Deterministic fallbacks. Used when the AI provider is not configured or a
 // call fails, so workflow runs always complete with output the partner can
@@ -93,6 +97,122 @@ export function fallbackLeadIntakeAnalysis(args: {
       args.eventType,
       ...(matched.length > 0 ? ["urgency_keywords"] : []),
     ],
+  };
+}
+
+const ROUTING_RULES: {
+  category: IntakeRouting["category"];
+  owner: IntakeRouting["recommended_owner"];
+  hints: string[];
+}[] = [
+  {
+    category: "billing_admin",
+    owner: "billing",
+    hints: ["invoice", "bill", "payment", "receipt", "insurance claim", "paperwork"],
+  },
+  {
+    category: "scheduling",
+    owner: "office_admin",
+    hints: ["reschedule", "appointment", "book", "booking", "confirm", "cancel", "availability"],
+  },
+  {
+    category: "estimate_quote",
+    owner: "sales",
+    hints: ["estimate", "quote", "how much", "price", "pricing", "cost"],
+  },
+  {
+    category: "review_reputation",
+    owner: "owner_manager",
+    hints: ["review", "complaint", "unhappy", "disappointed", "refund", "bbb"],
+  },
+  {
+    category: "pr_media",
+    owner: "owner_manager",
+    hints: ["press", "media", "interview", "journalist", "partnership", "sponsor"],
+  },
+  {
+    category: "spam_vendor",
+    owner: "no_action_needed",
+    hints: ["seo services", "marketing agency", "web design services", "guest post", "backlink", "wholesale", "supplier", "b2b offer"],
+  },
+  {
+    category: "customer_service",
+    owner: "service_manager",
+    hints: ["not working", "broken", "issue with", "problem with", "warranty", "came out", "follow up on the job", "still leaking"],
+  },
+];
+
+export function fallbackIntakeRouting(args: {
+  eventType: string;
+  data: Record<string, unknown>;
+  urgentKeywords?: string[];
+}): IntakeRouting {
+  const text = [
+    asString(args.data.message),
+    asString(args.data.description),
+    asString(args.data.transcript),
+    asString(args.data.subject),
+    asString(args.data.summary),
+    asString(args.data.service_type),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const urgentHints =
+    args.urgentKeywords && args.urgentKeywords.length > 0
+      ? args.urgentKeywords
+      : DEFAULT_URGENCY_KEYWORDS;
+  const urgentMatches = urgentHints.filter((hint) =>
+    text.includes(hint.toLowerCase()),
+  );
+
+  if (urgentMatches.length > 0) {
+    return {
+      category: "urgent_emergency",
+      urgency: "emergency",
+      confidence: "medium",
+      summary: `Rule-based routing: urgent keywords matched (${urgentMatches.join(", ")}).`,
+      reasoning: "Keyword rules matched emergency terms in the interaction text.",
+      recommended_owner: "service_manager",
+      suggested_next_action:
+        "Call this contact back immediately and confirm the situation is under control.",
+      requires_human_handoff: true,
+    };
+  }
+
+  const matchedRule = ROUTING_RULES.find((rule) =>
+    rule.hints.some((hint) => text.includes(hint)),
+  );
+
+  if (matchedRule) {
+    return {
+      category: matchedRule.category,
+      urgency: matchedRule.category === "customer_service" ? "high" : "medium",
+      confidence: "medium",
+      summary: `Rule-based routing: classified as ${matchedRule.category.replaceAll("_", " ")}.`,
+      reasoning: "Keyword rules matched the interaction text.",
+      recommended_owner: matchedRule.owner,
+      suggested_next_action:
+        matchedRule.category === "spam_vendor"
+          ? "No customer action needed. Review briefly and archive."
+          : "Review the interaction and follow up through the usual channel.",
+      requires_human_handoff: matchedRule.category === "review_reputation",
+    };
+  }
+
+  // Default: treat unclassified inbound interest as a sales opportunity so
+  // nothing valuable is dropped.
+  return {
+    category: "sales",
+    urgency: "medium",
+    confidence: "low",
+    summary: `Rule-based routing: no specific pattern matched a ${args.eventType} event; treated as a sales opportunity.`,
+    reasoning:
+      "No keyword rules matched, and unrecognized inbound interest defaults to sales so it is not lost.",
+    recommended_owner: "sales",
+    suggested_next_action:
+      "Review the details and respond the same business day.",
+    requires_human_handoff: false,
   };
 }
 

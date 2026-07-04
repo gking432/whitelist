@@ -11,7 +11,6 @@ import { Select } from "@/components/ui/select";
 import { RUNTIME_MODES } from "@/lib/clients/constants";
 import { formatEnum } from "@/lib/format";
 import {
-  INBOUND_WEBHOOK_PROVIDER_KEY,
   OUTBOUND_WEBHOOK_PROVIDER_KEY,
   type IntegrationProviderRecord,
 } from "@/lib/integrations/types";
@@ -48,8 +47,7 @@ export function ConnectionForm({
   const selectedProvider = providers.find(
     (provider) => provider.id === providerId,
   );
-  const isInbound =
-    selectedProvider?.provider_key === INBOUND_WEBHOOK_PROVIDER_KEY;
+  const isInbound = Boolean(selectedProvider?.supports_inbound);
   const isOutbound =
     selectedProvider?.provider_key === OUTBOUND_WEBHOOK_PROVIDER_KEY;
   const errors = state.fieldErrors ?? {};

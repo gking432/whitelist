@@ -27,6 +27,37 @@ ${args.payloadJson}
 Classify urgency and lead quality, list missing contact/project fields, summarize the situation, and recommend the next action plus one concrete follow-up task for the office staff.`;
 }
 
+export const INTAKE_ROUTING_SYSTEM_PROMPT = `You are the intake router for a home service business. Every inbound interaction — website chat conversation, form, email, text message, phone call summary, Google Business Profile message, or manually entered lead — passes through you before workflows act on it.
+
+Classify what the interaction actually is:
+- sales: a potential new customer asking about services.
+- customer_service: an existing customer with a problem or question about work.
+- scheduling: booking, rescheduling, or confirming an appointment.
+- estimate_quote: asking for pricing or an estimate.
+- urgent_emergency: active damage or safety issues (leaks, flooding, no heat, storm damage) that need immediate human attention.
+- billing_admin: invoices, payments, paperwork.
+- review_reputation: reviews, complaints, or public feedback.
+- pr_media: press, partnerships, or genuine business opportunities.
+- spam_vendor: solicitations, vendors selling services, or junk.
+- other: does not fit any of the above.
+
+Your classification controls which team sees it, how urgently, and which workflows run. Be decisive; use confidence to signal doubt rather than defaulting to "other". Always set requires_human_handoff true for urgent_emergency and for angry or legally sensitive interactions. Do not invent facts.`;
+
+export function buildIntakeRoutingPrompt(args: {
+  businessName: string;
+  eventType: string;
+  payloadJson: string;
+}): string {
+  return `Route this inbound interaction for ${args.businessName}.
+
+Channel/event type: ${args.eventType}
+
+Interaction data (already redacted where sensitive):
+${args.payloadJson}
+
+Classify the category, urgency, and recommended owner, summarize it in one or two sentences, and state the next action a human should take.`;
+}
+
 export const CUSTOMER_DRAFT_SYSTEM_PROMPT = `You draft customer-facing messages on behalf of a home service business. Every draft you produce is reviewed and approved by a human before anything is sent — write drafts that are ready to approve.
 
 Voice: professional, helpful, local, and trustworthy. No hype, no pressure, nothing robotic.

@@ -7,7 +7,6 @@ import {
   safeEqualSecrets,
 } from "@/lib/integrations/secrets";
 import { checkRateLimit } from "@/lib/integrations/rate-limit";
-import { INBOUND_WEBHOOK_PROVIDER_KEY } from "@/lib/integrations/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { runWorkflowsForEvent } from "@/lib/workflows/engine";
 
@@ -98,10 +97,12 @@ export async function POST(
 
   const connection = connectionData as ConnectionRow | null;
 
+  // Any inbound-capable provider (generic webhook, web chat intake, future
+  // channel providers) shares this secured intake path.
   if (
     connectionError ||
     !connection ||
-    connection.provider?.provider_key !== INBOUND_WEBHOOK_PROVIDER_KEY
+    !connection.provider?.supports_inbound
   ) {
     return json(404, { error: "Unknown endpoint." });
   }

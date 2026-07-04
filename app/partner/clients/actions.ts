@@ -240,7 +240,8 @@ export async function createClientBusiness(
   }
 
   revalidatePath("/partner/clients");
-  redirect(`/partner/clients/${clientId}`);
+  // New clients land in the guided setup flow first.
+  redirect(`/partner/clients/${clientId}/setup`);
 }
 
 export async function updateClientBusiness(
