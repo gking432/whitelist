@@ -422,6 +422,76 @@ Each connection should clearly show:
 
 If a native provider adapter is not available, the fallback should be generic webhook/API setup with clear copy/paste instructions and test buttons.
 
+### Lead Source Setup Options
+
+Northstar must give partners multiple easy ways to connect client lead sources.
+
+Partners should not be forced to paste code for everything. The setup flow should recommend the easiest available path for each client:
+
+1. one-click native connection.
+2. platform app/plugin.
+3. Zapier, Make, or n8n bridge.
+4. hosted Northstar form, chat widget, booking page, or tracking link.
+5. copy/paste website snippet.
+6. generic webhook/API setup.
+7. manual entry fallback.
+
+Examples:
+
+- WordPress should eventually have a plugin.
+- Wix may need a Wix app later; early path can use Zapier/Make or embed options.
+- Squarespace/Webflow/custom sites can use embed snippets, form webhooks, or direct API.
+- Google Business Profile should use supported Google connection paths, tracking numbers, booking/contact links, and source attribution rather than website code.
+- Clients without website access should still be supported through hosted Northstar pages, tracking numbers, or manual entry.
+
+The UI should ask plain questions like "What website platform does the client use?" and "Can you edit their website?" before showing technical instructions.
+
+### Universal AI Intake Routing
+
+Every inbound interaction should be classified before workflows run.
+
+This includes:
+
+- phone calls.
+- website chat.
+- website forms.
+- inbound email.
+- inbound SMS.
+- social or paid-ad leads.
+- Google Business Profile messages/calls where supported.
+- manual entries.
+
+The AI should decide whether the interaction belongs in:
+
+- sales.
+- customer service.
+- scheduling.
+- estimate/quote request.
+- urgent/emergency.
+- billing/admin.
+- review/reputation.
+- PR/media/opportunity.
+- spam/vendor/low-value.
+
+That classification should control workflow routing, urgency, CRM notes, approvals, reporting, and which human or team should see it.
+
+### Website AI Chat Assistant
+
+Northstar should include a website AI chat assistant as a major future offer.
+
+It should act as a customer service and sales rep on the client's site:
+
+- answer approved business questions.
+- collect lead/contact details.
+- qualify requests.
+- classify the request type.
+- suggest or book appointments when provider access allows.
+- create CRM leads/tickets.
+- hand off to humans.
+- leave AI Assistant notes and audit events.
+
+It should be installable through platform-specific apps/plugins where possible, snippets/embeds where needed, hosted pages as a fallback, and automation bridges like Zapier/Make/n8n when that is fastest.
+
 ## What To Pull From Northstar
 
 Use Northstar as a reference for product behavior and logic.
