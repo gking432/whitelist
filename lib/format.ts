@@ -35,6 +35,7 @@ const enumLabels: Record<string, string> = {
   expired: "Expired",
   received: "Received",
   processed: "Processed",
+  sent: "Sent",
   inbound: "Inbound",
   outbound: "Outbound",
   low: "Low",

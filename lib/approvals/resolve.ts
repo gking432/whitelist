@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
+import {
+  deliverApprovedCustomerMessage,
+  type DeliveryOutcome,
+} from "@/lib/delivery/customer-message";
 import type { FormState } from "@/lib/forms/state";
 import type { AccessContext } from "@/lib/permissions/types";
 
@@ -25,6 +29,7 @@ type ApprovalRow = {
   status: string;
   title: string;
   editable_content: string | null;
+  proposed_payload: Record<string, unknown> | null;
   assigned_to: string | null;
 };
 
@@ -46,7 +51,7 @@ export async function resolveApprovalItem(
   const { data, error } = await supabase
     .from("approval_items")
     .select(
-      "id, partner_id, client_id, workflow_run_id, type, status, title, editable_content, assigned_to",
+      "id, partner_id, client_id, workflow_run_id, type, status, title, editable_content, proposed_payload, assigned_to",
     )
     .eq("id", approvalId)
     .eq("client_id", clientId)
@@ -121,13 +126,38 @@ export async function resolveApprovalItem(
     };
   }
 
-  // Transition the paused run. Approved drafts do not send anywhere in this
-  // release; the approved content is recorded on the approval item.
+  // Delivery happens only here — strictly after a human approved the draft.
+  // Customer messages go through the gated Twilio path, which itself refuses
+  // to send unless the connection is in live mode.
+  let delivery: DeliveryOutcome | null = null;
+
+  if (
+    resolution !== "reject" &&
+    approval.type === "customer_message" &&
+    resolvedContent
+  ) {
+    const payload = approval.proposed_payload ?? {};
+
+    delivery = await deliverApprovedCustomerMessage({
+      approvalId: approval.id,
+      partnerId: approval.partner_id,
+      clientId: approval.client_id,
+      workflowRunId: approval.workflow_run_id,
+      channel: typeof payload.channel === "string" ? payload.channel : null,
+      to: typeof payload.to === "string" ? payload.to : null,
+      body: resolvedContent,
+    });
+  }
+
+  // Transition the paused run, recording exactly what happened to the
+  // approved content (sent, dry run, or recorded only).
   if (approval.workflow_run_id) {
     const approvedSummary =
       resolution === "reject"
         ? `Rejected: ${approval.title}`
-        : `Approved: ${approval.title}. No live delivery is configured in this release.`;
+        : delivery
+          ? `Approved: ${approval.title}. ${delivery.detail}`
+          : `Approved: ${approval.title}. The approved content is recorded on the approval item; no automatic delivery applies to this item type.`;
 
     await supabase
       .from("workflow_runs")
@@ -157,7 +187,15 @@ export async function resolveApprovalItem(
       status: nextStatus,
       resolution_note: input.note?.trim() || null,
     },
-    metadata: { approval_type: approval.type },
+    metadata: {
+      approval_type: approval.type,
+      ...(delivery
+        ? {
+            delivery_attempted: delivery.attempted,
+            delivery_delivered: delivery.delivered,
+          }
+        : {}),
+    },
   });
 
   return {
@@ -165,6 +203,8 @@ export async function resolveApprovalItem(
     message:
       nextStatus === "rejected"
         ? "Approval rejected. The workflow run was cancelled."
-        : "Approval recorded. The workflow run was completed.",
+        : delivery
+          ? delivery.detail
+          : "Approval recorded. The workflow run was completed.",
   };
 }

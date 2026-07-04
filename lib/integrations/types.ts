@@ -47,7 +47,14 @@ export type IntegrationEventRecord = {
   workflow_run_id: string | null;
   direction: "inbound" | "outbound";
   event_type: string;
-  status: "received" | "processed" | "rejected" | "failed" | "skipped";
+  status:
+    | "received"
+    | "processed"
+    | "rejected"
+    | "failed"
+    | "skipped"
+    | "sent"
+    | "dry_run";
   idempotency_key: string | null;
   error_code: string | null;
   error_message: string | null;

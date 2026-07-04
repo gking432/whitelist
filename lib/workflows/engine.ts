@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { redactAuditValue } from "@/lib/audit/redact";
+import { syncRunToCrm } from "@/lib/crm/sync-from-run";
 import {
   templateHandlers,
   type HandlerResult,
@@ -139,9 +140,26 @@ async function executeInstance(
     const needsApproval = Boolean(result.approvalDraft) &&
       approvalRequired(instance, template);
 
+    // Pilot loop: lead-bearing runs upsert the contact + AI Assistant note
+    // in the client's connected CRM (additive-only; explicitly safe). Dry
+    // run unless the CRM connection is live. Never fails the run.
+    const crmSync = await syncRunToCrm(supabase, {
+      partnerId: event.partnerId,
+      clientId: event.clientId,
+      runId,
+      templateKey: template.template_key,
+      clientName,
+      eventType: event.eventType,
+      eventData: event.data,
+      runSummary: result.summary,
+    });
+
+    const steps = crmSync ? [...result.steps, crmSync.step] : result.steps;
+
     const outputSnapshot: Record<string, unknown> = {
-      steps: result.steps,
+      steps,
       output: result.output,
+      ...(crmSync ? { crm: crmSync.crm } : {}),
       // How the output was produced (ai vs deterministic fallback) plus the
       // redacted context the handler worked from — run detail renders both.
       ai: result.ai ?? null,
