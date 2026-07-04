@@ -22,54 +22,58 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-gold: var(--brand-gold);
+
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
+  --color-status-urgent: var(--status-urgent);
+  --color-status-info: var(--status-info);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
 }
 
 :root {
-  --background: #f7f8f5;
-  --foreground: #17201d;
+  /* Northstar brand: deep green command center on warm parchment. */
+  --background: #f6f4ee;
+  --foreground: #17211b;
   --card: #ffffff;
-  --card-foreground: #17201d;
+  --card-foreground: #17211b;
   --popover: #ffffff;
-  --popover-foreground: #17201d;
-  --primary: #16685b;
-  --primary-foreground: #f8fffc;
-  --secondary: #e7eee9;
-  --secondary-foreground: #25322e;
-  --muted: #edf0eb;
-  --muted-foreground: #5f6d67;
-  --accent: #b85f24;
-  --accent-foreground: #fff8f3;
+  --popover-foreground: #17211b;
+  --primary: #1e4735;
+  --primary-foreground: #f5f3ec;
+  --secondary: #ebe8df;
+  --secondary-foreground: #26332b;
+  --muted: #efece4;
+  --muted-foreground: #616b64;
+  --accent: #c79a3b;
+  --accent-foreground: #1c1608;
   --destructive: #b42318;
-  --destructive-foreground: #fff8f8;
-  --border: #d9dfd8;
-  --input: #d1d9d2;
-  --ring: #218c78;
-  --radius: 0.5rem;
-}
+  --destructive-foreground: #ffffff;
+  --border: #e2ddd1;
+  --input: #d8d3c6;
+  --ring: #2c6a4f;
+  --radius: 0.75rem;
 
-.dark {
-  --background: #121715;
-  --foreground: #eef4ef;
-  --card: #18201d;
-  --card-foreground: #eef4ef;
-  --popover: #18201d;
-  --popover-foreground: #eef4ef;
-  --primary: #60c5ad;
-  --primary-foreground: #0d1714;
-  --secondary: #26312d;
-  --secondary-foreground: #eef4ef;
-  --muted: #26312d;
-  --muted-foreground: #aab6b0;
-  --accent: #e29a55;
-  --accent-foreground: #180e07;
-  --destructive: #ff6b5f;
-  --destructive-foreground: #180505;
-  --border: #33413b;
-  --input: #3d4a45;
-  --ring: #60c5ad;
+  --sidebar: #12291d;
+  --sidebar-foreground: #e6efe8;
+  --brand-deep: #12291d;
+  --brand-gold: #c79a3b;
+
+  --status-success: #157347;
+  --status-warning: #b45309;
+  --status-urgent: #b42318;
+  --status-info: #1d4ed8;
 }
 
 * {
@@ -83,14 +87,11 @@ html {
 
 body {
   min-height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(247, 248, 245, 0.98), rgba(241, 244, 239, 0.98)),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
-  font-family:
-    Arial,
-    Helvetica,
-    sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -98,5 +99,33 @@ a {
 }
 
 ::selection {
-  background: rgba(22, 104, 91, 0.18);
+  background: rgba(30, 71, 53, 0.16);
+}
+
+/* Restrained scrollbars for the command-center feel. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(23, 33, 27, 0.22) transparent;
+}
+
+/* Soft entrance for page content — calm, not showy. */
+@keyframes ns-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ns-fade-up {
+  animation: ns-fade-up 240ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ns-fade-up {
+    animation: none;
+  }
 }

@@ -206,7 +206,7 @@ export default async function PartnerPage() {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="outline">{formatEnum(dashboard.partner.status)}</Badge>
             <Badge variant="outline">{access.role.replaceAll("_", " ")}</Badge>
-            <Button asChild size="sm">
+            <Button asChild size="sm" variant="gold">
               <Link href="/partner/clients/new">
                 <Plus aria-hidden="true" />
                 Add client

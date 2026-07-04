@@ -117,7 +117,7 @@ export default async function ClientIntegrationsPage({ params }: PageProps) {
         <section className="overflow-hidden rounded-lg border bg-card">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[56rem] text-left text-sm">
-              <thead className="border-b bg-secondary/40 text-xs text-muted-foreground">
+              <thead className="border-b text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-5 py-3 font-medium">Connection</th>
                   <th className="px-4 py-3 font-medium">Status</th>

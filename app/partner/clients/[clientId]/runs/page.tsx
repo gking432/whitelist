@@ -112,10 +112,10 @@ export default async function ClientRunsPage({
               key={filter.label}
               href={href}
               className={cn(
-                "rounded-md border px-3 py-1.5 text-xs font-medium transition",
+                "rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
                 isActive
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "bg-background text-muted-foreground hover:bg-secondary",
+                  : "bg-card text-muted-foreground hover:bg-secondary",
               )}
             >
               {filter.label}
@@ -143,7 +143,7 @@ export default async function ClientRunsPage({
         <section className="overflow-hidden rounded-lg border bg-card">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[52rem] text-left text-sm">
-              <thead className="border-b bg-secondary/40 text-xs text-muted-foreground">
+              <thead className="border-b text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-5 py-3 font-medium">Time</th>
                   <th className="px-4 py-3 font-medium">Workflow</th>

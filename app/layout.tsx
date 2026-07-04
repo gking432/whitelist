@@ -1,13 +1,20 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
-    default: "Partner Portal",
-    template: "%s | Partner Portal",
+    default: "Northstar",
+    template: "%s | Northstar",
   },
   description:
-    "Partner operations platform for client integrations, automations, approvals, and workflow visibility.",
+    "White-label AI operations platform: integrations, AI workflows, approvals, and operational visibility for home service businesses.",
 };
 
 export default function RootLayout({
@@ -16,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       <body>{children}</body>
     </html>
   );

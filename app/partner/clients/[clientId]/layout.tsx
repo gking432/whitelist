@@ -71,23 +71,30 @@ export default async function ClientWorkspaceLayout({
       userEmail={user.email ?? "Authenticated user"}
       activeNav="clients"
     >
-      <div className="space-y-5">
-        <header className="space-y-4 border-b pb-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <Link
-                href="/partner/clients"
-                className="text-xs font-medium text-muted-foreground hover:text-foreground"
-              >
-                Clients
-              </Link>
-              <h1 className="mt-1 text-2xl font-semibold">{client.name}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {client.industry ?? "Industry not set"} · {client.timezone}
-              </p>
+      <div className="space-y-6">
+        <header className="overflow-hidden rounded-xl border bg-card shadow-[0_1px_2px_rgba(23,33,27,0.05),0_4px_16px_-8px_rgba(23,33,27,0.08)]">
+          <div className="flex flex-col gap-4 px-5 pb-0 pt-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 items-start gap-4">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-base font-semibold text-primary-foreground">
+                {client.name.slice(0, 1).toUpperCase()}
+              </span>
+              <div className="min-w-0">
+                <Link
+                  href="/partner/clients"
+                  className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                >
+                  Clients
+                </Link>
+                <h1 className="mt-0.5 truncate text-xl font-semibold tracking-tight">
+                  {client.name}
+                </h1>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {client.industry ?? "Industry not set"} · {client.timezone}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{formatEnum(client.status)}</Badge>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="secondary">{formatEnum(client.status)}</Badge>
               <Badge variant="outline">
                 CRM: {formatEnum(client.crm_operating_mode)}
               </Badge>
@@ -103,7 +110,9 @@ export default async function ClientWorkspaceLayout({
               </Badge>
             </div>
           </div>
-          <WorkspaceTabs clientId={client.id} />
+          <div className="mt-4 border-t px-5">
+            <WorkspaceTabs clientId={client.id} />
+          </div>
         </header>
 
         {children}

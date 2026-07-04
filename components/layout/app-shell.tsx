@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LayoutDashboard, UsersRound } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { NorthstarMark } from "@/components/brand/northstar-mark";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -34,56 +34,77 @@ export function AppShell({
   userEmail,
   activeNav = "dashboard",
 }: AppShellProps) {
+  const monogram = userEmail.slice(0, 1).toUpperCase();
+
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col lg:flex-row">
-        <aside className="border-b bg-card px-4 py-4 lg:w-64 lg:border-b-0 lg:border-r lg:px-5">
-          <div className="flex items-center justify-between gap-3 lg:block">
+      <div className="flex min-h-screen flex-col lg:flex-row">
+        <aside className="flex flex-col border-b border-white/10 bg-sidebar text-sidebar-foreground lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0 lg:border-b-0">
+          <div className="flex h-16 items-center justify-between border-b border-white/10 px-5 lg:justify-start">
             <Link href="/partner" className="block">
-              <p className="text-sm font-semibold text-foreground">
-                {organizationName}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Partner operations
-              </p>
+              <NorthstarMark subtitle="Partner Command Center" />
             </Link>
-            <Badge variant="outline">Partner workspace</Badge>
           </div>
 
-          <nav className="mt-5 flex gap-1 lg:grid">
+          <div className="px-5 pb-1 pt-4">
+            <p className="truncate text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/45">
+              {organizationName}
+            </p>
+          </div>
+
+          <nav className="flex gap-1 px-3 pb-3 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:py-1">
             {navigation.map((item) => {
               const Icon = item.icon;
+              const active = item.key === activeNav;
 
               return (
                 <Link
                   key={item.key}
                   href={item.href}
                   className={cn(
-                    "flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition",
-                    item.key === activeNav
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-secondary hover:text-secondary-foreground",
+                    "flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                      : "text-sidebar-foreground/65 hover:bg-white/5 hover:text-white",
                   )}
                 >
-                  <Icon className="size-4" aria-hidden="true" />
+                  <Icon
+                    className={cn("size-4", active && "text-brand-gold")}
+                    aria-hidden="true"
+                  />
                   <span>{item.label}</span>
                 </Link>
               );
             })}
           </nav>
 
-          <p className="mt-5 hidden text-xs leading-5 text-muted-foreground lg:block">
-            Integrations, workflows, runs, approvals, reports, and audit history
-            live inside each client workspace.
+          <p className="hidden px-5 pb-4 text-[11px] leading-5 text-sidebar-foreground/40 lg:block">
+            Integrations, workflows, runs, approvals, reports, and audit
+            history live inside each client workspace.
           </p>
 
-          <div className="mt-6 hidden rounded-md border bg-background p-3 text-xs leading-5 text-muted-foreground lg:block">
-            <p className="font-medium text-foreground">Signed-in account</p>
-            <p className="mt-1 break-all">{userEmail}</p>
+          <div className="hidden border-t border-white/10 p-4 lg:block">
+            <div className="flex items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
+                {monogram}
+              </span>
+              <div className="min-w-0 leading-tight">
+                <p className="truncate text-sm font-medium text-white">
+                  Signed in
+                </p>
+                <p className="truncate text-[11px] text-sidebar-foreground/55">
+                  {userEmail}
+                </p>
+              </div>
+            </div>
           </div>
         </aside>
 
-        <main className="flex-1 px-5 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1">
+          <div className="ns-fade-up mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10">
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );

@@ -27,7 +27,7 @@ export function WorkspaceTabs({ clientId }: WorkspaceTabsProps) {
   return (
     <nav
       aria-label="Client workspace sections"
-      className="flex gap-1 overflow-x-auto border-b pb-px"
+      className="-mb-px flex gap-0.5 overflow-x-auto"
     >
       {tabs.map((tab) => {
         const href = tab.segment ? `${base}/${tab.segment}` : base;
@@ -40,10 +40,10 @@ export function WorkspaceTabs({ clientId }: WorkspaceTabsProps) {
             key={tab.label}
             href={href}
             className={cn(
-              "whitespace-nowrap rounded-t-md border-b-2 px-3 py-2 text-sm font-medium transition",
+              "whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors",
               isActive
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
+                ? "border-brand-gold font-semibold text-foreground"
+                : "border-transparent font-medium text-muted-foreground hover:border-border hover:text-foreground",
             )}
           >
             {tab.label}
