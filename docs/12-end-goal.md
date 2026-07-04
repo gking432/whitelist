@@ -176,6 +176,81 @@ Each connection should clearly show:
 - what setup is missing.
 - test button/result.
 
+## Partner Package Builder
+
+Partners need to differentiate their offers.
+
+Northstar should let each partner create reusable service packages, then apply one package to each client during setup.
+
+Examples:
+
+- basic automation package with no AI.
+- standard package with some AI assistance.
+- premium/full AI operations package.
+- custom package for one-off deals.
+
+The partner should have a package builder with plain toggles, such as:
+
+- CRM sync.
+- lead source intake.
+- missed-call rescue.
+- SMS/email drafting.
+- approval-gated sending.
+- AI intake routing.
+- website AI chat assistant.
+- live call assistant.
+- live scheduling assistant.
+- AI phone answering.
+- appointment booking.
+- review requests.
+- quote prep.
+- reports.
+- client portal.
+- manager approvals.
+
+During client onboarding, the partner should choose:
+
+```text
+Which package did you sell this client?
+```
+
+Then Northstar should automatically:
+
+- enable the right workflow packs.
+- show only the integrations needed for that package.
+- guide the partner through setup step by step.
+- explain what will and will not work until each provider is connected.
+- create a custom package when the sold deal does not match a saved package.
+
+The package choice should drive the setup checklist, integration requirements, AI features, approvals, and billing/usage tracking.
+
+## Pilot Stack Vs Real Integrations
+
+The current "Pilot Stack" is a build/testing milestone, not the final product model.
+
+It exists to prove one real end-to-end path using a small provider set:
+
+- HubSpot.
+- Twilio.
+- Google Calendar.
+- Northstar intake.
+
+Long term, these should feel like normal integration/setup cards, not a separate concept partners have to understand.
+
+The product should evolve toward:
+
+```text
+Setup → choose package → connect required integrations → run tests → go live
+```
+
+and:
+
+```text
+Integrations → manage all connected providers
+```
+
+The pilot stack can remain as an internal/pilot label while building, but partner-facing language should eventually say "Required setup" or "Integrations for this package."
+
 ## Lead Source Setup Options
 
 Northstar should give partners many ways to connect a client's lead sources, because partners will not all be technical and client websites will vary.
@@ -285,6 +360,20 @@ Possible popup actions:
 When a provider integration exists, the user should click the action and Northstar should execute it through the connected API, then log/sync the result automatically.
 
 Copy/paste should be a fallback only.
+
+Some staff-facing assistance may require software running on the client's computers or browsers.
+
+Possible delivery modes:
+
+- browser extension for CRM/website overlays.
+- desktop tray app for call popups and notifications.
+- web app popup when staff live inside Northstar.
+- embeddable widget inside partner/client sites.
+- CRM-native app/extension where a provider supports it.
+
+The end state should not assume every client installs a desktop app, but the live call assistant and cross-CRM popups may need a small client-side runtime to appear over the tools staff already use.
+
+Setup should clearly say which staff install, extension, or permission is required for each package feature.
 
 ## Popups Needed
 

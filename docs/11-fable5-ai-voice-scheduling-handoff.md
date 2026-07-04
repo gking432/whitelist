@@ -422,6 +422,60 @@ Each connection should clearly show:
 
 If a native provider adapter is not available, the fallback should be generic webhook/API setup with clear copy/paste instructions and test buttons.
 
+### Partner Package Builder
+
+Partners need to create and sell different packages.
+
+Northstar should support reusable partner-defined packages, plus custom packages per client.
+
+Example package levels:
+
+- basic automations with little or no AI.
+- standard package with some AI assistance.
+- full AI operations package.
+- custom package.
+
+The partner should build these with toggles for capabilities such as:
+
+- CRM sync.
+- lead intake.
+- missed-call rescue.
+- SMS/email drafting.
+- approval-gated sends.
+- AI intake routing.
+- website AI chat assistant.
+- live call assistant.
+- live scheduling assistant.
+- AI phone answering.
+- appointment booking.
+- review requests.
+- quote prep.
+- reporting.
+- client portal.
+
+During client setup, the partner should select the package they sold or create a custom package. That package selection should drive:
+
+- which workflow packs turn on.
+- which integrations are required.
+- which setup steps appear.
+- which AI features are available.
+- which approvals and safety defaults apply.
+- usage/billing expectations.
+
+### Pilot Stack Vs Final Integration UX
+
+The current Pilot Stack is a testing milestone, not the final partner-facing model.
+
+It proves one real path with HubSpot, Twilio, Google Calendar, and Northstar intake.
+
+Long term, this should merge into the normal setup/integration experience:
+
+- Setup should guide the partner based on the selected package.
+- Integrations should manage all provider connections.
+- Required setup should show what is missing before go-live.
+
+Partners should not need to understand the phrase "pilot stack" in the final product. They should see what they sold, what needs connecting, what is live, and what still needs action.
+
 ### Lead Source Setup Options
 
 Northstar must give partners multiple easy ways to connect client lead sources.
@@ -491,6 +545,24 @@ It should act as a customer service and sales rep on the client's site:
 - leave AI Assistant notes and audit events.
 
 It should be installable through platform-specific apps/plugins where possible, snippets/embeds where needed, hosted pages as a fallback, and automation bridges like Zapier/Make/n8n when that is fastest.
+
+### Staff Runtime / App Install
+
+Some AI assistant features may need software on the client's staff computers or browsers.
+
+Possible delivery modes:
+
+- browser extension for CRM overlays.
+- desktop tray app for call popups and notifications.
+- web app popup when staff work inside Northstar.
+- embeddable widget for websites.
+- CRM-native app/extension where supported.
+
+Do not assume every client must install a desktop app. Use the lightest runtime needed for the package and provider stack.
+
+The live call assistant, live scheduling assistant, and cross-CRM popups may require a browser extension, desktop app, or CRM-native extension so the assistant can appear inside the tools staff already use.
+
+The setup flow should explain which staff-side install or permission is required for each enabled package feature.
 
 ## What To Pull From Northstar
 
