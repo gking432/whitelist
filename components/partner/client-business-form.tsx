@@ -62,7 +62,9 @@ export function ClientBusinessForm({
       ) : null}
 
       <fieldset className="space-y-4" disabled={isPending}>
-        <legend className="text-sm font-semibold">Business information</legend>
+        <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Business information
+        </legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="name">Client name</Label>
@@ -140,7 +142,9 @@ export function ClientBusinessForm({
       </fieldset>
 
       <fieldset className="space-y-4" disabled={isPending}>
-        <legend className="text-sm font-semibold">Primary contact</legend>
+        <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Primary contact
+        </legend>
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <Label htmlFor="primary_contact_name">Name</Label>
@@ -179,7 +183,9 @@ export function ClientBusinessForm({
       </fieldset>
 
       <fieldset className="space-y-4" disabled={isPending}>
-        <legend className="text-sm font-semibold">Operating modes</legend>
+        <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Operating modes
+        </legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="crm_operating_mode">CRM operating mode</Label>
@@ -217,8 +223,10 @@ export function ClientBusinessForm({
       </fieldset>
 
       <fieldset className="space-y-3" disabled={isPending}>
-        <legend className="text-sm font-semibold">Access and permissions</legend>
-        <label className="flex items-start gap-3 rounded-md border p-4">
+        <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Access and permissions
+        </legend>
+        <label className="flex items-start gap-3 rounded-xl border p-4 transition-colors has-checked:border-primary/40 has-checked:bg-primary/4">
           <Checkbox
             name="client_portal_enabled"
             defaultChecked={client?.client_portal_enabled ?? false}
@@ -234,7 +242,7 @@ export function ClientBusinessForm({
             </span>
           </span>
         </label>
-        <label className="flex items-start gap-3 rounded-md border p-4">
+        <label className="flex items-start gap-3 rounded-xl border p-4 transition-colors has-checked:border-primary/40 has-checked:bg-primary/4">
           <Checkbox
             name="partner_can_edit_client_data"
             defaultChecked={client?.partner_can_edit_client_data ?? false}

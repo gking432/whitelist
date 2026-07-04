@@ -223,7 +223,7 @@ export default async function PartnerPage() {
             const Icon = metric.icon;
 
             return (
-              <Card key={metric.label} className="shadow-none">
+              <Card key={metric.label}>
                 <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
                     {metric.label}
@@ -262,7 +262,7 @@ export default async function PartnerPage() {
 
             {displayedClients.length === 0 ? (
               <div className="flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
-                <div className="flex size-11 items-center justify-center rounded-md bg-secondary text-primary">
+                <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <UsersRound className="size-5" aria-hidden="true" />
                 </div>
                 <h3 className="mt-4 font-semibold">No client businesses yet</h3>
@@ -405,7 +405,7 @@ export default async function PartnerPage() {
                     index > 0 ? "border-t lg:border-l lg:border-t-0" : ""
                   }`}
                 >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-secondary text-primary">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <Icon className="size-4" aria-hidden="true" />
                   </div>
                   <div>

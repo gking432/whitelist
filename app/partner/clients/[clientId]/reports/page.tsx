@@ -200,7 +200,7 @@ export default async function ClientReportsPage({ params }: PageProps) {
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => (
-          <Card key={card.label} className="shadow-none">
+          <Card key={card.label}>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 {card.label}

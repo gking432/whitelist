@@ -109,7 +109,7 @@ export default async function ClientPortalOverviewPage() {
           const Icon = card.icon;
 
           return (
-            <Card key={card.label} className="shadow-none">
+            <Card key={card.label}>
               <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
                   {card.label}

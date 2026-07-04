@@ -184,7 +184,7 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
 
         {clients.length === 0 ? (
           <section className="flex min-h-72 flex-col items-center justify-center rounded-lg border bg-card px-6 py-12 text-center">
-            <div className="flex size-11 items-center justify-center rounded-md bg-secondary text-primary">
+            <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <UsersRound className="size-5" aria-hidden="true" />
             </div>
             <h2 className="mt-4 font-semibold">
