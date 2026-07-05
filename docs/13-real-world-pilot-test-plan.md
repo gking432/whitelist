@@ -184,40 +184,53 @@ what it will never do.
 
 ## 5. Exact tests to run
 
+Which events produce what (honest map, matches the current templates):
+
+- `lead.created` / `form.submitted` → AI lead analysis + AI intake routing +
+  CRM contact sync. **No SMS draft yet** — the auto first-response draft for
+  form leads is a known gap; missed-call rescue is the draft path today.
+- `missed_call.created` → everything above **plus** a missed-call rescue SMS
+  draft that waits in Approvals. Use this event to test the approval → SMS
+  loop.
+
 ### Test 1 — dry run end-to-end (nothing real leaves the system)
 
-Send a lead to the intake endpoint (replace the id, token, and phone):
+Send a missed-call lead to the intake endpoint (replace the id, token, and
+phone):
 
 ```bash
 curl -X POST "$APP_URL/api/integrations/inbound/<connectionId>" \
   -H "content-type: application/json" \
   -H "x-webhook-token: <token>" \
   -d '{
-    "event_type": "lead.created",
+    "event_type": "missed_call.created",
     "idempotency_key": "pilot-test-001",
     "data": {
       "name": "Taylor Testlead",
       "email": "taylor.testlead@example.com",
       "phone": "+1<your verified cell>",
       "address": "12 Pilot Ln",
-      "message": "Water heater is leaking, can someone come out this week?"
+      "message": "Missed call - voicemail: water heater is leaking, can someone come out this week?"
     }
   }'
 ```
 
 Expect `200` with a processed/run summary. Then verify, in order:
 
-1. **Runs/Logs tab** — a Lead Response run in **Awaiting approval**, plus an
-   AI Intake Routing run. Open the Lead Response run: you should see the
-   analysis/draft steps, whether AI or fallback produced them, and a **CRM
-   sync (dry run)** step containing the exact HubSpot payload that would have
-   been sent.
-2. **Approvals tab** — a pending customer-message draft with the SMS text
+1. **Runs/Logs tab** — a Lead Response run, a Missed-Call Rescue run in
+   **Awaiting approval**, and an AI Intake Routing run. Open them: you see
+   the analysis/draft/routing steps, whether AI or fallback produced them,
+   and a **CRM sync (dry run)** step containing the exact HubSpot payload
+   that would have been sent.
+2. **Assistant tab** — the console shows the interaction (phone/missed
+   call), the AI read (category, urgency, missing fields, next question),
+   the waiting SMS draft, CRM dry-run status, and honest action states.
+3. **Approvals tab** — a pending customer-message draft with the SMS text
    and destination number.
-3. Approve it. The result message should say it was recorded as a **dry
+4. Approve it. The result message should say it was recorded as a **dry
    run** because Twilio is not live. The run summary and the outbound
    `sms.customer_message` event (status `dry_run`) both say the same.
-4. Nothing appeared in HubSpot, no SMS arrived — correct, everything was in
+5. Nothing appeared in HubSpot, no SMS arrived — correct, everything was in
    dry run and said so.
 
 ### Test 2 — live CRM sync
@@ -227,14 +240,16 @@ Expect `200` with a processed/run summary. Then verify, in order:
 3. Run detail now shows **CRM synced** with the HubSpot contact id, and in
    HubSpot a contact "Taylor Testlead" exists with an
    **"AI Assistant — Northstar"** note. Send it a third time: the contact is
-   **updated**, not duplicated.
+   **updated**, not duplicated. The Assistant tab's **Sync to CRM** button
+   does the same push manually.
 
 ### Test 3 — live approved SMS
 
 1. Setup tab → Twilio card → **Go live**.
-2. Send `"idempotency_key": "pilot-test-003"` with your verified cell in
-   `data.phone`.
+2. Send `"idempotency_key": "pilot-test-003"` (still `missed_call.created`)
+   with your verified cell in `data.phone`.
 3. Approvals → open the draft → optionally **edit** the message → approve.
+   (The Assistant tab's **Review & approve** button jumps straight there.)
 4. The result message shows the Twilio message SID; your phone receives the
    SMS. The outbound event is `sent`, and the audit trail shows who approved
    and when.
@@ -271,14 +286,19 @@ Expect `200` with a processed/run summary. Then verify, in order:
       secrets redacted everywhere.
 - [ ] Turning each connection back to dry run stops real side effects
       immediately without breaking the loop.
+- [ ] The **Assistant tab** made sense as a staff view of the same lead:
+      interaction, AI read, draft, honest action states, and activity trail
+      (see `docs/15-staff-assistant-console.md`).
 
 ## 7. Missing pieces (next after the pilot)
 
 1. Automatic appointment booking: a scheduling workflow that proposes slots
    from free/busy and creates the event after approval.
-2. Email delivery channel (likely Resend/SendGrid) behind the same approval
+2. Auto first-response draft for form/web leads (`lead.created`) — today
+   only missed-call/estimate/appointment/review events produce drafts.
+3. Email delivery channel (likely Resend/SendGrid) behind the same approval
    gate.
-3. GoHighLevel adapter as the second CRM.
-4. Queued (async) run engine and delivery retries with backoff.
-5. Twilio inbound SMS → `sms.received` intake wiring, so replies flow back
+4. GoHighLevel adapter as the second CRM.
+5. Queued (async) run engine and delivery retries with backoff.
+6. Twilio inbound SMS → `sms.received` intake wiring, so replies flow back
    into the intake router automatically.

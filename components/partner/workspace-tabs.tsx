@@ -11,6 +11,7 @@ type WorkspaceTabsProps = {
 
 const tabs = [
   { label: "Overview", segment: "" },
+  { label: "Assistant", segment: "assistant" },
   { label: "Setup", segment: "setup" },
   { label: "Integrations", segment: "integrations" },
   { label: "Workflows", segment: "workflows" },
