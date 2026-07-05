@@ -50,6 +50,7 @@ export type ClientBusinessRecord = {
   client_portal_enabled: boolean;
   partner_can_edit_client_data: boolean;
   lead_source_profile: Record<string, unknown> | null;
+  package_id: string | null;
   created_at: string;
   updated_at: string;
 };

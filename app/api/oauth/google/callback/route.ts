@@ -35,7 +35,7 @@ function redirectToPilot(
   outcome: string,
 ): NextResponse {
   const target = clientId
-    ? `/partner/clients/${clientId}/pilot?google=${outcome}`
+    ? `/partner/clients/${clientId}/setup?google=${outcome}`
     : `/partner?google=${outcome}`;
 
   return NextResponse.redirect(new URL(target, request.url));

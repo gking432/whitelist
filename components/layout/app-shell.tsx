@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, UsersRound } from "lucide-react";
+import { LayoutDashboard, Package, UsersRound } from "lucide-react";
 
 import { NorthstarMark } from "@/components/brand/northstar-mark";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,12 @@ const navigation = [
     label: "Clients",
     href: "/partner/clients",
     icon: UsersRound,
+  },
+  {
+    key: "packages",
+    label: "Packages",
+    href: "/partner/packages",
+    icon: Package,
   },
 ] as const;
 

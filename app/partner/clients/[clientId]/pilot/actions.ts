@@ -286,7 +286,7 @@ export async function connectPilotProvider(
       },
     });
 
-    revalidatePath(`/partner/clients/${clientId}/pilot`);
+    revalidatePath(`/partner/clients/${clientId}/setup`);
     revalidatePath(`/partner/clients/${clientId}/integrations`);
 
     return { status: "success", message: test.detail };
@@ -516,7 +516,7 @@ export async function testPilotConnection(
       )
       .eq("id", connectionId);
 
-    revalidatePath(`/partner/clients/${clientId}/pilot`);
+    revalidatePath(`/partner/clients/${clientId}/setup`);
 
     return {
       status: result.ok ? "success" : "error",
@@ -590,7 +590,7 @@ export async function setPilotLiveMode(
       afterSnapshot: { runtime_mode: nextMode },
     });
 
-    revalidatePath(`/partner/clients/${clientId}/pilot`);
+    revalidatePath(`/partner/clients/${clientId}/setup`);
     revalidatePath(`/partner/clients/${clientId}/integrations`);
 
     return {

@@ -107,7 +107,7 @@ export async function deliverApprovedCustomerMessage(
       attempted: false,
       delivered: false,
       detail:
-        "Approved and recorded. No Twilio connection is set up for this client, so nothing was sent — connect Twilio in the Pilot Stack screen.",
+        "Approved and recorded. No Twilio connection is set up for this client, so nothing was sent — connect Twilio in the client's Setup checklist.",
     };
   }
 

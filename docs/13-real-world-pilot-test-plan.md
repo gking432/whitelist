@@ -95,7 +95,7 @@ Not fully real yet (documented, not hidden):
 5. Authorized redirect URI — must be exactly:
    `<your NEXT_PUBLIC_APP_URL>/api/oauth/google/callback`
    e.g. `http://localhost:3000/api/oauth/google/callback` for local runs.
-   The Pilot Stack screen shows this exact value on the Google card so you
+   The Google card on the Setup checklist shows this exact value so you
    can copy it.
 6. Copy the **Client ID** (`…apps.googleusercontent.com`) and **Client
    secret** (`GOCSPX-…`).
@@ -116,10 +116,10 @@ ANTHROPIC_API_KEY=<sk-ant-…>                     # optional
 Notes:
 
 - `SECRETS_ENCRYPTION_KEY` encrypts every provider credential at rest and
-  signs the Google OAuth state. Without it, the Pilot Stack screen refuses to
+  signs the Google OAuth state. Without it, the setup checklist refuses to
   store credentials (with a clear message).
 - HubSpot/Twilio/Google credentials are **not** environment variables — you
-  paste them into the Pilot Stack screen per client, and they are stored
+  paste them into the client's Setup checklist per client, and they are stored
   encrypted per connection.
 - Database: apply all migrations in `supabase/migrations/` (Supabase CLI:
   `npx supabase db push`, or run them in the SQL editor in filename order).
@@ -134,39 +134,51 @@ you in as `partner.owner@example.test`).
 ### A. Create (or open) the client
 
 1. **Partner → Clients → New client** — create e.g. "Pilot Plumbing Co", or
-   open an existing client.
-2. You land in the client workspace; the tabs across the top are the map:
-   Setup, **Pilot Stack**, Integrations, Workflows, Runs/Logs, Approvals…
+   open an existing client. New clients land on the **Setup tab**, which is
+   a package-driven checklist.
 
-### B. Set up the lead intake
+### B. Choose the package you sold
 
-1. **Setup tab** → run the lead-source wizard → choose the simplest path
-   (website form / webhook).
+1. **Setup tab → step 1**: pick the package. If you have no packages yet,
+   click **Create the three starter packages** (Basic Automation, AI Assist,
+   Full AI Operations) — or create a custom package with toggles.
+2. For this test plan choose **AI Assist** (or **Full AI Operations** —
+   the extra voice items will honestly show as "coming soon").
+3. The rest of the checklist appears: only the integrations and workflows
+   that package needs, plus what (if anything) client staff must install.
+
+### C. Set up the lead intake
+
+1. Setup checklist → **lead intake step** → the lead-source wizard at the
+   bottom of the page → choose the simplest path (website form / webhook).
 2. This creates an inbound connection. Open it (Integrations tab) and copy:
    - the endpoint path `/api/integrations/inbound/<connectionId>`
    - the one-time webhook token (shown once — save it now).
 
-### C. Enable the workflows
+### D. Enable the included workflows
 
-1. **Workflows tab** → enable **Lead Response** (`new_lead_intake`) and
-   **AI Intake Routing** (`ai_intake_router`) if they are not already active.
+1. Setup checklist → **workflows step** → **Enable this package's
+   workflows**. Lead Response, AI Intake Routing, and the other included
+   packs turn on in their safe default modes.
 2. Leave approval requirements at their defaults — customer messages require
    approval.
 
-### D. Connect the pilot stack
+### E. Connect the required integrations
 
-**Pilot Stack tab.** Each card says in plain language what the connection
-allows and what it will never do.
+Still on the **Setup tab** — the checklist shows one card per required
+provider. Each card says in plain language what the connection allows and
+what it will never do.
 
 1. **HubSpot** — paste the private app token → **Verify & connect**.
    Northstar calls HubSpot with the token before storing it; a typo fails
    immediately with a readable message.
 2. **Twilio** — paste Account SID, Auth Token, sending number →
    **Verify & connect**. Same live verification.
-3. **Google Calendar** — paste OAuth Client ID + secret → **Save & authorize
-   with Google** → Google consent screen → approve. You land back on the
-   Pilot Stack page; the card shows a live availability check result
-   ("primary calendar has N busy blocks in the next 7 days").
+3. **Google Calendar** (Full AI Operations package) — paste OAuth Client ID
+   + secret → **Save & authorize with Google** → Google consent screen →
+   approve. You land back on the Setup page; the card shows a live
+   availability check result ("primary calendar has N busy blocks in the
+   next 7 days").
 4. Every connection starts in **dry run**. Leave them there for the first
    test.
 
@@ -210,7 +222,7 @@ Expect `200` with a processed/run summary. Then verify, in order:
 
 ### Test 2 — live CRM sync
 
-1. Pilot Stack → HubSpot card → **Go live**.
+1. Setup tab → HubSpot card → **Go live**.
 2. Re-send the curl with `"idempotency_key": "pilot-test-002"`.
 3. Run detail now shows **CRM synced** with the HubSpot contact id, and in
    HubSpot a contact "Taylor Testlead" exists with an
@@ -219,7 +231,7 @@ Expect `200` with a processed/run summary. Then verify, in order:
 
 ### Test 3 — live approved SMS
 
-1. Pilot Stack → Twilio card → **Go live**.
+1. Setup tab → Twilio card → **Go live**.
 2. Send `"idempotency_key": "pilot-test-003"` with your verified cell in
    `data.phone`.
 3. Approvals → open the draft → optionally **edit** the message → approve.
@@ -231,7 +243,7 @@ Expect `200` with a processed/run summary. Then verify, in order:
 
 ### Test 4 — calendar connection health
 
-1. Pilot Stack → Google Calendar card → **Test connection**. Expect the
+1. Setup tab → Google Calendar card → **Test connection**. Expect the
    busy-block count from the real calendar. Add an event in Google Calendar,
    test again, and the count changes.
 2. That is the extent of the calendar loop today — see honest status above.
