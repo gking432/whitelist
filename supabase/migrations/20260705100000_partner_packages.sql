@@ -95,3 +95,6 @@ using (
     'partner_admin'
   ]::public.membership_role[])
 );
+
+grant select, insert, update, delete on public.partner_packages to authenticated;
+grant update (package_id) on public.client_businesses to authenticated;
