@@ -5,6 +5,10 @@ import {
   deliverApprovedCustomerMessage,
   type DeliveryOutcome,
 } from "@/lib/delivery/customer-message";
+import {
+  recordAppointmentBooking,
+  recordTimelineMessage,
+} from "@/lib/crm/internal";
 import { recordActionJob } from "@/lib/jobs/record";
 import { bookApprovedAppointment } from "@/lib/scheduling/book-approved";
 import type { FormState } from "@/lib/forms/state";
@@ -164,6 +168,18 @@ export async function resolveApprovalItem(
       approvalId: approval.id,
       workflowRunId: approval.workflow_run_id,
     });
+
+    // Built-in CRM timeline contribution (no-op for external-only modes).
+    await recordTimelineMessage({
+      partnerId: approval.partner_id,
+      clientId: approval.client_id,
+      approvalId: approval.id,
+      workflowRunId: approval.workflow_run_id,
+      channel: typeof payload.channel === "string" ? payload.channel : "sms",
+      to: typeof payload.to === "string" ? payload.to : null,
+      body: resolvedContent,
+      outcomeStatus: delivery.status,
+    });
   } else if (
     resolution !== "reject" &&
     approval.type === "appointment_booking"
@@ -191,6 +207,17 @@ export async function resolveApprovalItem(
       outcome: delivery,
       approvalId: approval.id,
       workflowRunId: approval.workflow_run_id,
+    });
+
+    // Built-in CRM appointment + timeline (no-op for external-only modes).
+    await recordAppointmentBooking({
+      partnerId: approval.partner_id,
+      clientId: approval.client_id,
+      approvalId: approval.id,
+      workflowRunId: approval.workflow_run_id,
+      payload: approval.proposed_payload ?? {},
+      outcomeStatus: delivery.status,
+      externalRef: delivery.externalRef ?? null,
     });
   }
 

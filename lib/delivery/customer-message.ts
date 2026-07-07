@@ -27,6 +27,9 @@ export type DeliveryOutcome = {
   detail: string;
   // Explicit machine-readable outcome for durable job recording.
   status: "succeeded" | "dry_run" | "skipped" | "failed";
+  // Provider-side reference for the delivered artifact (message SID,
+  // calendar event id) when one exists.
+  externalRef?: string | null;
 };
 
 type ApprovedMessage = {

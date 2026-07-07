@@ -52,10 +52,10 @@ Top to bottom, one column, styled like a small app window:
 | Action | State logic |
 | --- | --- |
 | Send SMS | **Real via approval gate.** Works now (Twilio live) / Dry run (Twilio dry run) / Requires Twilio (not connected) / Not in this package. The button jumps to the waiting draft in Approvals — the console never bypasses the approval gate. |
-| Send email | **Preview only.** Drafting works; email delivery is not wired. |
-| Book appointment | Requires Google Calendar (not connected) / **Preview only** (connected — availability checks are real, the booking workflow is not wired). |
-| Add CRM note | **Works now, automatically** — the AI Assistant note is attached with every CRM sync. Requires CRM if HubSpot is not connected. |
-| Sync to CRM | **Real button.** Re-runs the additive contact + note sync for the latest lead. Works now (HubSpot live) / Dry run (HubSpot dry run) / Requires CRM. |
+| Send email | **Real via approval gate** (Resend). Works now (live) / Dry run / Requires email provider. |
+| Book appointment | **Real via approval gate.** Scheduling requests propose real open slots from Google Calendar free/busy; approving books the event (live mode only). Requires Google Calendar when not connected. |
+| Add CRM note | **Works now, automatically** — the AI Assistant note is attached with every CRM sync. Requires CRM if none is connected. |
+| Sync to CRM | **Real button.** Re-runs the additive contact + note sync for the latest lead (HubSpot, GoHighLevel, or signed outbound webhook). Works now (live) / Dry run / Requires CRM. |
 | Create task | **Coming soon** — the AI already suggests the task; pushing it into a task system needs the CRM task adapter. |
 | Escalate | **Real button.** Records an escalation (with an optional note) in the audit trail. Manager notifications come with the notification pack. |
 | Copy fallback | **Real button.** Copies the draft text to the clipboard — the fallback when a provider is not connected. |
@@ -122,6 +122,7 @@ What the future runtimes need (deliberately **not** built yet):
 - Lives in the partner workspace; client-staff login for the console is not
   wired yet.
 - No real-time push — refresh to see a new interaction.
-- Appointment slots are illustrative until the booking workflow ships.
+- Appointment slots are real once a scheduling request produces a booking
+  proposal; before that the console shows clearly-labeled preview slots.
 - Escalate records to the audit trail; it does not notify anyone yet.
 - Preview mode uses sample data and says so; it never fakes a live state.

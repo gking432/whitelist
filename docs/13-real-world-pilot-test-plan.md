@@ -17,35 +17,37 @@ sends the SMS → everything visible in Runs/Logs and Audit.
 
 ## Honest status — what is real and what is not
 
-Real and testable end-to-end today:
+Real and testable end-to-end today (see docs/17 for the full matrix):
 
 - Secured inbound intake (webhook/web chat endpoint with token auth,
-  idempotency, rate limiting, redacted logs).
+  idempotency, rate limiting, redacted logs) **plus Twilio inbound SMS**
+  (signature-validated webhook → `sms.received` → AI intake routing).
 - AI intake routing and reply drafting (Claude when `ANTHROPIC_API_KEY` is
-  set; clearly-labeled rule-based fallback when not).
-- HubSpot contact upsert + note, with a **dry-run preview** of the exact
-  payload until you flip the connection to live. Marked **safe** because it
-  is additive-only: it never deletes, never changes deal stages, never clears
-  fields.
-- Approval-gated Twilio SMS delivery. Sending happens **only** after a human
-  approves, and **only** if the Twilio connection is in live mode. Every
-  other case is recorded honestly as `dry_run` or `skipped`.
-- Google Calendar connect (OAuth), live availability check on connect/test,
-  and an event-creation adapter.
+  set; clearly-labeled rule-based fallback when not). New leads get an
+  automatic approval-gated first-response draft.
+- CRM contact upsert + AI Assistant note into **HubSpot or GoHighLevel**
+  (or a signed generic outbound webhook when neither is connected), with a
+  **dry-run preview** until the connection is live. Additive-only: never
+  deletes, never changes stages, never clears fields.
+- Approval-gated **SMS (Twilio) and email (Resend)** delivery. Sending
+  happens **only** after a human approves, and **only** in live mode.
+  Every other case is recorded honestly as `dry_run` or `skipped`.
+- **Appointment booking**: scheduling requests propose real open slots from
+  Google Calendar free/busy; approving books the event (live mode only).
+- Durable **action jobs with retry** for every send/booking/sync, visible
+  on Runs / Logs.
+- **Built-in CRM** (contacts, leads, timeline, tasks, appointments) fills
+  automatically for clients in primary/mirror/assist CRM mode.
 
 Not fully real yet (documented, not hidden):
 
-- **No workflow books calendar events automatically.** The Google connection
-  verifies with a real free/busy read and `createCalendarEvent` exists and
-  works, but the booking workflow that would call it is not wired. Booking is
-  the next milestone.
-- **Email delivery is not wired.** Drafts whose channel is email are approved
-  and recorded, with an explicit "send manually" outcome message. SMS only.
-- **GoHighLevel and other CRMs are not in the pilot.** HubSpot only.
-- **Voice/phone calls** are design contracts only (see docs/11); Twilio here
-  is SMS-only.
-- The run engine executes synchronously in the request; fine for pilot
-  volume, queued execution comes later.
+- **Voice/phone calls** are design contracts only (see docs/11); Twilio
+  here is SMS-only. Live call/scheduling assistant popups need a phone
+  provider with live audio.
+- **Website chat widget UI** is not built (the chat intake endpoint is).
+- The run engine executes synchronously in the request; action jobs make
+  outcomes durable/retryable, but there is no background worker yet.
+- Reschedule/cancel flows for booked appointments are manual.
 
 ---
 
@@ -60,7 +62,9 @@ Not fully real yet (documented, not hidden):
    and messages get a trial prefix.
 4. **Google Cloud project** — console.cloud.google.com (free) plus any Google
    account whose calendar will be the client's job calendar.
-5. **Anthropic API key** (optional, recommended) — console.anthropic.com. If
+5. **Resend** (optional, for email delivery) — resend.com free tier;
+   verify the client's sending domain for real sends.
+6. **Anthropic API key** (optional, recommended) — console.anthropic.com. If
    you skip it, everything still runs; drafts/routing use the labeled
    rule-based fallback.
 
@@ -292,13 +296,15 @@ Expect `200` with a processed/run summary. Then verify, in order:
 
 ## 7. Missing pieces (next after the pilot)
 
-1. Automatic appointment booking: a scheduling workflow that proposes slots
-   from free/busy and creates the event after approval.
-2. Auto first-response draft for form/web leads (`lead.created`) — today
-   only missed-call/estimate/appointment/review events produce drafts.
-3. Email delivery channel (likely Resend/SendGrid) behind the same approval
-   gate.
-4. GoHighLevel adapter as the second CRM.
-5. Queued (async) run engine and delivery retries with backoff.
-6. Twilio inbound SMS → `sms.received` intake wiring, so replies flow back
-   into the intake router automatically.
+Shipped since this plan was first written: automatic slot proposals +
+approval-gated booking, first-response drafts for form/web leads, Resend
+email delivery, GoHighLevel + signed outbound webhook CRM adapters, Twilio
+inbound SMS intake, durable action jobs with retry, and the built-in CRM
+foundation. Still missing:
+
+1. Background worker/queue (jobs are durable and retryable, but execution
+   is synchronous and retries are manual).
+2. Voice/phone provider adapter — live call features stay off until then.
+3. Website chat widget UI (the intake endpoint is real).
+4. Appointment reschedule/cancel flows.
+5. Client-staff login for the Assistant console outside the partner app.

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { redactAuditValue } from "@/lib/audit/redact";
+import { recordLeadInInternalCrm } from "@/lib/crm/internal";
 import { syncRunToCrm } from "@/lib/crm/sync-from-run";
 import { recordActionJob } from "@/lib/jobs/record";
 import { proposeBookingFromRun } from "@/lib/scheduling/propose-from-run";
@@ -201,9 +202,27 @@ async function executeInstance(
           : null,
     });
 
+    // Built-in CRM: for clients running in primary_crm/mirror/assist mode,
+    // the lead also lands in Northstar's own contacts/leads/timeline/tasks
+    // with AI Assistant attribution.
+    const analysisOutput = (
+      result.output as { analysis?: Record<string, unknown> }
+    ).analysis;
+    const internalCrm = await recordLeadInInternalCrm(supabase, {
+      partnerId: event.partnerId,
+      clientId: event.clientId,
+      runId,
+      templateKey: template.template_key,
+      eventType: event.eventType,
+      eventData: event.data,
+      runSummary: result.summary,
+      analysis: analysisOutput ?? null,
+    });
+
     const steps = [
       ...result.steps,
       ...(crmSync ? [crmSync.step] : []),
+      ...(internalCrm ? [internalCrm.step] : []),
       ...(bookingProposal ? [bookingProposal.step] : []),
     ];
 
@@ -211,6 +230,7 @@ async function executeInstance(
       steps,
       output: result.output,
       ...(crmSync ? { crm: crmSync.crm } : {}),
+      ...(internalCrm ? { internal_crm: internalCrm.internal_crm } : {}),
       ...(bookingProposal ? { booking: bookingProposal.booking } : {}),
       // How the output was produced (ai vs deterministic fallback) plus the
       // redacted context the handler worked from — run detail renders both.

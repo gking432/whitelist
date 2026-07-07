@@ -161,6 +161,7 @@ export async function bookApprovedAppointment(
       attempted: true,
       delivered: true,
       status: "succeeded",
+      externalRef: created.eventId,
       detail: `Appointment booked on Google Calendar for ${slot.label ?? slot.start_iso} (event ${created.eventId}).`,
     };
   } catch (error) {
