@@ -25,11 +25,12 @@ import type {
 } from "@/lib/assistant/context";
 import { cn } from "@/lib/utils";
 
-// The Staff Assistant Console surface. Deliberately shaped like a small
-// standalone app window: everything the console renders comes from the
-// serializable AssistantContextData contract, so a future desktop tray app,
-// browser extension, or CRM overlay renders the same object with different
-// chrome. No dashboard sprawl — one narrow, action-first column.
+// The Staff Assistant Console surface. Everything the console renders
+// comes from the serializable AssistantContextData contract, so a future
+// desktop tray app, browser extension, or CRM overlay renders the same
+// object with different chrome. In the web app it lays out as a desktop
+// workbench: interaction context on the left, the action rail on the
+// right, one shared window frame.
 
 const urgencyStyles: Record<string, string> = {
   emergency: "border-red-200 bg-red-50 text-red-900",
@@ -181,7 +182,7 @@ export function AssistantConsole({
   };
 
   return (
-    <div className="mx-auto w-full max-w-lg">
+    <div className="w-full">
       {/* Window chrome: this is a future popup/tray app, framed as one. */}
       <div className="ns-surface-raised overflow-hidden rounded-lg border">
         <div className="flex items-center justify-between bg-sidebar px-4 py-2.5 text-white">
@@ -202,15 +203,17 @@ export function AssistantConsole({
           </Badge>
         </div>
 
-        <div className="space-y-4 bg-card p-4">
-          {context.mode === "preview" ? (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-              Preview — no interaction has come through this client yet. This
-              sample shows what the console looks like once real leads flow.
-              Nothing below is live customer data.
-            </p>
-          ) : null}
+        {context.mode === "preview" ? (
+          <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs leading-5 text-amber-900">
+            Preview — no interaction has come through this client yet. This
+            sample shows what the console looks like once real leads flow.
+            Nothing below is live customer data.
+          </p>
+        ) : null}
 
+        {/* Desktop workbench: context pane + action rail. */}
+        <div className="grid grid-cols-[minmax(0,1fr)_21rem] divide-x bg-card">
+          <div className="space-y-4 p-5">
           {/* Active interaction */}
           {interaction ? (
             <section>
@@ -408,10 +411,40 @@ export function AssistantConsole({
             </p>
           </section>
 
-          {/* Actions */}
+          {/* Recent activity */}
+          {context.recentActivity.length > 0 ? (
+            <section>
+              <SectionLabel>Recent assistant activity</SectionLabel>
+              <ul className="mt-1.5 space-y-1.5">
+                {context.recentActivity.map((item, index) => (
+                  <li
+                    key={`${item.at}-${index}`}
+                    className="flex items-baseline gap-2 text-xs leading-5"
+                  >
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {formatDateTime(item.at)}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="font-medium">{item.title}</span>
+                      {item.detail ? (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          — {item.detail}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          </div>
+
+          {/* Action rail */}
+          <div className="space-y-4 bg-background/40 p-4">
           <section>
             <SectionLabel>Actions</SectionLabel>
-            <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="mt-1.5 grid grid-cols-1 gap-2">
               {context.actions.map((action) => (
                 <ActionButton
                   key={action.key}
@@ -458,34 +491,7 @@ export function AssistantConsole({
               </p>
             ) : null}
           </section>
-
-          {/* Recent activity */}
-          {context.recentActivity.length > 0 ? (
-            <section>
-              <SectionLabel>Recent assistant activity</SectionLabel>
-              <ul className="mt-1.5 space-y-1.5">
-                {context.recentActivity.map((item, index) => (
-                  <li
-                    key={`${item.at}-${index}`}
-                    className="flex items-baseline gap-2 text-xs leading-5"
-                  >
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {formatDateTime(item.at)}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="font-medium">{item.title}</span>
-                      {item.detail ? (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          — {item.detail}
-                        </span>
-                      ) : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
+          </div>
         </div>
 
         {/* Runtime honesty footer */}

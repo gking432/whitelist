@@ -68,13 +68,18 @@ white/off-white surfaces, hairline borders, near-invisible shadows), the
 radius scale tightened to 8px cards / 6px controls, and deep green + gold
 now appear only as accents — active nav, icons, primary buttons, and the
 assistant window bar. Operational headings and tables were tightened for
-density. No behavior, routes, or data changed; all honesty labels
-(live/dry-run/preview, runtime modes, provider status) are untouched.
-Verified with desktop (1440px) and mobile (390px) screenshots.
+density. A second pass made the app deliberately desktop-first: the
+sidebar rail runs the full page height, every section shares one content
+width, and the Assistant console is a full-width two-pane workbench
+(context pane + action rail) instead of a floating narrow card. No
+behavior, routes, or data changed; all honesty labels (live/dry-run/
+preview, runtime modes, provider status) are untouched. Verified with
+1440px screenshots.
 
 Remaining visual debt: run-detail and audit pages could use the same
 density treatment; dark mode does not exist; the client portal could
-surface partner logo/colors once branding assets are stored.
+surface partner logo/colors once branding assets are stored; small-screen
+layouts are explicitly not designed yet (desktop-first by decision).
 
 ## Verification commands
 

@@ -129,7 +129,7 @@ export default async function ClientOverviewPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       {!hasSetupPlan ? (
-        <section className="flex flex-col gap-2 rounded-xl border border-brand-gold/40 bg-brand-gold/8 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <section className="flex flex-col gap-2 rounded-lg border border-brand-gold/40 bg-brand-gold/8 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold">
               Finish guided setup for {client.name}
@@ -197,7 +197,7 @@ export default async function ClientOverviewPage({ params }: PageProps) {
 
       <section
         aria-label="Operational metrics"
-        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        className="grid grid-cols-4 gap-3"
       >
         {cards.map((card) => {
           const Icon = card.icon;

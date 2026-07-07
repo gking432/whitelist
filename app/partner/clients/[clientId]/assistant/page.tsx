@@ -34,10 +34,10 @@ export default async function AssistantPage({ params }: PageProps) {
   const context = await buildAssistantContext(supabase, workspace.client);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <AssistantConsole context={context} />
-      <p className="mx-auto max-w-lg text-center text-xs leading-5 text-muted-foreground">
-        Prototype of the staff popup: this exact console later ships as a
+      <p className="text-xs leading-5 text-muted-foreground">
+        Prototype of the staff assistant: this exact console later ships as a
         desktop tray app, browser extension, or CRM overlay so staff see it
         over the tools they already use. See{" "}
         <code className="rounded bg-secondary px-1 py-0.5">

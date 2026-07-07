@@ -217,7 +217,7 @@ export default async function PartnerPage() {
 
         <section
           aria-label="Partner metrics"
-          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+          className="grid grid-cols-4 gap-3"
         >
           {metrics.map((metric) => {
             const Icon = metric.icon;
@@ -243,7 +243,7 @@ export default async function PartnerPage() {
           })}
         </section>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
+        <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)] gap-5">
           <section className="overflow-hidden rounded-lg border bg-card">
             <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
               <div>
@@ -282,7 +282,7 @@ export default async function PartnerPage() {
                 {displayedClients.map((client) => (
                   <div
                     key={client.id}
-                    className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1.3fr)_0.8fr] lg:grid-cols-[minmax(0,1.2fr)_0.85fr_0.7fr_0.6fr]"
+                    className="grid grid-cols-[minmax(0,1.2fr)_0.85fr_0.7fr_0.6fr] gap-4 px-5 py-4"
                   >
                     <div className="min-w-0">
                       <Link
@@ -394,7 +394,7 @@ export default async function PartnerPage() {
               Current approval, workflow, and integration state.
             </p>
           </div>
-          <div className="grid lg:grid-cols-3">
+          <div className="grid grid-cols-3">
             {operationalSummaries.map((summary, index) => {
               const Icon = summary.icon;
 

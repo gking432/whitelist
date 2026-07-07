@@ -114,7 +114,7 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-2 gap-4">
         <section className="rounded-lg border bg-card p-5">
           <h3 className="text-sm font-semibold">Leads</h3>
           {leads.length === 0 ? (

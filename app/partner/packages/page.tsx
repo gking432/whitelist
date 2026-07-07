@@ -133,7 +133,7 @@ export default async function PackagesPage() {
             </div>
           </section>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-2 gap-4">
             {reusablePackages.map((pkg) => {
               const capabilityKeys = enabledCapabilityKeys(pkg.capabilities);
               const clientCount = clientCounts.get(pkg.id) ?? 0;
