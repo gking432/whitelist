@@ -195,7 +195,7 @@ export default async function PartnerPage() {
             <Badge variant="secondary" className="mb-3">
               Partner dashboard
             </Badge>
-            <h1 className="text-2xl font-semibold tracking-normal">
+            <h1 className="text-xl font-semibold tracking-tight">
               Client operations
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
@@ -262,7 +262,7 @@ export default async function PartnerPage() {
 
             {displayedClients.length === 0 ? (
               <div className="flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
-                <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <UsersRound className="size-5" aria-hidden="true" />
                 </div>
                 <h3 className="mt-4 font-semibold">No client businesses yet</h3>
@@ -405,7 +405,7 @@ export default async function PartnerPage() {
                     index > 0 ? "border-t lg:border-l lg:border-t-0" : ""
                   }`}
                 >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Icon className="size-4" aria-hidden="true" />
                   </div>
                   <div>

@@ -33,9 +33,9 @@ export function PortalShell({
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b bg-card">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-5 pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">
               {clientName.slice(0, 1).toUpperCase()}
             </span>
             <div className="min-w-0 leading-tight">
@@ -53,7 +53,7 @@ export function PortalShell({
         </div>
         <nav
           aria-label="Portal sections"
-          className="mx-auto -mb-px flex w-full max-w-5xl gap-0.5 overflow-x-auto px-5 pt-4"
+          className="mx-auto -mb-px flex w-full max-w-5xl gap-0.5 overflow-x-auto px-4 pt-3 sm:px-6"
         >
           {navigation.map((item) => {
             const isActive =
@@ -66,7 +66,7 @@ export function PortalShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors",
+                  "whitespace-nowrap border-b-2 px-2.5 py-2 text-[13px] transition-colors",
                   isActive
                     ? "border-primary font-semibold text-foreground"
                     : "border-transparent font-medium text-muted-foreground hover:border-border hover:text-foreground",
@@ -79,12 +79,12 @@ export function PortalShell({
         </nav>
       </header>
 
-      <main className="ns-fade-up mx-auto w-full max-w-5xl flex-1 px-5 py-7">
+      <main className="ns-fade-up mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
         {children}
       </main>
 
-      <footer className="border-t bg-card">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-5 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <footer className="border-t">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p>
             {branding.reportFooterText ?? `Managed by ${branding.partnerName}.`}
           </p>

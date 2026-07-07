@@ -183,7 +183,7 @@ export function AssistantConsole({
   return (
     <div className="mx-auto w-full max-w-lg">
       {/* Window chrome: this is a future popup/tray app, framed as one. */}
-      <div className="overflow-hidden rounded-xl border shadow-lg">
+      <div className="ns-surface-raised overflow-hidden rounded-lg border">
         <div className="flex items-center justify-between bg-sidebar px-4 py-2.5 text-white">
           <div className="flex items-center gap-2">
             <Sparkles className="size-4 text-brand-gold" aria-hidden="true" />

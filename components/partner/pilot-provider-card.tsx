@@ -281,7 +281,7 @@ export function PilotProviderCard({
             </div>
           ))}
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" disabled={connectPending}>
               <ShieldCheck aria-hidden="true" />
               {connectPending

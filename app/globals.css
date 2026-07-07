@@ -43,28 +43,32 @@
 }
 
 :root {
-  /* Northstar brand: deep green command center on warm parchment. */
-  --background: #f6f4ee;
-  --foreground: #17211b;
+  /* Northstar 2026: neutral, calm app chrome with a faint warm cast.
+     Deep green + gold stay as the brand, but only as accents — active
+     states, icons, primary actions — never as large surfaces. */
+  --background: #f8f8f6;
+  --foreground: #191d1a;
   --card: #ffffff;
-  --card-foreground: #17211b;
+  --card-foreground: #191d1a;
   --popover: #ffffff;
-  --popover-foreground: #17211b;
+  --popover-foreground: #191d1a;
   --primary: #1e4735;
-  --primary-foreground: #f5f3ec;
-  --secondary: #ebe8df;
-  --secondary-foreground: #26332b;
-  --muted: #efece4;
-  --muted-foreground: #616b64;
+  --primary-foreground: #f7f6f2;
+  --secondary: #f0f0ec;
+  --secondary-foreground: #2a2f2b;
+  --muted: #f2f2ef;
+  --muted-foreground: #6b7069;
   --accent: #c79a3b;
   --accent-foreground: #1c1608;
   --destructive: #b42318;
   --destructive-foreground: #ffffff;
-  --border: #e2ddd1;
-  --input: #d8d3c6;
+  --border: #e6e5e0;
+  --input: #d9d8d2;
   --ring: #2c6a4f;
-  --radius: 0.75rem;
+  --radius: 0.5rem;
 
+  /* Deep-green surface tokens: reserved for small brand moments (the
+     assistant window bar), never for full app chrome. */
   --sidebar: #12291d;
   --sidebar-foreground: #e6efe8;
   --brand-deep: #12291d;
@@ -100,6 +104,18 @@ a {
 
 ::selection {
   background: rgba(30, 71, 53, 0.16);
+}
+
+/* Two-tier elevation: hairline borders carry structure; shadows stay
+   nearly invisible. */
+.ns-surface {
+  box-shadow: 0 1px 2px rgba(25, 29, 26, 0.04);
+}
+
+.ns-surface-raised {
+  box-shadow:
+    0 1px 2px rgba(25, 29, 26, 0.05),
+    0 8px 24px -16px rgba(25, 29, 26, 0.12);
 }
 
 /* Restrained scrollbars for the command-center feel. */

@@ -119,7 +119,7 @@ export default async function PackagesPage() {
 
         {reusablePackages.length === 0 ? (
           <section className="flex min-h-64 flex-col items-center justify-center rounded-lg border bg-card px-6 py-12 text-center">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <Package className="size-5" aria-hidden="true" />
             </div>
             <h2 className="mt-4 font-semibold">No packages yet</h2>

@@ -72,10 +72,10 @@ export default async function ClientWorkspaceLayout({
       activeNav="clients"
     >
       <div className="space-y-6">
-        <header className="overflow-hidden rounded-xl border bg-card shadow-[0_1px_2px_rgba(23,33,27,0.05),0_4px_16px_-8px_rgba(23,33,27,0.08)]">
+        <header className="overflow-hidden rounded-lg border bg-card ns-surface">
           <div className="flex flex-col gap-4 px-5 pb-0 pt-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 items-start gap-4">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-base font-semibold text-primary-foreground">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">
                 {client.name.slice(0, 1).toUpperCase()}
               </span>
               <div className="min-w-0">
@@ -85,7 +85,7 @@ export default async function ClientWorkspaceLayout({
                 >
                   Clients
                 </Link>
-                <h1 className="mt-0.5 truncate text-xl font-semibold tracking-tight">
+                <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight">
                   {client.name}
                 </h1>
                 <p className="mt-0.5 text-sm text-muted-foreground">

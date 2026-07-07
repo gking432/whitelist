@@ -143,7 +143,7 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
       <div className="space-y-6">
         <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Client businesses</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Client businesses</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Manage the businesses operating under this partner organization.
             </p>
@@ -184,7 +184,7 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
 
         {clients.length === 0 ? (
           <section className="flex min-h-72 flex-col items-center justify-center rounded-lg border bg-card px-6 py-12 text-center">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <UsersRound className="size-5" aria-hidden="true" />
             </div>
             <h2 className="mt-4 font-semibold">

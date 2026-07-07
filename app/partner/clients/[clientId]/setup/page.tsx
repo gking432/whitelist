@@ -78,7 +78,6 @@ const googleOutcomeMessages: Record<string, { ok: boolean; text: string }> = {
   },
 };
 
-// Which real connectable provider fulfils each requirement category today.
 // Which connectable providers fulfil each requirement category today.
 // Multiple entries mean "connect one of these" (e.g. either CRM).
 const CATEGORY_TO_PILOT_PROVIDERS: Partial<
@@ -559,7 +558,7 @@ export default async function ClientSetupPage({
           {/* Step 5 — staff runtime */}
           <section className="rounded-lg border bg-card p-6">
             <div className="flex items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <MonitorSmartphone className="size-5" aria-hidden="true" />
               </div>
               <div className="min-w-0">

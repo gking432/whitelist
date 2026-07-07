@@ -43,9 +43,9 @@ export function WorkspaceTabs({ clientId }: WorkspaceTabsProps) {
             key={tab.label}
             href={href}
             className={cn(
-              "whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors",
+              "whitespace-nowrap border-b-2 px-2.5 py-2 text-[13px] transition-colors",
               isActive
-                ? "border-brand-gold font-semibold text-foreground"
+                ? "border-primary font-semibold text-foreground"
                 : "border-transparent font-medium text-muted-foreground hover:border-border hover:text-foreground",
             )}
           >

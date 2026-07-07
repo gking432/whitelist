@@ -60,6 +60,22 @@ stack.
   rate limits exist only on inbound endpoints, no queue worker, legal
   review of AI disclosure (docs/12) still pending.
 
+## UI modernization pass (2026-07)
+
+The app chrome was modernized to match the product's positioning: the
+large deep-green sidebar was replaced with a light, slim shell (neutral
+white/off-white surfaces, hairline borders, near-invisible shadows), the
+radius scale tightened to 8px cards / 6px controls, and deep green + gold
+now appear only as accents — active nav, icons, primary buttons, and the
+assistant window bar. Operational headings and tables were tightened for
+density. No behavior, routes, or data changed; all honesty labels
+(live/dry-run/preview, runtime modes, provider status) are untouched.
+Verified with desktop (1440px) and mobile (390px) screenshots.
+
+Remaining visual debt: run-detail and audit pages could use the same
+density treatment; dark mode does not exist; the client portal could
+surface partner logo/colors once branding assets are stored.
+
 ## Verification commands
 
 ```bash
