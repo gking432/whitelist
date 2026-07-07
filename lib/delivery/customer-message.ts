@@ -25,6 +25,8 @@ export type DeliveryOutcome = {
   attempted: boolean;
   delivered: boolean;
   detail: string;
+  // Explicit machine-readable outcome for durable job recording.
+  status: "succeeded" | "dry_run" | "skipped" | "failed";
 };
 
 type ApprovedMessage = {
@@ -94,6 +96,7 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: false,
       delivered: false,
+      status: "skipped",
       detail:
         "Delivery skipped: the server is not configured for delivery (missing service credentials).",
     };
@@ -103,6 +106,7 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: false,
       delivered: false,
+      status: "skipped",
       detail:
         "Approved and recorded. This draft has no deliverable channel — send it manually if needed.",
     };
@@ -112,6 +116,7 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: false,
       delivered: false,
+      status: "skipped",
       detail: `Approved and recorded, but the lead has no ${
         message.channel === "sms" ? "phone number" : "email address"
       } on file, so nothing was sent.`,
@@ -158,6 +163,7 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: false,
       delivered: false,
+      status: "skipped",
       detail: `Approved and recorded. No ${channel.providerLabel} connection is set up for this client, so nothing was sent — ${channel.connectHint}.`,
     };
   }
@@ -170,6 +176,7 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: true,
       delivered: false,
+      status: "dry_run",
       detail: `Approved and recorded as a dry run — the ${channel.providerLabel} connection is in ${connection.runtime_mode.replaceAll("_", " ")} mode. Switch it to live to send for real.`,
     };
   }
@@ -207,7 +214,8 @@ export async function deliverApprovedCustomerMessage(
       return {
         attempted: true,
         delivered: true,
-        detail: `SMS sent to ${message.to} via Twilio (${outcome.messageSid}).`,
+        status: "succeeded",
+      detail: `SMS sent to ${message.to} via Twilio (${outcome.messageSid}).`,
       };
     }
 
@@ -239,6 +247,7 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: true,
       delivered: true,
+      status: "succeeded",
       detail: `Email sent to ${message.to} via Resend (${outcome.messageId}).`,
     };
   } catch (error) {
@@ -262,6 +271,7 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: true,
       delivered: false,
+      status: "failed",
       detail: `Approval recorded, but the ${message.channel} failed to send: ${detail}`,
     };
   }

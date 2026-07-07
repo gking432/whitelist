@@ -38,7 +38,9 @@ export function encryptProviderCredentials(
   const serialized = JSON.stringify(credentials);
   const anchor =
     credentials.privateAppToken ??
+    credentials.privateToken ??
     credentials.authToken ??
+    credentials.apiKey ??
     credentials.clientSecret ??
     serialized;
 

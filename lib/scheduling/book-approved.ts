@@ -37,6 +37,7 @@ export async function bookApprovedAppointment(
     return {
       attempted: false,
       delivered: false,
+      status: "skipped",
       detail:
         "Booking skipped: the server is not configured for calendar access.",
     };
@@ -49,6 +50,7 @@ export async function bookApprovedAppointment(
     return {
       attempted: false,
       delivered: false,
+      status: "skipped",
       detail:
         "Approved and recorded, but the proposal is missing its time slot — nothing was booked.",
     };
@@ -98,6 +100,7 @@ export async function bookApprovedAppointment(
     return {
       attempted: false,
       delivered: false,
+      status: "skipped",
       detail:
         "Approved and recorded, but no Google Calendar is connected — book this manually and reconnect the calendar in Setup.",
     };
@@ -111,6 +114,7 @@ export async function bookApprovedAppointment(
     return {
       attempted: true,
       delivered: false,
+      status: "dry_run",
       detail: `Approved and recorded as a dry run — the calendar connection is in ${connection.runtime_mode.replaceAll("_", " ")} mode. Switch it to live to book for real. Slot: ${slot.label ?? slot.start_iso}.`,
     };
   }
@@ -156,6 +160,7 @@ export async function bookApprovedAppointment(
     return {
       attempted: true,
       delivered: true,
+      status: "succeeded",
       detail: `Appointment booked on Google Calendar for ${slot.label ?? slot.start_iso} (event ${created.eventId}).`,
     };
   } catch (error) {
@@ -177,6 +182,7 @@ export async function bookApprovedAppointment(
     return {
       attempted: true,
       delivered: false,
+      status: "failed",
       detail: `Approval recorded, but the booking failed: ${detail}`,
     };
   }

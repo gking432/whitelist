@@ -539,7 +539,20 @@ export async function buildAssistantContext(
     };
   };
 
-  const crmConn = connFor("hubspot");
+  const connForCategory = (category: string): ConnectionInfo => {
+    const connection = connections.find(
+      (candidate) =>
+        candidate.provider?.category === category &&
+        ["connected", "needs_attention"].includes(candidate.status),
+    );
+
+    return {
+      connected: Boolean(connection),
+      live: connection?.runtime_mode === "live",
+    };
+  };
+
+  const crmConn = connForCategory("crm");
   const smsConn = connFor("twilio");
   const calendarConn = connFor("google_calendar");
   const emailConn = connFor("resend");

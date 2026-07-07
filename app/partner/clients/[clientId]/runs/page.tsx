@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { ClipboardList } from "lucide-react";
 
+import {
+  ActionJobsPanel,
+  type ActionJobView,
+} from "@/components/partner/action-jobs-panel";
 import { Badge } from "@/components/ui/badge";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { formatDateTime, formatEnum } from "@/lib/format";
+import { isRetryableJobStatus } from "@/lib/jobs/record";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -71,7 +76,17 @@ export default async function ClientRunsPage({
     query = query.eq("status", statusFilter);
   }
 
-  const { data, error } = await query;
+  const [{ data, error }, { data: jobsData }] = await Promise.all([
+    query,
+    supabase
+      .from("action_jobs")
+      .select(
+        "id, kind, status, attempt_count, last_error, last_attempt_at, created_at",
+      )
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+      .limit(15),
+  ]);
 
   if (error) {
     return (
@@ -86,6 +101,21 @@ export default async function ClientRunsPage({
 
   const runs = (data ?? []) as unknown as RunRow[];
   const base = `/partner/clients/${clientId}/runs`;
+
+  const jobs: ActionJobView[] = (
+    (jobsData ?? []) as {
+      id: string;
+      kind: string;
+      status: string;
+      attempt_count: number;
+      last_error: string | null;
+      last_attempt_at: string | null;
+      created_at: string;
+    }[]
+  ).map((job) => ({
+    ...job,
+    retryable: isRetryableJobStatus(job.status),
+  }));
 
   const filters = [
     { label: "All", value: null },
@@ -123,6 +153,12 @@ export default async function ClientRunsPage({
           );
         })}
       </nav>
+
+      <ActionJobsPanel
+        clientId={clientId}
+        jobs={jobs}
+        canRetry={workspace.access.canManageIntegrations}
+      />
 
       {runs.length === 0 ? (
         <section className="flex min-h-56 flex-col items-center justify-center rounded-lg border bg-card px-6 py-10 text-center">

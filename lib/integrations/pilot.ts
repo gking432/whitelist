@@ -6,6 +6,7 @@
 
 export const PILOT_PROVIDER_KEYS = [
   "hubspot",
+  "gohighlevel",
   "twilio",
   "resend",
   "google_calendar",
@@ -62,6 +63,39 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
     ],
     whereToGet:
       "HubSpot → Settings (gear icon) → Integrations → Private Apps → Create a private app. Scopes needed: crm.objects.contacts (read + write). Copy the access token after creating.",
+  },
+  gohighlevel: {
+    key: "gohighlevel",
+    title: "GoHighLevel CRM",
+    tagline: "Keeps the client's contact list up to date automatically.",
+    allows: [
+      "Create a contact when a new lead comes in (or update the existing one).",
+      "Attach an \"AI Assistant\" note to the contact describing what happened.",
+      "Check that the connection is healthy.",
+    ],
+    neverDoes: [
+      "Never deletes contacts, changes pipeline stages, or clears existing fields.",
+      "Never messages anyone through GoHighLevel.",
+    ],
+    connectMethod: "credentials",
+    fields: [
+      {
+        name: "privateToken",
+        label: "Private integration token",
+        placeholder: "pit-…",
+        help: "In the sub-account: Settings → Private Integrations → create one with contacts read/write scopes.",
+        secret: true,
+      },
+      {
+        name: "locationId",
+        label: "Location ID",
+        placeholder: "e.g. ve9EPM428h8vShlRW1KT",
+        help: "Settings → Business Profile → the sub-account's Location ID.",
+        secret: false,
+      },
+    ],
+    whereToGet:
+      "GoHighLevel sub-account → Settings → Private Integrations → create a token with View/Edit Contacts scopes. The Location ID is under Settings → Business Profile. Connect either HubSpot or GoHighLevel — one CRM per client is enough.",
   },
   twilio: {
     key: "twilio",

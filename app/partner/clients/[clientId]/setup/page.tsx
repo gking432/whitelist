@@ -79,13 +79,15 @@ const googleOutcomeMessages: Record<string, { ok: boolean; text: string }> = {
 };
 
 // Which real connectable provider fulfils each requirement category today.
-const CATEGORY_TO_PILOT_PROVIDER: Partial<
-  Record<string, PilotProviderKey>
+// Which connectable providers fulfil each requirement category today.
+// Multiple entries mean "connect one of these" (e.g. either CRM).
+const CATEGORY_TO_PILOT_PROVIDERS: Partial<
+  Record<string, PilotProviderKey[]>
 > = {
-  crm: "hubspot",
-  sms: "twilio",
-  email: "resend",
-  calendar: "google_calendar",
+  crm: ["hubspot", "gohighlevel"],
+  sms: ["twilio"],
+  email: ["resend"],
+  calendar: ["google_calendar"],
 };
 
 type PageProps = {
@@ -405,44 +407,63 @@ export default async function ClientSetupPage({
             </div>
 
             {integrationRequirements.map((requirement) => {
-              const pilotKey = requirement.category
-                ? CATEGORY_TO_PILOT_PROVIDER[requirement.category]
-                : undefined;
+              const pilotKeys = requirement.category
+                ? (CATEGORY_TO_PILOT_PROVIDERS[requirement.category] ?? [])
+                : [];
 
-              if (pilotKey && requirement.connectableToday) {
-                const meta = PILOT_PROVIDERS[pilotKey];
-                const connection =
-                  activeConnectionByProviderKey.get(pilotKey) ?? null;
+              if (pilotKeys.length > 0 && requirement.connectableToday) {
+                // If one option in the group is already connected, show only
+                // that one; otherwise offer every option ("connect one").
+                const connectedKey = pilotKeys.find((key) =>
+                  activeConnectionByProviderKey.has(key),
+                );
+                const keysToShow = connectedKey ? [connectedKey] : pilotKeys;
 
                 return (
-                  <PilotProviderCard
-                    key={requirement.id}
-                    clientId={clientId}
-                    meta={meta}
-                    connection={
-                      connection
-                        ? {
-                            id: connection.id,
-                            status: connection.status,
-                            runtime_mode: connection.runtime_mode,
-                            credential_status: connection.credential_status,
-                            health_summary: connection.health_summary,
-                            last_success_at: connection.last_success_at,
+                  <div key={requirement.id} className="space-y-4">
+                    {keysToShow.length > 1 ? (
+                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        {requirement.label}: connect one of the following
+                      </p>
+                    ) : null}
+                    {keysToShow.map((pilotKey) => {
+                      const meta = PILOT_PROVIDERS[pilotKey];
+                      const connection =
+                        activeConnectionByProviderKey.get(pilotKey) ?? null;
+
+                      return (
+                        <PilotProviderCard
+                          key={pilotKey}
+                          clientId={clientId}
+                          meta={meta}
+                          connection={
+                            connection
+                              ? {
+                                  id: connection.id,
+                                  status: connection.status,
+                                  runtime_mode: connection.runtime_mode,
+                                  credential_status:
+                                    connection.credential_status,
+                                  health_summary: connection.health_summary,
+                                  last_success_at: connection.last_success_at,
+                                }
+                              : null
                           }
-                        : null
-                    }
-                    oauthRedirectUri={
-                      pilotKey === "google_calendar"
-                        ? googleRedirectUri()
-                        : undefined
-                    }
-                    inboundWebhookUrl={
-                      pilotKey === "twilio" && connection
-                        ? `${getAppUrl()}/api/integrations/inbound/twilio/${connection.id}`
-                        : undefined
-                    }
-                    canManage={access.canManageIntegrations}
-                  />
+                          oauthRedirectUri={
+                            pilotKey === "google_calendar"
+                              ? googleRedirectUri()
+                              : undefined
+                          }
+                          inboundWebhookUrl={
+                            pilotKey === "twilio" && connection
+                              ? `${getAppUrl()}/api/integrations/inbound/twilio/${connection.id}`
+                              : undefined
+                          }
+                          canManage={access.canManageIntegrations}
+                        />
+                      );
+                    })}
+                  </div>
                 );
               }
 

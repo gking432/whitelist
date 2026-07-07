@@ -22,6 +22,10 @@ import {
   type EmailCredentials,
 } from "@/lib/integrations/providers/email";
 import {
+  testGoHighLevelConnection,
+  type GoHighLevelCredentials,
+} from "@/lib/integrations/providers/gohighlevel";
+import {
   testHubSpotConnection,
   type HubSpotCredentials,
 } from "@/lib/integrations/providers/hubspot";
@@ -228,13 +232,17 @@ export async function connectPilotProvider(
         ? await testHubSpotConnection(
             credentials as unknown as HubSpotCredentials,
           )
-        : providerKey === "resend"
-          ? await testEmailConnection(
-              credentials as unknown as EmailCredentials,
+        : providerKey === "gohighlevel"
+          ? await testGoHighLevelConnection(
+              credentials as unknown as GoHighLevelCredentials,
             )
-          : await testTwilioConnection(
-              credentials as unknown as TwilioCredentials,
-            );
+          : providerKey === "resend"
+            ? await testEmailConnection(
+                credentials as unknown as EmailCredentials,
+              )
+            : await testTwilioConnection(
+                credentials as unknown as TwilioCredentials,
+              );
 
     if (!test.ok) {
       return {
@@ -474,6 +482,17 @@ export async function testPilotConnection(
       result = credentials?.privateAppToken
         ? await testHubSpotConnection(credentials)
         : { ok: false, detail: "No credentials stored yet. Connect first." };
+    } else if (providerKey === "gohighlevel") {
+      const credentials =
+        await readProviderCredentials<GoHighLevelCredentials>(
+          admin,
+          connectionId,
+        );
+
+      result =
+        credentials?.privateToken && credentials.locationId
+          ? await testGoHighLevelConnection(credentials)
+          : { ok: false, detail: "No credentials stored yet. Connect first." };
     } else if (providerKey === "twilio") {
       const credentials = await readProviderCredentials<TwilioCredentials>(
         admin,

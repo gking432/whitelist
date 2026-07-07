@@ -5,6 +5,7 @@ import {
   deliverApprovedCustomerMessage,
   type DeliveryOutcome,
 } from "@/lib/delivery/customer-message";
+import { recordActionJob } from "@/lib/jobs/record";
 import { bookApprovedAppointment } from "@/lib/scheduling/book-approved";
 import type { FormState } from "@/lib/forms/state";
 import type { AccessContext } from "@/lib/permissions/types";
@@ -148,6 +149,21 @@ export async function resolveApprovalItem(
       body: resolvedContent,
       subject: typeof payload.subject === "string" ? payload.subject : null,
     });
+
+    await recordActionJob({
+      partnerId: approval.partner_id,
+      clientId: approval.client_id,
+      kind: payload.channel === "email" ? "email.send" : "sms.send",
+      payload: {
+        channel: payload.channel ?? "sms",
+        to: payload.to ?? null,
+        subject: payload.subject ?? null,
+        body: resolvedContent,
+      },
+      outcome: delivery,
+      approvalId: approval.id,
+      workflowRunId: approval.workflow_run_id,
+    });
   } else if (
     resolution !== "reject" &&
     approval.type === "appointment_booking"
@@ -165,6 +181,16 @@ export async function resolveApprovalItem(
       workflowRunId: approval.workflow_run_id,
       payload: approval.proposed_payload ?? {},
       clientName: clientRow?.name ?? "the business",
+    });
+
+    await recordActionJob({
+      partnerId: approval.partner_id,
+      clientId: approval.client_id,
+      kind: "calendar.book",
+      payload: approval.proposed_payload ?? {},
+      outcome: delivery,
+      approvalId: approval.id,
+      workflowRunId: approval.workflow_run_id,
     });
   }
 

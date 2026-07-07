@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { redactAuditValue } from "@/lib/audit/redact";
 import { syncRunToCrm } from "@/lib/crm/sync-from-run";
+import { recordActionJob } from "@/lib/jobs/record";
 import { proposeBookingFromRun } from "@/lib/scheduling/propose-from-run";
 import {
   templateHandlers,
@@ -154,6 +155,31 @@ async function executeInstance(
       eventData: event.data,
       runSummary: result.summary,
     });
+
+    if (crmSync) {
+      const crmStatus = String(crmSync.crm.status ?? "skipped");
+
+      await recordActionJob({
+        partnerId: event.partnerId,
+        clientId: event.clientId,
+        kind: "crm.sync",
+        payload: { run_id: runId, event_type: event.eventType },
+        outcome: {
+          attempted: crmStatus !== "skipped",
+          delivered: crmStatus === "synced",
+          status:
+            crmStatus === "synced"
+              ? "succeeded"
+              : crmStatus === "dry_run"
+                ? "dry_run"
+                : crmStatus === "failed"
+                  ? "failed"
+                  : "skipped",
+          detail: crmSync.step.detail,
+        },
+        workflowRunId: runId,
+      });
+    }
 
     // Scheduling requests get a booking proposal built from REAL calendar
     // availability. Approval-gated: the proposal is an approval item; the

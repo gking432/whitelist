@@ -92,7 +92,8 @@ const REQUIREMENTS: Record<IntegrationRequirement["id"], IntegrationRequirement>
       purpose: "Keep contacts current and leave AI Assistant notes.",
       category: "crm",
       connectableToday: true,
-      recommended: "HubSpot today; GoHighLevel and others later.",
+      recommended:
+        "HubSpot or GoHighLevel natively; any other system via the signed outbound webhook.",
     },
     sms: {
       id: "sms",
