@@ -5,6 +5,7 @@ import {
   deliverApprovedCustomerMessage,
   type DeliveryOutcome,
 } from "@/lib/delivery/customer-message";
+import { bookApprovedAppointment } from "@/lib/scheduling/book-approved";
 import type { FormState } from "@/lib/forms/state";
 import type { AccessContext } from "@/lib/permissions/types";
 
@@ -126,9 +127,8 @@ export async function resolveApprovalItem(
     };
   }
 
-  // Delivery happens only here — strictly after a human approved the draft.
-  // Customer messages go through the gated Twilio path, which itself refuses
-  // to send unless the connection is in live mode.
+  // Delivery/booking happens only here — strictly after a human approved.
+  // Each path itself refuses to act unless its connection is in live mode.
   let delivery: DeliveryOutcome | null = null;
 
   if (
@@ -146,6 +146,25 @@ export async function resolveApprovalItem(
       channel: typeof payload.channel === "string" ? payload.channel : null,
       to: typeof payload.to === "string" ? payload.to : null,
       body: resolvedContent,
+      subject: typeof payload.subject === "string" ? payload.subject : null,
+    });
+  } else if (
+    resolution !== "reject" &&
+    approval.type === "appointment_booking"
+  ) {
+    const { data: clientRow } = await supabase
+      .from("client_businesses")
+      .select("name")
+      .eq("id", approval.client_id)
+      .maybeSingle();
+
+    delivery = await bookApprovedAppointment({
+      approvalId: approval.id,
+      partnerId: approval.partner_id,
+      clientId: approval.client_id,
+      workflowRunId: approval.workflow_run_id,
+      payload: approval.proposed_payload ?? {},
+      clientName: clientRow?.name ?? "the business",
     });
   }
 

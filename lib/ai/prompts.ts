@@ -72,6 +72,7 @@ Hard rules:
 export function buildCustomerDraftPrompt(args: {
   businessName: string;
   draftKind:
+    | "new_lead_response"
     | "missed_call_rescue"
     | "estimate_follow_up"
     | "appointment_confirmation"
@@ -81,6 +82,8 @@ export function buildCustomerDraftPrompt(args: {
   customTemplate?: string;
 }): string {
   const intents: Record<typeof args.draftKind, string> = {
+    new_lead_response:
+      "A brand-new lead just came in (form, website, or referral). Draft a fast first response that thanks them, confirms what they asked about, and offers the next step (a call back or an appointment time). Speed-to-lead tone: prompt and personal, not salesy.",
     missed_call_rescue:
       "The business missed this person's call. Draft a short callback message that apologizes briefly, offers help, and invites a reply or a good time to call back.",
     estimate_follow_up:

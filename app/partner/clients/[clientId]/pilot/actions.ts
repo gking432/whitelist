@@ -18,6 +18,10 @@ import {
   type GoogleCalendarCredentials,
 } from "@/lib/integrations/providers/google-calendar";
 import {
+  testEmailConnection,
+  type EmailCredentials,
+} from "@/lib/integrations/providers/email";
+import {
   testHubSpotConnection,
   type HubSpotCredentials,
 } from "@/lib/integrations/providers/hubspot";
@@ -193,9 +197,9 @@ export async function connectPilotProvider(
   for (const field of meta.fields) {
     const value = String(formData.get(field.name) ?? "").trim();
 
-    if (!value) {
+    if (!value && !field.optional) {
       fieldErrors[field.name] = `${field.label} is required.`;
-    } else {
+    } else if (value) {
       credentials[field.name] = value;
     }
   }
@@ -224,9 +228,13 @@ export async function connectPilotProvider(
         ? await testHubSpotConnection(
             credentials as unknown as HubSpotCredentials,
           )
-        : await testTwilioConnection(
-            credentials as unknown as TwilioCredentials,
-          );
+        : providerKey === "resend"
+          ? await testEmailConnection(
+              credentials as unknown as EmailCredentials,
+            )
+          : await testTwilioConnection(
+              credentials as unknown as TwilioCredentials,
+            );
 
     if (!test.ok) {
       return {
@@ -475,6 +483,16 @@ export async function testPilotConnection(
       result =
         credentials?.accountSid && credentials.authToken
           ? await testTwilioConnection(credentials)
+          : { ok: false, detail: "No credentials stored yet. Connect first." };
+    } else if (providerKey === "resend") {
+      const credentials = await readProviderCredentials<EmailCredentials>(
+        admin,
+        connectionId,
+      );
+
+      result =
+        credentials?.apiKey && credentials.fromEmail
+          ? await testEmailConnection(credentials)
           : { ok: false, detail: "No credentials stored yet. Connect first." };
     } else {
       const credentials =

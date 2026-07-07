@@ -15,6 +15,7 @@ import {
   type IntakeAnswers,
 } from "@/lib/lead-sources/catalog";
 import { PILOT_PROVIDERS, type PilotProviderKey } from "@/lib/integrations/pilot";
+import { getAppUrl } from "@/lib/env";
 import { googleRedirectUri } from "@/lib/integrations/providers/google-calendar";
 import {
   enabledCapabilityKeys,
@@ -83,6 +84,7 @@ const CATEGORY_TO_PILOT_PROVIDER: Partial<
 > = {
   crm: "hubspot",
   sms: "twilio",
+  email: "resend",
   calendar: "google_calendar",
 };
 
@@ -432,6 +434,11 @@ export default async function ClientSetupPage({
                     oauthRedirectUri={
                       pilotKey === "google_calendar"
                         ? googleRedirectUri()
+                        : undefined
+                    }
+                    inboundWebhookUrl={
+                      pilotKey === "twilio" && connection
+                        ? `${getAppUrl()}/api/integrations/inbound/twilio/${connection.id}`
                         : undefined
                     }
                     canManage={access.canManageIntegrations}

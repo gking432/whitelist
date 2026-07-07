@@ -33,6 +33,9 @@ type PilotProviderCardProps = {
   connection: PilotConnectionSummary | null;
   // Shown on the Google card so the partner can paste it into Google Cloud.
   oauthRedirectUri?: string;
+  // Shown once connected (Twilio): the URL to paste into the provider so
+  // inbound messages flow back into Northstar.
+  inboundWebhookUrl?: string;
   canManage: boolean;
 };
 
@@ -50,6 +53,7 @@ export function PilotProviderCard({
   meta,
   connection,
   oauthRedirectUri,
+  inboundWebhookUrl,
   canManage,
 }: PilotProviderCardProps) {
   const isGoogle = meta.connectMethod === "oauth";
@@ -141,6 +145,22 @@ export function PilotProviderCard({
           </ul>
         </div>
       </div>
+
+      {connection && inboundWebhookUrl ? (
+        <div className="mt-4 rounded-md border bg-secondary/40 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Inbound messages
+          </p>
+          <p className="mt-1 text-sm leading-5">
+            To route customer replies back into Northstar, set this URL as the
+            phone number&apos;s &quot;A message comes in&quot; webhook (HTTP
+            POST) in the provider console:
+          </p>
+          <code className="mt-2 block overflow-x-auto rounded bg-background px-3 py-2 font-mono text-xs">
+            {inboundWebhookUrl}
+          </code>
+        </div>
+      ) : null}
 
       {connection?.health_summary ? (
         <div className="mt-4 rounded-md border bg-secondary/40 px-4 py-3">

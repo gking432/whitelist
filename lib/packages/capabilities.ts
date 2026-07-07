@@ -64,13 +64,13 @@ export const STAFF_RUNTIME_LABELS: Record<
 // A concrete "connect this" requirement a capability adds to the setup
 // checklist. Requirements with the same id are merged across capabilities.
 export type IntegrationRequirement = {
-  id: "lead_source" | "crm" | "sms" | "calendar" | "phone";
+  id: "lead_source" | "crm" | "sms" | "email" | "calendar" | "phone";
   label: string;
   // What Northstar does through it — plain language for the checklist.
   purpose: string;
   // Provider category to match against integration_connections (null for
   // lead_source, which matches any inbound-capable connection).
-  category: "crm" | "sms" | "calendar" | "phone" | null;
+  category: "crm" | "sms" | "email" | "calendar" | "phone" | null;
   // True when a real connectable adapter exists in this release.
   connectableToday: boolean;
   recommended: string;
@@ -101,6 +101,14 @@ const REQUIREMENTS: Record<IntegrationRequirement["id"], IntegrationRequirement>
       category: "sms",
       connectableToday: true,
       recommended: "Twilio.",
+    },
+    email: {
+      id: "email",
+      label: "Email provider",
+      purpose: "Send the emails a human approves.",
+      category: "email",
+      connectableToday: true,
+      recommended: "Resend (free tier works).",
     },
     calendar: {
       id: "calendar",
@@ -172,11 +180,10 @@ export const CAPABILITIES: Record<CapabilityKey, CapabilityMeta> = {
     key: "approval_gated_sending",
     label: "Approval-gated sending",
     description:
-      "Approved drafts actually send through the connected provider, and every send (or dry run) is logged.",
+      "Approved drafts actually send through the connected provider (SMS via Twilio, email via Resend), and every send (or dry run) is logged.",
     status: "available",
-    statusNote:
-      "SMS sending is live. Email sending is not wired yet — approved email drafts are recorded for manual sending.",
-    requirements: [REQUIREMENTS.sms],
+    statusNote: null,
+    requirements: [REQUIREMENTS.sms, REQUIREMENTS.email],
     workflowTemplateKeys: [],
     staffRuntime: "northstar_web",
   },

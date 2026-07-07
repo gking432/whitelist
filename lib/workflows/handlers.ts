@@ -145,26 +145,105 @@ async function handleLeadIntake(context: HandlerContext): Promise<HandlerResult>
       }),
   });
 
+  const steps: RunStep[] = [
+    { name: "Received event", detail: `Trigger: ${context.eventType}` },
+    { name: "Analyzed lead", detail: aiStepDetail(ai) },
+    {
+      name: "Classified and recommended",
+      detail: `Urgency ${analysis.urgency}, quality ${analysis.lead_quality}.${
+        analysis.missing_fields.length > 0
+          ? ` Missing fields: ${analysis.missing_fields.join(", ")}.`
+          : " All primary fields present."
+      }`,
+    },
+    {
+      name: "Suggested follow-up task",
+      detail: `${analysis.suggested_task.title} (${analysis.suggested_task.priority}, due in ${analysis.suggested_task.due_in_minutes} min).`,
+    },
+  ];
+
+  const name =
+    asString(context.data.name) || asString(context.data.full_name);
+  const phone = asString(context.data.phone);
+  const email = asString(context.data.email);
+  const recipient = name || phone || email || "the customer";
+
+  // Speed-to-lead: fresh leads get an approval-gated first-response draft.
+  // Missed calls are excluded — the missed-call rescue workflow drafts
+  // those, and one interaction should produce one draft.
+  const wantsFirstResponse =
+    !context.eventType.startsWith("missed_call.") &&
+    !context.eventType.startsWith("call.") &&
+    Boolean(phone || email);
+
+  let firstResponse: CustomerDraft | null = null;
+  let draftAi: AIExecutionInfo | null = null;
+
+  if (wantsFirstResponse) {
+    const customTemplate =
+      asString(context.settings.message_template) || undefined;
+
+    const draftResult = await structuredWithFallback<CustomerDraft>({
+      taskKey: "new_lead_response_draft",
+      system: CUSTOMER_DRAFT_SYSTEM_PROMPT,
+      user: buildCustomerDraftPrompt({
+        businessName: context.clientName,
+        draftKind: "new_lead_response",
+        eventType: context.eventType,
+        payloadJson: JSON.stringify(context.data, null, 2),
+        customTemplate,
+      }),
+      schema: CustomerDraftSchema,
+      fallback: () =>
+        fallbackCustomerDraft({
+          draftKind: "new_lead_response",
+          businessName: context.clientName,
+          data: context.data,
+          customTemplate,
+        }),
+    });
+
+    firstResponse = draftResult.data;
+    draftAi = draftResult.ai;
+
+    steps.push(
+      { name: "Prepared first response", detail: aiStepDetail(draftAi) },
+      {
+        name: "Queued for approval",
+        detail:
+          "The first-response draft waits for human approval; nothing is sent automatically.",
+      },
+    );
+  }
+
   return {
-    steps: [
-      { name: "Received event", detail: `Trigger: ${context.eventType}` },
-      { name: "Analyzed lead", detail: aiStepDetail(ai) },
-      {
-        name: "Classified and recommended",
-        detail: `Urgency ${analysis.urgency}, quality ${analysis.lead_quality}.${
-          analysis.missing_fields.length > 0
-            ? ` Missing fields: ${analysis.missing_fields.join(", ")}.`
-            : " All primary fields present."
-        }`,
-      },
-      {
-        name: "Suggested follow-up task",
-        detail: `${analysis.suggested_task.title} (${analysis.suggested_task.priority}, due in ${analysis.suggested_task.due_in_minutes} min).`,
-      },
-    ],
+    steps,
     summary: `Lead intake: ${analysis.urgency} urgency, ${analysis.lead_quality} quality. ${analysis.recommended_next_action}`,
-    output: { analysis },
+    output: {
+      analysis,
+      ...(firstResponse
+        ? { draft: firstResponse, recipient: { name, phone, email } }
+        : {}),
+    },
     ai,
+    ...(firstResponse
+      ? {
+          approvalDraft: {
+            type: "customer_message",
+            title: `First response: ${recipient}`,
+            summary: `Review the drafted first ${firstResponse.channel.toUpperCase()} response to ${recipient} for ${context.clientName}. ${firstResponse.internal_note}`,
+            riskLevel: "high" as const,
+            editableContent: firstResponse.body,
+            proposedPayload: {
+              channel: firstResponse.channel,
+              to: phone || email || null,
+              subject: firstResponse.subject,
+              draft_source:
+                draftAi?.status === "ai" ? "ai_generated" : "rule_based_template",
+            },
+          },
+        }
+      : {}),
   };
 }
 

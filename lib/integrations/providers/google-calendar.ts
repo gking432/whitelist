@@ -202,6 +202,40 @@ export async function testCalendarAccess(
   }
 }
 
+// Busy intervals on the primary calendar — the input for real slot
+// proposals. Returns raw intervals; slot math lives in lib/scheduling.
+export async function getBusyIntervals(
+  credentials: GoogleCalendarCredentials,
+  timeMinIso: string,
+  timeMaxIso: string,
+): Promise<{ start: string; end: string }[]> {
+  const accessToken = await mintAccessToken(credentials);
+
+  const response = await fetch(`${CALENDAR_BASE}/freeBusy`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      timeMin: timeMinIso,
+      timeMax: timeMaxIso,
+      items: [{ id: "primary" }],
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Google free/busy lookup failed (${response.status}).`);
+  }
+
+  const body = (await response.json()) as {
+    calendars?: { primary?: { busy?: { start: string; end: string }[] } };
+  };
+
+  return body.calendars?.primary?.busy ?? [];
+}
+
 export async function createCalendarEvent(
   credentials: GoogleCalendarCredentials,
   event: {

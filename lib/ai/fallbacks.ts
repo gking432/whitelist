@@ -218,6 +218,7 @@ export function fallbackIntakeRouting(args: {
 
 export function fallbackCustomerDraft(args: {
   draftKind:
+    | "new_lead_response"
     | "missed_call_rescue"
     | "estimate_follow_up"
     | "appointment_confirmation"
@@ -249,6 +250,14 @@ export function fallbackCustomerDraft(args: {
   }
 
   switch (args.draftKind) {
+    case "new_lead_response":
+      return {
+        channel,
+        subject:
+          channel === "email" ? `Thanks for reaching out to ${args.businessName}` : null,
+        body: `Hi ${greetingName}, thanks for reaching out to ${args.businessName}! We got your request and want to help. What's a good time for a quick call, or would you like us to suggest an appointment time?`,
+        internal_note: internalNote,
+      };
     case "missed_call_rescue":
       return {
         channel,

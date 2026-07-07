@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { redactAuditValue } from "@/lib/audit/redact";
 import { syncRunToCrm } from "@/lib/crm/sync-from-run";
+import { proposeBookingFromRun } from "@/lib/scheduling/propose-from-run";
 import {
   templateHandlers,
   type HandlerResult,
@@ -154,12 +155,37 @@ async function executeInstance(
       runSummary: result.summary,
     });
 
-    const steps = crmSync ? [...result.steps, crmSync.step] : result.steps;
+    // Scheduling requests get a booking proposal built from REAL calendar
+    // availability. Approval-gated: the proposal is an approval item; the
+    // event is created only on approval, and only in live mode.
+    const routingOutput = (
+      result.output as { routing?: { category?: unknown } }
+    ).routing;
+    const bookingProposal = await proposeBookingFromRun(supabase, {
+      partnerId: event.partnerId,
+      clientId: event.clientId,
+      runId,
+      templateKey: template.template_key,
+      clientName,
+      eventType: event.eventType,
+      eventData: event.data,
+      routingCategory:
+        typeof routingOutput?.category === "string"
+          ? routingOutput.category
+          : null,
+    });
+
+    const steps = [
+      ...result.steps,
+      ...(crmSync ? [crmSync.step] : []),
+      ...(bookingProposal ? [bookingProposal.step] : []),
+    ];
 
     const outputSnapshot: Record<string, unknown> = {
       steps,
       output: result.output,
       ...(crmSync ? { crm: crmSync.crm } : {}),
+      ...(bookingProposal ? { booking: bookingProposal.booking } : {}),
       // How the output was produced (ai vs deterministic fallback) plus the
       // redacted context the handler worked from — run detail renders both.
       ai: result.ai ?? null,

@@ -118,7 +118,13 @@ export type AssistantContextData = {
     contactId: string | null;
     detail: string;
   };
-  // Booking is not wired yet, so slots are always preview and say so.
+  // Real booking proposal (from calendar availability) when one exists.
+  booking: {
+    approvalId: string;
+    status: string;
+    slotLabel: string;
+    alternatives: string[];
+  } | null;
   slots: { label: string; startIso: string }[];
   slotsNote: string;
   actions: AssistantAction[];
@@ -235,7 +241,10 @@ function buildActions(input: {
   crmConn: ConnectionInfo;
   smsConn: ConnectionInfo;
   calendarConn: ConnectionInfo;
+  emailConn: ConnectionInfo;
   pendingSmsApprovalId: string | null;
+  pendingEmailApprovalId: string | null;
+  pendingBookingApprovalId: string | null;
   hasDraft: boolean;
   hasLeadBearingRun: boolean;
 }): AssistantAction[] {
@@ -245,7 +254,10 @@ function buildActions(input: {
     crmConn,
     smsConn,
     calendarConn,
+    emailConn,
     pendingSmsApprovalId,
+    pendingEmailApprovalId,
+    pendingBookingApprovalId,
     hasDraft,
     hasLeadBearingRun,
   } = input;
@@ -291,22 +303,33 @@ function buildActions(input: {
     });
   }
 
-  // Send email — honest: not wired in the pilot.
-  if (
-    !capabilities.has("approval_gated_sending") &&
-    !capabilities.has("message_drafting")
-  ) {
+  // Send email — real via the approval gate, delivered through Resend.
+  if (!capabilities.has("approval_gated_sending")) {
     actions.push(notInPackage("send_email", "Send email"));
+  } else if (!emailConn.connected) {
+    actions.push({
+      key: "send_email",
+      label: "Send email",
+      state: "requires_connection",
+      stateLabel: "Requires email provider",
+      detail:
+        "Connect Resend Email in the Setup checklist to send approved emails.",
+      href: `${base}/setup`,
+      enabled: true,
+    });
   } else {
     actions.push({
       key: "send_email",
       label: "Send email",
-      state: "preview_only",
-      stateLabel: "Preview only",
-      detail:
-        "Email drafting works; email delivery is not wired yet. Approved email drafts are recorded for manual sending.",
-      href: null,
-      enabled: false,
+      state: emailConn.live ? "works_now" : "dry_run",
+      stateLabel: emailConn.live ? "Works now" : "Dry run",
+      detail: pendingEmailApprovalId
+        ? emailConn.live
+          ? "An email draft is waiting — approving it sends the real email."
+          : "An email draft is waiting — approving it records a dry run (switch Resend to live to send for real)."
+        : "Sends happen only through approved drafts. No email draft is waiting right now.",
+      href: pendingEmailApprovalId ? `${base}/approvals` : null,
+      enabled: Boolean(pendingEmailApprovalId),
     });
   }
 
@@ -323,14 +346,26 @@ function buildActions(input: {
       href: `${base}/setup`,
       enabled: true,
     });
+  } else if (pendingBookingApprovalId) {
+    actions.push({
+      key: "book_appointment",
+      label: "Book appointment",
+      state: calendarConn.live ? "works_now" : "dry_run",
+      stateLabel: calendarConn.live ? "Works now" : "Dry run",
+      detail: calendarConn.live
+        ? "A slot proposal from real availability is waiting — approving it books the calendar event."
+        : "A slot proposal is waiting — approving records a dry run (switch the calendar to live to book for real).",
+      href: `${base}/approvals`,
+      enabled: true,
+    });
   } else {
     actions.push({
       key: "book_appointment",
       label: "Book appointment",
-      state: "preview_only",
-      stateLabel: "Preview only",
+      state: "works_now",
+      stateLabel: "Works now",
       detail:
-        "Calendar is connected and availability checks are real, but the booking workflow is not wired yet — book manually for now.",
+        "Scheduling requests automatically propose real open slots for approval. No proposal is waiting right now.",
       href: null,
       enabled: false,
     });
@@ -507,6 +542,7 @@ export async function buildAssistantContext(
   const crmConn = connFor("hubspot");
   const smsConn = connFor("twilio");
   const calendarConn = connFor("google_calendar");
+  const emailConn = connFor("resend");
 
   const runs = (runsData ?? []) as unknown as RunRow[];
 
@@ -702,6 +738,45 @@ export async function buildAssistantContext(
     asString(pendingApproval.proposed_payload?.channel) !== "email"
       ? pendingApproval.id
       : null;
+  const pendingEmailApprovalId =
+    pendingApproval &&
+    asString(pendingApproval.proposed_payload?.channel) === "email"
+      ? pendingApproval.id
+      : null;
+
+  // Real booking proposal (approval-gated, built from calendar free/busy).
+  const bookingApproval = approvals.find(
+    (approval) => approval.type === "appointment_booking",
+  );
+  let booking: AssistantContextData["booking"] = null;
+  let realSlots: { label: string; startIso: string }[] = [];
+
+  if (bookingApproval) {
+    const payload = bookingApproval.proposed_payload ?? {};
+    const slot = (payload.slot ?? {}) as { label?: string; start_iso?: string };
+    const alternatives = Array.isArray(payload.alternatives)
+      ? (payload.alternatives as { label?: string; start_iso?: string }[])
+      : [];
+
+    booking = {
+      approvalId: bookingApproval.id,
+      status: bookingApproval.status,
+      slotLabel: slot.label ?? "proposed slot",
+      alternatives: alternatives
+        .map((alternative) => alternative.label)
+        .filter((label): label is string => Boolean(label)),
+    };
+
+    realSlots = [slot, ...alternatives]
+      .filter(
+        (candidate): candidate is { label: string; start_iso: string } =>
+          Boolean(candidate.label && candidate.start_iso),
+      )
+      .map((candidate) => ({
+        label: candidate.label,
+        startIso: candidate.start_iso,
+      }));
+  }
 
   const actions = buildActions({
     base,
@@ -709,7 +784,11 @@ export async function buildAssistantContext(
     crmConn,
     smsConn,
     calendarConn,
+    emailConn,
     pendingSmsApprovalId,
+    pendingEmailApprovalId,
+    pendingBookingApprovalId:
+      bookingApproval?.status === "pending" ? bookingApproval.id : null,
     hasDraft: Boolean(draft),
     hasLeadBearingRun: Boolean(leadBearingRun),
   });
@@ -749,12 +828,21 @@ export async function buildAssistantContext(
     analysis,
     draft,
     crm,
-    slots: capabilities.has("appointment_booking")
-      ? previewSlots(client.timezone)
-      : [],
-    slotsNote: calendarConn.connected
-      ? "Preview slots — the calendar is connected and availability checks are real, but slot suggestions go live with the booking workflow."
-      : "Preview slots — connect Google Calendar to ground these in real availability.",
+    booking,
+    slots:
+      realSlots.length > 0
+        ? realSlots
+        : capabilities.has("appointment_booking")
+          ? previewSlots(client.timezone)
+          : [],
+    slotsNote:
+      realSlots.length > 0
+        ? booking?.status === "pending"
+          ? "Real availability from the connected calendar. Approving the booking proposal books the first slot."
+          : "Real availability from the connected calendar (proposal already resolved)."
+        : calendarConn.connected
+          ? "Preview slots — real slot proposals appear here when a scheduling request comes in."
+          : "Preview slots — connect Google Calendar to ground these in real availability.",
     actions,
     recentActivity,
     runtime: {

@@ -1,16 +1,23 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { redactAuditValue } from "@/lib/audit/redact";
 import { readProviderCredentials } from "@/lib/integrations/credentials";
+import {
+  sendEmail,
+  type EmailCredentials,
+} from "@/lib/integrations/providers/email";
 import {
   sendSms,
   type TwilioCredentials,
 } from "@/lib/integrations/providers/twilio";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-// Delivery of an approved customer message. Hard rules (docs/13):
+// Delivery of an approved customer message (SMS via Twilio, email via
+// Resend). Hard rules (docs/13):
 // - Runs ONLY after a human approved the draft (called from approval
 //   resolution, never from the engine).
-// - Sends ONLY when the client's Twilio connection is in live mode;
-//   otherwise it records an honest dry-run/skip outcome.
+// - Sends ONLY when the channel's connection is in live mode; otherwise it
+//   records an honest dry-run/skip outcome.
 // - Every attempt (sent, dry run, skipped, failed) is logged as an outbound
 //   integration event tied to the workflow run.
 
@@ -28,7 +35,55 @@ type ApprovedMessage = {
   channel: string | null;
   to: string | null;
   body: string;
+  subject?: string | null;
 };
+
+type ChannelConfig = {
+  providerKey: string;
+  providerLabel: string;
+  eventType: string;
+  connectHint: string;
+};
+
+const CHANNELS: Record<"sms" | "email", ChannelConfig> = {
+  sms: {
+    providerKey: "twilio",
+    providerLabel: "Twilio",
+    eventType: "sms.customer_message",
+    connectHint: "connect Twilio in the client's Setup checklist",
+  },
+  email: {
+    providerKey: "resend",
+    providerLabel: "Resend",
+    eventType: "email.customer_message",
+    connectHint: "connect Resend Email in the client's Setup checklist",
+  },
+};
+
+async function findChannelConnection(
+  admin: SupabaseClient,
+  message: ApprovedMessage,
+  providerKey: string,
+) {
+  const { data } = await admin
+    .from("integration_connections")
+    .select(
+      "id, runtime_mode, status, error_count, provider:integration_providers!inner(provider_key)",
+    )
+    .eq("client_id", message.clientId)
+    .eq("partner_id", message.partnerId)
+    .in("status", ["connected", "needs_attention"])
+    .eq("provider.provider_key", providerKey)
+    .limit(1)
+    .maybeSingle();
+
+  return data as {
+    id: string;
+    runtime_mode: string;
+    status: string;
+    error_count: number | null;
+  } | null;
+}
 
 export async function deliverApprovedCustomerMessage(
   message: ApprovedMessage,
@@ -44,12 +99,12 @@ export async function deliverApprovedCustomerMessage(
     };
   }
 
-  if (message.channel !== "sms") {
+  if (message.channel !== "sms" && message.channel !== "email") {
     return {
       attempted: false,
       delivered: false,
       detail:
-        "Approved and recorded. Email delivery is not part of the pilot stack yet — send this draft manually if needed.",
+        "Approved and recorded. This draft has no deliverable channel — send it manually if needed.",
     };
   }
 
@@ -57,22 +112,18 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: false,
       delivered: false,
-      detail:
-        "Approved and recorded, but the lead has no phone number on file, so nothing was sent.",
+      detail: `Approved and recorded, but the lead has no ${
+        message.channel === "sms" ? "phone number" : "email address"
+      } on file, so nothing was sent.`,
     };
   }
 
-  const { data: connection } = await admin
-    .from("integration_connections")
-    .select(
-      "id, runtime_mode, status, error_count, provider:integration_providers!inner(provider_key)",
-    )
-    .eq("client_id", message.clientId)
-    .eq("partner_id", message.partnerId)
-    .in("status", ["connected", "needs_attention"])
-    .eq("provider.provider_key", "twilio")
-    .limit(1)
-    .maybeSingle();
+  const channel = CHANNELS[message.channel];
+  const connection = await findChannelConnection(
+    admin,
+    message,
+    channel.providerKey,
+  );
 
   const logEvent = async (
     status: "sent" | "dry_run" | "failed" | "skipped",
@@ -85,11 +136,12 @@ export async function deliverApprovedCustomerMessage(
       connection_id: connection?.id ?? null,
       workflow_run_id: message.workflowRunId,
       direction: "outbound",
-      event_type: "sms.customer_message",
+      event_type: channel.eventType,
       status,
       request_payload: redactAuditValue({
         to: message.to,
         body: message.body,
+        subject: message.subject ?? null,
         approval_id: message.approvalId,
       }),
       response_payload: redactAuditValue(response),
@@ -100,63 +152,100 @@ export async function deliverApprovedCustomerMessage(
 
   if (!connection) {
     await logEvent("skipped", {
-      note: "No connected Twilio SMS connection for this client.",
+      note: `No connected ${channel.providerLabel} connection for this client.`,
     });
 
     return {
       attempted: false,
       delivered: false,
-      detail:
-        "Approved and recorded. No Twilio connection is set up for this client, so nothing was sent — connect Twilio in the client's Setup checklist.",
+      detail: `Approved and recorded. No ${channel.providerLabel} connection is set up for this client, so nothing was sent — ${channel.connectHint}.`,
     };
   }
 
   if (connection.runtime_mode !== "live") {
     await logEvent("dry_run", {
-      note: "Twilio connection is not in live mode; message recorded but not sent.",
+      note: `${channel.providerLabel} connection is not in live mode; message recorded but not sent.`,
     });
 
     return {
       attempted: true,
       delivered: false,
-      detail: `Approved and recorded as a dry run — the Twilio connection is in ${connection.runtime_mode.replaceAll("_", " ")} mode. Switch it to live to send for real.`,
+      detail: `Approved and recorded as a dry run — the ${channel.providerLabel} connection is in ${connection.runtime_mode.replaceAll("_", " ")} mode. Switch it to live to send for real.`,
     };
   }
 
   try {
-    const credentials = await readProviderCredentials<TwilioCredentials>(
+    if (message.channel === "sms") {
+      const credentials = await readProviderCredentials<TwilioCredentials>(
+        admin,
+        connection.id,
+      );
+
+      if (
+        !credentials?.accountSid ||
+        !credentials.authToken ||
+        !credentials.fromNumber
+      ) {
+        throw new Error("Twilio credentials are incomplete. Reconnect Twilio.");
+      }
+
+      const outcome = await sendSms(credentials, message.to, message.body);
+
+      await logEvent("sent", {
+        message_sid: outcome.messageSid,
+        twilio_status: outcome.status,
+      });
+
+      await admin
+        .from("integration_connections")
+        .update({
+          last_success_at: new Date().toISOString(),
+          status: "connected",
+        })
+        .eq("id", connection.id);
+
+      return {
+        attempted: true,
+        delivered: true,
+        detail: `SMS sent to ${message.to} via Twilio (${outcome.messageSid}).`,
+      };
+    }
+
+    const credentials = await readProviderCredentials<EmailCredentials>(
       admin,
       connection.id,
     );
 
-    if (
-      !credentials?.accountSid ||
-      !credentials.authToken ||
-      !credentials.fromNumber
-    ) {
-      throw new Error("Twilio credentials are incomplete. Reconnect Twilio.");
+    if (!credentials?.apiKey || !credentials.fromEmail) {
+      throw new Error("Resend credentials are incomplete. Reconnect Resend.");
     }
 
-    const outcome = await sendSms(credentials, message.to, message.body);
-
-    await logEvent("sent", {
-      message_sid: outcome.messageSid,
-      twilio_status: outcome.status,
+    const outcome = await sendEmail(credentials, {
+      to: message.to,
+      subject: message.subject?.trim() || "A message from your service team",
+      body: message.body,
     });
+
+    await logEvent("sent", { message_id: outcome.messageId });
 
     await admin
       .from("integration_connections")
-      .update({ last_success_at: new Date().toISOString(), status: "connected" })
+      .update({
+        last_success_at: new Date().toISOString(),
+        status: "connected",
+      })
       .eq("id", connection.id);
 
     return {
       attempted: true,
       delivered: true,
-      detail: `SMS sent to ${message.to} via Twilio (${outcome.messageSid}).`,
+      detail: `Email sent to ${message.to} via Resend (${outcome.messageId}).`,
     };
   } catch (error) {
     const detail =
-      error instanceof Error ? error.message : "Twilio send failed.";
+      error instanceof Error
+        ? error.message
+        : `${channel.providerLabel} send failed.`;
 
     await logEvent("failed", {}, detail);
 
@@ -166,14 +255,14 @@ export async function deliverApprovedCustomerMessage(
         status: "needs_attention",
         last_failure_at: new Date().toISOString(),
         error_count: (connection.error_count ?? 0) + 1,
-        health_summary: `Last SMS send failed: ${detail}`,
+        health_summary: `Last ${message.channel} send failed: ${detail}`,
       })
       .eq("id", connection.id);
 
     return {
       attempted: true,
       delivered: false,
-      detail: `Approval recorded, but the SMS failed to send: ${detail}`,
+      detail: `Approval recorded, but the ${message.channel} failed to send: ${detail}`,
     };
   }
 }

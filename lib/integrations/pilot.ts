@@ -7,6 +7,7 @@
 export const PILOT_PROVIDER_KEYS = [
   "hubspot",
   "twilio",
+  "resend",
   "google_calendar",
 ] as const;
 
@@ -18,6 +19,7 @@ export type PilotCredentialField = {
   placeholder: string;
   help: string;
   secret: boolean;
+  optional?: boolean;
 };
 
 export type PilotProviderMeta = {
@@ -99,6 +101,46 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
     ],
     whereToGet:
       "console.twilio.com → the Account SID and Auth Token are on the home dashboard. Buy (or use the trial) phone number under Phone Numbers → Manage → Active numbers.",
+  },
+  resend: {
+    key: "resend",
+    title: "Resend Email",
+    tagline: "Sends the emails you approve — nothing goes out on its own.",
+    allows: [
+      "Send an email to a lead after a human approves the exact message.",
+      "Check that the API key and sending domain are valid.",
+    ],
+    neverDoes: [
+      "Never sends anything without an approval.",
+      "Never sends while the connection is in dry-run mode — it records what would have been sent instead.",
+    ],
+    connectMethod: "credentials",
+    fields: [
+      {
+        name: "apiKey",
+        label: "Resend API key",
+        placeholder: "re_…",
+        help: "resend.com → API Keys → Create API key (Sending access is enough).",
+        secret: true,
+      },
+      {
+        name: "fromEmail",
+        label: "From address",
+        placeholder: "office@clientdomain.com",
+        help: "The address customers see. Its domain should be verified in Resend.",
+        secret: false,
+      },
+      {
+        name: "fromName",
+        label: "From name (optional)",
+        placeholder: "Pilot Plumbing Co",
+        help: "Shown as the sender name. Leave blank to send from the bare address.",
+        secret: false,
+        optional: true,
+      },
+    ],
+    whereToGet:
+      "resend.com (free tier works) → verify the client's sending domain under Domains → create an API key under API Keys. For a quick test you can use Resend's onboarding sender before the domain is verified.",
   },
   google_calendar: {
     key: "google_calendar",
