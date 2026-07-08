@@ -12,7 +12,9 @@ import {
 } from "lucide-react";
 
 import {
+  createTaskFromAssistant,
   escalateInteraction,
+  markLatestLeadLowValue,
   resyncLatestLeadToCrm,
 } from "@/app/partner/clients/[clientId]/assistant/actions";
 import { Badge } from "@/components/ui/badge";
@@ -176,6 +178,22 @@ export function AssistantConsole({
     if (action.key === "sync_to_crm") {
       startTransition(async () => {
         const result = await resyncLatestLeadToCrm(context.clientId);
+        setActionMessage(result.message ?? null);
+      });
+      return;
+    }
+
+    if (action.key === "create_task") {
+      startTransition(async () => {
+        const result = await createTaskFromAssistant(context.clientId);
+        setActionMessage(result.message ?? null);
+      });
+      return;
+    }
+
+    if (action.key === "mark_spam") {
+      startTransition(async () => {
+        const result = await markLatestLeadLowValue(context.clientId);
         setActionMessage(result.message ?? null);
       });
     }

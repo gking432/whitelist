@@ -11,6 +11,7 @@ import {
 } from "@/lib/crm/internal";
 import { recordActionJob } from "@/lib/jobs/record";
 import { bookApprovedAppointment } from "@/lib/scheduling/book-approved";
+import { queueBookingConfirmationDraft } from "@/lib/scheduling/confirmation";
 import type { FormState } from "@/lib/forms/state";
 import type { AccessContext } from "@/lib/permissions/types";
 
@@ -219,6 +220,19 @@ export async function resolveApprovalItem(
       outcomeStatus: delivery.status,
       externalRef: delivery.externalRef ?? null,
     });
+
+    // Chain the customer confirmation as a NEW approval-gated draft —
+    // booking approval never implies message approval.
+    if (delivery.status === "succeeded" || delivery.status === "dry_run") {
+      await queueBookingConfirmationDraft({
+        partnerId: approval.partner_id,
+        clientId: approval.client_id,
+        clientName: clientRow?.name ?? "the business",
+        workflowRunId: approval.workflow_run_id,
+        payload: approval.proposed_payload ?? {},
+        bookedLive: delivery.status === "succeeded",
+      });
+    }
   }
 
   // Transition the paused run, recording exactly what happened to the

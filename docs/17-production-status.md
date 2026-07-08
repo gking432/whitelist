@@ -24,19 +24,25 @@ stack.
 | Durable action jobs + retry | Real — every send/booking/sync records an attempt; failed/dry-run/skipped retryable from Runs / Logs with audit |
 | Built-in CRM foundation | Real — contacts/leads/timeline/tasks/appointments, tenant-scoped RLS, AI writes attributed as ai_assistant; fills for primary/mirror/assist modes only |
 | Packages → setup checklist | Real — capability toggles drive required integrations, workflows, staff-runtime honesty |
-| Staff Assistant Console (web) | Real data + real actions (approve-jumps, sync, escalate, copy); labeled Preview state before first lead |
+| Staff Assistant Console (web) | Real data + real actions (approve-jumps, sync, create task, mark spam, escalate, copy); labeled Preview state before first lead |
+| Client-staff Assistant Console (/client/assistant) | Real — same contract and gates, scoped by the member's own client; portal must be enabled |
+| Assistant Context API + live events | Real — GET /api/assistant/context and /api/assistant/events (polling), session-authenticated, tenancy-enforced (docs/18) |
+| Approved AI knowledge base | Real — per-client Knowledge tab, audited saves, injected into intake/draft/chat/call prompts with never-invent guardrails |
+| Website AI chat widget | Real — hosted page + iframe embed, public rotatable key, rate-limited, AI replies from approved knowledge with scripted fallback; completed chats become normal intake events (docs/19) |
+| Scheduling constraints | Real — "after 5"/"mornings"/"not tomorrow"/weekday parsing (unit-tested) intersects the knowledge-base booking window in slot proposals; approval summaries say what was honored |
+| Booking confirmation drafts | Real — approved bookings queue a NEW approval-gated confirmation message; booking approval never implies message approval |
+| Background job runner | Real — POST /api/jobs/run (CRON_SECRET) retries failed jobs with exponential backoff; manual retry retained; needs an external scheduler |
 | Audit + redaction | All new actions audited; every logged payload passes redactAuditValue |
 
 ## Preview / not built (still honest)
 
 | Area | Status |
 | --- | --- |
-| Voice: AI answering, live call assistant, live scheduling popup | Not built — needs a phone provider adapter with live audio/transcript. Design contracts in docs/11. |
-| Website AI chat widget UI | Not built — the chat intake endpoint + routing are real |
-| Background worker / queue | Not built — actions are durable + retryable, execution is synchronous, retries are manual |
+| Voice telephony | Foundation only — call sessions, transcripts, AI summaries, caller matching, disclosure modes, and the call.completed intake path are real code, but NO provider adapter exists: no calls happen until one ships with credentials + live mode (docs/20) |
+| Live call / live scheduling popups | Not built — need the voice adapter's live transcript; the assistant_events feed they will consume is real |
+| SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
 | Appointment reschedule/cancel | Not built — book-only today |
-| Desktop tray app / browser extension / CRM overlay | Not built — the Assistant context contract is ready for them (docs/15) |
-| Client-staff console login | Not built — console lives in the partner workspace |
+| Desktop tray app / browser extension / CRM overlay | Not built — context API + event feed are ready for them (docs/18) |
 | Per-client custom field mapping | Defaults only (docs/16) |
 | Billing/usage pricing on packages | Not built by request |
 

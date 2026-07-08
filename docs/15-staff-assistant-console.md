@@ -18,7 +18,15 @@ action-first window that answers three questions:
 ```text
 Partner → Clients → open a client → Assistant tab
 /partner/clients/[clientId]/assistant
+
+Client portal → Assistant tab (client owner/manager/staff)
+/client/assistant
 ```
+
+Both render the same contract with the same approval gates; the client
+version is scoped by the signed-in member's own business and never links
+into partner-only setup screens. Future runtimes consume the same data via
+GET /api/assistant/context and /api/assistant/events (docs/18).
 
 The console renders inside the partner web app today. That is deliberate
 (see "Future runtimes" below) — the prototype proves the interaction model
@@ -56,7 +64,8 @@ Top to bottom, one column, styled like a small app window:
 | Book appointment | **Real via approval gate.** Scheduling requests propose real open slots from Google Calendar free/busy; approving books the event (live mode only). Requires Google Calendar when not connected. |
 | Add CRM note | **Works now, automatically** — the AI Assistant note is attached with every CRM sync. Requires CRM if none is connected. |
 | Sync to CRM | **Real button.** Re-runs the additive contact + note sync for the latest lead (HubSpot, GoHighLevel, or signed outbound webhook). Works now (live) / Dry run / Requires CRM. |
-| Create task | **Coming soon** — the AI already suggests the task; pushing it into a task system needs the CRM task adapter. |
+| Create task | **Real button.** Writes the AI-suggested follow-up task into the built-in CRM task list (CRM tab). |
+| Mark spam / low-value | **Real button.** Closes the latest lead as low-value with an audit trail + timeline note. |
 | Escalate | **Real button.** Records an escalation (with an optional note) in the audit trail. Manager notifications come with the notification pack. |
 | Copy fallback | **Real button.** Copies the draft text to the clipboard — the fallback when a provider is not connected. |
 
@@ -104,24 +113,22 @@ The prototype is structured for that move:
 - Real actions go through ordinary server actions with the same permission
   checks, tenant scoping, and audit events as the rest of Northstar.
 
-What the future runtimes need (deliberately **not** built yet):
+Already shipped for future runtimes: the authenticated
+`/api/assistant/context` endpoint, the `assistant_events` feed with its
+polling endpoint, and client-staff access (`/client/assistant`). Still
+needed (deliberately **not** built yet):
 
-1. An authenticated `/api/assistant/context` endpoint serving
-   `AssistantContextData` (the builder is already runtime-agnostic).
-2. A push channel (SSE/WebSocket) so a new call/chat pops the console up
-   instead of waiting for a refresh.
-3. Trigger sources: phone-provider call events, CRM page context (from an
-   extension), inbox context.
-4. The thin shells: Electron/Tauri tray app, MV3 browser extension,
+1. A push channel (SSE/WebSocket) so a new call/chat pops the console up
+   instead of waiting for a refresh (polling works today).
+2. Trigger sources: phone-provider call events (voice adapter, docs/20),
+   CRM page context (from an extension), inbox context.
+3. The thin shells: Electron/Tauri tray app, MV3 browser extension,
    CRM-native app — each is chrome around the same console + contract.
-5. Client-staff authentication for the console outside the partner app
-   (client-role memberships already exist).
 
 ## Current limits (honest)
 
-- Lives in the partner workspace; client-staff login for the console is not
-  wired yet.
-- No real-time push — refresh to see a new interaction.
+- No real-time push — refresh (or poll /api/assistant/events) to see a new
+  interaction.
 - Appointment slots are real once a scheduling request produces a booking
   proposal; before that the console shows clearly-labeled preview slots.
 - Escalate records to the audit trail; it does not notify anyone yet.

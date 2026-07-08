@@ -6,6 +6,13 @@ export type BusyInterval = { start: string; end: string };
 
 export type OpenSlot = { startIso: string; endIso: string };
 
+export type SlotConstraints = {
+  earliestHour: number | null;
+  latestHour: number | null;
+  weekdays: number[];
+  excludeTomorrow: boolean;
+};
+
 export type SlotOptions = {
   timezone: string;
   durationMinutes?: number;
@@ -14,6 +21,9 @@ export type SlotOptions = {
   daysAhead?: number;
   maxSlots?: number;
   maxPerDay?: number;
+  // Customer constraints (parsed by lib/scheduling/constraints.ts),
+  // intersected with business hours.
+  constraints?: SlotConstraints;
   // Injectable clock for tests.
   now?: Date;
 };
@@ -81,8 +91,27 @@ export function computeOpenSlots(
     daysAhead = 7,
     maxSlots = 3,
     maxPerDay = 1,
+    constraints,
     now = new Date(),
   } = options;
+
+  // Customer constraints tighten the business window, never widen it.
+  const startHour = Math.max(
+    businessStartHour,
+    constraints?.earliestHour ?? businessStartHour,
+  );
+  const endHour = Math.min(
+    businessEndHour,
+    constraints?.latestHour ?? businessEndHour,
+  );
+
+  if (endHour <= startHour) {
+    return [];
+  }
+
+  const tomorrowKey = constraints?.excludeTomorrow
+    ? localParts(new Date(now.getTime() + 24 * 60 * 60 * 1000), timezone).dayKey
+    : null;
 
   const busyMs = busy
     .map((interval) => ({
@@ -116,7 +145,19 @@ export function computeOpenSlots(
       continue;
     }
 
-    if (hour < businessStartHour) {
+    if (
+      constraints &&
+      constraints.weekdays.length > 0 &&
+      !constraints.weekdays.includes(weekday)
+    ) {
+      continue;
+    }
+
+    if (tomorrowKey && dayKey === tomorrowKey) {
+      continue;
+    }
+
+    if (hour < startHour) {
       continue;
     }
 
@@ -125,11 +166,11 @@ export function computeOpenSlots(
     const endParts = localParts(new Date(endMs), timezone);
 
     if (
-      endParts.hour > businessEndHour ||
-      (endParts.hour === businessEndHour &&
+      endParts.hour > endHour ||
+      (endParts.hour === endHour &&
         endMs % (60 * 60 * 1000) !== 0 &&
         endParts.dayKey === dayKey) ||
-      hour >= businessEndHour
+      hour >= endHour
     ) {
       continue;
     }

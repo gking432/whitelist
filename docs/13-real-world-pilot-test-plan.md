@@ -267,7 +267,17 @@ Expect `200` with a processed/run summary. Then verify, in order:
    test again, and the count changes.
 2. That is the extent of the calendar loop today — see honest status above.
 
-### Test 5 — failure honesty
+### Test 5 — website chat end-to-end
+
+1. Knowledge tab → save the business knowledge. Integrations → web chat
+   connection → enable the widget → open `{APP_URL}/widget/<key>`.
+2. Chat as a homeowner ("water heater leaking, Friday after 5 works") and
+   leave a name + phone. Expect: router + lead runs, a first-response
+   draft in Approvals, a booking proposal honoring "Friday after 5" when
+   Google Calendar is connected, and the chat as the active interaction on
+   both Assistant consoles (partner tab and /client/assistant).
+
+### Test 6 — failure honesty
 
 1. Twilio card → Reconnect with a wrong auth token → expect an immediate
    readable failure and **nothing stored**.

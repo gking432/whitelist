@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { redactAuditValue } from "@/lib/audit/redact";
 import { recordLeadInInternalCrm } from "@/lib/crm/internal";
 import { syncRunToCrm } from "@/lib/crm/sync-from-run";
+import { emitAssistantEvent } from "@/lib/assistant/events";
 import { recordActionJob } from "@/lib/jobs/record";
 import {
   buildKnowledgeBlock,
@@ -225,6 +226,54 @@ async function executeInstance(
       analysis: analysisOutput ?? null,
     });
 
+    // Live assistant events (docs/18): the feed popups consume.
+    if (template.template_key === "new_lead_intake" && analysisOutput) {
+      await emitAssistantEvent({
+        partnerId: event.partnerId,
+        clientId: event.clientId,
+        eventType: "lead_detected",
+        payload: {
+          urgency: analysisOutput.urgency ?? null,
+          quality: analysisOutput.lead_quality ?? null,
+          event_type: event.eventType,
+        },
+        workflowRunId: runId,
+      });
+    }
+
+    if (
+      typeof routingOutput?.category === "string" &&
+      routingOutput.category === "scheduling"
+    ) {
+      await emitAssistantEvent({
+        partnerId: event.partnerId,
+        clientId: event.clientId,
+        eventType: "appointment_intent_detected",
+        payload: { event_type: event.eventType },
+        workflowRunId: runId,
+      });
+    }
+
+    if (crmSync && crmSync.crm.status === "synced") {
+      await emitAssistantEvent({
+        partnerId: event.partnerId,
+        clientId: event.clientId,
+        eventType: "crm_sync_completed",
+        payload: { provider: crmSync.crm.provider ?? null },
+        workflowRunId: runId,
+      });
+    }
+
+    if (bookingProposal && bookingProposal.booking.status === "proposed") {
+      await emitAssistantEvent({
+        partnerId: event.partnerId,
+        clientId: event.clientId,
+        eventType: "booking_proposed",
+        payload: { slot: bookingProposal.booking.slot ?? null },
+        workflowRunId: runId,
+      });
+    }
+
     const steps = [
       ...result.steps,
       ...(crmSync ? [crmSync.step] : []),
@@ -254,7 +303,7 @@ async function executeInstance(
     }
 
     if (needsApproval && result.approvalDraft) {
-      const { error: approvalError } = await supabase
+      const { data: createdApproval, error: approvalError } = await supabase
         .from("approval_items")
         .insert({
           partner_id: event.partnerId,
@@ -267,7 +316,31 @@ async function executeInstance(
           risk_level: result.approvalDraft.riskLevel,
           proposed_payload: result.approvalDraft.proposedPayload,
           editable_content: result.approvalDraft.editableContent,
+        })
+        .select("id")
+        .single();
+
+      if (!approvalError && createdApproval) {
+        await emitAssistantEvent({
+          partnerId: event.partnerId,
+          clientId: event.clientId,
+          eventType: "draft_ready",
+          payload: { title: result.approvalDraft.title },
+          workflowRunId: runId,
+          approvalId: createdApproval.id,
         });
+        await emitAssistantEvent({
+          partnerId: event.partnerId,
+          clientId: event.clientId,
+          eventType: "approval_needed",
+          payload: {
+            title: result.approvalDraft.title,
+            risk_level: result.approvalDraft.riskLevel,
+          },
+          workflowRunId: runId,
+          approvalId: createdApproval.id,
+        });
+      }
 
       if (approvalError) {
         throw Object.assign(

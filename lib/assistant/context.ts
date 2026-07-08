@@ -40,6 +40,7 @@ export type AssistantActionKey =
   | "add_crm_note"
   | "sync_to_crm"
   | "create_task"
+  | "mark_spam"
   | "escalate"
   | "copy_fallback";
 
@@ -133,7 +134,7 @@ export type AssistantContextData = {
   actions: AssistantAction[];
   recentActivity: {
     at: string;
-    kind: "run" | "approval" | "audit";
+    kind: "run" | "approval" | "audit" | "assistant_event";
     title: string;
     detail: string | null;
   }[];
@@ -440,16 +441,31 @@ function buildActions(input: {
     });
   }
 
-  // Create task — no task adapter exists yet anywhere.
+  // Create task — real: writes the AI-suggested follow-up task into the
+  // built-in CRM task list.
   actions.push({
     key: "create_task",
     label: "Create task",
-    state: "coming_soon",
-    stateLabel: "Coming soon",
-    detail:
-      "The AI already suggests a follow-up task on each lead; pushing it into a task system ships with the CRM task adapter.",
+    state: hasLeadBearingRun ? "works_now" : "preview_only",
+    stateLabel: hasLeadBearingRun ? "Works now" : "No lead yet",
+    detail: hasLeadBearingRun
+      ? "Creates the AI-suggested follow-up task for the latest lead in Northstar's task list."
+      : "Appears once a lead has come through — the AI suggests the task.",
     href: null,
-    enabled: false,
+    enabled: hasLeadBearingRun,
+  });
+
+  // Mark spam/low-value — real: closes the latest lead as low-value.
+  actions.push({
+    key: "mark_spam",
+    label: "Mark spam / low-value",
+    state: hasLeadBearingRun ? "works_now" : "preview_only",
+    stateLabel: hasLeadBearingRun ? "Works now" : "No lead yet",
+    detail: hasLeadBearingRun
+      ? "Closes the latest lead as spam/low-value and records it in the audit trail."
+      : "Appears once a lead has come through.",
+    href: null,
+    enabled: hasLeadBearingRun,
   });
 
   // Escalate — real: records an escalation in the audit trail.
@@ -494,6 +510,7 @@ export async function buildAssistantContext(
     { data: runsData },
     { data: approvalsData },
     { data: auditData },
+    { data: assistantEventsData },
   ] = await Promise.all([
     client.package_id
       ? supabase
@@ -528,6 +545,12 @@ export async function buildAssistantContext(
       .eq("client_id", client.id)
       .order("created_at", { ascending: false })
       .limit(6),
+    supabase
+      .from("assistant_events")
+      .select("created_at, event_type, payload")
+      .eq("client_id", client.id)
+      .order("created_at", { ascending: false })
+      .limit(8),
   ]);
 
   const pkg = packageData as PartnerPackageRecord | null;
@@ -823,7 +846,8 @@ export async function buildAssistantContext(
     hasLeadBearingRun: Boolean(leadBearingRun),
   });
 
-  // Recent activity: runs + audit events interleaved, newest first.
+  // Recent activity: runs + audit + live assistant events interleaved,
+  // newest first.
   const recentActivity: AssistantContextData["recentActivity"] = [
     ...runs.slice(0, 5).map((run) => ({
       at: run.started_at ?? "",
@@ -839,10 +863,23 @@ export async function buildAssistantContext(
         detail: event.summary,
       }),
     ),
+    ...((assistantEventsData ?? []) as {
+      created_at: string;
+      event_type: string;
+      payload: Record<string, unknown> | null;
+    }[]).map((event) => ({
+      at: event.created_at,
+      kind: "assistant_event" as const,
+      title: event.event_type.replaceAll("_", " "),
+      detail:
+        typeof event.payload?.title === "string"
+          ? (event.payload.title as string)
+          : null,
+    })),
   ]
     .filter((item) => item.at)
     .sort((a, b) => (a.at < b.at ? 1 : -1))
-    .slice(0, 8);
+    .slice(0, 10);
 
   const runtimeRequirements: StaffRuntime[] = requirements
     ? requirements.staffRuntimes

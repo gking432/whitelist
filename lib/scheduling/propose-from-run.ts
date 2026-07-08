@@ -6,6 +6,11 @@ import {
   getBusyIntervals,
   type GoogleCalendarCredentials,
 } from "@/lib/integrations/providers/google-calendar";
+import { getKnowledgeProfile } from "@/lib/knowledge/profile";
+import {
+  describeConstraints,
+  parseSchedulingConstraints,
+} from "@/lib/scheduling/constraints";
 import {
   computeOpenSlots,
   formatSlotLabel,
@@ -155,6 +160,19 @@ export async function proposeBookingFromRun(
     const now = new Date();
     const weekOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+    // Business booking window + visit length from the approved knowledge
+    // profile; customer constraints ("after 5", "not tomorrow", "mornings")
+    // tighten the window further, never widen it.
+    const knowledge = await getKnowledgeProfile(admin, input.clientId);
+    const constraintText = [
+      asString(input.eventData.appointment_preference),
+      asString(input.eventData.message),
+    ]
+      .filter(Boolean)
+      .join(". ");
+    const constraints = parseSchedulingConstraints(constraintText);
+    const constraintsDescription = describeConstraints(constraints);
+
     // REAL availability from the connected calendar.
     const busy = await getBusyIntervals(
       credentials,
@@ -162,7 +180,29 @@ export async function proposeBookingFromRun(
       weekOut.toISOString(),
     );
 
-    const slots = computeOpenSlots(busy, { timezone, maxSlots: 3 });
+    let slots = computeOpenSlots(busy, {
+      timezone,
+      maxSlots: 3,
+      businessStartHour: knowledge?.booking_hours_start ?? 9,
+      businessEndHour: knowledge?.booking_hours_end ?? 17,
+      durationMinutes: knowledge?.appointment_duration_minutes ?? 60,
+      constraints,
+    });
+
+    // If the customer's constraints leave nothing open, fall back to the
+    // plain business window and say so honestly.
+    let constraintsRelaxed = false;
+
+    if (slots.length === 0 && constraintsDescription) {
+      slots = computeOpenSlots(busy, {
+        timezone,
+        maxSlots: 3,
+        businessStartHour: knowledge?.booking_hours_start ?? 9,
+        businessEndHour: knowledge?.booking_hours_end ?? 17,
+        durationMinutes: knowledge?.appointment_duration_minutes ?? 60,
+      });
+      constraintsRelaxed = slots.length > 0;
+    }
 
     if (slots.length === 0) {
       await logEvent("processed", "calendar.slots_proposed", {
@@ -204,13 +244,20 @@ export async function proposeBookingFromRun(
           : " — the connection is not live, so approval records a dry run"
       }. Open alternatives: ${
         alternatives.map((slot) => slot.label).join("; ") || "none"
-      }. Slots come from real calendar availability.`,
+      }. Slots come from real calendar availability${
+        constraintsDescription
+          ? constraintsRelaxed
+            ? `. NOTE: the customer asked for ${constraintsDescription}, but nothing was open there — these ignore that preference; confirm with the customer`
+            : `, honoring the customer's preference (${constraintsDescription})`
+          : ""
+      }.`,
       risk_level: "high",
       proposed_payload: {
         kind: "appointment_booking",
         provider: "google_calendar",
         timezone,
-        duration_minutes: 60,
+        duration_minutes: knowledge?.appointment_duration_minutes ?? 60,
+        constraints_understood: constraintsDescription,
         slot: primary,
         alternatives,
         contact: {
