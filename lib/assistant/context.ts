@@ -85,6 +85,9 @@ export type AssistantContextData = {
   mode: "live" | "preview";
   clientId: string;
   clientName: string;
+  // Route prefix for in-app links; differs between the partner workspace
+  // and the client portal so the same console works for both audiences.
+  basePath: string;
   packageName: string | null;
   interaction: AssistantInteraction | null;
   routing: {
@@ -237,6 +240,7 @@ const PREVIEW_INTERACTION: AssistantInteraction = {
 
 function buildActions(input: {
   base: string;
+  canManageSetup: boolean;
   capabilities: Set<CapabilityKey>;
   crmConn: ConnectionInfo;
   smsConn: ConnectionInfo;
@@ -250,6 +254,7 @@ function buildActions(input: {
 }): AssistantAction[] {
   const {
     base,
+    canManageSetup,
     capabilities,
     crmConn,
     smsConn,
@@ -283,9 +288,11 @@ function buildActions(input: {
       label: "Send SMS",
       state: "requires_connection",
       stateLabel: "Requires Twilio",
-      detail: "Connect Twilio in the Setup checklist to send approved texts.",
-      href: `${base}/setup`,
-      enabled: true,
+      detail: canManageSetup
+        ? "Connect Twilio in the Setup checklist to send approved texts."
+        : "Ask your provider to connect SMS sending.",
+      href: canManageSetup ? `${base}/setup` : null,
+      enabled: canManageSetup,
     });
   } else {
     actions.push({
@@ -312,10 +319,11 @@ function buildActions(input: {
       label: "Send email",
       state: "requires_connection",
       stateLabel: "Requires email provider",
-      detail:
-        "Connect Resend Email in the Setup checklist to send approved emails.",
-      href: `${base}/setup`,
-      enabled: true,
+      detail: canManageSetup
+        ? "Connect Resend Email in the Setup checklist to send approved emails."
+        : "Ask your provider to connect email sending.",
+      href: canManageSetup ? `${base}/setup` : null,
+      enabled: canManageSetup,
     });
   } else {
     actions.push({
@@ -342,9 +350,11 @@ function buildActions(input: {
       label: "Book appointment",
       state: "requires_connection",
       stateLabel: "Requires Google Calendar",
-      detail: "Connect Google Calendar in the Setup checklist first.",
-      href: `${base}/setup`,
-      enabled: true,
+      detail: canManageSetup
+        ? "Connect Google Calendar in the Setup checklist first."
+        : "Ask your provider to connect the calendar.",
+      href: canManageSetup ? `${base}/setup` : null,
+      enabled: canManageSetup,
     });
   } else if (pendingBookingApprovalId) {
     actions.push({
@@ -380,9 +390,11 @@ function buildActions(input: {
       label: "Add CRM note",
       state: "requires_connection",
       stateLabel: "Requires CRM",
-      detail: "Connect HubSpot in the Setup checklist first.",
-      href: `${base}/setup`,
-      enabled: true,
+      detail: canManageSetup
+        ? "Connect a CRM in the Setup checklist first."
+        : "Ask your provider to connect the CRM.",
+      href: canManageSetup ? `${base}/setup` : null,
+      enabled: canManageSetup,
     });
   } else {
     actions.push({
@@ -406,9 +418,11 @@ function buildActions(input: {
       label: "Sync to CRM",
       state: "requires_connection",
       stateLabel: "Requires CRM",
-      detail: "Connect HubSpot in the Setup checklist first.",
-      href: `${base}/setup`,
-      enabled: true,
+      detail: canManageSetup
+        ? "Connect a CRM in the Setup checklist first."
+        : "Ask your provider to connect the CRM.",
+      href: canManageSetup ? `${base}/setup` : null,
+      enabled: canManageSetup,
     });
   } else {
     actions.push({
@@ -469,8 +483,10 @@ function buildActions(input: {
 export async function buildAssistantContext(
   supabase: SupabaseClient,
   client: ClientBusinessRecord,
+  options?: { audience?: "partner" | "client" },
 ): Promise<AssistantContextData> {
-  const base = `/partner/clients/${client.id}`;
+  const audience = options?.audience ?? "partner";
+  const base = audience === "client" ? "/client" : `/partner/clients/${client.id}`;
 
   const [
     { data: packageData },
@@ -793,6 +809,7 @@ export async function buildAssistantContext(
 
   const actions = buildActions({
     base,
+    canManageSetup: audience === "partner",
     capabilities,
     crmConn,
     smsConn,
@@ -835,6 +852,7 @@ export async function buildAssistantContext(
     mode,
     clientId: client.id,
     clientName: client.name,
+    basePath: base,
     packageName: pkg?.name ?? null,
     interaction,
     routing,

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { ChatWidgetSetup } from "@/components/partner/chat-widget-setup";
 import { ConnectionControls } from "@/components/partner/connection-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -124,6 +125,23 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]">
         <div className="space-y-5">
+          {connection.provider?.provider_key === "northstar_web_chat" ? (
+            <ChatWidgetSetup
+              clientId={clientId}
+              connectionId={connection.id}
+              widgetKey={
+                typeof (connection.config as Record<string, unknown>)
+                  ?.widget_public_key === "string"
+                  ? String(
+                      (connection.config as Record<string, unknown>)
+                        .widget_public_key,
+                    )
+                  : null
+              }
+              appUrl={getAppUrl()}
+              canManage={access.canManageIntegrations}
+            />
+          ) : null}
           <section className="rounded-lg border bg-card p-5">
             <h3 className="text-sm font-semibold">Connection summary</h3>
             <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">

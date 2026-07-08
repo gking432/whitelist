@@ -13,6 +13,7 @@ const tabs = [
   { label: "Overview", segment: "" },
   { label: "Assistant", segment: "assistant" },
   { label: "Setup", segment: "setup" },
+  { label: "Knowledge", segment: "knowledge" },
   { label: "CRM", segment: "crm" },
   { label: "Integrations", segment: "integrations" },
   { label: "Workflows", segment: "workflows" },

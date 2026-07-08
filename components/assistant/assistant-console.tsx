@@ -144,7 +144,7 @@ export function AssistantConsole({
   const [isPending, startTransition] = useTransition();
 
   const { interaction, routing, analysis, draft } = context;
-  const base = `/partner/clients/${context.clientId}`;
+  const base = context.basePath;
 
   const copyDraft = async () => {
     if (!draft) {

@@ -28,6 +28,7 @@ import {
   type AIExecutionInfo,
   type CustomerDraft,
 } from "@/lib/ai/schemas";
+import { KNOWLEDGE_GUARDRAILS } from "@/lib/knowledge/profile";
 import type { z } from "zod";
 
 export type RunStep = {
@@ -57,6 +58,10 @@ export type HandlerContext = {
   data: Record<string, unknown>;
   settings: Record<string, unknown>;
   clientName: string;
+  // Approved business knowledge block (lib/knowledge). When present it is
+  // appended to prompts with guardrails so drafts/routing stay inside what
+  // the business actually offers.
+  knowledgeBlock?: string;
 };
 
 function asString(value: unknown): string {
@@ -109,6 +114,15 @@ async function structuredWithFallback<T>(args: {
   }
 }
 
+
+function withKnowledge(prompt: string, context: HandlerContext): string {
+  if (!context.knowledgeBlock) {
+    return prompt;
+  }
+
+  return `${prompt}\n\n${KNOWLEDGE_GUARDRAILS}\n\n${context.knowledgeBlock}`;
+}
+
 function aiStepDetail(ai: AIExecutionInfo): string {
   if (ai.status === "ai") {
     return `AI-generated output (${ai.provider}/${ai.model}).`;
@@ -131,11 +145,14 @@ async function handleLeadIntake(context: HandlerContext): Promise<HandlerResult>
   const { data: analysis, ai } = await structuredWithFallback({
     taskKey: "lead_intake_analysis",
     system: LEAD_INTAKE_SYSTEM_PROMPT,
-    user: buildLeadIntakePrompt({
-      businessName: context.clientName,
-      eventType: context.eventType,
-      payloadJson: JSON.stringify(context.data, null, 2),
-    }),
+    user: withKnowledge(
+      buildLeadIntakePrompt({
+        businessName: context.clientName,
+        eventType: context.eventType,
+        payloadJson: JSON.stringify(context.data, null, 2),
+      }),
+      context,
+    ),
     schema: LeadIntakeAnalysisSchema,
     fallback: () =>
       fallbackLeadIntakeAnalysis({
@@ -186,13 +203,16 @@ async function handleLeadIntake(context: HandlerContext): Promise<HandlerResult>
     const draftResult = await structuredWithFallback<CustomerDraft>({
       taskKey: "new_lead_response_draft",
       system: CUSTOMER_DRAFT_SYSTEM_PROMPT,
-      user: buildCustomerDraftPrompt({
-        businessName: context.clientName,
-        draftKind: "new_lead_response",
-        eventType: context.eventType,
-        payloadJson: JSON.stringify(context.data, null, 2),
-        customTemplate,
-      }),
+      user: withKnowledge(
+        buildCustomerDraftPrompt({
+          businessName: context.clientName,
+          draftKind: "new_lead_response",
+          eventType: context.eventType,
+          payloadJson: JSON.stringify(context.data, null, 2),
+          customTemplate,
+        }),
+        context,
+      ),
       schema: CustomerDraftSchema,
       fallback: () =>
         fallbackCustomerDraft({
@@ -266,13 +286,16 @@ function draftHandler(options: {
     const { data: draft, ai } = await structuredWithFallback<CustomerDraft>({
       taskKey: `${options.draftKind}_draft`,
       system: CUSTOMER_DRAFT_SYSTEM_PROMPT,
-      user: buildCustomerDraftPrompt({
-        businessName: context.clientName,
-        draftKind: options.draftKind,
-        eventType: context.eventType,
-        payloadJson: JSON.stringify(context.data, null, 2),
-        customTemplate,
-      }),
+      user: withKnowledge(
+        buildCustomerDraftPrompt({
+          businessName: context.clientName,
+          draftKind: options.draftKind,
+          eventType: context.eventType,
+          payloadJson: JSON.stringify(context.data, null, 2),
+          customTemplate,
+        }),
+        context,
+      ),
       schema: CustomerDraftSchema,
       fallback: () =>
         fallbackCustomerDraft({
@@ -337,11 +360,14 @@ async function handleIntakeRouting(
   const { data: routing, ai } = await structuredWithFallback({
     taskKey: "intake_routing",
     system: INTAKE_ROUTING_SYSTEM_PROMPT,
-    user: buildIntakeRoutingPrompt({
-      businessName: context.clientName,
-      eventType: context.eventType,
-      payloadJson: JSON.stringify(context.data, null, 2),
-    }),
+    user: withKnowledge(
+      buildIntakeRoutingPrompt({
+        businessName: context.clientName,
+        eventType: context.eventType,
+        payloadJson: JSON.stringify(context.data, null, 2),
+      }),
+      context,
+    ),
     schema: IntakeRoutingSchema,
     fallback: () =>
       fallbackIntakeRouting({

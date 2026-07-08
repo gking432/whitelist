@@ -420,6 +420,86 @@ export async function updateConnectionRuntimeMode(
   }
 }
 
+// Enables (or rotates) the public website-chat widget key. The key is
+// public by design — it ships in website markup — and only lets visitors
+// start a chat with this client's assistant.
+export async function enableChatWidget(
+  clientId: string,
+  connectionId: string,
+): Promise<FormState> {
+  const authState = await getAuthState();
+
+  if (!authState.user) {
+    return { status: "error", message: "Sign in to manage integrations." };
+  }
+
+  try {
+    const loaded = await loadConnectionForUpdate(
+      authState.user.id,
+      clientId,
+      connectionId,
+    );
+
+    if (!loaded) {
+      return { status: "error", message: "Connection not found." };
+    }
+
+    const { access, supabase, connection } = loaded;
+    const providerKey = (
+      connection as unknown as { provider: { provider_key: string } | null }
+    ).provider?.provider_key;
+
+    if (providerKey !== "northstar_web_chat") {
+      return {
+        status: "error",
+        message: "The widget key belongs on a Northstar web chat connection.",
+      };
+    }
+
+    const { data: current } = await supabase
+      .from("integration_connections")
+      .select("config")
+      .eq("id", connectionId)
+      .maybeSingle();
+
+    const { generateWidgetKey } = await import("@/lib/chat/widget");
+    const widgetKey = generateWidgetKey();
+
+    const { error } = await supabase
+      .from("integration_connections")
+      .update({
+        config: {
+          ...((current?.config as Record<string, unknown>) ?? {}),
+          widget_public_key: widgetKey,
+        },
+      })
+      .eq("id", connectionId);
+
+    if (error) {
+      return { status: "error", message: "The widget key could not be saved." };
+    }
+
+    await recordAuditEvent({
+      actor: access,
+      action: "integration.widget_key_rotated",
+      targetType: "integration_connection",
+      targetId: connectionId,
+      summary: `Generated a website chat widget key for "${connection.display_name}". Any previously embedded widget stops working.`,
+    });
+
+    revalidatePath(
+      `/partner/clients/${clientId}/integrations/${connectionId}`,
+    );
+
+    return {
+      status: "success",
+      message: "Widget enabled. Embed the snippet shown on this page.",
+    };
+  } catch (error) {
+    return deniedState(error);
+  }
+}
+
 export async function rotateConnectionSecret(
   clientId: string,
   connectionId: string,

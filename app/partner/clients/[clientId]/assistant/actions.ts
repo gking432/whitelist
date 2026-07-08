@@ -6,11 +6,8 @@ import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
 import { syncRunToCrm } from "@/lib/crm/sync-from-run";
 import type { FormState } from "@/lib/forms/state";
-import {
-  isAccessError,
-  requireClientWorkspaceAccess,
-} from "@/lib/permissions/access";
-import { PARTNER_OPERATOR_ROLES } from "@/lib/permissions/roles";
+import { resolveAssistantAccess } from "@/lib/assistant/access";
+import { isAccessError } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -39,11 +36,8 @@ async function requireAssistantContext(clientId: string) {
     return { error: "Sign in to use the assistant." } as const;
   }
 
-  const access = await requireClientWorkspaceAccess(
-    authState.user.id,
-    clientId,
-    PARTNER_OPERATOR_ROLES,
-  );
+  // Partner operators AND the client's own owner/manager/staff may act.
+  const access = await resolveAssistantAccess(authState.user.id, clientId, "write");
 
   const supabase = await createSupabaseServerClient();
 
@@ -83,6 +77,7 @@ export async function escalateInteraction(
     });
 
     revalidatePath(`/partner/clients/${clientId}/assistant`);
+    revalidatePath("/client/assistant");
 
     return {
       status: "success",
@@ -183,6 +178,7 @@ export async function resyncLatestLeadToCrm(
     });
 
     revalidatePath(`/partner/clients/${clientId}/assistant`);
+    revalidatePath("/client/assistant");
 
     return {
       status:

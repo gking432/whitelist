@@ -4,6 +4,10 @@ import { redactAuditValue } from "@/lib/audit/redact";
 import { recordLeadInInternalCrm } from "@/lib/crm/internal";
 import { syncRunToCrm } from "@/lib/crm/sync-from-run";
 import { recordActionJob } from "@/lib/jobs/record";
+import {
+  buildKnowledgeBlock,
+  getKnowledgeProfile,
+} from "@/lib/knowledge/profile";
 import { proposeBookingFromRun } from "@/lib/scheduling/propose-from-run";
 import {
   templateHandlers,
@@ -93,6 +97,7 @@ async function executeInstance(
   instance: InstanceRecord,
   template: TemplateRecord,
   clientName: string,
+  knowledgeBlock: string,
 ): Promise<EngineRunResult | null> {
   const startedAt = new Date().toISOString();
 
@@ -138,6 +143,7 @@ async function executeInstance(
       data: event.data,
       settings: instance.settings ?? {},
       clientName,
+      knowledgeBlock,
     });
 
     const needsApproval = Boolean(result.approvalDraft) &&
@@ -390,6 +396,10 @@ export async function runWorkflowsForEvent(
     .maybeSingle();
 
   const clientName: string = client?.name ?? "the business";
+  // Approved knowledge is loaded once per event and shared by every
+  // handler so AI output stays inside what the business actually offers.
+  const knowledgeProfile = await getKnowledgeProfile(supabase, event.clientId);
+  const knowledgeBlock = buildKnowledgeBlock(clientName, knowledgeProfile);
   const runs: EngineRunResult[] = [];
   let matched = 0;
 
@@ -414,6 +424,7 @@ export async function runWorkflowsForEvent(
       instance,
       template,
       clientName,
+      knowledgeBlock,
     );
 
     if (result) {
