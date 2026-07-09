@@ -32,13 +32,14 @@ stack.
 | Scheduling constraints | Real — "after 5"/"mornings"/"not tomorrow"/weekday parsing (unit-tested) intersects the knowledge-base booking window in slot proposals; approval summaries say what was honored |
 | Booking confirmation drafts | Real — approved bookings queue a NEW approval-gated confirmation message; booking approval never implies message approval |
 | Background job runner | Real — POST /api/jobs/run (CRON_SECRET) retries failed jobs with exponential backoff; manual retry retained; needs an external scheduler |
+| OpenAI Realtime voice agent | Real — registered provider adapter, per-client instructions from approved knowledge, ephemeral session minting (key stays server-side), tool calls into real actions (contact lookup/save, notes, real slot proposals, approval-gated booking + message requests, escalation), simulated-call harness exercising the full pipeline (docs/21). No real telephony until a phone bridge ships |
 | Audit + redaction | All new actions audited; every logged payload passes redactAuditValue |
 
 ## Preview / not built (still honest)
 
 | Area | Status |
 | --- | --- |
-| Voice telephony | Foundation only — call sessions, transcripts, AI summaries, caller matching, disclosure modes, and the call.completed intake path are real code, but NO provider adapter exists: no calls happen until one ships with credentials + live mode (docs/20) |
+| Voice telephony (carrier calls) | Bridge missing — the AI agent side is real (OpenAI Realtime adapter, tools, simulated harness; docs/21), but no phone bridge connects carrier audio yet: no real calls until one ships (OpenAI SIP recommended) with credentials + live mode (docs/20, docs/21) |
 | Live call / live scheduling popups | Not built — need the voice adapter's live transcript; the assistant_events feed they will consume is real |
 | SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
 | Appointment reschedule/cancel | Not built — book-only today |

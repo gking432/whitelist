@@ -5,6 +5,13 @@ honest by construction. Reference behavior adapted from the Northstar CRM
 demo's call intelligence (summaries, caller matching, note-vs-transcript
 separation) into the multi-tenant platform.
 
+> Update: the first real adapter now exists — **OpenAI Realtime**
+> (docs/21): per-client instructions from approved knowledge, ephemeral
+> session minting, mid-call tool calling into real Northstar actions, and
+> a simulated-call harness that exercises this whole pipeline. What still
+> does not exist is a phone bridge (carrier audio ↔ realtime session), so
+> the "no real telephony" rule below still holds.
+
 ## What exists (real code, ready for a provider)
 
 - **Models**: `call_sessions` (direction, numbers, status, disclosure
@@ -25,19 +32,23 @@ separation) into the multi-tenant platform.
      sync), a timeline note on the matched contact, and a
      `call_completed` assistant event.
 - **Provider abstraction** (`lib/voice/provider.ts`): adapter interface
-  with a capability matrix (live audio/transcript, post-call recording,
-  outbound). The registry is empty on purpose; `getVoiceProvider()`
-  returns null until `VOICE_PROVIDER` + `VOICE_PROVIDER_API_KEY` are set
-  AND an adapter for that key ships.
+  with a capability matrix (AI answering, speech-to-speech, live
+  audio/transcript, tool calling, post-call summary/recording, outbound).
+  The registry holds `openai_realtime` (docs/21); `getVoiceProvider()`
+  returns null until `VOICE_PROVIDER` names a registered adapter AND that
+  adapter's credentials are configured (OpenAI Realtime reads
+  `OPENAI_API_KEY`; future adapters use `VOICE_PROVIDER_API_KEY`).
 - **Disclosure modes** per client (Knowledge tab): explicit (default),
   minimal, off. Stamped onto every call session.
 
 ## What a provider adapter must do
 
-Translate the provider's webhooks/streams into the three lifecycle calls.
-Nothing else — summaries, matching, workflows, approvals, CRM sync, and
-assistant events all already happen. Candidates: Twilio Voice + media
-streams, Retell, Vapi.
+Translate the provider's webhooks/streams into the three lifecycle calls
+(plus `executeVoiceTool` for mid-call actions). Nothing else — summaries,
+matching, workflows, approvals, CRM sync, and assistant events all
+already happen. The AI-agent side is done (OpenAI Realtime, docs/21);
+what remains is the phone bridge: OpenAI SIP connector (recommended),
+Twilio Voice + media streams, or Retell/Vapi — compared in docs/21.
 
 ## Hard rules
 
