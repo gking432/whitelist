@@ -221,7 +221,7 @@ values (
   'summit-home-services',
   'onboarding',
   'Home services',
-  'webhook_only',
+  'primary_crm',
   'sandbox',
   'https://summit.example.test',
   'Morgan Lee',
@@ -534,3 +534,66 @@ on conflict (id) do update
   set role = excluded.role,
       status = excluded.status,
       updated_at = now();
+
+-- ---------------------------------------------------------------------------
+-- Demo onboarding for "Summit Home Services" (docs/22). Makes the seeded
+-- client ready to demonstrate the moment you log in: approved knowledge the
+-- AI answers from, the lead-handling workflows enabled (in sandbox / dry run
+-- so nothing sends), and built-in CRM mode so leads land somewhere visible.
+-- Fire the "Send a test lead" button on Summit's setup page and watch the
+-- whole pipeline run. See docs/22-demo-walkthrough.md.
+
+insert into public.client_knowledge_profiles (
+  partner_id, client_id,
+  business_description, services_offered, service_areas, business_hours,
+  booking_hours_start, booking_hours_end, appointment_duration_minutes,
+  emergency_rules, pricing_disclaimer, booking_rules, faq,
+  escalation_rules, ai_disclosure, voice_disclosure_mode, updated_by
+)
+values (
+  '10000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  'Summit Home Services is a family-owned home services company handling plumbing, heating, and cooling for residential customers.',
+  'Plumbing repairs, water heater install and repair, drain cleaning, furnace and AC repair, seasonal HVAC tune-ups.',
+  'The greater Springfield metro area and surrounding suburbs within about 30 miles.',
+  'Monday to Friday 8am to 6pm; Saturday 9am to 2pm; closed Sunday. Emergency line after hours.',
+  9, 17, 60,
+  'Active water leaks, no heat in freezing weather, and gas smells are emergencies: collect the address and phone, tell the caller to shut off water or gas if safe, and escalate for an immediate callback.',
+  'We never quote an exact price without seeing the job. Give ranges only if they are in the approved knowledge; otherwise say a technician will confirm pricing on site.',
+  'Book 60-minute visits during business hours. Confirm the address, the problem, and a callback number before proposing times.',
+  '[{"q": "Do you charge for estimates?", "a": "Estimates for replacement work are free. Diagnostic visits for repairs have a service-call fee that applies toward the work if you proceed."}, {"q": "How soon can someone come out?", "a": "For emergencies we aim for same-day. For standard visits we usually have openings within a few business days."}]'::jsonb,
+  'Escalate to a human for anything involving injury, property damage, billing disputes, or a caller who is upset or explicitly asks for a person.',
+  'Hi, you have reached Summit Home Services. I am their AI assistant and can help you get booked in or take a message for the team.',
+  'explicit',
+  '00000000-0000-4000-8000-000000000002'
+)
+on conflict (client_id) do update
+  set business_description = excluded.business_description,
+      services_offered = excluded.services_offered,
+      service_areas = excluded.service_areas,
+      business_hours = excluded.business_hours,
+      emergency_rules = excluded.emergency_rules,
+      pricing_disclaimer = excluded.pricing_disclaimer,
+      booking_rules = excluded.booking_rules,
+      faq = excluded.faq,
+      escalation_rules = excluded.escalation_rules,
+      ai_disclosure = excluded.ai_disclosure,
+      updated_at = now();
+
+-- Enable the core lead-handling workflows for Summit, in sandbox (dry run).
+insert into public.client_workflow_instances (
+  partner_id, client_id, template_id, name, status, runtime_mode, created_by
+)
+select
+  '10000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  t.id,
+  t.name,
+  'active',
+  'sandbox',
+  '00000000-0000-4000-8000-000000000002'
+from public.workflow_templates t
+where t.template_key in (
+  'ai_intake_router', 'new_lead_intake', 'missed_call_rescue'
+)
+on conflict (client_id, template_id) do nothing;
