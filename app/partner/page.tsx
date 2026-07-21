@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import {
+  buildGettingStartedSteps,
+  PartnerGettingStarted,
+  shouldShowGettingStarted,
+} from "@/components/partner/partner-getting-started";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -183,6 +188,26 @@ export default async function PartnerPage() {
   const displayedClients = dashboard.clients.slice(0, 8);
   const displayedAttention = dashboard.attentionItems.slice(0, 6);
 
+  // On-ramp: the next concrete step for a partner still getting going. Aims
+  // at the client that's mid-onboarding (or the first one), and hides once
+  // there's a client, enabled workflows, and at least one run.
+  const onboardingTarget =
+    dashboard.clients.find((client) => client.status === "onboarding") ??
+    dashboard.clients[0] ??
+    null;
+  const showGettingStarted = shouldShowGettingStarted({
+    totalClients: dashboard.metrics.totalClients,
+    activeWorkflows: dashboard.metrics.activeWorkflows,
+    totalRuns7d: dashboard.metrics.totalRuns7d,
+  });
+  const gettingStartedSteps = buildGettingStartedSteps({
+    totalClients: dashboard.metrics.totalClients,
+    activeWorkflows: dashboard.metrics.activeWorkflows,
+    totalRuns7d: dashboard.metrics.totalRuns7d,
+    targetClientId: onboardingTarget?.id ?? null,
+    targetClientName: onboardingTarget?.name ?? null,
+  });
+
   return (
     <AppShell
       organizationName={dashboard.partner.name}
@@ -214,6 +239,10 @@ export default async function PartnerPage() {
             </Button>
           </div>
         </header>
+
+        {showGettingStarted ? (
+          <PartnerGettingStarted steps={gettingStartedSteps} />
+        ) : null}
 
         <section
           aria-label="Partner metrics"
