@@ -8,6 +8,7 @@ import {
   type PackageOption,
 } from "@/components/partner/package-picker";
 import { PilotProviderCard } from "@/components/partner/pilot-provider-card";
+import { TestLeadButton } from "@/components/partner/test-lead-button";
 import { Badge } from "@/components/ui/badge";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import {
@@ -599,17 +600,32 @@ export default async function ClientSetupPage({
           <section className="rounded-lg border bg-card p-6">
             <h3 className="font-semibold">Run a test lead before go-live</h3>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Send a test lead to the intake endpoint and watch it move
-              through{" "}
-              <Link href={`${base}/runs`} className="underline">
-                Runs / Logs
-              </Link>
-              ,{" "}
+              Fire a realistic sample lead through the real pipeline and watch
+              it move: AI analysis, a customer-facing draft, and the built-in
+              CRM entry. Nothing real is sent — every connection stays in dry
+              run until you switch it to live, so this is safe to run now with
+              nothing connected. Once you connect a provider and go live, the
+              same approve button actually sends.
+            </p>
+            {access.canManageWorkflows ? (
+              <div className="mt-4">
+                <TestLeadButton clientId={clientId} />
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Your role can view results but not fire test leads.
+              </p>
+            )}
+            <p className="mt-3 text-xs text-muted-foreground">
+              After it runs you&apos;ll land on the run detail. Also check{" "}
               <Link href={`${base}/approvals`} className="underline">
                 Approvals
-              </Link>
-              , and the connected providers. The step-by-step script — with
-              exact curl commands and what success looks like — is in{" "}
+              </Link>{" "}
+              for the waiting draft and{" "}
+              <Link href={`${base}/crm`} className="underline">
+                CRM
+              </Link>{" "}
+              for the new contact. Prefer curl? The manual script is in{" "}
               <code className="rounded bg-secondary px-1 py-0.5 text-xs">
                 docs/13-real-world-pilot-test-plan.md
               </code>

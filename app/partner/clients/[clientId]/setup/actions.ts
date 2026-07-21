@@ -21,7 +21,9 @@ import {
   requireClientWorkspaceAccess,
 } from "@/lib/permissions/access";
 import { PARTNER_OPERATOR_ROLES } from "@/lib/permissions/roles";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { sendTestLead } from "@/lib/testing/test-lead";
 
 const YES_NO_UNSURE: YesNoUnsure[] = ["yes", "no", "unsure"];
 
@@ -472,5 +474,91 @@ export async function enablePackageWorkflows(
     };
   } catch (error) {
     return deniedState(error);
+  }
+}
+
+// Fires a realistic sample lead through the real pipeline so a partner can
+// watch intake → AI → approval → CRM end to end with zero setup. Uses the
+// service-role client (like the inbound webhook) to write the event and run
+// the engine; access is still verified as a partner operator first.
+export type TestLeadActionResult = {
+  status: "success" | "error";
+  message: string;
+  runId?: string | null;
+};
+
+export async function runTestLead(
+  clientId: string,
+  scenarioIndex?: number,
+): Promise<TestLeadActionResult> {
+  try {
+    const context = await requireSetupContext(clientId);
+
+    if ("error" in context) {
+      return {
+        status: "error",
+        message: context.error ?? "Setup is unavailable right now.",
+      };
+    }
+
+    const { access, partnerId } = context;
+
+    const admin = createSupabaseAdminClient();
+
+    if (!admin) {
+      return {
+        status: "error",
+        message:
+          "Test leads need the server's service configuration (see docs/13).",
+      };
+    }
+
+    const result = await sendTestLead(admin, {
+      partnerId,
+      clientId,
+      scenarioIndex,
+    });
+
+    if (!result.ok) {
+      return { status: "error", message: result.error };
+    }
+
+    await recordAuditEvent({
+      actor: access,
+      action: "client.test_lead_sent",
+      targetType: "client_business",
+      targetId: clientId,
+      summary: `Sent a sample test lead (${result.scenarioName}) through the pipeline.`,
+      metadata: {
+        event_id: result.eventId,
+        run_id: result.runId,
+        runs_started: result.runsStarted,
+      },
+    });
+
+    revalidatePath(`/partner/clients/${clientId}/runs`);
+    revalidatePath(`/partner/clients/${clientId}/approvals`);
+    revalidatePath(`/partner/clients/${clientId}/crm`);
+
+    return {
+      status: "success",
+      message:
+        result.runsStarted > 0
+          ? `Sample lead "${result.scenarioName}" is moving through the pipeline. Opening the run…`
+          : `Sample lead "${result.scenarioName}" was received, but no active workflow matched it — enable this package's workflows first.`,
+      runId: result.runId,
+    };
+  } catch (error) {
+    if (isAccessError(error)) {
+      return {
+        status: "error",
+        message:
+          error.code === "ACCESS_DENIED"
+            ? "You do not have permission to manage setup for this client."
+            : "Setup is unavailable right now. Try again shortly.",
+      };
+    }
+
+    throw error;
   }
 }
