@@ -40,6 +40,13 @@ export async function retryActionJob(
       PARTNER_OPERATOR_ROLES,
     );
 
+    if (!access.canOperateCustomerActions) {
+      return {
+        status: "error",
+        message: "Only authorized client staff can retry customer actions.",
+      };
+    }
+
     const supabase = await createSupabaseServerClient();
     const admin = createSupabaseAdminClient();
 

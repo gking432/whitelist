@@ -51,6 +51,8 @@ export type ClientBusinessRecord = {
   partner_can_edit_client_data: boolean;
   lead_source_profile: Record<string, unknown> | null;
   package_id: string | null;
+  account_kind: "managed_client" | "partner_agency";
+  is_test_account: boolean;
   created_at: string;
   updated_at: string;
 };

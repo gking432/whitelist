@@ -10,6 +10,7 @@ import {
   runSimulatedCallerTurn,
   startSimulatedCall,
 } from "@/lib/voice/simulate";
+import { isOpenAIRealtimeConfigured } from "@/lib/voice/providers/openai-realtime";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +128,7 @@ export async function POST(request: NextRequest) {
           call_session_id: result.callSessionId,
           greeting: result.greeting,
           tools_used: result.toolsUsed,
+          runtime: isOpenAIRealtimeConfigured() ? "openai" : "scripted",
           simulated: true,
         })
       : json(502, { error: result.error });
@@ -150,6 +152,7 @@ export async function POST(request: NextRequest) {
           reply: result.reply,
           tools_used: result.toolsUsed,
           end_call: result.endCall,
+          runtime: isOpenAIRealtimeConfigured() ? "openai" : "scripted",
           simulated: true,
         })
       : json(502, { error: result.error });

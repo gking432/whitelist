@@ -15,6 +15,10 @@ import {
   type YesNoUnsure,
 } from "@/lib/lead-sources/catalog";
 import { readPackageFields } from "@/lib/packages/form";
+import {
+  deployPackageToClient,
+  type PackageDeploymentSummary,
+} from "@/lib/packages/deployment";
 import { requirementsForPackage } from "@/lib/packages/requirements";
 import {
   isAccessError,
@@ -197,10 +201,14 @@ async function requireSetupContext(clientId: string) {
   return { access, supabase, partnerId: access.partnerId } as const;
 }
 
+export type PackageAssignmentResult = FormState & {
+  deployment?: PackageDeploymentSummary;
+};
+
 export async function assignPackageToClient(
   clientId: string,
   packageId: string,
-): Promise<FormState> {
+): Promise<PackageAssignmentResult> {
   try {
     const context = await requireSetupContext(clientId);
 
@@ -240,24 +248,29 @@ export async function assignPackageToClient(
       return { status: "error", message: "The client was not found." };
     }
 
-    const { error } = await supabase
-      .from("client_businesses")
-      .update({ package_id: packageId })
-      .eq("id", clientId)
-      .eq("partner_id", partnerId);
-
-    if (error) {
-      return { status: "error", message: "The package could not be assigned." };
-    }
+    const deployment = await deployPackageToClient(supabase, {
+      partnerId,
+      clientId,
+      packageId,
+      userId: access.userId,
+    });
 
     await recordAuditEvent({
       actor: access,
-      action: "client.package_assigned",
+      action: "client.package_deployed",
       targetType: "client_business",
       targetId: clientId,
-      summary: `Assigned package "${pkg.name}" to "${client.name}".`,
+      summary: `Deployed package "${pkg.name}" to "${client.name}" in sandbox.`,
       beforeSnapshot: { package_id: client.package_id },
-      afterSnapshot: { package_id: packageId, package_name: pkg.name },
+      afterSnapshot: {
+        package_id: packageId,
+        package_name: pkg.name,
+        deployment_id: deployment.id,
+        deployment_status: deployment.status,
+        workflow_keys: deployment.provisionedWorkflowKeys,
+        missing_integration_ids: deployment.missingIntegrationIds,
+        bridge_connection_id: deployment.bridge?.connectionId ?? null,
+      },
     });
 
     revalidatePath(`/partner/clients/${clientId}/setup`);
@@ -265,10 +278,22 @@ export async function assignPackageToClient(
 
     return {
       status: "success",
-      message: `Package "${pkg.name}" assigned. The checklist now shows exactly what this client needs.`,
+      message:
+        deployment.status === "ready"
+          ? `Package "${pkg.name}" deployed and ready for sandbox testing.`
+          : `Package "${pkg.name}" deployed in sandbox. Connect ${deployment.missingIntegrationLabels.join(", ")} before go-live.`,
+      deployment,
     };
   } catch (error) {
-    return deniedState(error);
+    if (isAccessError(error)) {
+      return deniedState(error);
+    }
+
+    return {
+      status: "error",
+      message:
+        error instanceof Error ? error.message : "The package could not be deployed.",
+    };
   }
 }
 
@@ -278,7 +303,7 @@ export async function createCustomPackageForClient(
   clientId: string,
   _previousState: FormState,
   formData: FormData,
-): Promise<FormState> {
+): Promise<PackageAssignmentResult> {
   const { name, description, capabilities } = readPackageFields(formData);
 
   if (!name) {
@@ -318,37 +343,46 @@ export async function createCustomPackageForClient(
       };
     }
 
-    const { error: assignError } = await supabase
-      .from("client_businesses")
-      .update({ package_id: created.id })
-      .eq("id", clientId)
-      .eq("partner_id", partnerId);
-
-    if (assignError) {
-      return {
-        status: "error",
-        message:
-          "The package was created but could not be assigned. Pick it from the package list.",
-      };
-    }
+    const deployment = await deployPackageToClient(supabase, {
+      partnerId,
+      clientId,
+      packageId: created.id,
+      userId: access.userId,
+    });
 
     await recordAuditEvent({
       actor: access,
-      action: "package.custom_created",
+      action: "package.custom_created_and_deployed",
       targetType: "partner_package",
       targetId: created.id,
       summary: `Created and assigned custom package "${name}" for this client.`,
-      afterSnapshot: { name, capabilities: Object.keys(capabilities) },
+      afterSnapshot: {
+        name,
+        capabilities: Object.keys(capabilities),
+        deployment_id: deployment.id,
+        deployment_status: deployment.status,
+      },
     });
 
     revalidatePath(`/partner/clients/${clientId}/setup`);
 
     return {
       status: "success",
-      message: `Custom package "${name}" created and assigned.`,
+      message: `Custom package "${name}" created and deployed in sandbox.`,
+      deployment,
     };
   } catch (error) {
-    return deniedState(error);
+    if (isAccessError(error)) {
+      return deniedState(error);
+    }
+
+    return {
+      status: "error",
+      message:
+        error instanceof Error
+          ? error.message
+          : "The custom package could not be deployed.",
+    };
   }
 }
 

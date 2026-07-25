@@ -54,9 +54,51 @@ export async function testTwilioConnection(
       status?: string;
     };
 
+    const numbersResponse = await fetch(
+      `${TWILIO_BASE}/Accounts/${encodeURIComponent(credentials.accountSid)}` +
+        `/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(credentials.fromNumber)}&PageSize=1`,
+      {
+        headers: { Authorization: authHeader(credentials) },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+
+    if (!numbersResponse.ok) {
+      return {
+        ok: false,
+        detail:
+          "Twilio credentials worked, but Northstar could not verify the configured phone number.",
+      };
+    }
+
+    const numbers = (await numbersResponse.json()) as {
+      incoming_phone_numbers?: {
+        phone_number?: string;
+        friendly_name?: string;
+        capabilities?: { sms?: boolean; voice?: boolean };
+      }[];
+    };
+    const number = numbers.incoming_phone_numbers?.[0];
+
+    if (!number) {
+      return {
+        ok: false,
+        detail:
+          "The phone number was not found in this Twilio account. Enter it in +15551234567 format.",
+      };
+    }
+
+    if (!number.capabilities?.sms || !number.capabilities?.voice) {
+      return {
+        ok: false,
+        detail:
+          "This Twilio number must support both SMS and Voice for the full Northstar package.",
+      };
+    }
+
     return {
       ok: true,
-      detail: `Connected to Twilio account "${account.friendly_name ?? credentials.accountSid}" (${account.status ?? "active"}). Northstar can send SMS from ${credentials.fromNumber} after approval.`,
+      detail: `Connected to Twilio account "${account.friendly_name ?? credentials.accountSid}" (${account.status ?? "active"}). ${number.phone_number ?? credentials.fromNumber} is ready for approved SMS and AI phone answering.`,
     };
   } catch {
     return { ok: false, detail: "Could not reach Twilio." };

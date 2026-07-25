@@ -99,15 +99,19 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
   },
   twilio: {
     key: "twilio",
-    title: "Twilio SMS",
-    tagline: "Sends the text messages you approve — nothing goes out on its own.",
+    title: "Twilio Messaging + Voice",
+    tagline:
+      "Sends approved texts and connects the client's number to the Northstar phone assistant.",
     allows: [
       "Send an SMS to a lead after a human approves the exact message.",
+      "Answer inbound calls with the client's AI phone assistant.",
+      "Capture the transcript, contact details, scheduling request, CRM note, and follow-up work.",
       "Check that the account and phone number are valid.",
     ],
     neverDoes: [
       "Never sends anything without an approval.",
       "Never sends while the connection is in dry-run mode — it records what would have been sent instead.",
+      "Never confirms a booking before an authorized person approves it.",
     ],
     connectMethod: "credentials",
     fields: [
@@ -127,9 +131,9 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
       },
       {
         name: "fromNumber",
-        label: "Sending phone number",
+        label: "Twilio phone number",
         placeholder: "+15551234567",
-        help: "A Twilio number you own, in +1… format. Trial accounts can only text verified numbers.",
+        help: "A voice-and-SMS-capable Twilio number you own, in +1… format. Trial accounts can only contact verified numbers.",
         secret: false,
       },
     ],

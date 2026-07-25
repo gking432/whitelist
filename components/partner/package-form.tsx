@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 
+import { PackageDeploymentResult } from "@/components/partner/package-deployment-result";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,6 +15,7 @@ import {
   type CapabilityKey,
 } from "@/lib/packages/capabilities";
 import { initialFormState, type FormState } from "@/lib/forms/state";
+import type { PackageDeploymentSummary } from "@/lib/packages/deployment";
 import { cn } from "@/lib/utils";
 
 type PackageFormProps = {
@@ -50,6 +52,9 @@ export function PackageForm({
 }: PackageFormProps) {
   const [state, formAction, pending] = useActionState(action, initialFormState);
   const initialSet = new Set(initialCapabilities);
+  const deployment = (state as FormState & {
+    deployment?: PackageDeploymentSummary;
+  }).deployment;
 
   return (
     <form action={formAction} className="space-y-5">
@@ -139,6 +144,7 @@ export function PackageForm({
           </p>
         ) : null}
       </div>
+      {deployment ? <PackageDeploymentResult deployment={deployment} /> : null}
     </form>
   );
 }

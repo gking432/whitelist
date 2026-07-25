@@ -36,6 +36,9 @@ type PilotProviderCardProps = {
   // Shown once connected (Twilio): the URL to paste into the provider so
   // inbound messages flow back into Northstar.
   inboundWebhookUrl?: string;
+  // Twilio Voice URLs for the number's incoming-call and status callbacks.
+  voiceWebhookUrl?: string;
+  voiceStatusUrl?: string;
   canManage: boolean;
 };
 
@@ -54,6 +57,8 @@ export function PilotProviderCard({
   connection,
   oauthRedirectUri,
   inboundWebhookUrl,
+  voiceWebhookUrl,
+  voiceStatusUrl,
   canManage,
 }: PilotProviderCardProps) {
   const isGoogle = meta.connectMethod === "oauth";
@@ -159,6 +164,32 @@ export function PilotProviderCard({
           <code className="mt-2 block overflow-x-auto rounded bg-background px-3 py-2 font-mono text-xs">
             {inboundWebhookUrl}
           </code>
+        </div>
+      ) : null}
+
+      {connection && voiceWebhookUrl ? (
+        <div className="mt-4 rounded-md border bg-secondary/40 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            AI phone answering
+          </p>
+          <p className="mt-1 text-sm leading-5">
+            In Twilio, open this phone number and set &quot;A call comes
+            in&quot; to Webhook, HTTP POST:
+          </p>
+          <code className="mt-2 block overflow-x-auto rounded bg-background px-3 py-2 font-mono text-xs">
+            {voiceWebhookUrl}
+          </code>
+          {voiceStatusUrl ? (
+            <>
+              <p className="mt-3 text-sm leading-5">
+                Set the call status callback to this URL (HTTP POST) so
+                hangups always finish the transcript and CRM pipeline:
+              </p>
+              <code className="mt-2 block overflow-x-auto rounded bg-background px-3 py-2 font-mono text-xs">
+                {voiceStatusUrl}
+              </code>
+            </>
+          ) : null}
         </div>
       ) : null}
 

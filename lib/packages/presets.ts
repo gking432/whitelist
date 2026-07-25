@@ -15,8 +15,15 @@ export const PACKAGE_PRESETS: PackagePreset[] = [
   {
     name: "Basic Automation",
     description:
-      "Leads flow in, the CRM stays current, review requests go out, and the owner gets reports. No AI drafting or routing.",
-    capabilities: ["lead_intake", "crm_sync", "review_requests", "reports_portal"],
+      "Northstar CRM, lead intake, external CRM sync, automation packs, review requests, and reports. No AI drafting or routing.",
+    capabilities: [
+      "northstar_crm",
+      "lead_intake",
+      "crm_sync",
+      "automation_packs",
+      "review_requests",
+      "reports_portal",
+    ],
   },
   {
     name: "AI Assist",
@@ -24,12 +31,16 @@ export const PACKAGE_PRESETS: PackagePreset[] = [
       "Everything in Basic Automation plus AI intake routing, AI message drafting, and approval-gated SMS sending.",
     capabilities: [
       "lead_intake",
+      "northstar_crm",
       "crm_sync",
+      "automation_packs",
       "review_requests",
       "reports_portal",
       "ai_intake_routing",
       "message_drafting",
       "approval_gated_sending",
+      "quote_intelligence",
+      "feedback_intelligence",
     ],
   },
   {
@@ -38,12 +49,16 @@ export const PACKAGE_PRESETS: PackagePreset[] = [
       "The complete offer: everything in AI Assist plus website chat, appointment booking, and the AI voice features as they ship.",
     capabilities: [
       "lead_intake",
+      "northstar_crm",
       "crm_sync",
+      "automation_packs",
       "review_requests",
       "reports_portal",
       "ai_intake_routing",
       "message_drafting",
       "approval_gated_sending",
+      "quote_intelligence",
+      "feedback_intelligence",
       "website_ai_chat",
       "appointment_booking",
       "live_call_assistant",

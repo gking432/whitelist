@@ -154,6 +154,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                     Sign in as client
                   </Link>
                 </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/dev/auto-login?next=/control">
+                    Sign in as platform owner
+                  </Link>
+                </Button>
               </div>
             </div>
           ) : null}

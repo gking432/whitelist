@@ -82,36 +82,62 @@ Reply as the assistant for ${input.clientName}.`;
 
 const EMAIL_PATTERN = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
 const PHONE_PATTERN = /(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
+const NAME_PATTERN =
+  /\b(?:i['’]?m|i am|my name is|this is)\s+([a-z][a-z' -]{1,40})(?=[,.]|\s+(?:and|my|at)\b|$)/i;
+const ADDRESS_PATTERN =
+  /\b\d{1,6}\s+[a-z0-9][a-z0-9 .'-]{1,60}\s(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|way)\b/i;
+const APPOINTMENT_PATTERN =
+  /\b(today|tomorrow|this (?:morning|afternoon|evening)|(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?: morning| afternoon| evening)?|after \d{1,2}(?::\d{2})?\s?(?:am|pm)?)\b/i;
+const HANDOFF_PATTERN = /human|person|someone real|talk to a|call me/i;
 
 // Scripted fallback: one field at a time, honest about being unable to
 // answer open questions without the team.
 export function fallbackChatReply(
   fields: SessionFields,
   visitorMessage: string,
-  disclosure: string | null,
-  isFirstMessage: boolean,
+  _disclosure: string | null,
+  _isFirstMessage: boolean,
 ): ChatReply {
   const email = visitorMessage.match(EMAIL_PATTERN)?.[0] ?? null;
   const phone = visitorMessage.match(PHONE_PATTERN)?.[0] ?? null;
+  const trimmed = visitorMessage.trim();
+  const name = visitorMessage.match(NAME_PATTERN)?.[1]?.trim() ?? null;
+  const address = visitorMessage.match(ADDRESS_PATTERN)?.[0] ?? null;
+  const appointmentPreference =
+    visitorMessage.match(APPOINTMENT_PATTERN)?.[0] ?? null;
+  const handoffRequested = HANDOFF_PATTERN.test(visitorMessage);
+  const urgency = /gas leak|burst pipe|flooding|fire|sparks|carbon monoxide/i.test(
+    visitorMessage,
+  )
+    ? "emergency"
+    : /urgent|asap|today|leak|no heat|no cooling/i.test(visitorMessage)
+      ? "high"
+      : null;
+  const looksLikeGreeting = /^(?:hi|hello|hey|good (?:morning|afternoon|evening))[!. ]*$/i.test(
+    trimmed,
+  );
 
   const extracted: ChatReply["extracted"] = {
-    name: null,
+    name,
     phone,
     email,
-    address: null,
-    service_need: null,
-    urgency: null,
-    appointment_preference: null,
+    address,
+    service_need:
+      !fields.service_need &&
+      trimmed &&
+      !looksLikeGreeting &&
+      !(trimmed === email || trimmed === phone)
+        ? trimmed.slice(0, 300)
+        : null,
+    urgency,
+    appointment_preference: appointmentPreference,
   };
 
   // Assign free text to whichever field we asked for last.
-  const trimmed = visitorMessage.trim();
-
-  if (!fields.service_need && !isFirstMessage && trimmed && !email && !phone) {
-    extracted.service_need = trimmed.slice(0, 300);
-  } else if (
+  if (
     fields.service_need &&
     !fields.visitor_name &&
+    !extracted.name &&
     trimmed &&
     !email &&
     !phone &&
@@ -134,6 +160,7 @@ export function fallbackChatReply(
     name: fields.visitor_name ?? extracted.name,
     phone: fields.visitor_phone ?? extracted.phone,
     email: fields.visitor_email ?? extracted.email,
+    address: fields.visitor_address ?? extracted.address,
     appointment_preference:
       fields.appointment_preference ?? extracted.appointment_preference,
   };
@@ -141,8 +168,9 @@ export function fallbackChatReply(
   let reply: string;
   let complete = false;
 
-  if (isFirstMessage) {
-    reply = `${disclosure ?? "Hi! I'm the AI assistant for this business."} What can we help you with today?`;
+  if (handoffRequested && (merged.phone || merged.email)) {
+    reply = `Thanks${merged.name ? `, ${merged.name}` : ""} — I've sent your request to the team. A human will follow up using the contact information you provided.`;
+    complete = true;
   } else if (!merged.service_need) {
     reply = "Got it — can you tell me a bit about what you need done?";
   } else if (!merged.name) {
@@ -161,7 +189,7 @@ export function fallbackChatReply(
     reply,
     extracted,
     conversation_complete: complete,
-    handoff_requested: /human|person|someone real|talk to a/i.test(visitorMessage),
+    handoff_requested: handoffRequested,
   };
 }
 

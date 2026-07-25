@@ -86,6 +86,7 @@ const CATEGORY_TO_PILOT_PROVIDERS: Partial<
 > = {
   crm: ["hubspot", "gohighlevel"],
   sms: ["twilio"],
+  phone: ["twilio"],
   email: ["resend"],
   calendar: ["google_calendar"],
 };
@@ -107,6 +108,42 @@ type ConnectionRow = {
     category: string;
     supports_inbound: boolean;
   } | null;
+};
+
+type PackageDeploymentRow = {
+  id: string;
+  package_id: string | null;
+  package_name: string;
+  status: "provisioning" | "needs_setup" | "ready" | "failed";
+  provisioned_workflow_keys: string[];
+  required_integration_ids: string[];
+  missing_integration_ids: string[];
+  bridge_connection_id: string | null;
+  error_message: string | null;
+  deployed_at: string | null;
+  created_at: string;
+};
+
+const deploymentStatusMeta: Record<
+  PackageDeploymentRow["status"],
+  { label: string; className: string }
+> = {
+  provisioning: {
+    label: "Provisioning",
+    className: "border-sky-200 bg-sky-50 text-sky-800",
+  },
+  needs_setup: {
+    label: "Connections needed",
+    className: "border-amber-200 bg-amber-50 text-amber-900",
+  },
+  ready: {
+    label: "Sandbox ready",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  },
+  failed: {
+    label: "Deployment failed",
+    className: "border-destructive/30 bg-destructive/5 text-destructive",
+  },
 };
 
 function StepBadge({ done, label }: { done: boolean; label?: string }) {
@@ -145,8 +182,12 @@ export default async function ClientSetupPage({
     return null;
   }
 
-  const [{ data: packagesData }, { data: connectionsData }, { data: instancesData }] =
-    await Promise.all([
+  const [
+    { data: packagesData },
+    { data: connectionsData },
+    { data: instancesData },
+    { data: deploymentData },
+  ] = await Promise.all([
       supabase
         .from("partner_packages")
         .select("*")
@@ -165,6 +206,15 @@ export default async function ClientSetupPage({
         .from("client_workflow_instances")
         .select("id, status, template:workflow_templates(template_key, name)")
         .eq("client_id", clientId),
+      supabase
+        .from("client_package_deployments")
+        .select(
+          "id, package_id, package_name, status, provisioned_workflow_keys, required_integration_ids, missing_integration_ids, bridge_connection_id, error_message, deployed_at, created_at",
+        )
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
   const packages = (packagesData ?? []) as PartnerPackageRecord[];
@@ -174,6 +224,8 @@ export default async function ClientSetupPage({
     status: string;
     template: { template_key: string; name: string } | null;
   }[];
+  const latestDeployment =
+    (deploymentData as PackageDeploymentRow | null) ?? null;
 
   const assignedPackage =
     packages.find((pkg) => pkg.id === client.package_id) ?? null;
@@ -258,16 +310,25 @@ export default async function ClientSetupPage({
 
   const googleOutcome = google ? googleOutcomeMessages[google] : undefined;
   const base = `/partner/clients/${clientId}`;
+  const deploymentStatus = latestDeployment
+    ? deploymentStatusMeta[latestDeployment.status]
+    : null;
+  const missingDeploymentLabels =
+    latestDeployment?.missing_integration_ids.map(
+      (id) =>
+        requirements?.integrations.find((requirement) => requirement.id === id)
+          ?.label ?? id.replaceAll("_", " "),
+    ) ?? [];
 
   return (
     <div className="space-y-5">
       <section className="rounded-lg border bg-card p-6">
         <h2 className="font-semibold">Setup for {client.name}</h2>
         <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Pick the package you sold, and Northstar turns it into a concrete
-          checklist: what to connect, which workflows to enable, what (if
-          anything) the client&apos;s staff need installed, and what to test
-          before go-live.
+          Pick the package you sold, and Northstar provisions its workflows and
+          automation bridge in sandbox. This checklist shows what to connect,
+          what the client&apos;s staff need installed, and what to test before
+          go-live.
         </p>
       </section>
 
@@ -292,43 +353,88 @@ export default async function ClientSetupPage({
             label={assignedPackage ? assignedPackage.name : "Choose a package"}
           />
         </div>
-        {assignedPackage ? (
-          <div className="mt-3">
-            <div className="flex flex-wrap gap-1.5">
-              {enabledCapabilityKeys(assignedPackage.capabilities).map(
-                (key) => (
-                  <Badge key={key} variant="outline">
-                    {requirements?.capabilities.find(
-                      (capability) => capability.key === key,
-                    )?.label ?? key}
-                  </Badge>
-                ),
-              )}
-            </div>
-            <details className="mt-4">
-              <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-                Change package or create a custom one
-              </summary>
-              <div className="mt-3">
-                <PackagePicker
-                  clientId={clientId}
-                  options={options}
-                  currentPackageId={client.package_id}
-                  canManage={access.canManageIntegrations}
-                />
+        <div className="mt-3">
+          {assignedPackage ? (
+            <>
+              <div className="flex flex-wrap gap-1.5">
+                {enabledCapabilityKeys(assignedPackage.capabilities).map(
+                  (key) => (
+                    <Badge key={key} variant="outline">
+                      {requirements?.capabilities.find(
+                        (capability) => capability.key === key,
+                      )?.label ?? key}
+                    </Badge>
+                  ),
+                )}
               </div>
-            </details>
-          </div>
-        ) : (
-          <div className="mt-4">
+              {latestDeployment && deploymentStatus ? (
+                <div className="mt-4 space-y-2 border-l-2 border-primary/40 pl-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold">
+                      Latest deployment: {latestDeployment.package_name}
+                    </p>
+                    <Badge
+                      variant="outline"
+                      className={deploymentStatus.className}
+                    >
+                      {deploymentStatus.label}
+                    </Badge>
+                  </div>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {latestDeployment.provisioned_workflow_keys.length} workflow
+                    {latestDeployment.provisioned_workflow_keys.length === 1
+                      ? ""
+                      : "s"}{" "}
+                    provisioned
+                    {latestDeployment.bridge_connection_id
+                      ? "; automation intake bridge ready"
+                      : ""}
+                    . Last run{" "}
+                    {new Date(
+                      latestDeployment.deployed_at ??
+                        latestDeployment.created_at,
+                    ).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                    .
+                  </p>
+                  {missingDeploymentLabels.length > 0 ? (
+                    <p className="text-xs leading-5 text-amber-900">
+                      Connect before go-live:{" "}
+                      {missingDeploymentLabels.join(", ")}.{" "}
+                      <Link href={`${base}/integrations`} className="underline">
+                        Open integrations
+                      </Link>
+                      .
+                    </p>
+                  ) : null}
+                  {latestDeployment.error_message ? (
+                    <p className="text-xs leading-5 text-destructive">
+                      {latestDeployment.error_message}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  This package predates deployment receipts. Redeploy it below
+                  to provision the complete sandbox package.
+                </p>
+              )}
+            </>
+          ) : null}
+          <div className={assignedPackage ? "mt-4" : "mt-1"}>
             <PackagePicker
               clientId={clientId}
               options={options}
               currentPackageId={client.package_id}
               canManage={access.canManageIntegrations}
+              collapsedByDefault={Boolean(assignedPackage)}
             />
           </div>
-        )}
+        </div>
       </section>
 
       {assignedPackage && requirements ? (
@@ -407,6 +513,13 @@ export default async function ClientSetupPage({
             </div>
 
             {integrationRequirements.map((requirement) => {
+              if (
+                requirement.id === "phone" &&
+                integrationRequirements.some((item) => item.id === "sms")
+              ) {
+                return null;
+              }
+
               const pilotKeys = requirement.category
                 ? (CATEGORY_TO_PILOT_PROVIDERS[requirement.category] ?? [])
                 : [];
@@ -459,6 +572,16 @@ export default async function ClientSetupPage({
                               ? `${getAppUrl()}/api/integrations/inbound/twilio/${connection.id}`
                               : undefined
                           }
+                          voiceWebhookUrl={
+                            pilotKey === "twilio" && connection
+                              ? `${getAppUrl()}/api/integrations/inbound/twilio-voice/${connection.id}`
+                              : undefined
+                          }
+                          voiceStatusUrl={
+                            pilotKey === "twilio" && connection
+                              ? `${getAppUrl()}/api/integrations/inbound/twilio-voice/${connection.id}/status`
+                              : undefined
+                          }
                           canManage={access.canManageIntegrations}
                         />
                       );
@@ -493,7 +616,7 @@ export default async function ClientSetupPage({
           <section className="rounded-lg border bg-card p-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-semibold">
-                {leadSourceRequired ? "4" : "3"}. Enable the included workflows
+                {leadSourceRequired ? "4" : "3"}. Included workflows
               </h3>
               <StepBadge
                 done={allWorkflowsEnabled || requiredTemplates.length === 0}
@@ -545,8 +668,8 @@ export default async function ClientSetupPage({
                   </div>
                 ) : null}
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Workflows start in their safe default mode with approvals
-                  on. Fine-tune each one under{" "}
+                  Package deployment activates these in sandbox with approval
+                  gates on. Fine-tune each one under{" "}
                   <Link href={`${base}/workflows`} className="underline">
                     Workflows
                   </Link>
@@ -605,7 +728,7 @@ export default async function ClientSetupPage({
               CRM entry. Nothing real is sent — every connection stays in dry
               run until you switch it to live, so this is safe to run now with
               nothing connected. Once you connect a provider and go live, the
-              same approve button actually sends.
+              authorized client staff make any required customer-facing decisions.
             </p>
             {access.canManageWorkflows ? (
               <div className="mt-4">
@@ -621,7 +744,7 @@ export default async function ClientSetupPage({
               <Link href={`${base}/approvals`} className="underline">
                 Approvals
               </Link>{" "}
-              for the waiting draft and{" "}
+              for the client-owned decision status and{" "}
               <Link href={`${base}/crm`} className="underline">
                 CRM
               </Link>{" "}

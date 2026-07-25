@@ -1,7 +1,14 @@
 import Link from "next/link";
-import { LayoutDashboard, Package, UsersRound } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  FlaskConical,
+  LayoutDashboard,
+  Package,
+  UsersRound,
+} from "lucide-react";
 
 import { NorthstarMark } from "@/components/brand/northstar-mark";
+import { ImpersonationBanner } from "@/components/impersonation/impersonation-banner";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -10,6 +17,12 @@ const navigation = [
     label: "Dashboard",
     href: "/partner",
     icon: LayoutDashboard,
+  },
+  {
+    key: "agency",
+    label: "My Agency",
+    href: "/partner/agency",
+    icon: BriefcaseBusiness,
   },
   {
     key: "clients",
@@ -22,6 +35,12 @@ const navigation = [
     label: "Packages",
     href: "/partner/packages",
     icon: Package,
+  },
+  {
+    key: "lab",
+    label: "Lab",
+    href: "/partner/lab",
+    icon: FlaskConical,
   },
 ] as const;
 
@@ -45,11 +64,18 @@ export function AppShell({
   activeNav = "dashboard",
 }: AppShellProps) {
   const monogram = userEmail.slice(0, 1).toUpperCase();
+  const labEnabled =
+    process.env.NODE_ENV !== "production" ||
+    process.env.ENABLE_SCENARIO_LAB === "true";
+  const visibleNavigation = labEnabled
+    ? navigation
+    : navigation.filter((item) => item.key !== "lab");
 
   return (
     <div className="min-h-screen bg-background">
+      <ImpersonationBanner />
       <div className="flex min-h-screen">
-        <div className="w-56 shrink-0 border-r bg-card">
+        <div className="hidden w-56 shrink-0 border-r bg-card md:block">
           <div className="sticky top-0 flex h-screen flex-col">
             <div className="flex h-14 shrink-0 items-center border-b px-4">
               <Link href="/partner" className="block">
@@ -64,7 +90,7 @@ export function AppShell({
             </div>
 
             <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-1.5">
-              {navigation.map((item) => {
+              {visibleNavigation.map((item) => {
                 const Icon = item.icon;
                 const active = item.key === activeNav;
 
@@ -94,8 +120,8 @@ export function AppShell({
             </nav>
 
             <p className="px-4 pb-4 text-[11px] leading-4 text-muted-foreground/80">
-              Integrations, workflows, runs, approvals, and audit live inside
-              each client workspace.
+              Run your agency here. Managed-client workspaces are for setup,
+              feature control, and troubleshooting.
             </p>
 
             <div className="shrink-0 border-t px-3 py-3">
@@ -114,11 +140,52 @@ export function AppShell({
           </div>
         </div>
 
-        <main className="min-w-0 flex-1">
-          <div className="ns-fade-up mx-auto w-full max-w-6xl px-8 py-6">
-            {children}
-          </div>
-        </main>
+        <div className="min-w-0 flex-1">
+          <header className="sticky top-0 z-30 border-b bg-card/95 backdrop-blur md:hidden">
+            <div className="flex h-14 items-center justify-between px-4">
+              <Link href="/partner">
+                <NorthstarMark surface="light" />
+              </Link>
+              <span className="max-w-40 truncate text-xs text-muted-foreground">
+                {organizationName}
+              </span>
+            </div>
+            <nav
+              className="grid border-t"
+              style={{
+                gridTemplateColumns: `repeat(${visibleNavigation.length}, minmax(0, 1fr))`,
+              }}
+              aria-label="Partner navigation"
+            >
+              {visibleNavigation.map((item) => {
+                const Icon = item.icon;
+                const active = item.key === activeNav;
+
+                return (
+                  <Link
+                    key={item.key}
+                    href={item.href}
+                    className={cn(
+                      "flex min-w-0 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-medium",
+                      active
+                        ? "bg-primary/8 text-primary"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    <Icon className="size-4" aria-hidden="true" />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          </header>
+
+          <main>
+            <div className="ns-fade-up mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 md:px-8 md:py-6">
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );

@@ -7,15 +7,17 @@ import type { PortalBranding } from "@/lib/clients/portal";
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { label: "Overview", href: "/client" },
+  { label: "Action Center", href: "/client" },
+  { label: "CRM", href: "/client/crm" },
   { label: "Assistant", href: "/client/assistant" },
   { label: "Approvals", href: "/client/approvals" },
+  { label: "Test Center", href: "/client/test-center" },
   { label: "Activity", href: "/client/activity" },
-  { label: "Integrations", href: "/client/integrations" },
 ];
 
 type PortalShellProps = {
   children: React.ReactNode;
+  banner?: React.ReactNode;
   clientName: string;
   branding: PortalBranding;
   userEmail: string;
@@ -25,6 +27,7 @@ type PortalShellProps = {
 // the chrome. No platform branding appears here.
 export function PortalShell({
   children,
+  banner,
   clientName,
   branding,
   userEmail,
@@ -33,6 +36,7 @@ export function PortalShell({
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      {banner}
       <header className="border-b bg-card">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex min-w-0 items-center gap-3">

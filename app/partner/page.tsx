@@ -139,9 +139,9 @@ export default async function PartnerPage() {
       icon: AlertTriangle,
     },
     {
-      label: "Open approvals",
+      label: "Client decisions pending",
       value: dashboard.metrics.openApprovals,
-      detail: "Waiting for human review",
+      detail: "Read-only visibility for support",
       icon: BellCheck,
     },
     {
@@ -175,12 +175,12 @@ export default async function PartnerPage() {
       icon: PlugZap,
     },
     {
-      label: "Approvals",
+      label: "Client decisions",
       value: `${dashboard.metrics.openApprovals} open`,
       detail:
         dashboard.metrics.openApprovals > 0
-          ? "Resolve approvals from each client's Approvals tab."
-          : "No approval items are waiting.",
+          ? "Clients own these decisions; inspect their status when troubleshooting."
+          : "No client decisions are waiting.",
       icon: BellCheck,
     },
   ];
@@ -207,6 +207,8 @@ export default async function PartnerPage() {
     targetClientId: onboardingTarget?.id ?? null,
     targetClientName: onboardingTarget?.name ?? null,
   });
+  const canAddClient =
+    !access.isImpersonating || access.impersonationMode === "sandbox_full";
 
   return (
     <AppShell
@@ -231,12 +233,14 @@ export default async function PartnerPage() {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="outline">{formatEnum(dashboard.partner.status)}</Badge>
             <Badge variant="outline">{access.role.replaceAll("_", " ")}</Badge>
-            <Button asChild size="sm" variant="gold">
-              <Link href="/partner/clients/new">
-                <Plus aria-hidden="true" />
-                Add client
-              </Link>
-            </Button>
+            {canAddClient ? (
+              <Button asChild size="sm" variant="gold">
+                <Link href="/partner/clients/new">
+                  <Plus aria-hidden="true" />
+                  Add client
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </header>
 
@@ -246,7 +250,7 @@ export default async function PartnerPage() {
 
         <section
           aria-label="Partner metrics"
-          className="grid grid-cols-4 gap-3"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
         >
           {metrics.map((metric) => {
             const Icon = metric.icon;
@@ -272,7 +276,7 @@ export default async function PartnerPage() {
           })}
         </section>
 
-        <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)] gap-5">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
           <section className="overflow-hidden rounded-lg border bg-card">
             <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
               <div>
@@ -299,19 +303,21 @@ export default async function PartnerPage() {
                   Add the first client business to begin tracking operational
                   health and attention.
                 </p>
-                <Button asChild className="mt-5">
-                  <Link href="/partner/clients/new">
-                    <Plus aria-hidden="true" />
-                    Add client
-                  </Link>
-                </Button>
+                {canAddClient ? (
+                  <Button asChild className="mt-5">
+                    <Link href="/partner/clients/new">
+                      <Plus aria-hidden="true" />
+                      Add client
+                    </Link>
+                  </Button>
+                ) : null}
               </div>
             ) : (
               <div className="divide-y">
                 {displayedClients.map((client) => (
                   <div
                     key={client.id}
-                    className="grid grid-cols-[minmax(0,1.2fr)_0.85fr_0.7fr_0.6fr] gap-4 px-5 py-4"
+                    className="grid gap-4 px-5 py-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_0.85fr_0.7fr_0.6fr]"
                   >
                     <div className="min-w-0">
                       <Link
@@ -420,10 +426,10 @@ export default async function PartnerPage() {
           <div className="border-b px-5 py-4">
             <h2 className="font-semibold">Operational signals</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Current approval, workflow, and integration state.
+              Read-only client decisions, workflow activity, and integration health.
             </p>
           </div>
-          <div className="grid grid-cols-3">
+          <div className="grid grid-cols-1 lg:grid-cols-3">
             {operationalSummaries.map((summary, index) => {
               const Icon = summary.icon;
 

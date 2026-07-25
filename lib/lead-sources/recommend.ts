@@ -8,7 +8,7 @@ import {
   type LeadSourceKey,
   type SetupPathKey,
   type SetupPathStatus,
-} from "@/lib/lead-sources/catalog";
+} from "./catalog.ts";
 
 // Turns the partner's plain-language answers into a ranked setup plan per
 // lead source. Pure function: UI previews it live and the server stores the
@@ -43,6 +43,18 @@ export type SetupPlan = {
 const pathActions: Partial<
   Record<SetupPathKey, { label: string; hrefSuffix: string }>
 > = {
+  native_connection: {
+    label: "Add provider connection",
+    hrefSuffix: "/integrations/new",
+  },
+  hosted_page: {
+    label: "Set up website chat",
+    hrefSuffix: "/integrations/new",
+  },
+  website_snippet: {
+    label: "Set up website chat",
+    hrefSuffix: "/integrations/new",
+  },
   automation_bridge: {
     label: "Create webhook intake connection",
     hrefSuffix: "/integrations/new",
@@ -66,6 +78,21 @@ function pathsForSource(
 
   return ordered.map((path) => {
     const info = setupPathInfo[path];
+    const isLiveWebsiteChatPath =
+      source === "website_chat" &&
+      (path === "hosted_page" || path === "website_snippet");
+    const isLiveSmsPath = source === "sms" && path === "native_connection";
+    const status =
+      isLiveWebsiteChatPath || isLiveSmsPath
+        ? "available_now"
+        : info.status;
+    const howItWorksToday = isLiveWebsiteChatPath
+      ? path === "hosted_page"
+        ? "Create a Northstar Website Chat connection, enable its widget key, and share the generated hosted chat URL. Completed conversations enter the normal intake workflows."
+        : "Create a Northstar Website Chat connection, enable its widget key, and paste the generated iframe snippet into the client's site."
+      : isLiveSmsPath
+        ? "Add a Twilio SMS connection and point the Twilio inbound-message webhook at Northstar. Replies remain approval-gated and respect dry-run/live mode."
+        : info.howItWorksToday;
 
     const blockedReason =
       info.requiresWebsiteAccess && answers.canEditWebsite === "no"
@@ -78,7 +105,7 @@ function pathsForSource(
             : "Confirm the website platform first."
           : null;
 
-    const eligible = info.status === "available_now" && blockedReason === null;
+    const eligible = status === "available_now" && blockedReason === null;
     const recommended = eligible && !recommendedAssigned;
 
     if (recommended) {
@@ -89,8 +116,8 @@ function pathsForSource(
       path,
       label: info.label,
       plainDescription: info.plainDescription,
-      howItWorksToday: info.howItWorksToday,
-      status: info.status,
+      howItWorksToday,
+      status,
       recommended,
       blockedReason,
       action: eligible ? (pathActions[path] ?? null) : null,
@@ -120,17 +147,17 @@ export function recommendSetupPlan(answers: IntakeAnswers): SetupPlan {
     );
   } else if (answers.websitePlatform === "none") {
     stackNotes.push(
-      "No website: hosted Northstar pages and tracking numbers will carry this client; manual entry and bridges work today.",
+      "No website: the hosted Northstar chat page works today; webhooks, manual intake, and automation bridges cover other lead sources.",
     );
   }
 
   if (answers.hasCrm === "yes") {
     stackNotes.push(
-      "Client has a CRM — keep it as the system of record. Most CRMs can send new leads through a bridge or webhook today; native sync adapters are on the roadmap.",
+      "Client has a CRM — keep it as the system of record. HubSpot and GoHighLevel connect directly today; use a bridge or webhook for other CRMs.",
     );
   } else if (answers.hasCrm === "no") {
     stackNotes.push(
-      "No CRM yet — Northstar's built-in CRM mode is planned. Until then, runs, approvals, and reports in this workspace are the operational record.",
+      "No CRM yet — use Northstar's built-in CRM now, then add HubSpot or GoHighLevel later if the business needs an external system of record.",
     );
   }
 
@@ -148,7 +175,7 @@ export function recommendSetupPlan(answers: IntakeAnswers): SetupPlan {
 
   if (answers.hasCalendar === "yes") {
     stackNotes.push(
-      "Calendar in use — AI scheduling will read real availability once calendar connections ship.",
+      "Calendar in use — connect Google Calendar to read real availability and create client-approved appointments.",
     );
   }
 

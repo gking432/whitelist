@@ -36,5 +36,10 @@ export type AccessContext = {
   canManageIntegrations: boolean;
   canManageWorkflows: boolean;
   canResolveApprovals: boolean;
+  canOperateCustomerActions: boolean;
+  canEditCrmData: boolean;
   canViewSensitiveLogs: boolean;
+  isImpersonating: boolean;
+  impersonationMode?: "read_only" | "sandbox_full";
+  impersonationSessionId?: string;
 };

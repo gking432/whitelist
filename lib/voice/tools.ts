@@ -493,6 +493,20 @@ async function proposeSlots(
   context: VoiceToolContext,
   args: Record<string, unknown>,
 ): Promise<VoiceToolOutcome> {
+  const { data: client } = await admin
+    .from("client_businesses")
+    .select("timezone")
+    .eq("id", context.clientId)
+    .maybeSingle();
+  const timezone = client?.timezone ?? "America/New_York";
+  const knowledge = await getKnowledgeProfile(admin, context.clientId);
+  const constraints = parseSchedulingConstraints(
+    asTrimmedString(args.preference_text) ?? "",
+  );
+  const constraintsDescription = describeConstraints(constraints);
+  const now = new Date();
+  const weekOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
   const { data: connection } = await admin
     .from("integration_connections")
     .select(
@@ -505,54 +519,72 @@ async function proposeSlots(
     .limit(1)
     .maybeSingle();
 
-  if (!connection) {
-    return {
-      result: {
-        status: "no_calendar",
-        say: "You cannot see the calendar right now. Offer to have the team call back to set a time, and collect their preference.",
-      },
-    };
-  }
-
   try {
-    const credentials =
-      await readProviderCredentials<GoogleCalendarCredentials>(
-        admin,
-        connection.id,
+    let busy: { start: string; end: string }[];
+    let source: "google_calendar" | "northstar_internal";
+    let businessStartHour = knowledge?.booking_hours_start ?? 9;
+    let businessEndHour = knowledge?.booking_hours_end ?? 17;
+    let durationMinutes = knowledge?.appointment_duration_minutes ?? 60;
+
+    if (connection) {
+      const credentials =
+        await readProviderCredentials<GoogleCalendarCredentials>(
+          admin,
+          connection.id,
+        );
+
+      if (!credentials?.refreshToken) {
+        throw new Error("Calendar authorization is incomplete.");
+      }
+
+      busy = await getBusyIntervals(
+        credentials,
+        now.toISOString(),
+        weekOut.toISOString(),
       );
+      source = "google_calendar";
+    } else {
+      const [{ data: appointments }, { data: windows }] = await Promise.all([
+        admin
+          .from("crm_appointments")
+          .select("start_at, end_at")
+          .eq("client_id", context.clientId)
+          .in("status", ["proposed", "booked"])
+          .gte("end_at", now.toISOString())
+          .lte("start_at", weekOut.toISOString()),
+        admin
+          .from("crm_availability_windows")
+          .select("start_time, end_time, appointment_minutes")
+          .eq("client_id", context.clientId)
+          .eq("active", true)
+          .order("start_time", { ascending: true }),
+      ]);
 
-    if (!credentials?.refreshToken) {
-      throw new Error("Calendar authorization is incomplete.");
+      busy = (appointments ?? []).map((appointment) => ({
+        start: appointment.start_at,
+        end: appointment.end_at,
+      }));
+      source = "northstar_internal";
+
+      if (windows && windows.length > 0) {
+        const startHours = windows.map((window) =>
+          Number(String(window.start_time).slice(0, 2)),
+        );
+        const endHours = windows.map((window) =>
+          Number(String(window.end_time).slice(0, 2)),
+        );
+        businessStartHour = Math.min(...startHours);
+        businessEndHour = Math.max(...endHours);
+        durationMinutes = windows[0].appointment_minutes ?? durationMinutes;
+      }
     }
-
-    const { data: client } = await admin
-      .from("client_businesses")
-      .select("timezone")
-      .eq("id", context.clientId)
-      .maybeSingle();
-
-    const timezone = client?.timezone ?? "America/New_York";
-    const now = new Date();
-    const weekOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    const knowledge = await getKnowledgeProfile(admin, context.clientId);
-    const constraints = parseSchedulingConstraints(
-      asTrimmedString(args.preference_text) ?? "",
-    );
-    const constraintsDescription = describeConstraints(constraints);
-
-    const busy = await getBusyIntervals(
-      credentials,
-      now.toISOString(),
-      weekOut.toISOString(),
-    );
 
     let slots = computeOpenSlots(busy, {
       timezone,
       maxSlots: 3,
-      businessStartHour: knowledge?.booking_hours_start ?? 9,
-      businessEndHour: knowledge?.booking_hours_end ?? 17,
-      durationMinutes: knowledge?.appointment_duration_minutes ?? 60,
+      businessStartHour,
+      businessEndHour,
+      durationMinutes,
       constraints,
     });
 
@@ -562,9 +594,9 @@ async function proposeSlots(
       slots = computeOpenSlots(busy, {
         timezone,
         maxSlots: 3,
-        businessStartHour: knowledge?.booking_hours_start ?? 9,
-        businessEndHour: knowledge?.booking_hours_end ?? 17,
-        durationMinutes: knowledge?.appointment_duration_minutes ?? 60,
+        businessStartHour,
+        businessEndHour,
+        durationMinutes,
       });
       constraintsRelaxed = slots.length > 0;
     }
@@ -590,7 +622,8 @@ async function proposeSlots(
     await mergeExtracted(admin, context.callSessionId, {
       proposed_slots: labeled,
       proposed_slots_timezone: timezone,
-      proposed_slots_connection_id: connection.id,
+      proposed_slots_connection_id: connection?.id ?? null,
+      proposed_slots_provider: source,
       proposed_slots_constraints: constraintsDescription || null,
       proposed_slots_constraints_relaxed: constraintsRelaxed,
     });
@@ -598,6 +631,7 @@ async function proposeSlots(
     return {
       result: {
         status: "ok",
+        source,
         timezone,
         slots: labeled,
         ...(constraintsRelaxed
@@ -688,7 +722,12 @@ async function requestBooking(
       type: "appointment_booking",
       status: "pending",
       title: `Book appointment: ${contactName} — ${chosen.label}`,
-      summary: `The AI phone assistant took this request on a call. Approving books ${chosen.label} (${timezone}) on the connected Google Calendar — live mode only; otherwise a dry run is recorded. Slots came from real calendar availability${
+      summary: `The AI phone assistant took this request on a call. Approving books ${chosen.label} (${timezone}) in ${
+        asTrimmedString(session.extracted.proposed_slots_provider) ===
+        "northstar_internal"
+          ? "Northstar's internal calendar"
+          : "the connected Google Calendar"
+      }. Slots came from current availability${
         asTrimmedString(session.extracted.proposed_slots_constraints)
           ? session.extracted.proposed_slots_constraints_relaxed === true
             ? `. NOTE: the caller asked for ${session.extracted.proposed_slots_constraints}, but nothing was open there — confirm with them`
@@ -698,7 +737,9 @@ async function requestBooking(
       risk_level: "high",
       proposed_payload: {
         kind: "appointment_booking",
-        provider: "google_calendar",
+        provider:
+          asTrimmedString(session.extracted.proposed_slots_provider) ??
+          "google_calendar",
         timezone,
         duration_minutes: knowledge?.appointment_duration_minutes ?? 60,
         constraints_understood:

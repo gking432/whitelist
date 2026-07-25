@@ -6,11 +6,15 @@
 // capability_key -> boolean map.
 
 export const CAPABILITY_KEYS = [
+  "northstar_crm",
   "lead_intake",
   "crm_sync",
   "message_drafting",
   "approval_gated_sending",
   "ai_intake_routing",
+  "quote_intelligence",
+  "feedback_intelligence",
+  "automation_packs",
   "website_ai_chat",
   "live_call_assistant",
   "live_scheduling_assistant",
@@ -47,7 +51,7 @@ export const STAFF_RUNTIME_LABELS: Record<
   northstar_web: {
     label: "Northstar web approvals",
     detail:
-      "Whoever approves messages signs into the Northstar web portal (or the partner approves on their behalf). No install — just a browser login.",
+      "Authorized client staff approve customer-facing messages in the Northstar web portal. Partners can inspect the decision history but cannot approve on the client's behalf. No install — just a browser login.",
   },
   website_widget: {
     label: "Website widget / snippet",
@@ -124,9 +128,9 @@ const REQUIREMENTS: Record<IntegrationRequirement["id"], IntegrationRequirement>
       label: "Phone provider",
       purpose: "Answer, listen to, or follow up on real phone calls.",
       category: "phone",
-      connectableToday: false,
+      connectableToday: true,
       recommended:
-        "No phone adapter exists yet — phone-based features stay off until one ships.",
+        "Twilio Voice uses the same account and number as Northstar SMS.",
     },
   };
 
@@ -144,6 +148,17 @@ export type CapabilityMeta = {
 };
 
 export const CAPABILITIES: Record<CapabilityKey, CapabilityMeta> = {
+  northstar_crm: {
+    key: "northstar_crm",
+    label: "Northstar CRM",
+    description:
+      "A complete built-in CRM with contacts, pipeline, tasks, inbox, schedule, calls, quotes, feedback, and reports for clients that need an operating system.",
+    status: "available",
+    statusNote: null,
+    requirements: [],
+    workflowTemplateKeys: [],
+    staffRuntime: "northstar_web",
+  },
   lead_intake: {
     key: "lead_intake",
     label: "Lead intake",
@@ -199,14 +214,46 @@ export const CAPABILITIES: Record<CapabilityKey, CapabilityMeta> = {
     workflowTemplateKeys: ["ai_intake_router"],
     staffRuntime: "none",
   },
+  quote_intelligence: {
+    key: "quote_intelligence",
+    label: "AI quote assistant",
+    description:
+      "Creates transparent ballpark ranges from service type, labor, materials, complexity, and urgency, then records the quote in Northstar CRM.",
+    status: "available",
+    statusNote: null,
+    requirements: [],
+    workflowTemplateKeys: ["estimate_follow_up"],
+    staffRuntime: "northstar_web",
+  },
+  feedback_intelligence: {
+    key: "feedback_intelligence",
+    label: "AI feedback intelligence",
+    description:
+      "Analyzes reviews and customer feedback for sentiment and risk, drafts a response, and opens a manager task when an issue needs attention.",
+    status: "available",
+    statusNote: null,
+    requirements: [],
+    workflowTemplateKeys: ["review_request"],
+    staffRuntime: "northstar_web",
+  },
+  automation_packs: {
+    key: "automation_packs",
+    label: "Zapier, n8n & Make packs",
+    description:
+      "Client-ready automation recipes and downloadable templates connect external apps to Northstar's signed event and workflow system.",
+    status: "available",
+    statusNote: null,
+    requirements: [],
+    workflowTemplateKeys: [],
+    staffRuntime: "none",
+  },
   website_ai_chat: {
     key: "website_ai_chat",
     label: "Website AI chat",
     description:
       "A chat assistant on the client's website that answers questions, collects lead details, and hands off to a human.",
-    status: "preview",
-    statusNote:
-      "The chat intake endpoint and AI routing are real; the on-site chat widget itself is not built yet.",
+    status: "available",
+    statusNote: null,
     requirements: [REQUIREMENTS.lead_source],
     workflowTemplateKeys: ["ai_intake_router"],
     staffRuntime: "website_widget",
@@ -216,33 +263,32 @@ export const CAPABILITIES: Record<CapabilityKey, CapabilityMeta> = {
     label: "Live call assistant",
     description:
       "A popup that helps staff during an active call: caller match, extracted fields, missing questions, urgency flags.",
-    status: "coming_soon",
+    status: "preview",
     statusNote:
-      "Needs a phone provider with live audio/transcript plus a staff-side popup runtime. Design contracts exist; nothing ships yet.",
+      "The browser call lab, transcript, extracted fields, urgency flags, and CRM notes work now. A carrier connection is still needed for live external calls.",
     requirements: [REQUIREMENTS.phone],
     workflowTemplateKeys: [],
-    staffRuntime: "browser_extension_or_desktop",
+    staffRuntime: "northstar_web",
   },
   live_scheduling_assistant: {
     key: "live_scheduling_assistant",
     label: "Live scheduling assistant",
     description:
       "Suggests appointment slots during a call that fit the customer, the calendar, and service rules.",
-    status: "coming_soon",
+    status: "preview",
     statusNote:
-      "Needs live call access from a phone provider. Calendar availability reads are already real.",
+      "The scheduling popup works in the browser call lab with Northstar or Google availability. A carrier connection is still needed during real external calls.",
     requirements: [REQUIREMENTS.phone, REQUIREMENTS.calendar],
     workflowTemplateKeys: [],
-    staffRuntime: "browser_extension_or_desktop",
+    staffRuntime: "northstar_web",
   },
   ai_phone_answering: {
     key: "ai_phone_answering",
     label: "AI phone answering",
     description:
       "AI answers inbound calls and calls new leads back fast, with clear disclosure and human handoff.",
-    status: "coming_soon",
-    statusNote:
-      "No voice provider adapter yet. Missed-call rescue drafting works today as the interim path.",
+    status: "available",
+    statusNote: null,
     requirements: [REQUIREMENTS.phone],
     workflowTemplateKeys: ["missed_call_rescue"],
     staffRuntime: "none",
@@ -252,9 +298,8 @@ export const CAPABILITIES: Record<CapabilityKey, CapabilityMeta> = {
     label: "Appointment booking",
     description:
       "Northstar reads real calendar availability and books appointments, with reminder drafts before each visit.",
-    status: "preview",
-    statusNote:
-      "Calendar connect, availability checks, and reminder drafts are real. Automatic booking is not wired yet — bookings stay manual for now.",
+    status: "available",
+    statusNote: null,
     requirements: [REQUIREMENTS.calendar],
     workflowTemplateKeys: ["appointment_reminder"],
     staffRuntime: "none",

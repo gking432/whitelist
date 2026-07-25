@@ -209,6 +209,7 @@ export async function getPartnerDashboardData(
         "id, partner_id, name, status, industry, crm_operating_mode, default_runtime_mode, client_portal_enabled, updated_at",
       )
       .eq("partner_id", partnerId)
+      .eq("account_kind", "managed_client")
       .order("name", { ascending: true }),
     getPartnerOpsCounts(supabase, partnerId).catch(() => null),
   ]);

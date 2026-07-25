@@ -268,6 +268,39 @@ Summarize this call.`,
     }
   }
 
+  const voiceCollected =
+    typeof session.extracted?.voice_collected === "object" &&
+    session.extracted.voice_collected !== null
+      ? (session.extracted.voice_collected as Record<string, unknown>)
+      : {};
+  const collectedString = (key: string) => {
+    const value = voiceCollected[key];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  };
+  const collectedUrgency = collectedString("urgency");
+  const mergedExtracted: CallSummary["extracted"] = {
+    name: summary.extracted.name ?? collectedString("name"),
+    phone:
+      summary.extracted.phone ??
+      collectedString("phone") ??
+      session.from_number,
+    email: summary.extracted.email ?? collectedString("email"),
+    address: summary.extracted.address ?? collectedString("address"),
+    service_need:
+      summary.extracted.service_need ?? collectedString("service_need"),
+    urgency:
+      summary.extracted.urgency ??
+      (["emergency", "high", "medium", "low"].includes(
+        collectedUrgency ?? "",
+      )
+        ? (collectedUrgency as CallSummary["extracted"]["urgency"])
+        : null),
+    appointment_preference:
+      summary.extracted.appointment_preference ??
+      collectedString("appointment_preference"),
+  };
+  summary = { ...summary, extracted: mergedExtracted };
+
   await admin
     .from("call_sessions")
     .update({
@@ -275,7 +308,11 @@ Summarize this call.`,
       ended_at: new Date().toISOString(),
       summary: summary.internal_summary,
       crm_note: summary.crm_note,
-      extracted: redactAuditValue(summary.extracted),
+      extracted: redactAuditValue({
+        ...(session.extracted as Record<string, unknown>),
+        ...summary.extracted,
+        voice_collected: voiceCollected,
+      }),
     })
     .eq("id", callSessionId);
 

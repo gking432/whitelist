@@ -310,7 +310,10 @@ export async function runSimulatedAgentTurn(args: {
         tool_choice: "auto",
         max_tokens: 400,
       }),
-      signal: AbortSignal.timeout(30_000),
+      // Twilio Voice webhooks have a hard 15-second response ceiling. Keep
+      // the model call below that so the route still has time for tools and
+      // a TwiML response.
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!response.ok) {

@@ -133,7 +133,7 @@ export const setupPathInfo: Record<
     status: "coming_soon",
     requiresWebsiteAccess: false,
     howItWorksToday:
-      "Native provider connections (CRM, phone, calendar) are on the roadmap. Use an automation bridge or webhook until then.",
+      "Northstar directly supports HubSpot and GoHighLevel sync, Twilio SMS, Resend email, and Google Calendar. Other providers use an automation bridge or webhook; real voice still requires a carrier bridge.",
   },
   platform_plugin: {
     label: "Website app / plugin",

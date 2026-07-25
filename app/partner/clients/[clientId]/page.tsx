@@ -104,12 +104,12 @@ export default async function ClientOverviewPage({ params }: PageProps) {
       icon: Workflow,
     },
     {
-      label: "Open approvals",
+      label: "Client decisions pending",
       value: counts.pendingApprovals,
       detail:
         counts.pendingApprovals > 0
-          ? "Waiting for human review"
-          : "No approvals waiting",
+          ? "Waiting on authorized client staff"
+          : "No client decisions waiting",
       href: `${base}/approvals`,
       icon: BellCheck,
     },
@@ -197,7 +197,7 @@ export default async function ClientOverviewPage({ params }: PageProps) {
 
       <section
         aria-label="Operational metrics"
-        className="grid grid-cols-4 gap-3"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
       >
         {cards.map((card) => {
           const Icon = card.icon;

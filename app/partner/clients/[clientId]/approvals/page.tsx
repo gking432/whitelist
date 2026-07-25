@@ -85,8 +85,8 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
       <div>
         <h2 className="font-semibold">Approval queue</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Customer-facing and high-risk actions pause here until a human
-          decides. Every resolution is audited.
+          Read-only support history for customer-facing decisions. Managed
+          client approvals can only be resolved by that client&apos;s authorized staff.
         </p>
       </div>
 
@@ -151,7 +151,7 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Your role can view this queue but not resolve items.
+                    This decision belongs to the client. You can inspect its context and workflow run for troubleshooting.
                   </p>
                 )}
               </div>

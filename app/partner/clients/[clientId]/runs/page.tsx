@@ -157,7 +157,7 @@ export default async function ClientRunsPage({
       <ActionJobsPanel
         clientId={clientId}
         jobs={jobs}
-        canRetry={workspace.access.canManageIntegrations}
+        canRetry={workspace.access.canOperateCustomerActions}
       />
 
       {runs.length === 0 ? (

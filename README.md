@@ -1,9 +1,12 @@
 # Partner AI Platform
 
-This folder contains the planning docs and production scaffold for a new partner
-operations platform.
+This folder contains the multi-tenant, white-label Northstar product. It
+combines the partner operations platform with the CRM and AI operating suite
+originally prototyped in `/Users/gkn/new`.
 
-It is intentionally separate from `/Users/gkn/new`, which contains the existing Northstar portfolio demo. Do not modify, migrate, import, or depend on the Northstar app when building this product.
+Northstar is the product partners sell under their own branding. A partner can
+run it for their own agency, offer the built-in CRM to clients that need one,
+or install the AI and automation layer alongside a client's existing CRM.
 
 ## Local Development
 

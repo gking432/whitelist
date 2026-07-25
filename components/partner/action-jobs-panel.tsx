@@ -9,9 +9,8 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime, formatEnum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-// Durable outbound actions (deliveries, bookings, syncs) with honest
-// status and one-click retry. Retries re-run the already-approved payload
-// through the same gated path — approval and live-mode rules still apply.
+// Durable outbound actions (deliveries, bookings, syncs) with honest status.
+// Retry remains available only in workspaces allowed to operate customer actions.
 
 export type ActionJobView = {
   id: string;
@@ -62,9 +61,9 @@ export function ActionJobsPanel({
       <div className="border-b px-5 py-4">
         <h3 className="font-semibold">Outbound actions</h3>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Every delivery, booking, and sync attempt — with retry for anything
-          that did not go through. Retries respect approvals and live/dry-run
-          modes.
+          {canRetry
+            ? "Every delivery, booking, and sync attempt, with retry for actions that did not go through."
+            : "Every delivery, booking, and sync attempt. This troubleshooting view is read-only; the client controls customer-facing actions."}
         </p>
       </div>
       <ul className="divide-y">

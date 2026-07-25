@@ -48,9 +48,15 @@ export function getAppUrl() {
 }
 
 export function isLocalDevAutoLoginEnabled() {
+  const usesLocalSupabase =
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??
+    false;
+  const previewLoginEnabled =
+    process.env.ENABLE_LOCAL_PREVIEW_LOGIN === "true";
+
   return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:")
+    usesLocalSupabase &&
+    (process.env.NODE_ENV !== "production" || previewLoginEnabled)
   );
 }
 
@@ -61,6 +67,10 @@ export function getLocalDevLoginEmail(nextPath = "/partner") {
 
   if (nextPath.startsWith("/client")) {
     return "client.owner@example.test";
+  }
+
+  if (nextPath.startsWith("/control")) {
+    return "platform.owner@example.test";
   }
 
   return "partner.owner@example.test";

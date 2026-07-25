@@ -92,6 +92,40 @@ export async function bookApprovedAppointment(
     });
   };
 
+  if (booking.payload.scenario_lab === true) {
+    await logEvent("dry_run", {
+      note: "Scenario Lab booking approval recorded; no calendar was called.",
+      simulated: true,
+    });
+
+    return {
+      attempted: true,
+      delivered: false,
+      status: "dry_run",
+      detail: `Scenario Lab approval recorded as a dry run. No real calendar was contacted. Slot: ${slot.label ?? slot.start_iso}.`,
+    };
+  }
+
+  if (
+    booking.payload.provider === "northstar_internal" ||
+    (!connection && booking.payload.provider !== "google_calendar")
+  ) {
+    const internalRef = `northstar-${booking.approvalId}`;
+
+    await logEvent("sent", {
+      note: "Booked in Northstar's internal calendar.",
+      internal_ref: internalRef,
+    });
+
+    return {
+      attempted: true,
+      delivered: true,
+      status: "succeeded",
+      externalRef: internalRef,
+      detail: `Appointment booked in Northstar for ${slot.label ?? slot.start_iso}.`,
+    };
+  }
+
   if (!connection) {
     await logEvent("skipped", {
       note: "No connected Google Calendar for this client.",

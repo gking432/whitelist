@@ -14,6 +14,7 @@ import {
 } from "@/lib/permissions/access";
 import { CLIENT_APPROVER_ROLES } from "@/lib/permissions/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function resolveClientApproval(
   approvalId: string,
@@ -40,7 +41,10 @@ export async function resolveClientApproval(
       CLIENT_APPROVER_ROLES,
     );
 
-    const supabase = await createSupabaseServerClient();
+    const supabase =
+      access.isImpersonating && access.impersonationMode === "sandbox_full"
+        ? createSupabaseAdminClient()
+        : await createSupabaseServerClient();
 
     if (!supabase || !access.clientId) {
       return { status: "error", message: "The data service is unavailable." };

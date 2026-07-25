@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Eye } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { WorkspaceTabs } from "@/components/partner/workspace-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { startClientSupportView } from "@/app/impersonation/actions";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { formatEnum } from "@/lib/format";
 
@@ -64,6 +65,9 @@ export default async function ClientWorkspaceLayout({
   }
 
   const { client, user } = workspace;
+  const hasNorthstarCrm = ["primary_crm", "mirror", "assist"].includes(
+    client.crm_operating_mode,
+  );
 
   return (
     <AppShell
@@ -80,10 +84,16 @@ export default async function ClientWorkspaceLayout({
               </span>
               <div className="min-w-0">
                 <Link
-                  href="/partner/clients"
+                  href={
+                    client.account_kind === "partner_agency"
+                      ? "/partner/agency"
+                      : "/partner/clients"
+                  }
                   className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
                 >
-                  Clients
+                  {client.account_kind === "partner_agency"
+                    ? "My Agency"
+                    : "Clients"}
                 </Link>
                 <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight">
                   {client.name}
@@ -94,6 +104,20 @@ export default async function ClientWorkspaceLayout({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
+              {client.account_kind === "managed_client" && hasNorthstarCrm ? (
+                <form
+                  action={startClientSupportView.bind(
+                    null,
+                    client.id,
+                    client.is_test_account ? "sandbox_full" : "read_only",
+                  )}
+                >
+                  <Button type="submit" variant="outline" size="sm">
+                    <Eye aria-hidden="true" />
+                    {client.is_test_account ? "Test as client" : "View as client"}
+                  </Button>
+                </form>
+              ) : null}
               <Badge variant="secondary">{formatEnum(client.status)}</Badge>
               <Badge variant="outline">
                 CRM: {formatEnum(client.crm_operating_mode)}
@@ -111,7 +135,10 @@ export default async function ClientWorkspaceLayout({
             </div>
           </div>
           <div className="mt-4 border-t px-5">
-            <WorkspaceTabs clientId={client.id} />
+            <WorkspaceTabs
+              clientId={client.id}
+              accountKind={client.account_kind}
+            />
           </div>
         </header>
 

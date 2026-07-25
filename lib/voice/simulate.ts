@@ -119,6 +119,196 @@ async function loadClientName(
   return data?.name ?? "the business";
 }
 
+function scriptedName(text: string): string | null {
+  const match = text.match(
+    /\b(?:i am|i'm|this is|my name is)\s+([a-z][a-z'-]+(?:\s+[a-z][a-z'-]+)?)/i,
+  );
+  return match?.[1]?.replace(/\b\w/g, (letter) => letter.toUpperCase()) ?? null;
+}
+
+function scriptedEmail(text: string): string | null {
+  return (
+    text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? null
+  );
+}
+
+function scriptedPhone(text: string): string | null {
+  return (
+    text.match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/)?.[0] ??
+    null
+  );
+}
+
+function scriptedAddress(text: string): string | null {
+  return (
+    text.match(
+      /\b\d{1,6}\s+[A-Za-z0-9.' -]+\s(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|boulevard|blvd|court|ct)\b/i,
+    )?.[0] ?? null
+  );
+}
+
+async function runScriptedAgentTurn(
+  admin: SupabaseClient,
+  context: VoiceToolContext,
+  callerText: string,
+): Promise<{
+  ok: true;
+  reply: string | null;
+  toolsUsed: { name: string; result: Record<string, unknown> }[];
+  endCall: boolean;
+}> {
+  const lower = callerText.toLowerCase();
+  const toolsUsed: { name: string; result: Record<string, unknown> }[] = [];
+  const emergency =
+    /emergency|flood|burst|fire|gas leak|no heat|freezing|sparking|furnace.{0,24}(stopped|not working|isn't working)/.test(
+      lower,
+    );
+  const scheduling =
+    /appointment|schedule|book|available|morning|afternoon|evening|after \d|monday|tuesday|wednesday|thursday|friday/.test(
+      lower,
+    );
+  const endCall = /\b(?:goodbye|bye|that's all|that is all|no thanks)\b/.test(
+    lower,
+  );
+  const acknowledgement =
+    /^(?:that works|first one|second one|take the|book it|sounds good|okay|ok|yes)\b/.test(
+      lower.trim(),
+    );
+  const { data: sessionState } = await admin
+    .from("call_sessions")
+    .select("extracted")
+    .eq("id", context.callSessionId)
+    .maybeSingle();
+  const existingCollected = (sessionState?.extracted?.voice_collected ??
+    {}) as Record<string, unknown>;
+  const collected: Record<string, unknown> = {
+    ...(scriptedName(callerText) ? { name: scriptedName(callerText) } : {}),
+    ...(scriptedEmail(callerText)
+      ? { email: scriptedEmail(callerText) }
+      : {}),
+    ...(scriptedPhone(callerText)
+      ? { phone: scriptedPhone(callerText) }
+      : {}),
+    ...(scriptedAddress(callerText)
+      ? { address: scriptedAddress(callerText) }
+      : {}),
+    ...(callerText.trim() &&
+    !acknowledgement &&
+    !endCall &&
+    !existingCollected.service_need
+      ? {
+          service_need: callerText.trim().slice(0, 500),
+          project_details: callerText.trim().slice(0, 1000),
+        }
+      : {}),
+    ...(emergency ? { urgency: "emergency" } : {}),
+    ...(scheduling && !acknowledgement && !endCall
+      ? { appointment_preference: callerText.trim().slice(0, 300) }
+      : {}),
+  };
+
+  if (Object.keys(collected).length > 0) {
+    const saved = await executeVoiceTool(admin, context, {
+      name: "save_contact_details",
+      arguments: collected,
+    });
+    toolsUsed.push({ name: "save_contact_details", result: saved.result });
+  }
+
+  if (emergency) {
+    const escalated = await executeVoiceTool(admin, context, {
+      name: "escalate",
+      arguments: {
+        reason: callerText.slice(0, 500),
+        urgency: "emergency",
+      },
+    });
+    toolsUsed.push({ name: "escalate", result: escalated.result });
+    return {
+      ok: true,
+      reply:
+        "I marked this as urgent for the team. If anyone is in immediate danger, call emergency services now. A person from the business will follow up as quickly as possible.",
+      toolsUsed,
+      endCall: false,
+    };
+  }
+
+  const proposed = Array.isArray(sessionState?.extracted?.proposed_slots)
+    ? (sessionState.extracted.proposed_slots as {
+        start_iso: string;
+        label: string;
+      }[])
+    : [];
+  const selecting =
+    proposed.length > 0 &&
+    /\b(?:that works|first one|second one|take the|book it|sounds good)\b/.test(
+      lower,
+    );
+
+  if (selecting) {
+    const chosen = /\bsecond\b/.test(lower)
+      ? (proposed[1] ?? proposed[0])
+      : proposed[0];
+    const booking = await executeVoiceTool(admin, context, {
+      name: "request_booking",
+      arguments: { start_iso: chosen.start_iso },
+    });
+    toolsUsed.push({ name: "request_booking", result: booking.result });
+    return {
+      ok: true,
+      reply: `Great. I requested ${chosen.label}. The team will confirm it shortly.`,
+      toolsUsed,
+      endCall: false,
+    };
+  }
+
+  if (scheduling) {
+    const slots = await executeVoiceTool(admin, context, {
+      name: "propose_slots",
+      arguments: { preference_text: callerText.slice(0, 500) },
+    });
+    toolsUsed.push({ name: "propose_slots", result: slots.result });
+    const choices = Array.isArray(slots.result.slots)
+      ? (slots.result.slots as { label?: string }[])
+          .slice(0, 2)
+          .map((slot) => slot.label)
+          .filter(Boolean)
+      : [];
+
+    return {
+      ok: true,
+      reply:
+        choices.length > 0
+          ? `Based on what you said and the current calendar, I can offer ${choices.join(" or ")}. Which works better?`
+          : "I saved your scheduling preference. The team will contact you to confirm an available time.",
+      toolsUsed,
+      endCall: false,
+    };
+  }
+
+  if (endCall) {
+    const ended = await executeVoiceTool(admin, context, {
+      name: "end_call",
+      arguments: { reason: "Caller finished the conversation." },
+    });
+    toolsUsed.push({ name: "end_call", result: ended.result });
+    return {
+      ok: true,
+      reply: `Thanks for calling ${context.clientName}. The team has your information. Goodbye.`,
+      toolsUsed,
+      endCall: true,
+    };
+  }
+
+  return {
+    ok: true,
+    reply:
+      "I saved that for the team. What name, address, and preferred appointment time should I include?",
+    toolsUsed,
+    endCall: false,
+  };
+}
+
 // One agent turn with the in-request tool loop: the model may call tools,
 // we execute them against the REAL executors, feed results back, and
 // repeat until it produces speech (or asks to end the call).
@@ -127,6 +317,7 @@ async function runAgentWithTools(args: {
   toolContext: VoiceToolContext;
   instructions: string;
   messages: ChatMessage[];
+  maxToolRounds?: number;
 }): Promise<
   | {
       ok: true;
@@ -139,8 +330,12 @@ async function runAgentWithTools(args: {
   const messages = [...args.messages];
   const toolsUsed: { name: string; result: Record<string, unknown> }[] = [];
   let endCall = false;
+  const maxToolRounds = Math.max(
+    1,
+    Math.min(args.maxToolRounds ?? MAX_TOOL_ROUNDS, MAX_TOOL_ROUNDS),
+  );
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+  for (let round = 0; round < maxToolRounds; round += 1) {
     const turn = await runSimulatedAgentTurn({
       instructions: args.instructions,
       messages,
@@ -197,14 +392,45 @@ async function runAgentWithTools(args: {
     }
   }
 
-  return { ok: true, reply: null, toolsUsed, endCall };
+  const lastTool = toolsUsed.at(-1);
+  let reply: string | null = null;
+
+  if (lastTool?.name === "propose_slots") {
+    const choices = Array.isArray(lastTool.result.slots)
+      ? (lastTool.result.slots as { label?: string }[])
+          .slice(0, 2)
+          .map((slot) => slot.label)
+          .filter(Boolean)
+      : [];
+    reply =
+      choices.length > 0
+        ? `I can offer ${choices.join(" or ")}. Which works better?`
+        : "I saved your scheduling preference. The team will contact you with an available time.";
+  } else if (lastTool?.name === "request_booking") {
+    reply =
+      "I requested that time. The team will confirm the appointment shortly.";
+  } else if (lastTool?.name === "escalate") {
+    reply =
+      "I flagged this for immediate human follow-up. A person from the team will contact you as quickly as possible.";
+  } else if (lastTool?.name === "end_call") {
+    reply = `Thanks for calling ${args.toolContext.clientName}. Goodbye.`;
+  } else if (toolsUsed.length > 0) {
+    reply =
+      "I saved that for the team. What else should I include before they follow up?";
+  }
+
+  return { ok: true, reply, toolsUsed, endCall };
 }
 
-export async function startSimulatedCall(
+export async function startTextVoiceCall(
   admin: SupabaseClient,
   input: {
     clientId: string;
+    provider: string;
+    connectionId?: string | null;
     fromNumber?: string | null;
+    toNumber?: string | null;
+    externalRef?: string | null;
   },
 ): Promise<
   | {
@@ -215,14 +441,6 @@ export async function startSimulatedCall(
     }
   | { ok: false; error: string }
 > {
-  if (!isOpenAIRealtimeConfigured()) {
-    return {
-      ok: false,
-      error:
-        "OPENAI_API_KEY is not configured — the simulated voice harness needs it.",
-    };
-  }
-
   const { data: client } = await admin
     .from("client_businesses")
     .select("partner_id")
@@ -236,9 +454,12 @@ export async function startSimulatedCall(
   const created = await createCallSession(admin, {
     partnerId: client.partner_id,
     clientId: input.clientId,
-    provider: SIMULATED_PROVIDER,
+    connectionId: input.connectionId,
+    provider: input.provider,
     direction: "inbound",
     fromNumber: input.fromNumber ?? null,
+    toNumber: input.toNumber ?? null,
+    externalRef: input.externalRef ?? null,
   });
 
   if (!created) {
@@ -258,23 +479,32 @@ export async function startSimulatedCall(
     clientName,
   );
 
-  const result = await runAgentWithTools({
-    admin,
-    toolContext: {
-      callSessionId: session.id,
-      partnerId: session.partner_id,
-      clientId: session.client_id,
-      clientName,
-    },
-    instructions,
-    messages: [
-      {
-        role: "user",
-        content:
-          "(The phone call has just connected. Greet the caller as the call answerer — do not wait for them to speak first.)",
-      },
-    ],
-  });
+  const result = isOpenAIRealtimeConfigured()
+    ? await runAgentWithTools({
+        admin,
+        toolContext: {
+          callSessionId: session.id,
+          partnerId: session.partner_id,
+          clientId: session.client_id,
+          clientName,
+        },
+        instructions,
+        maxToolRounds:
+          input.provider === "twilio_voice" ? 1 : MAX_TOOL_ROUNDS,
+        messages: [
+          {
+            role: "user",
+            content:
+              "(The phone call has just connected. Greet the caller as the call answerer — do not wait for them to speak first.)",
+          },
+        ],
+      })
+    : {
+        ok: true as const,
+        reply: `Hi, you've reached ${clientName}. I'm the AI scheduling assistant. How can I help today?`,
+        toolsUsed: [],
+        endCall: false,
+      };
 
   if (!result.ok) {
     return { ok: false, error: result.error };
@@ -295,10 +525,24 @@ export async function startSimulatedCall(
   };
 }
 
-export async function runSimulatedCallerTurn(
+export async function startSimulatedCall(
+  admin: SupabaseClient,
+  input: {
+    clientId: string;
+    fromNumber?: string | null;
+  },
+) {
+  return startTextVoiceCall(admin, {
+    ...input,
+    provider: SIMULATED_PROVIDER,
+  });
+}
+
+export async function runTextVoiceCallerTurn(
   admin: SupabaseClient,
   callSessionId: string,
   callerText: string,
+  provider: string,
 ): Promise<
   | {
       ok: true;
@@ -310,12 +554,12 @@ export async function runSimulatedCallerTurn(
 > {
   const session = await loadSession(admin, callSessionId);
 
-  if (!session || session.provider !== SIMULATED_PROVIDER) {
-    return { ok: false, error: "Simulated call session not found." };
+  if (!session || session.provider !== provider) {
+    return { ok: false, error: "Voice call session not found." };
   }
 
   if (session.status !== "in_progress") {
-    return { ok: false, error: "This simulated call has already ended." };
+    return { ok: false, error: "This voice call has already ended." };
   }
 
   await addTranscriptTurn(admin, callSessionId, {
@@ -351,20 +595,26 @@ export async function runSimulatedCallerTurn(
     clientName,
   );
 
-  const result = await runAgentWithTools({
-    admin,
-    toolContext: {
-      callSessionId,
-      partnerId: session.partner_id,
-      clientId: session.client_id,
-      clientName,
-    },
-    instructions,
-    messages: turns.map((turn) => ({
-      role: turn.role === "caller" ? ("user" as const) : ("assistant" as const),
-      content: turn.content,
-    })),
-  });
+  const toolContext = {
+    callSessionId,
+    partnerId: session.partner_id,
+    clientId: session.client_id,
+    clientName,
+  };
+  const result = isOpenAIRealtimeConfigured()
+    ? await runAgentWithTools({
+        admin,
+        toolContext,
+        instructions,
+        maxToolRounds:
+          provider === "twilio_voice" ? 1 : MAX_TOOL_ROUNDS,
+        messages: turns.map((turn) => ({
+          role:
+            turn.role === "caller" ? ("user" as const) : ("assistant" as const),
+          content: turn.content,
+        })),
+      })
+    : await runScriptedAgentTurn(admin, toolContext, callerText);
 
   if (!result.ok) {
     return { ok: false, error: result.error };
@@ -385,19 +635,33 @@ export async function runSimulatedCallerTurn(
   };
 }
 
-// Complete the call through the real pipeline, then report everything it
-// produced so the whole voice workflow is verifiable in one response.
-export async function completeSimulatedCall(
+export async function runSimulatedCallerTurn(
   admin: SupabaseClient,
   callSessionId: string,
+  callerText: string,
+) {
+  return runTextVoiceCallerTurn(
+    admin,
+    callSessionId,
+    callerText,
+    SIMULATED_PROVIDER,
+  );
+}
+
+// Complete the call through the real pipeline, then report everything it
+// produced so the whole voice workflow is verifiable in one response.
+export async function completeTextVoiceCall(
+  admin: SupabaseClient,
+  callSessionId: string,
+  provider: string,
 ): Promise<
   | { ok: true; report: Record<string, unknown> }
   | { ok: false; error: string }
 > {
   const session = await loadSession(admin, callSessionId);
 
-  if (!session || session.provider !== SIMULATED_PROVIDER) {
-    return { ok: false, error: "Simulated call session not found." };
+  if (!session || session.provider !== provider) {
+    return { ok: false, error: "Voice call session not found." };
   }
 
   const completion = await completeCallSession(admin, callSessionId);
@@ -477,4 +741,11 @@ export async function completeSimulatedCall(
       assistant_events: (events ?? []).map((event) => event.event_type),
     },
   };
+}
+
+export async function completeSimulatedCall(
+  admin: SupabaseClient,
+  callSessionId: string,
+) {
+  return completeTextVoiceCall(admin, callSessionId, SIMULATED_PROVIDER);
 }

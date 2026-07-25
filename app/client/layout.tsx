@@ -1,4 +1,5 @@
 import { PortalShell } from "@/components/client/portal-shell";
+import { ImpersonationBanner } from "@/components/impersonation/impersonation-banner";
 import { loadClientPortal } from "@/lib/clients/portal";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,7 @@ export default async function ClientPortalLayout({
       clientName={portal.client.name}
       branding={portal.branding}
       userEmail={portal.user.email ?? "Signed in"}
+      banner={<ImpersonationBanner />}
     >
       {children}
     </PortalShell>

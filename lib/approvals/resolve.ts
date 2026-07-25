@@ -181,6 +181,21 @@ export async function resolveApprovalItem(
       body: resolvedContent,
       outcomeStatus: delivery.status,
     });
+
+    // Keep the CRM inbox in sync with the universal approval lifecycle.
+    await supabase
+      .from("crm_communications")
+      .update({
+        status:
+          delivery.status === "succeeded"
+            ? "sent"
+            : delivery.status === "failed"
+              ? "failed"
+              : "approved",
+        human_approved: true,
+        provider_ref: delivery.externalRef ?? null,
+      })
+      .eq("approval_id", approval.id);
   } else if (
     resolution !== "reject" &&
     approval.type === "appointment_booking"

@@ -96,6 +96,7 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
     .from("client_businesses")
     .select("*")
     .eq("partner_id", partnerId)
+    .eq("account_kind", "managed_client")
     .order("name", { ascending: true });
 
   clientsQuery = statusFilter

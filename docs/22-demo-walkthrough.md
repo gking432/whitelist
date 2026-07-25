@@ -109,13 +109,15 @@ Everything above is dry run. To see a real action:
 
 Same buttons you already used — the only change is a live connection.
 
-## 6. Act 4 — the AI answers a call (simulated)
+## 6. Act 4 — the AI answers a call
 
 The OpenAI Realtime voice agent (docs/21) can be exercised over text with
 `POST /api/voice/simulate` (needs `OPENAI_API_KEY` and a signed-in session):
 `start` a call, send `caller_turn`s, then `complete` — and the same
-post-call pipeline runs (summary, CRM note, approvals). A screen to watch
-this live is the recommended next build.
+post-call pipeline runs (summary, CRM note, approvals). The CRM AI Calls
+screen provides this browser phone lab. After Twilio is connected, paste
+the displayed voice and status URLs into the number and call it for the
+real carrier test.
 
 ## 7. Honest notes
 

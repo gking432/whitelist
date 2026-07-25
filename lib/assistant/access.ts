@@ -28,11 +28,15 @@ export async function resolveAssistantAccess(
   mode: "read" | "write",
 ): Promise<AccessContext> {
   try {
-    return await requireClientWorkspaceAccess(
+    const partnerAccess = await requireClientWorkspaceAccess(
       userId,
       clientId,
       mode === "write" ? PARTNER_OPERATOR_ROLES : PARTNER_ROLES,
     );
+
+    if (mode === "read" || partnerAccess.canOperateCustomerActions) {
+      return partnerAccess;
+    }
   } catch (error) {
     if (!isAccessError(error) || error.code !== "ACCESS_DENIED") {
       throw error;

@@ -33,6 +33,9 @@ type ProposalInput = {
   eventType: string;
   eventData: Record<string, unknown>;
   routingCategory: string | null;
+  simulationCalendar?: {
+    outcome: "available" | "failure";
+  };
 };
 
 export type BookingProposalResult = {
@@ -60,6 +63,151 @@ export function isSchedulingIntent(
   );
 }
 
+async function proposeSimulatedBooking(
+  admin: SupabaseClient,
+  input: ProposalInput,
+): Promise<BookingProposalResult> {
+  if (input.simulationCalendar?.outcome === "failure") {
+    return {
+      step: {
+        name: "Sandbox calendar failed",
+        detail:
+          "The Scenario Lab simulated a calendar-provider failure before any booking was attempted.",
+      },
+      booking: {
+        status: "failed",
+        error: "Simulated calendar-provider failure.",
+        simulated: true,
+      },
+    };
+  }
+
+  const [{ data: client }, knowledge] = await Promise.all([
+    admin
+      .from("client_businesses")
+      .select("timezone")
+      .eq("id", input.clientId)
+      .maybeSingle(),
+    getKnowledgeProfile(admin, input.clientId),
+  ]);
+  const timezone = client?.timezone ?? "America/Chicago";
+  const constraintText = [
+    asString(input.eventData.appointment_preference),
+    asString(input.eventData.message),
+  ]
+    .filter(Boolean)
+    .join(". ");
+  const constraints = parseSchedulingConstraints(constraintText);
+  const constraintsDescription = describeConstraints(constraints);
+  const slots = computeOpenSlots([], {
+    timezone,
+    maxSlots: 3,
+    businessStartHour: knowledge?.booking_hours_start ?? 9,
+    businessEndHour: knowledge?.booking_hours_end ?? 17,
+    durationMinutes: knowledge?.appointment_duration_minutes ?? 60,
+    constraints,
+  });
+
+  if (slots.length === 0) {
+    return {
+      step: {
+        name: "Sandbox calendar has no matching slots",
+        detail:
+          "The simulated calendar had no opening that matched the supplied constraints.",
+      },
+      booking: { status: "no_slots", simulated: true },
+    };
+  }
+
+  const labeled = slots.map((slot) => ({
+    start_iso: slot.startIso,
+    end_iso: slot.endIso,
+    label: formatSlotLabel(slot.startIso, timezone),
+  }));
+  const [primary, ...alternatives] = labeled;
+  const contactName =
+    asString(input.eventData.name) ||
+    asString(input.eventData.full_name) ||
+    "the customer";
+  const { data: approval, error: approvalError } = await admin
+    .from("approval_items")
+    .insert({
+      partner_id: input.partnerId,
+      client_id: input.clientId,
+      workflow_run_id: input.runId,
+      type: "appointment_booking",
+      status: "pending",
+      title: `Sandbox booking: ${contactName} — ${primary.label}`,
+      summary: `Scenario Lab proposal for ${primary.label} (${timezone}). Approving records a dry run only.${
+        constraintsDescription
+          ? ` Customer preference understood: ${constraintsDescription}.`
+          : ""
+      }`,
+      risk_level: "high",
+      proposed_payload: {
+        kind: "appointment_booking",
+        provider: "scenario_lab_calendar",
+        scenario_lab: true,
+        simulated: true,
+        timezone,
+        slot: primary,
+        alternatives,
+        contact: {
+          name: asString(input.eventData.name) || null,
+          phone: asString(input.eventData.phone) || null,
+          email: asString(input.eventData.email) || null,
+          address: asString(input.eventData.address) || null,
+        },
+      },
+      editable_content: null,
+    })
+    .select("id")
+    .single();
+
+  if (approvalError || !approval) {
+    return {
+      step: {
+        name: "Sandbox booking proposal failed",
+        detail: "The simulated slot was found, but its approval could not be queued.",
+      },
+      booking: { status: "failed", simulated: true },
+    };
+  }
+
+  await admin.from("integration_events").insert({
+    partner_id: input.partnerId,
+    client_id: input.clientId,
+    connection_id: null,
+    workflow_run_id: input.runId,
+    direction: "outbound",
+    event_type: "calendar.slots_proposed",
+    status: "processed",
+    request_payload: redactAuditValue({
+      source: "scenario_lab",
+      simulated: true,
+      slot: primary,
+      alternatives,
+      timezone,
+    }),
+    redacted: true,
+  });
+
+  return {
+    step: {
+      name: "Sandbox booking proposed",
+      detail: `Scenario Lab proposed ${primary.label} from ${labeled.length} deterministic open slots.`,
+    },
+    booking: {
+      status: "proposed",
+      simulated: true,
+      approval_id: approval.id,
+      slot: primary,
+      alternatives,
+      timezone,
+    },
+  };
+}
+
 export async function proposeBookingFromRun(
   admin: SupabaseClient,
   input: ProposalInput,
@@ -72,6 +220,10 @@ export async function proposeBookingFromRun(
 
   if (!isSchedulingIntent(input.eventType, input.routingCategory)) {
     return null;
+  }
+
+  if (input.simulationCalendar) {
+    return proposeSimulatedBooking(admin, input);
   }
 
   const { data: connection } = await admin

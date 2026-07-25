@@ -331,7 +331,7 @@ export default async function RunDetailPage({ params }: PageProps) {
                   href={`/partner/clients/${clientId}/approvals`}
                   className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
                 >
-                  Open approval queue
+                  View client decision status
                 </Link>
               </div>
             ) : (

@@ -7,26 +7,40 @@ import { cn } from "@/lib/utils";
 
 type WorkspaceTabsProps = {
   clientId: string;
+  accountKind?: "managed_client" | "partner_agency";
 };
 
-const tabs = [
+const managedClientTabs = [
   { label: "Overview", segment: "" },
-  { label: "Assistant", segment: "assistant" },
-  { label: "Setup", segment: "setup" },
-  { label: "Knowledge", segment: "knowledge" },
-  { label: "CRM", segment: "crm" },
+  { label: "Onboarding", segment: "setup" },
+  { label: "Test Center", segment: "test-center" },
+  { label: "Features", segment: "workflows" },
+  { label: "Automation Packs", segment: "automation-packs" },
   { label: "Integrations", segment: "integrations" },
-  { label: "Workflows", segment: "workflows" },
-  { label: "Runs / Logs", segment: "runs" },
-  { label: "Approvals", segment: "approvals" },
-  { label: "Reports", segment: "reports" },
-  { label: "Settings", segment: "settings" },
-  { label: "Audit", segment: "audit" },
+  { label: "Health & Logs", segment: "runs" },
+  { label: "Launch", segment: "launch" },
 ];
 
-export function WorkspaceTabs({ clientId }: WorkspaceTabsProps) {
+const agencyTabs = [
+  { label: "Agency Home", segment: "" },
+  { label: "Assistant", segment: "assistant" },
+  { label: "CRM", segment: "crm" },
+  { label: "Approvals", segment: "approvals" },
+  { label: "Workflows", segment: "workflows" },
+  { label: "Automation Packs", segment: "automation-packs" },
+  { label: "Integrations", segment: "integrations" },
+  { label: "Test Center", segment: "test-center" },
+  { label: "Activity", segment: "runs" },
+];
+
+export function WorkspaceTabs({
+  clientId,
+  accountKind = "managed_client",
+}: WorkspaceTabsProps) {
   const pathname = usePathname();
   const base = `/partner/clients/${clientId}`;
+  const tabs =
+    accountKind === "partner_agency" ? agencyTabs : managedClientTabs;
 
   return (
     <nav

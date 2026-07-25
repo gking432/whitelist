@@ -30,7 +30,7 @@ export async function findConnectionByWidgetKey(
   const { data } = await admin
     .from("integration_connections")
     .select(
-      "id, partner_id, client_id, status, config, client:client_businesses(name), provider:integration_providers!inner(provider_key)",
+      "id, partner_id, client_id, status, config, client:client_businesses!integration_connections_client_id_fkey(name), provider:integration_providers!integration_connections_provider_id_fkey!inner(provider_key)",
     )
     .eq("provider.provider_key", "northstar_web_chat")
     .eq("config->>widget_public_key", widgetKey)

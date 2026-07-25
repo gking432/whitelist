@@ -30,6 +30,11 @@ export type EngineTriggerEvent = {
   connectionId: string | null;
   eventType: string;
   data: Record<string, unknown>;
+  simulation?: {
+    calendar?: {
+      outcome: "available" | "failure";
+    };
+  };
 };
 
 export type EngineRunResult = {
@@ -207,6 +212,7 @@ async function executeInstance(
         typeof routingOutput?.category === "string"
           ? routingOutput.category
           : null,
+      simulationCalendar: event.simulation?.calendar,
     });
 
     // Built-in CRM: for clients running in primary_crm/mirror/assist mode,

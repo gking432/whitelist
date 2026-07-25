@@ -77,8 +77,9 @@ export default async function NewConnectionPage({ params }: PageProps) {
         </Button>
         <h2 className="mt-2 text-lg font-semibold">Add connection</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Generic webhooks are fully supported today. Provider-specific
-          adapters are tracked as planned connections.
+          Website chat and generic webhooks work immediately. HubSpot,
+          GoHighLevel, Twilio SMS, Resend, and Google Calendar connect when you
+          add the provider credentials.
         </p>
       </div>
 

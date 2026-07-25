@@ -17,6 +17,12 @@ per-client Knowledge tab.
   once a bridge dials. `testConnection()` validates the key and model
   against OpenAI before anything is stored. Configure with
   `VOICE_PROVIDER=openai_realtime` + `OPENAI_API_KEY`.
+- **Twilio Voice bridge** —
+  `/api/integrations/inbound/twilio-voice/[connectionId]` answers a real
+  Twilio number, verifies every webhook, uses speech `<Gather>` turns, runs
+  the same agent tools as the browser lab, and completes the normal
+  transcript/summary/workflow/CRM pipeline on hangup. Setup displays the
+  exact per-client voice and status callback URLs.
 - **Session contract** (`lib/voice/providers/openai-realtime.ts`):
   - `buildVoiceAgentInstructions` — per-client prompt built ONLY from the
     approved Knowledge profile (business description, services, areas,
@@ -38,7 +44,7 @@ per-client Knowledge tab.
   | `lookup_contact` | Finds an existing built-in CRM contact by phone/email (tenant-scoped) and pins it to the call session |
   | `save_contact_details` | Stores collected details on the call session + additive contact create/update (never overwrites filled fields) |
   | `add_note` | AI-attributed timeline note on the matched contact + call-session note |
-  | `propose_slots` | REAL Google Calendar availability through the knowledge booking window + parsed caller constraints; honest `no_calendar` / `no_slots` answers |
+  | `propose_slots` | Google Calendar availability when connected, otherwise Northstar business hours and appointments, plus parsed caller constraints |
   | `request_booking` | Creates a PENDING `appointment_booking` approval — only for a slot `propose_slots` actually returned; booking still happens only on human approval + live mode |
   | `request_confirmation_message` | Creates a PENDING `customer_message` approval (SMS/email draft) — delivery only on approval + live mode |
   | `escalate` | `escalation_needed` assistant event + timeline note |
@@ -71,10 +77,11 @@ per-client Knowledge tab.
 - Tenancy: every write carries the call session's partner_id/client_id;
   RLS + service-role separation as everywhere else.
 
-## Testing the voice workflow (before any phone bridge)
+## Testing the voice workflow
 
 `POST /api/voice/simulate` runs the whole pipeline with text standing in
-for audio (requires `OPENAI_API_KEY`; sim model defaults to gpt-4o-mini):
+for audio. With `OPENAI_API_KEY` it uses the live model; without the key it
+uses a labeled deterministic fallback so setup can still be proven:
 
 ```jsonc
 // 1. Start — creates the call session (caller matching, disclosure,
@@ -102,40 +109,20 @@ tab shows the contact, note, and (after approving) the appointment.
 Simulated sessions are stamped `provider: "openai_realtime_simulated"` so
 nothing ever presents them as real telephony.
 
-## Phone bridge plan: what remains for real inbound calls
+## Real inbound Twilio calls
 
-Everything above the audio transport is done. A bridge has one job:
-connect a carrier call's audio to an OpenAI Realtime session minted by
-`/api/voice/realtime/session`-style code and relay transcript/tool events
-into `lib/voice/sessions.ts` + `lib/voice/tools.ts`. Options, in
-recommended order:
+1. Connect a voice-and-SMS-capable Twilio number in client Setup.
+2. Add `OPENAI_API_KEY` to the deployed app.
+3. In Twilio's active-number settings, paste the displayed Northstar voice
+   URL into **A call comes in** and choose HTTP POST.
+4. Paste the displayed status URL into **Call status callback**, also POST.
+5. Call the number. Twilio transcribes each caller turn and speaks the
+   assistant reply while Northstar executes the same tenant-scoped tools.
 
-1. **OpenAI SIP connector (recommended first bridge).** Point a Twilio
-   SIP trunk (or any SIP provider) at OpenAI's SIP endpoint; OpenAI sends
-   an incoming-call webhook, the server accepts it with the same
-   per-client instructions + tools, then receives transcript/tool events
-   over a websocket. No media handling on our side at all — the least
-   code and the least latency. Needs: a phone number + SIP trunk per
-   client, the incoming-call webhook route (verify with
-   `OPENAI_REALTIME_WEBHOOK_SECRET`), number→client mapping, and the
-   event relay into sessions/tools.
-2. **Twilio Voice + Media Streams.** Twilio answers, streams μ-law audio
-   over a websocket to our server, which re-encodes and proxies to the
-   Realtime API. Full control (recording, transfer to a human, IVR
-   fallback) but we own a stateful audio proxy — needs a long-lived
-   websocket host (not serverless), buffering, and barge-in handling.
-3. **Retell / Vapi.** Managed voice-agent platforms that own telephony +
-   the realtime loop and call our webhooks for tools/transcripts. Fastest
-   to ship and multi-model, but a per-minute vendor margin, less prompt
-   control, and their adapter would replace `openai_realtime` rather than
-   reuse it. Keep as the fallback if SIP setup stalls.
-
-In all three cases the adapter surface is the one docs/20 defined:
-`createCallSession` on ring, `addTranscriptTurn` per utterance,
-`executeVoiceTool` per tool call, `completeCallSession` on hangup.
-Summaries, workflows, approvals, CRM sync, and assistant events already
-happen from there. Hard rule stays: no real calls until a bridge exists,
-credentials are configured, and the connection runs in live mode.
+The V1 carrier bridge is turn-based Twilio speech recognition and TTS. A
+future direct OpenAI SIP or Twilio Media Streams transport can provide
+lower-latency speech-to-speech and barge-in without changing the tools,
+approvals, CRM, or post-call pipeline.
 
 ## Env vars
 
