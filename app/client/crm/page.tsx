@@ -6,8 +6,14 @@ import { CRM_VIEWS, parseCrmView } from "@/lib/crm/views";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
-export const metadata = { title: "Northstar CRM" };
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata() {
+  const portal = await loadClientPortal();
+  return {
+    title: portal.kind === "ok" ? portal.branding.productName : "CRM",
+  };
+}
 
 export default async function ClientCrmPage({
   searchParams,
@@ -42,6 +48,8 @@ export default async function ClientCrmPage({
   return (
     <NorthstarDesktopShell
       clientName={portal.client.name}
+      productName={portal.branding.productName}
+      logoUrl={portal.branding.logoUrl}
       currentView={view}
       userEmail={portal.user.email ?? "Signed in"}
       visibleSections={portal.access.visibleClientSections}

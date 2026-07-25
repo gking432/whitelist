@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import type { PortalBranding } from "@/lib/clients/portal";
+import { brandStyleVariables } from "@/lib/branding";
 import type { ClientExperienceMode } from "@/lib/clients/constants";
 import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 import { cn } from "@/lib/utils";
@@ -56,10 +57,11 @@ export function PortalShell({
   ).filter((item) =>
     visibleSections.includes(item.section as ClientSectionKey),
   );
+  const brandStyle = brandStyleVariables(branding);
 
   if (pathname.startsWith("/client/crm")) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background" style={brandStyle}>
         {banner}
         {children}
       </div>
@@ -67,20 +69,32 @@ export function PortalShell({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div
+      className="flex min-h-screen flex-col bg-background"
+      style={brandStyle}
+    >
       {banner}
       <header className="border-b bg-card">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">
-              {clientName.slice(0, 1).toUpperCase()}
+            <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-sm font-semibold text-primary">
+              {branding.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={branding.logoUrl}
+                  alt=""
+                  className="size-full object-contain"
+                />
+              ) : (
+                branding.productName.slice(0, 1).toUpperCase()
+              )}
             </span>
             <div className="min-w-0 leading-tight">
               <p className="truncate text-sm font-semibold tracking-tight">
-                {clientName}
+                {branding.productName}
               </p>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                Operations portal · provided by {branding.partnerName}
+                {clientName} operations portal
               </p>
             </div>
           </div>

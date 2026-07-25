@@ -137,6 +137,8 @@ function initials(email: string) {
 
 function SidebarContent({
   clientName,
+  productName,
+  logoUrl,
   currentView,
   userEmail,
   visibleSections,
@@ -144,6 +146,8 @@ function SidebarContent({
   onNavigate,
 }: {
   clientName: string;
+  productName: string;
+  logoUrl: string | null;
   currentView: CrmView;
   userEmail: string;
   visibleSections: ClientSectionKey[];
@@ -152,16 +156,21 @@ function SidebarContent({
 }) {
   return (
     <>
-      <div className="flex h-16 shrink-0 items-center gap-2 border-b border-white/10 px-5">
-        <span className="flex size-8 items-center justify-center rounded-md bg-brand-gold text-brand-deep">
-          <Compass className="size-4" aria-hidden="true" />
+      <div className="flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-foreground/10 px-5">
+        <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-brand-gold text-brand-deep">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt="" className="size-full object-contain" />
+          ) : (
+            <Compass className="size-4" aria-hidden="true" />
+          )}
         </span>
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-semibold text-white">
-            {clientName}
+          <p className="truncate text-sm font-semibold text-sidebar-foreground">
+            {productName}
           </p>
           <p className="text-[11px] text-sidebar-foreground/60">
-            Northstar Command Center
+            {clientName}
           </p>
         </div>
       </div>
@@ -184,8 +193,8 @@ function SidebarContent({
               className={cn(
                 "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
                 active
-                  ? "bg-white/10 text-white"
-                  : "text-sidebar-foreground/70 hover:bg-white/5 hover:text-white",
+                  ? "bg-sidebar-foreground/10 text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground",
               )}
             >
               <Icon className="size-4" aria-hidden="true" />
@@ -195,7 +204,7 @@ function SidebarContent({
         })}
       </nav>
 
-      <div className="border-t border-white/10 p-4">
+      <div className="border-t border-sidebar-foreground/10 p-4">
         {canViewActionCenter ? (
           <Link
             href="/client/action-center"
@@ -207,11 +216,11 @@ function SidebarContent({
           </Link>
         ) : null}
         <div className="flex items-center gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-medium text-white">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sidebar-foreground/10 text-sm font-medium text-sidebar-foreground">
             {initials(userEmail)}
           </span>
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-sm font-medium text-white">
+            <p className="truncate text-sm font-medium text-sidebar-foreground">
               {userEmail}
             </p>
             <p className="text-[11px] text-sidebar-foreground/60">
@@ -227,6 +236,8 @@ function SidebarContent({
 export function NorthstarDesktopShell({
   children,
   clientName,
+  productName,
+  logoUrl,
   currentView,
   userEmail,
   visibleSections,
@@ -235,6 +246,8 @@ export function NorthstarDesktopShell({
 }: {
   children: React.ReactNode;
   clientName: string;
+  productName: string;
+  logoUrl: string | null;
   currentView: CrmView;
   userEmail: string;
   visibleSections: ClientSectionKey[];
@@ -248,6 +261,8 @@ export function NorthstarDesktopShell({
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground lg:flex">
         <SidebarContent
           clientName={clientName}
+          productName={productName}
+          logoUrl={logoUrl}
           currentView={currentView}
           userEmail={userEmail}
           visibleSections={visibleSections}
@@ -268,7 +283,7 @@ export function NorthstarDesktopShell({
               type="button"
               size="icon"
               variant="ghost"
-              className="absolute right-2 top-3 z-10 text-white hover:bg-white/10 hover:text-white"
+              className="absolute right-2 top-3 z-10 text-sidebar-foreground hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
               onClick={() => setMobileOpen(false)}
               title="Close navigation"
             >
@@ -276,6 +291,8 @@ export function NorthstarDesktopShell({
             </Button>
             <SidebarContent
               clientName={clientName}
+              productName={productName}
+              logoUrl={logoUrl}
               currentView={currentView}
               userEmail={userEmail}
               visibleSections={visibleSections}
