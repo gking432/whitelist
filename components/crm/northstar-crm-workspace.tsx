@@ -48,6 +48,7 @@ import {
   type ClientTeamMember,
 } from "@/components/client/team-permissions";
 import { ClientAutomationHealth } from "@/components/client/automation-health";
+import { BusinessOutcomeReports } from "@/components/client/business-outcome-reports";
 import { MarketingAnalyticsDashboard } from "@/components/client/marketing-analytics";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -190,6 +191,12 @@ type Feedback = {
   suggested_internal_action: string | null;
   suggested_customer_response: string | null;
   ai_status: string;
+  created_at: string;
+};
+
+type TimelineEntry = {
+  id: string;
+  actor_type: string;
   created_at: string;
 };
 
@@ -386,6 +393,7 @@ export function NorthstarCrmWorkspace({
     data.transcriptTurns as unknown as TranscriptTurn[];
   const quotes = data.quotes as unknown as Quote[];
   const feedback = data.feedback as unknown as Feedback[];
+  const timeline = data.timeline as unknown as TimelineEntry[];
   const workflows = data.workflows as unknown as AutomationWorkflow[];
   const workflowRuns = data.workflowRuns as unknown as AutomationRun[];
   const connections = data.connections as unknown as AutomationConnection[];
@@ -450,9 +458,6 @@ export function NorthstarCrmWorkspace({
         2,
     0,
   );
-  const wonLeads = leads.filter((lead) => lead.status === "won");
-  const conversion =
-    leads.length > 0 ? Math.round((wonLeads.length / leads.length) * 100) : 0;
   const filteredContacts = contacts.filter((contact) =>
     [
       contactName(contact),
@@ -1966,103 +1971,16 @@ export function NorthstarCrmWorkspace({
       ) : null}
 
       {view === "reports" ? (
-        <div className="space-y-5">
-          <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-4">
-            <Metric
-              label="Lead conversion"
-              value={`${conversion}%`}
-              detail={`${wonLeads.length} won of ${leads.length}`}
-              icon={TrendingUp}
-            />
-            <Metric
-              label="Pipeline"
-              value={money(pipelineValue)}
-              detail={`${openLeads.length} open opportunities`}
-              icon={CircleDollarSign}
-            />
-            <Metric
-              label="Customer touches"
-              value={communications.length + calls.length}
-              detail={`${calls.length} calls · ${communications.length} messages`}
-              icon={MessageSquareText}
-            />
-            <Metric
-              label="AI operations"
-              value={
-                data.timeline.filter(
-                  (item) => item.actor_type === "ai_assistant",
-                ).length
-              }
-              detail="CRM contributions logged"
-              icon={Sparkles}
-            />
-          </section>
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            <section className="rounded-lg border bg-card p-4">
-              <h2 className="text-sm font-semibold">Pipeline distribution</h2>
-              <div className="mt-4 space-y-3">
-                {PIPELINE_STAGES.map((stage) => {
-                  const count = leads.filter(
-                    (lead) => lead.status === stage,
-                  ).length;
-                  const percent =
-                    leads.length > 0 ? Math.round((count / leads.length) * 100) : 0;
-                  return (
-                    <div key={stage}>
-                      <div className="flex justify-between text-xs">
-                        <span className="capitalize">{stage}</span>
-                        <span className="text-muted-foreground">{count}</span>
-                      </div>
-                      <div className="mt-1 h-2 overflow-hidden rounded-sm bg-secondary">
-                        <div
-                          className="h-full bg-primary"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="rounded-lg border bg-card p-4">
-              <h2 className="text-sm font-semibold">System readiness</h2>
-              <div className="mt-3 divide-y">
-                {data.connections.map((connection) => {
-                  const provider = connection.provider as
-                    | { display_name?: string; provider_key?: string }
-                    | null;
-                  return (
-                    <div
-                      key={String(connection.id)}
-                      className="flex items-center justify-between py-3"
-                    >
-                      <span className="text-sm">
-                        {provider?.display_name ??
-                          String(connection.display_name ?? "Integration")}
-                      </span>
-                      <div className="flex gap-1.5">
-                        <Badge variant="outline">
-                          {String(connection.status)}
-                        </Badge>
-                        <Badge variant="outline">
-                          {runtimeLabel(String(connection.runtime_mode))}
-                        </Badge>
-                      </div>
-                    </div>
-                  );
-                })}
-                {data.connections.length === 0 ? (
-                  <p className="py-6 text-sm text-muted-foreground">
-                    Northstar CRM works internally now. Provider connections
-                    activate live delivery and sync.
-                  </p>
-                ) : null}
-              </div>
-            </section>
-          </div>
-        </div>
+        <BusinessOutcomeReports
+          leads={leads}
+          appointments={appointments}
+          communications={communications}
+          calls={calls}
+          quotes={quotes}
+          workflows={workflows}
+          workflowRuns={workflowRuns}
+          timeline={timeline}
+        />
       ) : null}
 
       {view === "automations" ? (
