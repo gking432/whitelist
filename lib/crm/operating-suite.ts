@@ -26,8 +26,10 @@ export type NorthstarCrmData = {
   pendingApprovals: number;
   connections: Record<string, unknown>[];
   workflows: Record<string, unknown>[];
+  workflowRuns: Record<string, unknown>[];
   integrationEvents: Record<string, unknown>[];
   teamMembers: Record<string, unknown>[];
+  escalationRules: string | null;
 };
 
 async function rows(
@@ -58,8 +60,10 @@ export async function loadNorthstarCrm(
     approvalsResult,
     connections,
     workflows,
+    workflowRuns,
     integrationEvents,
     teamMembers,
+    knowledgeResult,
     clientResult,
   ] = await Promise.all([
     rows(
@@ -167,10 +171,20 @@ export async function loadNorthstarCrm(
       supabase
         .from("client_workflow_instances")
         .select(
-          "id, name, status, runtime_mode, health_status, last_run_at, template:workflow_templates(name, category, risk_level)",
+          "id, name, status, runtime_mode, health_status, last_run_at, template:workflow_templates(name, description, category, risk_level, required_provider_categories)",
         )
         .eq("client_id", clientId)
         .order("name", { ascending: true }),
+    ),
+    rows(
+      supabase
+        .from("workflow_runs")
+        .select(
+          "id, workflow_instance_id, status, summary, error_message, requires_approval, created_at, finished_at",
+        )
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false })
+        .limit(500),
     ),
     rows(
       supabase
@@ -191,6 +205,11 @@ export async function loadNorthstarCrm(
         .eq("client_id", clientId)
         .order("created_at", { ascending: true }),
     ),
+    supabase
+      .from("client_knowledge_profiles")
+      .select("escalation_rules")
+      .eq("client_id", clientId)
+      .maybeSingle(),
     supabase
       .from("client_businesses")
       .select(
@@ -219,7 +238,12 @@ export async function loadNorthstarCrm(
     pendingApprovals: approvalsResult.count ?? 0,
     connections,
     workflows,
+    workflowRuns,
     integrationEvents,
     teamMembers,
+    escalationRules:
+      knowledgeResult.error || !knowledgeResult.data
+        ? null
+        : knowledgeResult.data.escalation_rules,
   };
 }

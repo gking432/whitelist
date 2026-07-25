@@ -48,12 +48,18 @@ import {
   ClientTeamPermissions,
   type ClientTeamMember,
 } from "@/components/client/team-permissions";
+import { ClientAutomationHealth } from "@/components/client/automation-health";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { NorthstarCrmData } from "@/lib/crm/operating-suite";
+import type {
+  AutomationConnection,
+  AutomationRun,
+  AutomationWorkflow,
+} from "@/lib/crm/automation-health";
 import type { CrmView } from "@/lib/crm/views";
 import { COMMON_TIMEZONES } from "@/lib/clients/constants";
 import type { FormState } from "@/lib/forms/state";
@@ -183,32 +189,6 @@ type Feedback = {
   suggested_customer_response: string | null;
   ai_status: string;
   created_at: string;
-};
-
-type WorkflowInstance = {
-  id: string;
-  name: string;
-  status: string;
-  runtime_mode: string;
-  health_status: string;
-  last_run_at: string | null;
-  template: {
-    name?: string;
-    category?: string;
-    risk_level?: string;
-  } | null;
-};
-
-type IntegrationConnection = {
-  id: string;
-  display_name: string;
-  status: string;
-  runtime_mode: string;
-  provider: {
-    provider_key?: string;
-    display_name?: string;
-    category?: string;
-  } | null;
 };
 
 type IntegrationEvent = {
@@ -404,8 +384,9 @@ export function NorthstarCrmWorkspace({
     data.transcriptTurns as unknown as TranscriptTurn[];
   const quotes = data.quotes as unknown as Quote[];
   const feedback = data.feedback as unknown as Feedback[];
-  const workflows = data.workflows as unknown as WorkflowInstance[];
-  const connections = data.connections as unknown as IntegrationConnection[];
+  const workflows = data.workflows as unknown as AutomationWorkflow[];
+  const workflowRuns = data.workflowRuns as unknown as AutomationRun[];
+  const connections = data.connections as unknown as AutomationConnection[];
   const integrationEvents =
     data.integrationEvents as unknown as IntegrationEvent[];
   const teamMembers = data.teamMembers as unknown as ClientTeamMember[];
@@ -2176,80 +2157,22 @@ export function NorthstarCrmWorkspace({
       ) : null}
 
       {view === "automations" ? (
-        <div className="space-y-5">
-          <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-3">
-            <Metric
-              label="Installed workflows"
-              value={workflows.length}
-              detail={`${workflows.filter((workflow) => workflow.status === "active").length} active`}
-              icon={Workflow}
-            />
-            <Metric
-              label="Healthy"
-              value={
-                workflows.filter((workflow) =>
-                  ["healthy", "ok"].includes(workflow.health_status),
-                ).length
-              }
-              detail="Reporting normal operation"
-              icon={Check}
-            />
-            <Metric
-              label="Needs attention"
-              value={
-                workflows.filter((workflow) =>
-                  ["failing", "degraded", "needs_attention"].includes(
-                    workflow.health_status,
-                  ),
-                ).length
-              }
-              detail="Requires partner troubleshooting"
-              icon={ClipboardCheck}
-            />
-          </section>
-
-          <section className="overflow-hidden rounded-lg border bg-card">
-            <div className="border-b px-5 py-4">
-              <h2 className="text-sm font-semibold">Installed automations</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Client users can see operation and health. Package changes are
-                managed by the partner.
-              </p>
-            </div>
-            {workflows.length === 0 ? (
-              <Empty
-                title="No automations installed"
-                detail="Workflows appear here after the partner deploys a package."
-              />
-            ) : (
-              <div className="divide-y">
-                {workflows.map((workflow) => (
-                  <div
-                    key={workflow.id}
-                    className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{workflow.name}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {workflow.template?.category ?? "Workflow"} · Last run:{" "}
-                        {when(workflow.last_run_at)}
-                      </p>
-                    </div>
-                    <Badge variant="outline">
-                      {runtimeLabel(workflow.runtime_mode)}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      className={statusClass(workflow.health_status)}
-                    >
-                      {workflow.status} · {workflow.health_status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
+        <ClientAutomationHealth
+          workflows={workflows}
+          runs={workflowRuns}
+          connections={connections}
+          escalationRules={data.escalationRules}
+          escalationContact={{
+            name: data.client?.primary_contact_name ?? null,
+            email: data.client?.primary_contact_email ?? null,
+            phone: data.client?.primary_contact_phone ?? null,
+          }}
+          actionCenterPath={
+            visibleSections?.includes("action-center")
+              ? "/client/action-center"
+              : null
+          }
+        />
       ) : null}
 
       {view === "crm-sync" ? (
