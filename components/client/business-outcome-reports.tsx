@@ -180,8 +180,8 @@ export function BusinessOutcomeReports({
 
   return (
     <div className="min-w-0 max-w-full space-y-5 overflow-x-hidden">
-      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 overflow-x-auto">
+      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center">
+        <div className="grid w-full grid-cols-3 sm:flex sm:w-auto sm:shrink-0">
           {(
             [
               ["executive", "Executive"],
@@ -194,7 +194,7 @@ export function BusinessOutcomeReports({
               type="button"
               onClick={() => setActiveView(key)}
               className={cn(
-                "min-h-9 whitespace-nowrap border-b-2 px-4 text-xs font-medium",
+                "min-h-9 whitespace-nowrap border-b-2 px-2 text-xs font-medium sm:px-4",
                 activeView === key
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground",
@@ -209,7 +209,7 @@ export function BusinessOutcomeReports({
           onChange={(event) =>
             setRange(event.target.value as BusinessReportRange)
           }
-          className="min-w-40"
+          className="w-full sm:ml-auto sm:w-44 sm:shrink-0"
           aria-label="Report date range"
         >
           {Object.entries(RANGE_LABELS).map(([value, label]) => (
