@@ -61,7 +61,7 @@ test("marketing staff only receive their assigned client sections", () => {
   assert.deepEqual(access.visibleClientSections, [
     "overview",
     "inbox",
-    "feedback",
+    "marketing",
     "reports",
   ]);
   assert.equal(access.canViewActionCenter, false);

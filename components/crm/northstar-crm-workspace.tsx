@@ -29,7 +29,6 @@ import {
 import { useRouter } from "next/navigation";
 
 import {
-  analyzeAndSaveCrmFeedback,
   createCrmAppointment,
   createCrmLead,
   createCrmMessageDraft,
@@ -49,6 +48,7 @@ import {
   type ClientTeamMember,
 } from "@/components/client/team-permissions";
 import { ClientAutomationHealth } from "@/components/client/automation-health";
+import { MarketingAnalyticsDashboard } from "@/components/client/marketing-analytics";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,6 +88,7 @@ type Lead = {
   description: string | null;
   urgency: string | null;
   quality: string | null;
+  source_event_type: string | null;
   summary: string | null;
   next_action: string | null;
   estimated_value_min: number | null;
@@ -130,6 +131,7 @@ type Appointment = {
   status: string;
   location: string | null;
   notes: string | null;
+  created_at: string;
 };
 
 type Availability = {
@@ -216,7 +218,7 @@ const VIEW_ITEMS: {
   { key: "schedule", label: "Schedule", icon: CalendarDays },
   { key: "calls", label: "AI Calls", icon: PhoneCall },
   { key: "quotes", label: "Quotes", icon: CircleDollarSign },
-  { key: "feedback", label: "Feedback", icon: Star },
+  { key: "marketing", label: "Marketing", icon: Star },
   { key: "automations", label: "AI Automations", icon: Workflow },
   { key: "reports", label: "Reports", icon: BarChart3 },
   { key: "crm-sync", label: "CRM Sync", icon: Cable },
@@ -1954,106 +1956,13 @@ export function NorthstarCrmWorkspace({
         </div>
       ) : null}
 
-      {view === "feedback" ? (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
-          <section className="overflow-hidden rounded-lg border bg-card">
-            <div className="border-b px-4 py-3">
-              <h2 className="text-sm font-semibold">Feedback intelligence</h2>
-            </div>
-            {feedback.length === 0 ? (
-              <Empty
-                title="No feedback analyzed"
-                detail="Paste a review or customer message to identify sentiment, risk, next actions, and a response."
-              />
-            ) : (
-              <div className="divide-y">
-                {feedback.map((item) => (
-                  <article key={item.id} className="px-4 py-4">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge
-                        variant="outline"
-                        className={statusClass(item.sentiment)}
-                      >
-                        {item.sentiment}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={statusClass(item.risk_level)}
-                      >
-                        {item.risk_level} risk
-                      </Badge>
-                      {item.rating ? (
-                        <Badge variant="outline">{item.rating}/5</Badge>
-                      ) : null}
-                      <span className="text-[11px] text-muted-foreground">
-                        {item.source} · {item.ai_status}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm">{item.summary}</p>
-                    {item.suggested_internal_action ? (
-                      <p className="mt-2 rounded-md bg-secondary/50 px-3 py-2 text-xs leading-5">
-                        <span className="font-medium">Next action:</span>{" "}
-                        {item.suggested_internal_action}
-                      </p>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {canEdit ? (
-            <form
-              className="h-fit space-y-3 rounded-lg border bg-card p-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = new FormData(event.currentTarget);
-                run(() =>
-                  analyzeAndSaveCrmFeedback({
-                    clientId,
-                    source: String(form.get("source") ?? ""),
-                    rating: Number(form.get("rating")),
-                    feedbackText: String(form.get("feedback_text") ?? ""),
-                    contactId: String(form.get("contact_id") ?? ""),
-                  }),
-                );
-              }}
-            >
-              <h2 className="text-sm font-semibold">Analyze feedback</h2>
-              <Select name="source" defaultValue="google_review">
-                <option value="google_review">Google review</option>
-                <option value="facebook">Facebook</option>
-                <option value="email">Email</option>
-                <option value="survey">Survey</option>
-                <option value="manual">Manual entry</option>
-              </Select>
-              <Select name="rating" defaultValue="5">
-                <option value="5">5 stars</option>
-                <option value="4">4 stars</option>
-                <option value="3">3 stars</option>
-                <option value="2">2 stars</option>
-                <option value="1">1 star</option>
-              </Select>
-              <Select name="contact_id" defaultValue="">
-                <option value="">No contact match</option>
-                {contacts.map((contact) => (
-                  <option key={contact.id} value={contact.id}>
-                    {contactName(contact)}
-                  </option>
-                ))}
-              </Select>
-              <Textarea
-                name="feedback_text"
-                placeholder="Paste the customer's feedback"
-                required
-              />
-              <Button type="submit" className="w-full" disabled={pending}>
-                <Sparkles aria-hidden="true" />
-                Analyze sentiment and risk
-              </Button>
-            </form>
-          ) : null}
-        </div>
+      {view === "marketing" ? (
+        <MarketingAnalyticsDashboard
+          contacts={contacts}
+          leads={leads}
+          appointments={appointments}
+          feedback={feedback}
+        />
       ) : null}
 
       {view === "reports" ? (

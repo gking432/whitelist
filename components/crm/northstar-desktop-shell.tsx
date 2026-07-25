@@ -84,9 +84,9 @@ const CRM_NAVIGATION: Array<{
     icon: Calculator,
   },
   {
-    href: "/client/crm?view=feedback",
-    label: "Feedback",
-    view: "feedback",
+    href: "/client/crm?view=marketing",
+    label: "Marketing",
+    view: "marketing",
     icon: Activity,
   },
   {
@@ -124,7 +124,7 @@ const PAGE_TITLES: Record<CrmView, string> = {
   tasks: "Tasks",
   schedule: "Appointments",
   quotes: "Quote Tool",
-  feedback: "Customer Feedback",
+  marketing: "Marketing",
   automations: "AI Automations",
   reports: "Reports",
   "crm-sync": "CRM Sync",

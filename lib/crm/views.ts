@@ -7,7 +7,7 @@ export const CRM_VIEWS = [
   "schedule",
   "calls",
   "quotes",
-  "feedback",
+  "marketing",
   "automations",
   "reports",
   "crm-sync",
@@ -17,6 +17,7 @@ export const CRM_VIEWS = [
 export type CrmView = (typeof CRM_VIEWS)[number];
 
 export function parseCrmView(value: string | undefined): CrmView {
+  if (value === "feedback") return "marketing";
   return CRM_VIEWS.includes(value as CrmView)
     ? (value as CrmView)
     : "overview";
