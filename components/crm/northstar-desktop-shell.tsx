@@ -294,6 +294,11 @@ export function NorthstarDesktopShell({
               className="pl-9"
             />
           </form>
+          <Button asChild size="icon" variant="outline">
+            <Link href="/client/assistant" aria-label="Open AI assistant">
+              <Bot aria-hidden="true" />
+            </Link>
+          </Button>
           <Button asChild size="sm" className="ml-auto shrink-0 md:ml-0">
             <Link
               href="/client/crm?view=pipeline&new=1#new-lead"

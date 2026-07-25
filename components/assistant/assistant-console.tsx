@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   ArrowUpRight,
+  Bot,
   CalendarClock,
   Check,
   Copy,
@@ -43,10 +44,9 @@ const urgencyStyles: Record<string, string> = {
 
 const actionStateStyles: Record<string, string> = {
   works_now: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  dry_run: "border-sky-200 bg-sky-50 text-sky-800",
+  dry_run: "border-amber-200 bg-amber-50 text-amber-900",
   requires_connection: "border-amber-200 bg-amber-50 text-amber-900",
-  preview_only: "border-slate-200 bg-slate-100 text-slate-600",
-  coming_soon: "border-slate-200 bg-slate-100 text-slate-600",
+  waiting: "border-slate-200 bg-slate-100 text-slate-600",
   not_in_package: "border-slate-200 bg-slate-50 text-slate-400",
 };
 
@@ -58,14 +58,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SourceTag({ source }: { source: "ai" | "fallback" | "preview" }) {
+function SourceTag({ source }: { source: "ai" | "fallback" }) {
   return (
     <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-      {source === "ai"
-        ? "AI"
-        : source === "fallback"
-          ? "Rule-based fallback"
-          : "Preview"}
+      {source === "ai" ? "AI" : "Automated"}
     </span>
   );
 }
@@ -79,12 +75,18 @@ function ActionButton({
   onActivate?: () => void;
   busy?: boolean;
 }) {
+  const stateLabel =
+    action.state === "dry_run" ? "Connection pending" : action.stateLabel;
+  const detail =
+    action.state === "dry_run"
+      ? "Your service provider is finishing this connection."
+      : action.detail;
   const chip = (
     <Badge
       variant="outline"
       className={cn("text-[10px]", actionStateStyles[action.state])}
     >
-      {action.stateLabel}
+      {stateLabel}
     </Badge>
   );
 
@@ -102,7 +104,7 @@ function ActionButton({
         {chip}
       </span>
       <span className="mt-1 block text-left text-[11px] leading-4 text-muted-foreground">
-        {action.detail}
+        {detail}
       </span>
     </>
   );
@@ -135,10 +137,11 @@ function ActionButton({
 }
 
 export function AssistantConsole({
-  context,
+  context: initialContext,
 }: {
   context: AssistantContextData;
 }) {
+  const [context, setContext] = useState(initialContext);
   const [copied, setCopied] = useState(false);
   const [escalating, setEscalating] = useState(false);
   const [escalationNote, setEscalationNote] = useState("");
@@ -147,6 +150,45 @@ export function AssistantConsole({
 
   const { interaction, routing, analysis, draft } = context;
   const base = context.basePath;
+  const visibleActions = useMemo(
+    () =>
+      context.actions.filter(
+        (action) =>
+          action.enabled ||
+          (context.mode === "live" && action.state !== "not_in_package"),
+      ),
+    [context.actions, context.mode],
+  );
+
+  useEffect(() => {
+    let active = true;
+    const query = context.basePath.startsWith("/partner/")
+      ? `?client_id=${encodeURIComponent(context.clientId)}`
+      : "";
+
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/assistant/context${query}`, {
+          cache: "no-store",
+        });
+        const body = (await response.json()) as {
+          context?: AssistantContextData;
+        };
+
+        if (active && response.ok && body.context) {
+          setContext(body.context);
+        }
+      } catch {
+        // Keep the last known context if the connection briefly drops.
+      }
+    };
+
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [context.basePath, context.clientId]);
 
   const copyDraft = async () => {
     if (!draft) {
@@ -207,31 +249,48 @@ export function AssistantConsole({
           <div className="flex items-center gap-2">
             <Sparkles className="size-4 text-brand-gold" aria-hidden="true" />
             <span className="text-sm font-semibold">Assistant</span>
-            <span className="text-xs text-white/60">{context.clientName}</span>
+            <span className="hidden text-xs text-white/60 sm:inline">
+              {context.clientName}
+            </span>
           </div>
           <Badge
             variant="outline"
             className={
               context.mode === "live"
                 ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-200"
-                : "border-amber-300/40 bg-amber-400/10 text-amber-200"
+                : "border-white/20 bg-white/5 text-white/70"
             }
           >
-            {context.mode === "live" ? "Live data" : "Preview"}
+            <span className="sm:hidden">
+              {context.mode === "live" ? "Live" : "Idle"}
+            </span>
+            <span className="hidden sm:inline">
+              {context.mode === "live"
+                ? "Live customer data"
+                : "No active interaction"}
+            </span>
           </Badge>
         </div>
 
-        {context.mode === "preview" ? (
-          <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs leading-5 text-amber-900">
-            Preview — no interaction has come through this client yet. This
-            sample shows what the console looks like once real leads flow.
-            Nothing below is live customer data.
-          </p>
-        ) : null}
-
         {/* Desktop workbench: context pane + action rail. */}
-        <div className="grid grid-cols-[minmax(0,1fr)_21rem] divide-x bg-card">
+        <div className="grid divide-y bg-card lg:grid-cols-[minmax(0,1fr)_21rem] lg:divide-x lg:divide-y-0">
           <div className="space-y-4 p-5">
+          {context.mode === "idle" ? (
+            <section className="flex min-h-80 flex-col items-center justify-center px-5 text-center">
+              <span className="flex size-11 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                <Bot className="size-5" aria-hidden="true" />
+              </span>
+              <h2 className="mt-3 text-sm font-semibold">
+                No customer activity yet
+              </h2>
+              <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+                Calls, messages, scheduling suggestions, and drafts will appear
+                here automatically as connected customer channels receive
+                activity.
+              </p>
+            </section>
+          ) : (
+            <>
           {/* Active interaction */}
           {interaction ? (
             <section>
@@ -282,6 +341,34 @@ export function AssistantConsole({
                     ? `HubSpot contact ${context.crm.contactId}`
                     : "no CRM match yet"}
                 </p>
+              </div>
+            </section>
+          ) : null}
+
+          {context.transcript.length > 0 ? (
+            <section>
+              <SectionLabel>Live transcript</SectionLabel>
+              <div className="mt-1.5 max-h-56 space-y-2 overflow-y-auto rounded-lg border bg-background p-3">
+                {context.transcript.map((turn, index) => (
+                  <div
+                    key={`${turn.at}-${index}`}
+                    className={cn(
+                      "max-w-[88%] rounded-md px-2.5 py-2 text-xs leading-5",
+                      turn.role === "caller"
+                        ? "bg-secondary"
+                        : "ml-auto border bg-card",
+                    )}
+                  >
+                    <p className="text-[10px] font-semibold text-muted-foreground">
+                      {turn.role === "caller"
+                        ? "Customer"
+                        : turn.role === "staff"
+                          ? "Team member"
+                          : "AI assistant"}
+                    </p>
+                    <p>{turn.content}</p>
+                  </div>
+                ))}
               </div>
             </section>
           ) : null}
@@ -456,6 +543,8 @@ export function AssistantConsole({
               </ul>
             </section>
           ) : null}
+            </>
+          )}
           </div>
 
           {/* Action rail */}
@@ -463,7 +552,7 @@ export function AssistantConsole({
           <section>
             <SectionLabel>Actions</SectionLabel>
             <div className="mt-1.5 grid grid-cols-1 gap-2">
-              {context.actions.map((action) => (
+              {visibleActions.map((action) => (
                 <ActionButton
                   key={action.key}
                   action={action}
@@ -471,6 +560,12 @@ export function AssistantConsole({
                   onActivate={() => activate(action)}
                 />
               ))}
+              {visibleActions.length === 0 ? (
+                <p className="rounded-lg border border-dashed px-3 py-4 text-xs leading-5 text-muted-foreground">
+                  Actions will appear when a customer interaction needs a
+                  response.
+                </p>
+              ) : null}
             </div>
             {escalating ? (
               <div className="mt-2 rounded-lg border bg-background p-3">
@@ -512,34 +607,6 @@ export function AssistantConsole({
           </div>
         </div>
 
-        {/* Runtime honesty footer */}
-        <div className="border-t bg-secondary/40 px-4 py-3">
-          <p className="text-[11px] leading-4 text-muted-foreground">
-            <span className="font-medium text-foreground">
-              You&apos;re using the web console — works now.
-            </span>{" "}
-            {context.packageName
-              ? `Package: ${context.packageName}.`
-              : "No package selected yet — actions unlock with the package."}{" "}
-            Later runtimes for this same console:{" "}
-            {context.runtime.futureRuntimes.join(", ").toLowerCase()}.
-          </p>
-          {context.soldAhead.length > 0 ? (
-            <details className="mt-1.5">
-              <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">
-                Sold ahead of the product ({context.soldAhead.length})
-              </summary>
-              <ul className="mt-1 space-y-1 text-[11px] leading-4 text-muted-foreground">
-                {context.soldAhead.map((item) => (
-                  <li key={item.label}>
-                    <span className="font-medium">{item.label}:</span>{" "}
-                    {item.note}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-        </div>
       </div>
     </div>
   );

@@ -11,7 +11,6 @@ const backgroundNavigation = [
   { label: "Action Center", href: "/client" },
   { label: "Assistant", href: "/client/assistant" },
   { label: "Approvals", href: "/client/approvals" },
-  { label: "Test Center", href: "/client/test-center" },
   { label: "Activity", href: "/client/activity" },
 ];
 
@@ -20,7 +19,6 @@ const crmNavigation = [
   { label: "Action Center", href: "/client/action-center" },
   { label: "Assistant", href: "/client/assistant" },
   { label: "Approvals", href: "/client/approvals" },
-  { label: "Test Center", href: "/client/test-center" },
   { label: "Activity", href: "/client/activity" },
 ];
 

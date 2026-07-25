@@ -20,7 +20,6 @@ import {
   PhoneCall,
   Plus,
   Search,
-  Send,
   Settings,
   Sparkles,
   Star,
@@ -36,7 +35,6 @@ import {
   createCrmMessageDraft,
   createCrmQuote,
   createCrmTask,
-  receiveCrmCommunication,
   saveCrmAvailability,
   setCrmAppointmentStatus,
   setCrmQuoteStatus,
@@ -46,7 +44,6 @@ import {
   updateCrmLeadStage,
   updateCrmWorkspaceSettings,
 } from "@/app/crm/actions";
-import { VoiceCallLab } from "@/components/crm/voice-call-lab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,13 +133,25 @@ type Availability = {
 type Call = {
   id: string;
   from_number: string | null;
+  to_number: string | null;
   direction: string;
   status: string;
   provider: string;
+  matched_contact_id: string | null;
   summary: string | null;
   crm_note: string | null;
+  extracted: Record<string, unknown> | null;
   started_at: string;
   ended_at: string | null;
+};
+
+type TranscriptTurn = {
+  id: string;
+  call_session_id: string;
+  seq: number;
+  role: "caller" | "staff" | "ai_assistant";
+  content: string;
+  occurred_at: string;
 };
 
 type Quote = {
@@ -374,6 +383,8 @@ export function NorthstarCrmWorkspace({
   const appointments = data.appointments as unknown as Appointment[];
   const availability = data.availability as unknown as Availability[];
   const calls = data.calls as unknown as Call[];
+  const transcriptTurns =
+    data.transcriptTurns as unknown as TranscriptTurn[];
   const quotes = data.quotes as unknown as Quote[];
   const feedback = data.feedback as unknown as Feedback[];
   const workflows = data.workflows as unknown as WorkflowInstance[];
@@ -396,6 +407,21 @@ export function NorthstarCrmWorkspace({
     () => new Map(contacts.map((contact) => [contact.id, contact])),
     [contacts],
   );
+  const transcriptByCall = useMemo(() => {
+    const grouped = new Map<string, TranscriptTurn[]>();
+
+    for (const turn of transcriptTurns) {
+      const group = grouped.get(turn.call_session_id) ?? [];
+      group.push(turn);
+      grouped.set(turn.call_session_id, group);
+    }
+
+    for (const group of grouped.values()) {
+      group.sort((a, b) => a.seq - b.seq);
+    }
+
+    return grouped;
+  }, [transcriptTurns]);
 
   function run(action: () => Promise<FormState>) {
     setActionMessage(null);
@@ -1293,7 +1319,7 @@ export function NorthstarCrmWorkspace({
             {communications.length === 0 ? (
               <Empty
                 title="No conversations yet"
-                detail="Use the customer simulator to send an inbound message through the real workflow engine."
+                detail="Connected forms, phone, SMS, and email activity will appear here automatically."
               />
             ) : (
               <div className="divide-y">
@@ -1341,52 +1367,6 @@ export function NorthstarCrmWorkspace({
 
           {canOperate ? (
             <aside className="space-y-4">
-              <form
-                className="space-y-3 rounded-lg border bg-card p-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const form = new FormData(event.currentTarget);
-                  run(() =>
-                    receiveCrmCommunication({
-                      clientId,
-                      channel: String(form.get("channel")) as
-                        | "sms"
-                        | "email"
-                        | "form",
-                      name: String(form.get("name") ?? ""),
-                      phone: String(form.get("phone") ?? ""),
-                      email: String(form.get("email") ?? ""),
-                      message: String(form.get("message") ?? ""),
-                    }),
-                  );
-                }}
-              >
-                <div>
-                  <h2 className="text-sm font-semibold">Customer simulator</h2>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Sends an inbound event through routing, lead analysis, CRM,
-                    drafting, and approvals.
-                  </p>
-                </div>
-                <Select name="channel" defaultValue="sms">
-                  <option value="sms">Inbound SMS</option>
-                  <option value="email">Inbound email</option>
-                  <option value="form">Website form</option>
-                </Select>
-                <Input name="name" placeholder="Customer name" />
-                <Input name="phone" placeholder="Phone" />
-                <Input name="email" type="email" placeholder="Email" />
-                <Textarea
-                  name="message"
-                  placeholder="What is the customer saying?"
-                  required
-                />
-                <Button type="submit" className="w-full" disabled={pending}>
-                  <Send aria-hidden="true" />
-                  Send through workflows
-                </Button>
-              </form>
-
               <form
                 className="space-y-3 rounded-lg border bg-card p-4"
                 onSubmit={(event) => {
@@ -1650,47 +1630,184 @@ export function NorthstarCrmWorkspace({
 
       {view === "calls" ? (
         <div className="space-y-5">
-          <VoiceCallLab clientId={clientId} canOperate={canOperate} />
           <section className="overflow-hidden rounded-lg border bg-card">
-            <div className="border-b px-4 py-3">
-              <h2 className="text-sm font-semibold">Call history</h2>
+            <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold">Call history</h2>
+                <p className="text-xs text-muted-foreground">
+                  Transcripts, AI summaries, and scheduling details
+                </p>
+              </div>
+              <Button asChild variant="outline" size="sm">
+                <Link href={assistantPath}>
+                  <Bot aria-hidden="true" />
+                  Open assistant
+                </Link>
+              </Button>
             </div>
             {calls.length === 0 ? (
               <Empty
                 title="No calls yet"
-                detail="Run the phone lab above. Real carrier calls will land in this same history after Twilio Voice is connected."
+                detail="Calls from connected phone systems will appear here automatically."
               />
             ) : (
               <div className="divide-y">
-                {calls.map((call) => (
-                  <div
-                    key={call.id}
-                    className="grid gap-3 px-4 py-3 lg:grid-cols-[12rem_8rem_minmax(0,1fr)]"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">
-                        {call.from_number ?? "Unknown caller"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {when(call.started_at)}
-                      </p>
-                    </div>
-                    <div>
-                      <Badge
-                        variant="outline"
-                        className={statusClass(call.status)}
-                      >
-                        {call.status}
-                      </Badge>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        {call.provider.replaceAll("_", " ")}
-                      </p>
-                    </div>
-                    <p className="text-sm leading-6 text-muted-foreground">
-                      {call.summary ?? call.crm_note ?? "Call in progress"}
-                    </p>
-                  </div>
-                ))}
+                {calls.map((call) => {
+                  const turns = transcriptByCall.get(call.id) ?? [];
+                  const matchedContact = call.matched_contact_id
+                    ? contactById.get(call.matched_contact_id)
+                    : null;
+                  const extracted = call.extracted ?? {};
+                  const facts = [
+                    ["Service", extracted.service_need],
+                    ["Urgency", extracted.urgency],
+                    ["Scheduling", extracted.appointment_preference],
+                    ["Address", extracted.address],
+                  ].filter(
+                    (fact): fact is [string, string] =>
+                      typeof fact[1] === "string" &&
+                      Boolean(fact[1].trim()),
+                  );
+
+                  return (
+                    <details key={call.id} className="group">
+                      <summary className="grid cursor-pointer list-none gap-3 px-4 py-3 transition-colors hover:bg-secondary/30 lg:grid-cols-[12rem_8rem_minmax(0,1fr)_auto]">
+                        <div>
+                          <p className="text-sm font-medium">
+                            {matchedContact
+                              ? contactName(matchedContact)
+                              : call.from_number ?? "Unknown caller"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {when(call.started_at)}
+                          </p>
+                        </div>
+                        <div>
+                          <Badge
+                            variant="outline"
+                            className={statusClass(call.status)}
+                          >
+                            {call.status.replaceAll("_", " ")}
+                          </Badge>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {call.provider.replaceAll("_", " ")}
+                          </p>
+                        </div>
+                        <p className="text-sm leading-6 text-muted-foreground">
+                          {call.crm_note ??
+                            call.summary ??
+                            (call.status === "in_progress"
+                              ? "Call in progress"
+                              : "No summary captured")}
+                        </p>
+                        <ChevronRight
+                          className="mt-1 size-4 text-muted-foreground transition-transform group-open:rotate-90"
+                          aria-hidden="true"
+                        />
+                      </summary>
+                      <div className="border-t bg-secondary/15 px-4 py-4">
+                        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]">
+                          <section>
+                            <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                              Transcript
+                            </p>
+                            {turns.length > 0 ? (
+                              <div className="mt-2 space-y-2">
+                                {turns.map((turn) => (
+                                  <div
+                                    key={turn.id}
+                                    className="rounded-md border bg-card px-3 py-2"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[11px] font-semibold">
+                                        {turn.role === "caller"
+                                          ? "Customer"
+                                          : turn.role === "staff"
+                                            ? "Team member"
+                                            : "AI assistant"}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {when(turn.occurred_at)}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 whitespace-pre-wrap text-xs leading-5">
+                                      {turn.content}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                No transcript was captured for this call.
+                              </p>
+                            )}
+                          </section>
+                          <aside className="space-y-4">
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                                Call details
+                              </p>
+                              <dl className="mt-2 space-y-2 text-xs">
+                                <div className="flex justify-between gap-3">
+                                  <dt className="text-muted-foreground">
+                                    Direction
+                                  </dt>
+                                  <dd className="font-medium">
+                                    {call.direction}
+                                  </dd>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                  <dt className="text-muted-foreground">
+                                    From
+                                  </dt>
+                                  <dd className="text-right font-medium">
+                                    {call.from_number ?? "Unknown"}
+                                  </dd>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                  <dt className="text-muted-foreground">To</dt>
+                                  <dd className="text-right font-medium">
+                                    {call.to_number ?? "Unknown"}
+                                  </dd>
+                                </div>
+                              </dl>
+                            </div>
+                            {facts.length > 0 ? (
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                                  AI captured
+                                </p>
+                                <dl className="mt-2 space-y-2 text-xs">
+                                  {facts.map(([label, value]) => (
+                                    <div key={label}>
+                                      <dt className="text-muted-foreground">
+                                        {label}
+                                      </dt>
+                                      <dd className="mt-0.5 font-medium">
+                                        {value}
+                                      </dd>
+                                    </div>
+                                  ))}
+                                </dl>
+                              </div>
+                            ) : null}
+                            {call.summary &&
+                            call.summary !== call.crm_note ? (
+                              <div>
+                                <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                                  Internal summary
+                                </p>
+                                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                                  {call.summary}
+                                </p>
+                              </div>
+                            ) : null}
+                          </aside>
+                        </div>
+                      </div>
+                    </details>
+                  );
+                })}
               </div>
             )}
           </section>

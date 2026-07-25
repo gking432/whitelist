@@ -3,14 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ClientBusinessRecord } from "@/lib/clients/constants";
 import {
   enabledCapabilityKeys,
-  STAFF_RUNTIME_LABELS,
   type CapabilityKey,
-  type StaffRuntime,
 } from "@/lib/packages/capabilities";
-import {
-  requirementsForPackage,
-  type PartnerPackageRecord,
-} from "@/lib/packages/requirements";
+import type { PartnerPackageRecord } from "@/lib/packages/requirements";
 
 // ---------------------------------------------------------------------------
 // Staff Assistant Console context (docs/15).
@@ -50,8 +45,7 @@ export type AssistantActionState =
   | "works_now"
   | "dry_run"
   | "requires_connection"
-  | "preview_only"
-  | "coming_soon"
+  | "waiting"
   | "not_in_package";
 
 export type AssistantAction = {
@@ -81,9 +75,7 @@ export type AssistantInteraction = {
 };
 
 export type AssistantContextData = {
-  // "live" renders real tenant data; "preview" is a labeled sample so the
-  // console is understandable before the first real interaction arrives.
-  mode: "live" | "preview";
+  mode: "live" | "idle";
   clientId: string;
   clientName: string;
   // Route prefix for in-app links; differs between the partner workspace
@@ -91,6 +83,11 @@ export type AssistantContextData = {
   basePath: string;
   packageName: string | null;
   interaction: AssistantInteraction | null;
+  transcript: {
+    role: "caller" | "staff" | "ai_assistant";
+    content: string;
+    at: string;
+  }[];
   routing: {
     category: string;
     urgency: string;
@@ -99,7 +96,7 @@ export type AssistantContextData = {
     suggestedNextAction: string;
     recommendedOwner: string;
     requiresHandoff: boolean;
-    source: "ai" | "fallback" | "preview";
+    source: "ai" | "fallback";
   } | null;
   analysis: {
     urgency: string;
@@ -107,7 +104,7 @@ export type AssistantContextData = {
     missingFields: string[];
     recommendedNextAction: string;
     suggestedTaskTitle: string | null;
-    source: "ai" | "fallback" | "preview";
+    source: "ai" | "fallback";
   } | null;
   draft: {
     channel: string;
@@ -138,12 +135,6 @@ export type AssistantContextData = {
     title: string;
     detail: string | null;
   }[];
-  // Package/runtime honesty.
-  runtime: {
-    requiredNow: { label: string; detail: string }[];
-    futureRuntimes: string[];
-  };
-  soldAhead: { label: string; note: string }[];
   hasLeadBearingRun: boolean;
 };
 
@@ -160,6 +151,21 @@ type RunRow = {
   input_snapshot: Record<string, unknown> | null;
   output_snapshot: Record<string, unknown> | null;
   template: { template_key: string; name: string } | null;
+};
+
+type CallRow = {
+  id: string;
+  status: string;
+  from_number: string | null;
+  started_at: string;
+  extracted: Record<string, unknown> | null;
+};
+
+type TranscriptRow = {
+  call_session_id: string;
+  role: string;
+  content: string;
+  occurred_at: string;
 };
 
 const CHANNEL_BY_EVENT_PREFIX: [string, AssistantChannel, string][] = [
@@ -190,54 +196,6 @@ function channelForEvent(eventType: string): {
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
-
-// Three plausible upcoming slots in the client's timezone. Always preview:
-// real availability comes from the calendar once booking is wired.
-function previewSlots(timezone: string): { label: string; startIso: string }[] {
-  const slots: { label: string; startIso: string }[] = [];
-  const hours = [9, 13, 15];
-  const now = new Date();
-
-  for (let dayOffset = 1; slots.length < 3; dayOffset += 1) {
-    const candidate = new Date(now);
-    candidate.setDate(candidate.getDate() + dayOffset);
-
-    const weekday = candidate.getDay();
-
-    if (weekday === 0 || weekday === 6) {
-      continue;
-    }
-
-    candidate.setHours(hours[slots.length], 0, 0, 0);
-
-    slots.push({
-      label: new Intl.DateTimeFormat("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        timeZone: timezone,
-      }).format(candidate),
-      startIso: candidate.toISOString(),
-    });
-  }
-
-  return slots;
-}
-
-const PREVIEW_INTERACTION: AssistantInteraction = {
-  channel: "phone",
-  channelLabel: "Phone (missed call)",
-  eventType: "missed_call.created",
-  receivedAt: null,
-  contactName: "Taylor Sample",
-  contactPhone: "+1 (555) 010-1234",
-  contactEmail: "taylor.sample@example.com",
-  contactAddress: "12 Pilot Lane",
-  message:
-    "Missed call — voicemail transcript: \"Hi, my water heater is leaking and I'd love someone out this week if possible.\"",
-};
 
 function buildActions(input: {
   base: string;
@@ -446,7 +404,7 @@ function buildActions(input: {
   actions.push({
     key: "create_task",
     label: "Create task",
-    state: hasLeadBearingRun ? "works_now" : "preview_only",
+    state: hasLeadBearingRun ? "works_now" : "waiting",
     stateLabel: hasLeadBearingRun ? "Works now" : "No lead yet",
     detail: hasLeadBearingRun
       ? "Creates the AI-suggested follow-up task for the latest lead in Northstar's task list."
@@ -459,7 +417,7 @@ function buildActions(input: {
   actions.push({
     key: "mark_spam",
     label: "Mark spam / low-value",
-    state: hasLeadBearingRun ? "works_now" : "preview_only",
+    state: hasLeadBearingRun ? "works_now" : "waiting",
     stateLabel: hasLeadBearingRun ? "Works now" : "No lead yet",
     detail: hasLeadBearingRun
       ? "Closes the latest lead as spam/low-value and records it in the audit trail."
@@ -472,19 +430,20 @@ function buildActions(input: {
   actions.push({
     key: "escalate",
     label: "Escalate",
-    state: "works_now",
-    stateLabel: "Works now",
-    detail:
-      "Flags this interaction for a manager and records the escalation in the audit trail.",
+    state: hasLeadBearingRun ? "works_now" : "waiting",
+    stateLabel: hasLeadBearingRun ? "Works now" : "No interaction yet",
+    detail: hasLeadBearingRun
+      ? "Flags this interaction for a manager and records the escalation in the audit trail."
+      : "Available when a customer interaction needs attention.",
     href: null,
-    enabled: true,
+    enabled: hasLeadBearingRun,
   });
 
   // Copy fallback — real whenever a draft exists.
   actions.push({
     key: "copy_fallback",
     label: "Copy fallback",
-    state: hasDraft ? "works_now" : "preview_only",
+    state: hasDraft ? "works_now" : "waiting",
     stateLabel: hasDraft ? "Works now" : "No draft yet",
     detail: hasDraft
       ? "Copies the draft text so you can paste it into any tool — the fallback when a provider is not connected."
@@ -511,6 +470,8 @@ export async function buildAssistantContext(
     { data: approvalsData },
     { data: auditData },
     { data: assistantEventsData },
+    { data: callsData },
+    { data: transcriptData },
   ] = await Promise.all([
     client.package_id
       ? supabase
@@ -551,14 +512,24 @@ export async function buildAssistantContext(
       .eq("client_id", client.id)
       .order("created_at", { ascending: false })
       .limit(8),
+    supabase
+      .from("call_sessions")
+      .select("id, status, from_number, started_at, extracted")
+      .eq("client_id", client.id)
+      .order("started_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("call_transcript_turns")
+      .select("call_session_id, role, content, occurred_at")
+      .eq("client_id", client.id)
+      .order("occurred_at", { ascending: false })
+      .limit(40),
   ]);
 
   const pkg = packageData as PartnerPackageRecord | null;
   const capabilities = new Set<CapabilityKey>(
     pkg ? enabledCapabilityKeys(pkg.capabilities) : [],
   );
-  const requirements = pkg ? requirementsForPackage(pkg) : null;
-
   const connections = (connectionsData ?? []) as unknown as {
     status: string;
     runtime_mode: string;
@@ -612,12 +583,42 @@ export async function buildAssistantContext(
       run.template?.template_key ?? "",
     ),
   );
+  const latestCall = ((callsData ?? []) as CallRow[])[0] ?? null;
+  const activeCall = latestCall?.status === "in_progress" ? latestCall : null;
+  const activeCallTurns = activeCall
+    ? ((transcriptData ?? []) as TranscriptRow[])
+        .filter((turn) => turn.call_session_id === activeCall.id)
+        .sort((a, b) => (a.occurred_at > b.occurred_at ? 1 : -1))
+    : [];
 
-  const mode: AssistantContextData["mode"] = latestRun ? "live" : "preview";
+  const mode: AssistantContextData["mode"] =
+    latestRun || activeCall ? "live" : "idle";
 
   let interaction: AssistantInteraction | null = null;
 
-  if (latestRun) {
+  if (activeCall) {
+    const extracted = activeCall.extracted ?? {};
+    const collected =
+      typeof extracted.voice_collected === "object" &&
+      extracted.voice_collected !== null
+        ? (extracted.voice_collected as Record<string, unknown>)
+        : {};
+    const latestCallerTurn = [...activeCallTurns]
+      .reverse()
+      .find((turn) => turn.role === "caller");
+
+    interaction = {
+      channel: "phone",
+      channelLabel: "Live phone call",
+      eventType: "call.in_progress",
+      receivedAt: activeCall.started_at,
+      contactName: asString(collected.name),
+      contactPhone: asString(collected.phone) ?? activeCall.from_number,
+      contactEmail: asString(collected.email),
+      contactAddress: asString(collected.address),
+      message: latestCallerTurn?.content ?? null,
+    };
+  } else if (latestRun) {
     const input = latestRun.input_snapshot ?? {};
     const eventType = asString(input.event_type) ?? "event";
     const data = (input.data ?? {}) as Record<string, unknown>;
@@ -634,8 +635,6 @@ export async function buildAssistantContext(
       contactAddress: asString(data.address),
       message: asString(data.message) ?? asString(data.notes),
     };
-  } else {
-    interaction = PREVIEW_INTERACTION;
   }
 
   // Routing panel.
@@ -659,18 +658,6 @@ export async function buildAssistantContext(
       recommendedOwner: asString(routingOutput.recommended_owner) ?? "",
       requiresHandoff: routingOutput.requires_human_handoff === true,
       source: ai?.status === "ai" ? "ai" : "fallback",
-    };
-  } else if (mode === "preview" && capabilities.has("ai_intake_routing")) {
-    routing = {
-      category: "scheduling",
-      urgency: "high",
-      confidence: "medium",
-      summary: "Homeowner with an active leak wants a visit this week.",
-      suggestedNextAction:
-        "Confirm the address and offer the two earliest slots.",
-      recommendedOwner: "office_admin",
-      requiresHandoff: false,
-      source: "preview",
     };
   }
 
@@ -701,15 +688,32 @@ export async function buildAssistantContext(
       suggestedTaskTitle: asString(suggestedTask?.title),
       source: ai?.status === "ai" ? "ai" : "fallback",
     };
-  } else if (mode === "preview" && capabilities.has("lead_intake")) {
+  } else if (activeCall) {
+    const extracted = activeCall.extracted ?? {};
+    const collected =
+      typeof extracted.voice_collected === "object" &&
+      extracted.voice_collected !== null
+        ? (extracted.voice_collected as Record<string, unknown>)
+        : {};
+    const missingFields = [
+      ["customer name", collected.name],
+      ["service need", collected.service_need],
+      ["address", collected.address],
+      ["appointment preference", collected.appointment_preference],
+    ]
+      .filter(([, value]) => !asString(value))
+      .map(([label]) => label as string);
+
     analysis = {
-      urgency: "high",
-      quality: "hot",
-      missingFields: ["preferred appointment window", "water heater age"],
+      urgency: asString(collected.urgency) ?? "medium",
+      quality: "unreviewed",
+      missingFields,
       recommendedNextAction:
-        "Call back within 15 minutes — active leak, hot lead.",
-      suggestedTaskTitle: "Call Taylor back about the leaking water heater",
-      source: "preview",
+        missingFields.length > 0
+          ? `Ask for ${missingFields.slice(0, 2).join(" and ")}.`
+          : "Review the captured details and confirm the next step.",
+      suggestedTaskTitle: null,
+      source: "fallback",
     };
   }
 
@@ -744,15 +748,6 @@ export async function buildAssistantContext(
       body: draftApproval.editable_content,
       approvalId: draftApproval.id,
       approvalStatus: draftApproval.status,
-    };
-  } else if (mode === "preview" && capabilities.has("message_drafting")) {
-    draft = {
-      channel: "sms",
-      to: "+1 (555) 010-1234",
-      subject: null,
-      body: "Hi Taylor, this is Pilot Plumbing — sorry we missed your call about the leaking water heater. We can have someone out this week. Does tomorrow morning or afternoon work better?",
-      approvalId: null,
-      approvalStatus: null,
     };
   }
 
@@ -830,6 +825,24 @@ export async function buildAssistantContext(
       }));
   }
 
+  const activeCallSlots =
+    activeCall && Array.isArray(activeCall.extracted?.proposed_slots)
+      ? (
+          activeCall.extracted?.proposed_slots as {
+            label?: unknown;
+            start_iso?: unknown;
+          }[]
+        )
+          .map((slot) => ({
+            label: asString(slot.label),
+            startIso: asString(slot.start_iso),
+          }))
+          .filter(
+            (slot): slot is { label: string; startIso: string } =>
+              Boolean(slot.label && slot.startIso),
+          )
+      : [];
+
   const actions = buildActions({
     base,
     canManageSetup: audience === "partner",
@@ -881,9 +894,20 @@ export async function buildAssistantContext(
     .sort((a, b) => (a.at < b.at ? 1 : -1))
     .slice(0, 10);
 
-  const runtimeRequirements: StaffRuntime[] = requirements
-    ? requirements.staffRuntimes
-    : [];
+  const slots = activeCallSlots.length > 0 ? activeCallSlots : realSlots;
+  let slotsNote =
+    "Calendar availability will appear after your provider connects a calendar.";
+
+  if (activeCallSlots.length > 0) {
+    slotsNote = "Current availability matched to the customer's request.";
+  } else if (realSlots.length > 0) {
+    slotsNote =
+      booking?.status === "pending"
+        ? "Real availability from the connected calendar. Approving the booking proposal books the first slot."
+        : "Real availability from the connected calendar (proposal already resolved).";
+  } else if (calendarConn.connected) {
+    slotsNote = "Open slots will appear when a customer asks to schedule.";
+  }
 
   return {
     mode,
@@ -892,44 +916,28 @@ export async function buildAssistantContext(
     basePath: base,
     packageName: pkg?.name ?? null,
     interaction,
+    transcript: activeCallTurns
+      .filter(
+        (
+          turn,
+        ): turn is TranscriptRow & {
+          role: "caller" | "staff" | "ai_assistant";
+        } => ["caller", "staff", "ai_assistant"].includes(turn.role),
+      )
+      .map((turn) => ({
+        role: turn.role,
+        content: turn.content,
+        at: turn.occurred_at,
+      })),
     routing,
     analysis,
     draft,
     crm,
     booking,
-    slots:
-      realSlots.length > 0
-        ? realSlots
-        : capabilities.has("appointment_booking")
-          ? previewSlots(client.timezone)
-          : [],
-    slotsNote:
-      realSlots.length > 0
-        ? booking?.status === "pending"
-          ? "Real availability from the connected calendar. Approving the booking proposal books the first slot."
-          : "Real availability from the connected calendar (proposal already resolved)."
-        : calendarConn.connected
-          ? "Preview slots — real slot proposals appear here when a scheduling request comes in."
-          : "Preview slots — connect Google Calendar to ground these in real availability.",
+    slots,
+    slotsNote,
     actions,
     recentActivity,
-    runtime: {
-      requiredNow: runtimeRequirements.map(
-        (runtime) => STAFF_RUNTIME_LABELS[runtime],
-      ),
-      futureRuntimes: [
-        "Desktop tray app for call popups",
-        "Browser extension for CRM overlays",
-        "CRM-native app/extension",
-        "Website chat widget",
-      ],
-    },
-    soldAhead: requirements
-      ? requirements.limitations.map(({ capability, note }) => ({
-          label: capability.label,
-          note,
-        }))
-      : [],
     hasLeadBearingRun: Boolean(leadBearingRun),
   };
 }
