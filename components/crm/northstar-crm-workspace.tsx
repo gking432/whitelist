@@ -44,6 +44,10 @@ import {
   updateCrmLeadStage,
   updateCrmWorkspaceSettings,
 } from "@/app/crm/actions";
+import {
+  ClientTeamPermissions,
+  type ClientTeamMember,
+} from "@/components/client/team-permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +57,7 @@ import type { NorthstarCrmData } from "@/lib/crm/operating-suite";
 import type { CrmView } from "@/lib/crm/views";
 import { COMMON_TIMEZONES } from "@/lib/clients/constants";
 import type { FormState } from "@/lib/forms/state";
+import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 import { cn } from "@/lib/utils";
 
 type Contact = {
@@ -301,6 +306,12 @@ function statusClass(status: string): string {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
+function runtimeLabel(runtimeMode: string): string {
+  return runtimeMode === "sandbox"
+    ? "setup"
+    : runtimeMode.replaceAll("_", " ");
+}
+
 function Metric({
   label,
   value,
@@ -350,6 +361,8 @@ export function NorthstarCrmWorkspace({
   view,
   canEdit,
   canOperate,
+  canManageTeam,
+  visibleSections,
   approvalsPath,
   assistantPath,
   data,
@@ -363,6 +376,8 @@ export function NorthstarCrmWorkspace({
   view: CrmView;
   canEdit: boolean;
   canOperate: boolean;
+  canManageTeam: boolean;
+  visibleSections?: ClientSectionKey[];
   approvalsPath: string;
   assistantPath: string;
   data: NorthstarCrmData;
@@ -376,6 +391,8 @@ export function NorthstarCrmWorkspace({
   const [search, setSearch] = useState(initialSearch);
   const [newLeadOpen, setNewLeadOpen] = useState(showNewLead);
   const [renderedAt] = useState(() => Date.now());
+  const canSeeView = (candidate: CrmView) =>
+    !visibleSections || visibleSections.includes(candidate);
   const contacts = data.contacts as unknown as Contact[];
   const leads = data.leads as unknown as Lead[];
   const tasks = data.tasks as unknown as Task[];
@@ -391,6 +408,7 @@ export function NorthstarCrmWorkspace({
   const connections = data.connections as unknown as IntegrationConnection[];
   const integrationEvents =
     data.integrationEvents as unknown as IntegrationEvent[];
+  const teamMembers = data.teamMembers as unknown as ClientTeamMember[];
   const crmConnections = connections.filter(
     (connection) => connection.provider?.category === "crm",
   );
@@ -599,17 +617,19 @@ export function NorthstarCrmWorkspace({
             <section className="overflow-hidden rounded-lg border bg-card">
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <h2 className="text-sm font-semibold">Priority queue</h2>
-                <Link
-                  href={`${basePath}?view=pipeline`}
-                  className="text-xs font-medium text-primary"
-                >
-                  Open pipeline
-                </Link>
+                {canSeeView("pipeline") ? (
+                  <Link
+                    href={`${basePath}?view=pipeline`}
+                    className="text-xs font-medium text-primary"
+                  >
+                    Open pipeline
+                  </Link>
+                ) : null}
               </div>
               {openLeads.length === 0 ? (
                 <Empty
                   title="No open leads"
-                  detail="Create a lead or run an intake test to fill the CRM."
+                  detail="New customer inquiries and manually created leads will appear here."
                 />
               ) : (
                 <div className="divide-y">
@@ -2137,7 +2157,7 @@ export function NorthstarCrmWorkspace({
                           {String(connection.status)}
                         </Badge>
                         <Badge variant="outline">
-                          {String(connection.runtime_mode)}
+                          {runtimeLabel(String(connection.runtime_mode))}
                         </Badge>
                       </div>
                     </div>
@@ -2215,7 +2235,9 @@ export function NorthstarCrmWorkspace({
                         {when(workflow.last_run_at)}
                       </p>
                     </div>
-                    <Badge variant="outline">{workflow.runtime_mode}</Badge>
+                    <Badge variant="outline">
+                      {runtimeLabel(workflow.runtime_mode)}
+                    </Badge>
                     <Badge
                       variant="outline"
                       className={statusClass(workflow.health_status)}
@@ -2266,7 +2288,7 @@ export function NorthstarCrmWorkspace({
                       </p>
                     </div>
                     <Badge variant="outline">
-                      {connection.runtime_mode}
+                      {runtimeLabel(connection.runtime_mode)}
                     </Badge>
                     <Badge
                       variant="outline"
@@ -2322,134 +2344,134 @@ export function NorthstarCrmWorkspace({
       ) : null}
 
       {view === "settings" ? (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]">
-          <section className="overflow-hidden rounded-lg border bg-card">
-            <div className="border-b px-5 py-4">
-              <h2 className="text-sm font-semibold">Company profile</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Business details used throughout the CRM workspace
-              </p>
-            </div>
-            {data.client ? (
-              <form
-                className="grid gap-4 p-5 sm:grid-cols-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const form = new FormData(event.currentTarget);
-                  run(() =>
-                    updateCrmWorkspaceSettings({
-                      clientId,
-                      name: String(form.get("name") ?? ""),
-                      industry: String(form.get("industry") ?? ""),
-                      timezone: String(form.get("timezone") ?? ""),
-                      websiteUrl: String(form.get("website_url") ?? ""),
-                      primaryContactName: String(
-                        form.get("primary_contact_name") ?? "",
-                      ),
-                      primaryContactEmail: String(
-                        form.get("primary_contact_email") ?? "",
-                      ),
-                      primaryContactPhone: String(
-                        form.get("primary_contact_phone") ?? "",
-                      ),
-                    }),
-                  );
-                }}
-              >
-                <Input
-                  name="name"
-                  defaultValue={data.client.name}
-                  placeholder="Company name"
-                  required
-                  disabled={!canEdit}
-                />
-                <Input
-                  name="industry"
-                  defaultValue={data.client.industry ?? ""}
-                  placeholder="Industry"
-                  disabled={!canEdit}
-                />
-                <Input
-                  name="website_url"
-                  type="url"
-                  defaultValue={data.client.website_url ?? ""}
-                  placeholder="Website"
-                  disabled={!canEdit}
-                />
-                <Select
-                  name="timezone"
-                  defaultValue={data.client.timezone}
-                  disabled={!canEdit}
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]">
+            <section className="overflow-hidden rounded-lg border bg-card">
+              <div className="border-b px-5 py-4">
+                <h2 className="text-sm font-semibold">Company profile</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Business details used throughout the CRM workspace
+                </p>
+              </div>
+              {data.client ? (
+                <form
+                  className="grid gap-4 p-5 sm:grid-cols-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const form = new FormData(event.currentTarget);
+                    run(() =>
+                      updateCrmWorkspaceSettings({
+                        clientId,
+                        name: String(form.get("name") ?? ""),
+                        industry: String(form.get("industry") ?? ""),
+                        timezone: String(form.get("timezone") ?? ""),
+                        websiteUrl: String(form.get("website_url") ?? ""),
+                        primaryContactName: String(
+                          form.get("primary_contact_name") ?? "",
+                        ),
+                        primaryContactEmail: String(
+                          form.get("primary_contact_email") ?? "",
+                        ),
+                        primaryContactPhone: String(
+                          form.get("primary_contact_phone") ?? "",
+                        ),
+                      }),
+                    );
+                  }}
                 >
-                  {COMMON_TIMEZONES.map((timezone) => (
-                    <option key={timezone} value={timezone}>
-                      {timezone}
-                    </option>
-                  ))}
-                </Select>
-                <Input
-                  name="primary_contact_name"
-                  defaultValue={data.client.primary_contact_name ?? ""}
-                  placeholder="Primary contact"
-                  disabled={!canEdit}
+                  <Input
+                    name="name"
+                    defaultValue={data.client.name}
+                    placeholder="Company name"
+                    required
+                    disabled={!canEdit}
+                  />
+                  <Input
+                    name="industry"
+                    defaultValue={data.client.industry ?? ""}
+                    placeholder="Industry"
+                    disabled={!canEdit}
+                  />
+                  <Input
+                    name="website_url"
+                    type="url"
+                    defaultValue={data.client.website_url ?? ""}
+                    placeholder="Website"
+                    disabled={!canEdit}
+                  />
+                  <Select
+                    name="timezone"
+                    defaultValue={data.client.timezone}
+                    disabled={!canEdit}
+                  >
+                    {COMMON_TIMEZONES.map((timezone) => (
+                      <option key={timezone} value={timezone}>
+                        {timezone}
+                      </option>
+                    ))}
+                  </Select>
+                  <Input
+                    name="primary_contact_name"
+                    defaultValue={data.client.primary_contact_name ?? ""}
+                    placeholder="Primary contact"
+                    disabled={!canEdit}
+                  />
+                  <Input
+                    name="primary_contact_email"
+                    type="email"
+                    defaultValue={data.client.primary_contact_email ?? ""}
+                    placeholder="Primary contact email"
+                    disabled={!canEdit}
+                  />
+                  <Input
+                    name="primary_contact_phone"
+                    defaultValue={data.client.primary_contact_phone ?? ""}
+                    placeholder="Primary contact phone"
+                    disabled={!canEdit}
+                  />
+                  {canEdit ? (
+                    <div className="flex items-center sm:justify-end">
+                      <Button type="submit" disabled={pending}>
+                        Save settings
+                      </Button>
+                    </div>
+                  ) : null}
+                </form>
+              ) : (
+                <Empty
+                  title="Settings unavailable"
+                  detail="The company profile could not be loaded."
                 />
-                <Input
-                  name="primary_contact_email"
-                  type="email"
-                  defaultValue={data.client.primary_contact_email ?? ""}
-                  placeholder="Primary contact email"
-                  disabled={!canEdit}
-                />
-                <Input
-                  name="primary_contact_phone"
-                  defaultValue={data.client.primary_contact_phone ?? ""}
-                  placeholder="Primary contact phone"
-                  disabled={!canEdit}
-                />
-                {canEdit ? (
-                  <div className="flex items-center sm:justify-end">
-                    <Button type="submit" disabled={pending}>
-                      Save settings
-                    </Button>
-                  </div>
-                ) : null}
-              </form>
-            ) : (
-              <Empty
-                title="Settings unavailable"
-                detail="The company profile could not be loaded."
-              />
-            )}
-          </section>
+              )}
+            </section>
 
-          <aside className="space-y-5">
-            <section className="rounded-lg border bg-card p-5">
-              <h2 className="text-sm font-semibold">Operating mode</h2>
-              <dl className="mt-3 space-y-3 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">CRM</dt>
-                  <dd className="font-medium">
-                    {data.client?.crm_operating_mode.replaceAll("_", " ") ??
-                      "Unavailable"}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">Automations</dt>
-                  <dd className="font-medium">
-                    {data.client?.default_runtime_mode.replaceAll("_", " ") ??
-                      "Unavailable"}
-                  </dd>
-                </div>
-              </dl>
-            </section>
-            <section className="rounded-lg border bg-card p-5">
-              <h2 className="text-sm font-semibold">Team permissions</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Owners and managers can edit CRM records. Staff permissions
-                will be configured from this area in the permissions phase.
-              </p>
-            </section>
-          </aside>
+            <aside className="space-y-5">
+              <section className="rounded-lg border bg-card p-5">
+                <h2 className="text-sm font-semibold">Operating mode</h2>
+                <dl className="mt-3 space-y-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">CRM</dt>
+                    <dd className="font-medium">
+                      {data.client?.crm_operating_mode.replaceAll("_", " ") ??
+                        "Unavailable"}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">Automations</dt>
+                    <dd className="font-medium">
+                      {data.client?.default_runtime_mode
+                        ? runtimeLabel(data.client.default_runtime_mode)
+                        : "Unavailable"}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            </aside>
+          </div>
+          <ClientTeamPermissions
+            members={teamMembers}
+            canManage={canManageTeam}
+          />
         </div>
       ) : null}
 

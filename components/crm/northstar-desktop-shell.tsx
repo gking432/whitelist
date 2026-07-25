@@ -26,6 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CrmView } from "@/lib/crm/views";
+import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 import { cn } from "@/lib/utils";
 
 const CRM_NAVIGATION: Array<{
@@ -138,11 +139,15 @@ function SidebarContent({
   clientName,
   currentView,
   userEmail,
+  visibleSections,
+  canViewActionCenter,
   onNavigate,
 }: {
   clientName: string;
   currentView: CrmView;
   userEmail: string;
+  visibleSections: ClientSectionKey[];
+  canViewActionCenter: boolean;
   onNavigate?: () => void;
 }) {
   return (
@@ -165,7 +170,9 @@ function SidebarContent({
         aria-label="CRM sections"
         className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4"
       >
-        {CRM_NAVIGATION.map((item) => {
+        {CRM_NAVIGATION.filter((item) =>
+          visibleSections.includes(item.view),
+        ).map((item) => {
           const Icon = item.icon;
           const active = item.view === currentView;
 
@@ -189,14 +196,16 @@ function SidebarContent({
       </nav>
 
       <div className="border-t border-white/10 p-4">
-        <Link
-          href="/client/action-center"
-          onClick={onNavigate}
-          className="mb-4 flex h-9 items-center gap-3 rounded-md border border-brand-gold/35 bg-brand-gold/10 px-3 text-sm font-medium text-brand-gold transition-colors hover:bg-brand-gold/20"
-        >
-          <Activity className="size-4" aria-hidden="true" />
-          Action Center
-        </Link>
+        {canViewActionCenter ? (
+          <Link
+            href="/client/action-center"
+            onClick={onNavigate}
+            className="mb-4 flex h-9 items-center gap-3 rounded-md border border-brand-gold/35 bg-brand-gold/10 px-3 text-sm font-medium text-brand-gold transition-colors hover:bg-brand-gold/20"
+          >
+            <Activity className="size-4" aria-hidden="true" />
+            Action Center
+          </Link>
+        ) : null}
         <div className="flex items-center gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-medium text-white">
             {initials(userEmail)}
@@ -220,11 +229,17 @@ export function NorthstarDesktopShell({
   clientName,
   currentView,
   userEmail,
+  visibleSections,
+  canViewActionCenter,
+  canEditCrmData,
 }: {
   children: React.ReactNode;
   clientName: string;
   currentView: CrmView;
   userEmail: string;
+  visibleSections: ClientSectionKey[];
+  canViewActionCenter: boolean;
+  canEditCrmData: boolean;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -235,6 +250,8 @@ export function NorthstarDesktopShell({
           clientName={clientName}
           currentView={currentView}
           userEmail={userEmail}
+          visibleSections={visibleSections}
+          canViewActionCenter={canViewActionCenter}
         />
       </aside>
 
@@ -261,6 +278,8 @@ export function NorthstarDesktopShell({
               clientName={clientName}
               currentView={currentView}
               userEmail={userEmail}
+              visibleSections={visibleSections}
+              canViewActionCenter={canViewActionCenter}
               onNavigate={() => setMobileOpen(false)}
             />
           </aside>
@@ -282,32 +301,45 @@ export function NorthstarDesktopShell({
           <h1 className="min-w-0 truncate text-lg font-semibold">
             {PAGE_TITLES[currentView]}
           </h1>
-          <form action="/client/crm" className="relative ml-auto hidden w-full max-w-xs md:block">
-            <input type="hidden" name="view" value="contacts" />
-            <Search
-              className="absolute left-2.5 top-2.5 size-4 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              name="search"
-              placeholder="Search leads"
-              className="pl-9"
-            />
-          </form>
-          <Button asChild size="icon" variant="outline">
-            <Link href="/client/assistant" aria-label="Open AI assistant">
-              <Bot aria-hidden="true" />
-            </Link>
-          </Button>
-          <Button asChild size="sm" className="ml-auto shrink-0 md:ml-0">
-            <Link
-              href="/client/crm?view=pipeline&new=1#new-lead"
-              aria-label="New lead"
+          {visibleSections.includes("contacts") ? (
+            <form
+              action="/client/crm"
+              className="relative ml-auto hidden w-full max-w-xs md:block"
             >
-              <Plus aria-hidden="true" />
-              <span className="hidden sm:inline">New Lead</span>
-            </Link>
-          </Button>
+              <input type="hidden" name="view" value="contacts" />
+              <Search
+                className="absolute left-2.5 top-2.5 size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                name="search"
+                placeholder="Search leads"
+                className="pl-9"
+              />
+            </form>
+          ) : (
+            <span className="ml-auto" />
+          )}
+          {visibleSections.includes("assistant") ? (
+            <Button asChild size="icon" variant="outline">
+              <Link href="/client/assistant" aria-label="Open AI assistant">
+                <Bot aria-hidden="true" />
+              </Link>
+            </Button>
+          ) : null}
+          {canEditCrmData &&
+          (visibleSections.includes("pipeline") ||
+            visibleSections.includes("contacts")) ? (
+            <Button asChild size="sm" className="ml-auto shrink-0 md:ml-0">
+              <Link
+                href="/client/crm?view=pipeline&new=1#new-lead"
+                aria-label="New lead"
+              >
+                <Plus aria-hidden="true" />
+                <span className="hidden sm:inline">New Lead</span>
+              </Link>
+            </Button>
+          ) : null}
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
             {initials(userEmail)}
           </span>

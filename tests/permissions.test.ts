@@ -49,6 +49,53 @@ test("authorized client staff retain control of their customer interactions", ()
   assert.equal(access.canEditCrmData, true);
 });
 
+test("marketing staff only receive their assigned client sections", () => {
+  const access = buildAccessContext({
+    userId: "marketing-user",
+    role: "client_staff",
+    clientId: "client-id",
+    accountKind: "managed_client",
+    clientJobRole: "marketing",
+  });
+
+  assert.deepEqual(access.visibleClientSections, [
+    "overview",
+    "inbox",
+    "feedback",
+    "reports",
+  ]);
+  assert.equal(access.canViewActionCenter, false);
+  assert.equal(access.canOperateCustomerActions, false);
+  assert.equal(access.canEditCrmData, false);
+});
+
+test("client-owner overrides control authority as well as navigation", () => {
+  const access = buildAccessContext({
+    userId: "front-desk-user",
+    role: "client_staff",
+    clientId: "client-id",
+    accountKind: "managed_client",
+    clientJobRole: "front_desk",
+    clientPermissions: {
+      sections: ["inbox", "calls", "schedule", "approvals"],
+      view_action_center: false,
+      resolve_approvals: false,
+      operate_customer_actions: true,
+      edit_crm_data: true,
+    },
+  });
+
+  assert.deepEqual(access.visibleClientSections, [
+    "inbox",
+    "calls",
+    "schedule",
+    "approvals",
+  ]);
+  assert.equal(access.canResolveApprovals, false);
+  assert.equal(access.canOperateCustomerActions, true);
+  assert.equal(access.canEditCrmData, true);
+});
+
 test("read-only support impersonation disables every mutation capability", () => {
   const access = buildAccessContext({
     userId: "owner-user",

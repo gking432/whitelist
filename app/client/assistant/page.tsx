@@ -2,6 +2,8 @@ import { AssistantConsole } from "@/components/assistant/assistant-console";
 import { buildAssistantContext } from "@/lib/assistant/context";
 import { loadClientPortal } from "@/lib/clients/portal";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { clientHomePath } from "@/lib/permissions/client-sections";
+import { redirect } from "next/navigation";
 
 export const metadata = {
   title: "Assistant",
@@ -17,6 +19,14 @@ export default async function ClientAssistantPage() {
 
   if (portal.kind !== "ok") {
     return null;
+  }
+  if (!portal.access.visibleClientSections.includes("assistant")) {
+    redirect(
+      clientHomePath(
+        portal.access.visibleClientSections,
+        portal.client.client_experience_mode,
+      ),
+    );
   }
 
   const supabase = await createSupabaseServerClient();

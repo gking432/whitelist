@@ -1,3 +1,8 @@
+import type {
+  ClientJobRole,
+  ClientSectionKey,
+} from "@/lib/permissions/client-sections";
+
 export type MembershipRole =
   | "platform_owner"
   | "platform_admin"
@@ -38,6 +43,10 @@ export type AccessContext = {
   canResolveApprovals: boolean;
   canOperateCustomerActions: boolean;
   canEditCrmData: boolean;
+  canViewActionCenter: boolean;
+  canManageClientTeam: boolean;
+  clientJobRole?: ClientJobRole;
+  visibleClientSections: ClientSectionKey[];
   canViewSensitiveLogs: boolean;
   isImpersonating: boolean;
   impersonationMode?: "read_only" | "sandbox_full";

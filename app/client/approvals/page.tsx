@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { loadClientPortal } from "@/lib/clients/portal";
 import { formatDateTime, formatEnum } from "@/lib/format";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { clientHomePath } from "@/lib/permissions/client-sections";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,14 @@ export default async function ClientPortalApprovalsPage() {
 
   if (portal.kind !== "ok") {
     return null;
+  }
+  if (!portal.access.visibleClientSections.includes("approvals")) {
+    redirect(
+      clientHomePath(
+        portal.access.visibleClientSections,
+        portal.client.client_experience_mode,
+      ),
+    );
   }
 
   const { access } = portal;

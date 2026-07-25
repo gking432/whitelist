@@ -299,7 +299,7 @@ export function AssistantConsole({
                 <span className="text-[11px] text-muted-foreground">
                   {interaction.receivedAt
                     ? formatDateTime(interaction.receivedAt)
-                    : "Sample"}
+                    : "Time unavailable"}
                 </span>
               </div>
               <div className="mt-1.5 rounded-lg border bg-background p-3">

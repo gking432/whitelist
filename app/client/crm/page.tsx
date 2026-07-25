@@ -2,7 +2,7 @@ import { NorthstarCrmWorkspace } from "@/components/crm/northstar-crm-workspace"
 import { NorthstarDesktopShell } from "@/components/crm/northstar-desktop-shell";
 import { loadClientPortal } from "@/lib/clients/portal";
 import { loadNorthstarCrm } from "@/lib/crm/operating-suite";
-import { parseCrmView } from "@/lib/crm/views";
+import { CRM_VIEWS, parseCrmView } from "@/lib/crm/views";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -25,6 +25,18 @@ export default async function ClientCrmPage({
 
   const params = await searchParams;
   const view = parseCrmView(params.view);
+  const allowedViews = CRM_VIEWS.filter((candidate) =>
+    portal.access.visibleClientSections.includes(candidate),
+  );
+
+  if (!allowedViews.includes(view)) {
+    redirect(
+      allowedViews.length > 0
+        ? `/client/crm?view=${allowedViews[0]}`
+        : "/client/assistant",
+    );
+  }
+
   const data = await loadNorthstarCrm(supabase, portal.access.clientId);
 
   return (
@@ -32,6 +44,9 @@ export default async function ClientCrmPage({
       clientName={portal.client.name}
       currentView={view}
       userEmail={portal.user.email ?? "Signed in"}
+      visibleSections={portal.access.visibleClientSections}
+      canViewActionCenter={portal.access.canViewActionCenter}
+      canEditCrmData={portal.access.canEditCrmData}
     >
       <NorthstarCrmWorkspace
         clientId={portal.access.clientId}
@@ -40,6 +55,8 @@ export default async function ClientCrmPage({
         view={view}
         canEdit={portal.access.canEditCrmData}
         canOperate={portal.access.canOperateCustomerActions}
+        canManageTeam={portal.access.canManageClientTeam}
+        visibleSections={portal.access.visibleClientSections}
         approvalsPath="/client/approvals"
         assistantPath="/client/assistant"
         data={data}

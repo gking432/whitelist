@@ -5,21 +5,26 @@ import { usePathname } from "next/navigation";
 
 import type { PortalBranding } from "@/lib/clients/portal";
 import type { ClientExperienceMode } from "@/lib/clients/constants";
+import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 import { cn } from "@/lib/utils";
 
 const backgroundNavigation = [
-  { label: "Action Center", href: "/client" },
-  { label: "Assistant", href: "/client/assistant" },
-  { label: "Approvals", href: "/client/approvals" },
-  { label: "Activity", href: "/client/activity" },
+  { label: "Action Center", href: "/client", section: "action-center" },
+  { label: "Assistant", href: "/client/assistant", section: "assistant" },
+  { label: "Approvals", href: "/client/approvals", section: "approvals" },
+  { label: "Activity", href: "/client/activity", section: "activity" },
 ];
 
 const crmNavigation = [
-  { label: "CRM", href: "/client/crm" },
-  { label: "Action Center", href: "/client/action-center" },
-  { label: "Assistant", href: "/client/assistant" },
-  { label: "Approvals", href: "/client/approvals" },
-  { label: "Activity", href: "/client/activity" },
+  { label: "CRM", href: "/client/crm", section: "overview" },
+  {
+    label: "Action Center",
+    href: "/client/action-center",
+    section: "action-center",
+  },
+  { label: "Assistant", href: "/client/assistant", section: "assistant" },
+  { label: "Approvals", href: "/client/approvals", section: "approvals" },
+  { label: "Activity", href: "/client/activity", section: "activity" },
 ];
 
 type PortalShellProps = {
@@ -29,6 +34,7 @@ type PortalShellProps = {
   branding: PortalBranding;
   experienceMode: ClientExperienceMode;
   userEmail: string;
+  visibleSections: ClientSectionKey[];
 };
 
 // Partner-branded shell: the partner is the provider, so their name carries
@@ -40,12 +46,16 @@ export function PortalShell({
   branding,
   experienceMode,
   userEmail,
+  visibleSections,
 }: PortalShellProps) {
   const pathname = usePathname();
-  const navigation =
+  const navigation = (
     experienceMode === "northstar_crm"
       ? crmNavigation
-      : backgroundNavigation;
+      : backgroundNavigation
+  ).filter((item) =>
+    visibleSections.includes(item.section as ClientSectionKey),
+  );
 
   if (pathname.startsWith("/client/crm")) {
     return (

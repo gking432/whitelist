@@ -5,6 +5,10 @@ import type {
   PartnerRole,
   PlatformRole,
 } from "@/lib/permissions/types";
+import {
+  resolveClientPermissions,
+  type StoredClientPermissions,
+} from "./client-sections.ts";
 
 export const PLATFORM_ROLES = [
   "platform_owner",
@@ -67,6 +71,8 @@ type CapabilityInput = {
   clientPortalEnabled?: boolean;
   partnerCanEditClientData?: boolean;
   accountKind?: "managed_client" | "partner_agency";
+  clientJobRole?: string | null;
+  clientPermissions?: StoredClientPermissions | null;
   impersonation?: {
     id: string;
     mode: "read_only" | "sandbox_full";
@@ -80,12 +86,23 @@ export function buildAccessContext(input: CapabilityInput): AccessContext {
   const partnerCanEditClientData = Boolean(input.partnerCanEditClientData);
   const isAgencyBusiness = input.accountKind === "partner_agency";
   const readOnlyImpersonation = input.impersonation?.mode === "read_only";
-  const canOperateCustomerActions =
+  const clientPermissions = isClient
+    ? resolveClientPermissions({
+        role: input.role as ClientRole,
+        jobRole: input.clientJobRole,
+        stored: input.clientPermissions,
+      })
+    : null;
+  const roleCanOperateCustomerActions =
     !readOnlyImpersonation &&
     ((isPartner &&
       isAgencyBusiness &&
       PARTNER_OPERATOR_ROLE_SET.has(input.role)) ||
       (isClient && CLIENT_APPROVER_ROLE_SET.has(input.role)));
+  const canOperateCustomerActions =
+    !readOnlyImpersonation &&
+    (clientPermissions?.canOperateCustomerActions ??
+      roleCanOperateCustomerActions);
 
   return {
     userId: input.userId,
@@ -110,14 +127,28 @@ export function buildAccessContext(input: CapabilityInput): AccessContext {
       (isPlatform ||
       (isPartner && PARTNER_OPERATOR_ROLE_SET.has(input.role)) ||
       input.role === "client_owner"),
-    canResolveApprovals: canOperateCustomerActions,
+    canResolveApprovals:
+      !readOnlyImpersonation &&
+      (clientPermissions?.canResolveApprovals ??
+        canOperateCustomerActions),
     canOperateCustomerActions,
     canEditCrmData:
       !readOnlyImpersonation &&
-      ((isPartner &&
-        isAgencyBusiness &&
-        PARTNER_OPERATOR_ROLE_SET.has(input.role)) ||
-        (isClient && ["client_owner", "client_manager"].includes(input.role))),
+      (clientPermissions?.canEditCrmData ??
+        ((isPartner &&
+          isAgencyBusiness &&
+          PARTNER_OPERATOR_ROLE_SET.has(input.role)) ||
+          (isClient &&
+            ["client_owner", "client_manager"].includes(input.role)))),
+    canViewActionCenter:
+      !readOnlyImpersonation &&
+      (clientPermissions?.canViewActionCenter ??
+        (isPartner && isAgencyBusiness)),
+    canManageClientTeam:
+      !readOnlyImpersonation &&
+      Boolean(clientPermissions?.canManageClientTeam),
+    clientJobRole: clientPermissions?.jobRole,
+    visibleClientSections: clientPermissions?.visibleSections ?? [],
     canViewSensitiveLogs:
       ["platform_owner", "platform_admin", "partner_owner", "partner_admin"].includes(
         input.role,

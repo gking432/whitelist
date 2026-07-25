@@ -49,6 +49,7 @@ export default async function ClientPortalLayout({
       branding={portal.branding}
       experienceMode={portal.client.client_experience_mode}
       userEmail={portal.user.email ?? "Signed in"}
+      visibleSections={portal.access.visibleClientSections}
       banner={<ImpersonationBanner />}
     >
       {children}

@@ -27,6 +27,7 @@ export type NorthstarCrmData = {
   connections: Record<string, unknown>[];
   workflows: Record<string, unknown>[];
   integrationEvents: Record<string, unknown>[];
+  teamMembers: Record<string, unknown>[];
 };
 
 async function rows(
@@ -58,6 +59,7 @@ export async function loadNorthstarCrm(
     connections,
     workflows,
     integrationEvents,
+    teamMembers,
     clientResult,
   ] = await Promise.all([
     rows(
@@ -180,6 +182,15 @@ export async function loadNorthstarCrm(
         .order("created_at", { ascending: false })
         .limit(100),
     ),
+    rows(
+      supabase
+        .from("memberships")
+        .select(
+          "id, user_id, role, status, client_job_role, client_permissions, profile:profiles!memberships_user_id_fkey(email, full_name)",
+        )
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: true }),
+    ),
     supabase
       .from("client_businesses")
       .select(
@@ -209,5 +220,6 @@ export async function loadNorthstarCrm(
     connections,
     workflows,
     integrationEvents,
+    teamMembers,
   };
 }

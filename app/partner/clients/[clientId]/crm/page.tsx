@@ -33,6 +33,7 @@ export default async function PartnerClientCrmPage({
       view={parseCrmView(query.view)}
       canEdit={workspace.access.canEditCrmData}
       canOperate={workspace.access.canOperateCustomerActions}
+      canManageTeam={workspace.access.canManageClientTeam}
       approvalsPath={`/partner/clients/${clientId}/approvals`}
       assistantPath={`/partner/clients/${clientId}/assistant`}
       data={data}

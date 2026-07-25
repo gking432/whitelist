@@ -6,6 +6,7 @@ import {
   isAccessError,
   requirePrimaryClientAccess,
 } from "@/lib/permissions/access";
+import type { AccessContext } from "@/lib/permissions/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -36,13 +37,18 @@ export async function GET(request: NextRequest) {
 
   let clientId = request.nextUrl.searchParams.get("client_id");
   const after = request.nextUrl.searchParams.get("after");
+  let resolvedAccess: AccessContext | null = null;
 
   try {
     if (clientId) {
-      await resolveAssistantAccess(authState.user.id, clientId, "read");
+      resolvedAccess = await resolveAssistantAccess(
+        authState.user.id,
+        clientId,
+        "read",
+      );
     } else {
-      const access = await requirePrimaryClientAccess(authState.user.id);
-      clientId = access.clientId ?? null;
+      resolvedAccess = await requirePrimaryClientAccess(authState.user.id);
+      clientId = resolvedAccess.clientId ?? null;
     }
   } catch (error) {
     if (isAccessError(error)) {
@@ -59,6 +65,13 @@ export async function GET(request: NextRequest) {
 
   if (!clientId) {
     return json(404, { error: "Client not found or inaccessible." });
+  }
+
+  if (
+    resolvedAccess?.role.startsWith("client_") &&
+    !resolvedAccess.visibleClientSections.includes("assistant")
+  ) {
+    return json(404, { error: "Assistant access is not enabled." });
   }
 
   let query = supabase

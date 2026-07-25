@@ -21,6 +21,8 @@ type MembershipRecord = {
   client_id: string | null;
   role: MembershipRole;
   status: string;
+  client_job_role: string | null;
+  client_permissions: Record<string, unknown> | null;
 };
 
 type ClientScopeRecord = {
@@ -121,6 +123,8 @@ function toAccessContext(
     clientPortalEnabled: clientScope?.client_portal_enabled,
     partnerCanEditClientData: clientScope?.partner_can_edit_client_data,
     accountKind: clientScope?.account_kind,
+    clientJobRole: membership.client_job_role,
+    clientPermissions: membership.client_permissions,
   });
 }
 
@@ -168,6 +172,7 @@ function impersonatedClientAccess(
     clientPortalEnabled: true,
     partnerCanEditClientData: false,
     accountKind: clientScope.account_kind,
+    clientJobRole: "owner",
     impersonation: { id: session.id, mode: session.mode },
   });
 }
@@ -194,7 +199,7 @@ export async function requirePlatformRole(
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("status", "active")
     .is("partner_id", null)
@@ -235,7 +240,7 @@ export async function requirePartnerAccess(
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("partner_id", partnerId)
     .is("client_id", null)
@@ -272,7 +277,7 @@ export async function requirePrimaryPartnerAccess(
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("status", "active")
     .not("partner_id", "is", null)
@@ -318,7 +323,7 @@ export async function requireClientWorkspaceAccess(
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("partner_id", clientScope.partner_id)
     .is("client_id", null)
@@ -358,7 +363,7 @@ export async function requirePrimaryClientAccess(
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("status", "active")
     .not("client_id", "is", null)
@@ -407,7 +412,7 @@ export async function requireClientAccess(
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("partner_id", clientScope.partner_id)
     .eq("client_id", clientId)
@@ -454,7 +459,7 @@ export async function requirePartnerClientAccess(
   if (partnerRoles.length > 0) {
     const { data, error } = await supabase
       .from("memberships")
-      .select("id, user_id, partner_id, client_id, role, status")
+      .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
       .eq("user_id", userId)
       .eq("partner_id", partnerId)
       .is("client_id", null)
@@ -474,7 +479,7 @@ export async function requirePartnerClientAccess(
   if (clientRoles.length > 0 && clientScope.client_portal_enabled) {
     const { data, error } = await supabase
       .from("memberships")
-      .select("id, user_id, partner_id, client_id, role, status")
+      .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
       .eq("user_id", userId)
       .eq("partner_id", partnerId)
       .eq("client_id", clientId)

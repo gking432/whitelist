@@ -8,6 +8,7 @@ import {
   isAccessError,
   requirePrimaryClientAccess,
 } from "@/lib/permissions/access";
+import type { AccessContext } from "@/lib/permissions/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -41,22 +42,25 @@ export async function GET(request: NextRequest) {
   const requestedClientId = request.nextUrl.searchParams.get("client_id");
   let clientId: string | null = requestedClientId;
   let audience: "partner" | "client" = "partner";
+  let resolvedAccess: AccessContext | null = null;
 
   try {
     if (clientId) {
       // Explicit client: allowed for partner members of that client's
       // partner org, or the client's own members.
-      const access = await resolveAssistantAccess(
+      resolvedAccess = await resolveAssistantAccess(
         authState.user.id,
         clientId,
         "read",
       );
 
-      audience = access.clientId ? "client" : "partner";
+      audience = resolvedAccess.role.startsWith("client_")
+        ? "client"
+        : "partner";
     } else {
       // No client specified: resolve the caller's own client membership.
-      const access = await requirePrimaryClientAccess(authState.user.id);
-      clientId = access.clientId ?? null;
+      resolvedAccess = await requirePrimaryClientAccess(authState.user.id);
+      clientId = resolvedAccess.clientId ?? null;
       audience = "client";
     }
   } catch (error) {
@@ -77,6 +81,13 @@ export async function GET(request: NextRequest) {
 
   if (!clientId) {
     return json(404, { error: "Client not found or inaccessible." });
+  }
+
+  if (
+    audience === "client" &&
+    !resolvedAccess?.visibleClientSections.includes("assistant")
+  ) {
+    return json(404, { error: "Assistant access is not enabled." });
   }
 
   const { data: client } = await supabase
