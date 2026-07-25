@@ -1,6 +1,8 @@
 import { PortalShell } from "@/components/client/portal-shell";
 import { ImpersonationBanner } from "@/components/impersonation/impersonation-banner";
 import { loadClientPortal } from "@/lib/clients/portal";
+import { loadUnreadNotificationCount } from "@/lib/notifications/client";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +45,18 @@ export default async function ClientPortalLayout({
     );
   }
 
+  const supabase = await createSupabaseServerClient();
+  const unreadNotificationCount =
+    supabase &&
+    portal.access.clientId &&
+    portal.access.visibleClientSections.includes("notifications")
+      ? await loadUnreadNotificationCount(
+          supabase,
+          portal.access.clientId,
+          portal.user.id,
+        )
+      : 0;
+
   return (
     <PortalShell
       clientName={portal.client.name}
@@ -50,6 +64,7 @@ export default async function ClientPortalLayout({
       experienceMode={portal.client.client_experience_mode}
       userEmail={portal.user.email ?? "Signed in"}
       visibleSections={portal.access.visibleClientSections}
+      unreadNotificationCount={unreadNotificationCount}
       banner={<ImpersonationBanner />}
     >
       {children}

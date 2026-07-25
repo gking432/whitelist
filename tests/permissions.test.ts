@@ -63,6 +63,7 @@ test("marketing staff only receive their assigned client sections", () => {
     "inbox",
     "marketing",
     "reports",
+    "notifications",
   ]);
   assert.equal(access.canViewActionCenter, false);
   assert.equal(access.canOperateCustomerActions, false);

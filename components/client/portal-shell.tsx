@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Bell } from "lucide-react";
 
 import type { PortalBranding } from "@/lib/clients/portal";
 import { brandStyleVariables } from "@/lib/branding";
@@ -11,6 +12,11 @@ import { cn } from "@/lib/utils";
 
 const backgroundNavigation = [
   { label: "Action Center", href: "/client", section: "action-center" },
+  {
+    label: "Notifications",
+    href: "/client/notifications",
+    section: "notifications",
+  },
   { label: "Assistant", href: "/client/assistant", section: "assistant" },
   { label: "Approvals", href: "/client/approvals", section: "approvals" },
   { label: "Activity", href: "/client/activity", section: "activity" },
@@ -18,6 +24,11 @@ const backgroundNavigation = [
 
 const crmNavigation = [
   { label: "CRM", href: "/client/crm", section: "overview" },
+  {
+    label: "Notifications",
+    href: "/client/notifications",
+    section: "notifications",
+  },
   {
     label: "Action Center",
     href: "/client/action-center",
@@ -36,6 +47,7 @@ type PortalShellProps = {
   experienceMode: ClientExperienceMode;
   userEmail: string;
   visibleSections: ClientSectionKey[];
+  unreadNotificationCount: number;
 };
 
 // Partner-branded shell: the partner is the provider, so their name carries
@@ -48,6 +60,7 @@ export function PortalShell({
   experienceMode,
   userEmail,
   visibleSections,
+  unreadNotificationCount,
 }: PortalShellProps) {
   const pathname = usePathname();
   const navigation = (
@@ -75,7 +88,7 @@ export function PortalShell({
     >
       {banner}
       <header className="border-b bg-card">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 pt-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 pt-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10 text-sm font-semibold text-primary">
               {branding.logoUrl ? (
@@ -98,9 +111,29 @@ export function PortalShell({
               </p>
             </div>
           </div>
-          <span className="hidden text-xs text-muted-foreground sm:block">
-            {userEmail}
-          </span>
+          <div className="flex items-center gap-3">
+            {visibleSections.includes("notifications") ? (
+              <Link
+                href="/client/notifications"
+                className="relative flex size-9 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                aria-label={`Notifications${
+                  unreadNotificationCount > 0
+                    ? `, ${unreadNotificationCount} unread`
+                    : ""
+                }`}
+              >
+                <Bell className="size-4" aria-hidden="true" />
+                {unreadNotificationCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white">
+                    {Math.min(unreadNotificationCount, 99)}
+                  </span>
+                ) : null}
+              </Link>
+            ) : null}
+            <span className="hidden text-xs text-muted-foreground sm:block">
+              {userEmail}
+            </span>
+          </div>
         </div>
         <nav
           aria-label="Portal sections"

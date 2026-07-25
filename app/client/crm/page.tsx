@@ -4,6 +4,7 @@ import { loadClientPortal } from "@/lib/clients/portal";
 import { loadNorthstarCrm } from "@/lib/crm/operating-suite";
 import { CRM_VIEWS, parseCrmView } from "@/lib/crm/views";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { loadUnreadNotificationCount } from "@/lib/notifications/client";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,16 @@ export default async function ClientCrmPage({
     );
   }
 
-  const data = await loadNorthstarCrm(supabase, portal.access.clientId);
+  const [data, unreadNotificationCount] = await Promise.all([
+    loadNorthstarCrm(supabase, portal.access.clientId),
+    portal.access.visibleClientSections.includes("notifications")
+      ? loadUnreadNotificationCount(
+          supabase,
+          portal.access.clientId,
+          portal.user.id,
+        )
+      : Promise.resolve(0),
+  ]);
 
   return (
     <NorthstarDesktopShell
@@ -55,6 +65,7 @@ export default async function ClientCrmPage({
       visibleSections={portal.access.visibleClientSections}
       canViewActionCenter={portal.access.canViewActionCenter}
       canEditCrmData={portal.access.canEditCrmData}
+      unreadNotificationCount={unreadNotificationCount}
     >
       <NorthstarCrmWorkspace
         clientId={portal.access.clientId}

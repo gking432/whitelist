@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   Activity,
   BarChart3,
+  Bell,
   Bot,
   Cable,
   Calculator,
@@ -243,6 +244,7 @@ export function NorthstarDesktopShell({
   visibleSections,
   canViewActionCenter,
   canEditCrmData,
+  unreadNotificationCount,
 }: {
   children: React.ReactNode;
   clientName: string;
@@ -253,6 +255,7 @@ export function NorthstarDesktopShell({
   visibleSections: ClientSectionKey[];
   canViewActionCenter: boolean;
   canEditCrmData: boolean;
+  unreadNotificationCount: number;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -341,6 +344,30 @@ export function NorthstarDesktopShell({
             <Button asChild size="icon" variant="outline">
               <Link href="/client/assistant" aria-label="Open AI assistant">
                 <Bot aria-hidden="true" />
+              </Link>
+            </Button>
+          ) : null}
+          {visibleSections.includes("notifications") ? (
+            <Button
+              asChild
+              size="icon"
+              variant="outline"
+              className="relative"
+            >
+              <Link
+                href="/client/notifications"
+                aria-label={`Notifications${
+                  unreadNotificationCount > 0
+                    ? `, ${unreadNotificationCount} unread`
+                    : ""
+                }`}
+              >
+                <Bell aria-hidden="true" />
+                {unreadNotificationCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white">
+                    {Math.min(unreadNotificationCount, 99)}
+                  </span>
+                ) : null}
               </Link>
             </Button>
           ) : null}

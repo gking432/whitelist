@@ -14,6 +14,7 @@ export const CLIENT_SECTION_KEYS = [
   "reports",
   "crm-sync",
   "settings",
+  "notifications",
   "action-center",
   "assistant",
   "approvals",
@@ -65,6 +66,7 @@ export const CLIENT_SECTION_LABELS: Record<ClientSectionKey, string> = {
   reports: "Reports",
   "crm-sync": "CRM sync",
   settings: "Settings",
+  notifications: "Notifications",
   "action-center": "Action Center",
   assistant: "Assistant",
   approvals: "Approvals",
@@ -86,6 +88,7 @@ const TEMPLATE_SECTIONS: Record<ClientJobRole, ClientSectionKey[]> = {
     "schedule",
     "quotes",
     "assistant",
+    "notifications",
   ],
   front_desk: [
     "overview",
@@ -95,9 +98,17 @@ const TEMPLATE_SECTIONS: Record<ClientJobRole, ClientSectionKey[]> = {
     "tasks",
     "schedule",
     "assistant",
+    "notifications",
   ],
-  marketing: ["overview", "inbox", "marketing", "reports"],
-  staff: ["overview", "inbox", "contacts", "tasks", "schedule"],
+  marketing: ["overview", "inbox", "marketing", "reports", "notifications"],
+  staff: [
+    "overview",
+    "inbox",
+    "contacts",
+    "tasks",
+    "schedule",
+    "notifications",
+  ],
   viewer: ["overview"],
 };
 
@@ -213,7 +224,13 @@ export function clientHomePath(
   if (experienceMode === "northstar_crm") {
     const firstCrmSection = CLIENT_SECTION_KEYS.find(
       (section) =>
-        !["action-center", "assistant", "approvals", "activity"].includes(
+        ![
+          "notifications",
+          "action-center",
+          "assistant",
+          "approvals",
+          "activity",
+        ].includes(
           section,
         ) && sections.includes(section),
     );
@@ -223,6 +240,7 @@ export function clientHomePath(
     }
   }
 
+  if (sections.includes("notifications")) return "/client/notifications";
   if (sections.includes("action-center")) return "/client/action-center";
   if (sections.includes("assistant")) return "/client/assistant";
   if (sections.includes("approvals")) return "/client/approvals";

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { processPendingActionJobs } from "@/lib/jobs/runner";
+import { processPendingNotificationDeliveries } from "@/lib/notifications/delivery";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const result = await processPendingActionJobs(20);
+  const [result, notifications] = await Promise.all([
+    processPendingActionJobs(20),
+    processPendingNotificationDeliveries(20),
+  ]);
 
-  return NextResponse.json({ ok: true, ...result });
+  return NextResponse.json({ ok: true, ...result, notifications });
 }
