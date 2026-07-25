@@ -210,7 +210,7 @@ export async function updatePartnerBranding(
       afterSnapshot: values,
     });
 
-    revalidatePath("/partner/branding");
+    revalidatePath("/partner/settings");
     revalidatePath("/client", "layout");
     revalidatePath("/client/crm");
 

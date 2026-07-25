@@ -311,13 +311,15 @@ export function BrandingForm({
             <div className="grid gap-3 p-4 sm:grid-cols-2">
               <div className="rounded-md border bg-card p-3">
                 <p className="text-[10px] text-muted-foreground">Open leads</p>
-                <p className="mt-2 text-xl font-semibold">18</p>
+                <p className="mt-2 text-sm font-semibold">No data</p>
               </div>
               <div className="rounded-md border bg-card p-3">
                 <p className="text-[10px] text-muted-foreground">
                   Automation health
                 </p>
-                <p className="mt-2 text-xl font-semibold text-primary">98%</p>
+                <p className="mt-2 text-sm font-semibold text-primary">
+                  Not connected
+                </p>
               </div>
             </div>
           </div>

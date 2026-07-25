@@ -3,7 +3,7 @@ import {
   BriefcaseBusiness,
   LayoutDashboard,
   Package,
-  Palette,
+  Settings,
   UsersRound,
 } from "lucide-react";
 
@@ -37,10 +37,10 @@ const navigation = [
     icon: Package,
   },
   {
-    key: "branding",
-    label: "Branding",
-    href: "/partner/branding",
-    icon: Palette,
+    key: "settings",
+    label: "Settings",
+    href: "/partner/settings",
+    icon: Settings,
   },
 ] as const;
 
