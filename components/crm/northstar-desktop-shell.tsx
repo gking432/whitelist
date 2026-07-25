@@ -296,7 +296,7 @@ export function NorthstarDesktopShell({
           </form>
           <Button asChild size="sm" className="ml-auto shrink-0 md:ml-0">
             <Link
-              href="/client/crm?view=pipeline#new-lead"
+              href="/client/crm?view=pipeline&new=1#new-lead"
               aria-label="New lead"
             >
               <Plus aria-hidden="true" />

@@ -38,8 +38,13 @@ import {
   createCrmTask,
   receiveCrmCommunication,
   saveCrmAvailability,
+  setCrmAppointmentStatus,
+  setCrmQuoteStatus,
   setCrmTaskStatus,
+  updateCrmContact,
+  updateCrmLead,
   updateCrmLeadStage,
+  updateCrmWorkspaceSettings,
 } from "@/app/crm/actions";
 import { VoiceCallLab } from "@/components/crm/voice-call-lab";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +54,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { NorthstarCrmData } from "@/lib/crm/operating-suite";
 import type { CrmView } from "@/lib/crm/views";
+import { COMMON_TIMEZONES } from "@/lib/clients/constants";
 import type { FormState } from "@/lib/forms/state";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +65,8 @@ type Contact = {
   email: string | null;
   phone: string | null;
   address: string | null;
+  company_name: string | null;
+  preferred_channel: string | null;
   source: string | null;
   created_at: string;
 };
@@ -107,11 +115,13 @@ type Communication = {
 type Appointment = {
   id: string;
   contact_id: string | null;
+  lead_id: string | null;
   title: string;
   start_at: string;
   end_at: string;
   status: string;
   location: string | null;
+  notes: string | null;
 };
 
 type Availability = {
@@ -138,6 +148,7 @@ type Call = {
 type Quote = {
   id: string;
   contact_id: string | null;
+  lead_id: string | null;
   service_type: string;
   status: string;
   low_amount: number;
@@ -157,6 +168,44 @@ type Feedback = {
   suggested_internal_action: string | null;
   suggested_customer_response: string | null;
   ai_status: string;
+  created_at: string;
+};
+
+type WorkflowInstance = {
+  id: string;
+  name: string;
+  status: string;
+  runtime_mode: string;
+  health_status: string;
+  last_run_at: string | null;
+  template: {
+    name?: string;
+    category?: string;
+    risk_level?: string;
+  } | null;
+};
+
+type IntegrationConnection = {
+  id: string;
+  display_name: string;
+  status: string;
+  runtime_mode: string;
+  provider: {
+    provider_key?: string;
+    display_name?: string;
+    category?: string;
+  } | null;
+};
+
+type IntegrationEvent = {
+  id: string;
+  connection_id: string | null;
+  direction: string;
+  event_type: string;
+  status: string;
+  external_object_type: string | null;
+  external_object_id: string | null;
+  error_message: string | null;
   created_at: string;
 };
 
@@ -296,6 +345,8 @@ export function NorthstarCrmWorkspace({
   assistantPath,
   data,
   embedded = false,
+  initialSearch = "",
+  showNewLead = false,
 }: {
   clientId: string;
   clientName: string;
@@ -307,11 +358,14 @@ export function NorthstarCrmWorkspace({
   assistantPath: string;
   data: NorthstarCrmData;
   embedded?: boolean;
+  initialSearch?: string;
+  showNewLead?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [actionMessage, setActionMessage] = useState<FormState | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
+  const [newLeadOpen, setNewLeadOpen] = useState(showNewLead);
   const [renderedAt] = useState(() => Date.now());
   const contacts = data.contacts as unknown as Contact[];
   const leads = data.leads as unknown as Lead[];
@@ -322,6 +376,22 @@ export function NorthstarCrmWorkspace({
   const calls = data.calls as unknown as Call[];
   const quotes = data.quotes as unknown as Quote[];
   const feedback = data.feedback as unknown as Feedback[];
+  const workflows = data.workflows as unknown as WorkflowInstance[];
+  const connections = data.connections as unknown as IntegrationConnection[];
+  const integrationEvents =
+    data.integrationEvents as unknown as IntegrationEvent[];
+  const crmConnections = connections.filter(
+    (connection) => connection.provider?.category === "crm",
+  );
+  const crmConnectionIds = new Set(
+    crmConnections.map((connection) => connection.id),
+  );
+  const crmSyncEvents = integrationEvents.filter(
+    (event) =>
+      (event.connection_id && crmConnectionIds.has(event.connection_id)) ||
+      event.external_object_type === "crm_contact" ||
+      event.external_object_type === "crm_lead",
+  );
   const contactById = useMemo(
     () => new Map(contacts.map((contact) => [contact.id, contact])),
     [contacts],
@@ -367,6 +437,22 @@ export function NorthstarCrmWorkspace({
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  const filteredLeads = leads.filter((lead) => {
+    const contact = contactById.get(lead.contact_id);
+    return [
+      contactName(contact),
+      contact?.email ?? "",
+      contact?.phone ?? "",
+      lead.service_type ?? "",
+      lead.description ?? "",
+      lead.status,
+      lead.urgency ?? "",
+      lead.quality ?? "",
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(search.toLowerCase());
+  });
 
   return (
     <div className="space-y-5">
@@ -581,7 +667,14 @@ export function NorthstarCrmWorkspace({
       {view === "pipeline" ? (
         <div className="space-y-5">
           {canEdit ? (
-            <details className="rounded-lg border bg-card">
+            <details
+              id="new-lead"
+              className="rounded-lg border bg-card"
+              open={newLeadOpen}
+              onToggle={(event) =>
+                setNewLeadOpen(event.currentTarget.open)
+              }
+            >
               <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
                 Add lead
               </summary>
@@ -616,8 +709,8 @@ export function NorthstarCrmWorkspace({
                   className="sm:col-span-2"
                 />
                 <Button type="submit" disabled={pending}>
-                  <Sparkles aria-hidden="true" />
-                  Create and analyze
+                  <Plus aria-hidden="true" />
+                  Create lead
                 </Button>
               </form>
             </details>
@@ -706,69 +799,354 @@ export function NorthstarCrmWorkspace({
       ) : null}
 
       {view === "contacts" ? (
-        <section className="overflow-hidden rounded-lg border bg-card">
-          <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-sm font-semibold">Customer records</h2>
-              <p className="text-xs text-muted-foreground">
-                {contacts.length} contacts across every channel
-              </p>
+        <div className="space-y-5">
+          <section className="overflow-hidden rounded-lg border bg-card">
+            <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold">Leads</h2>
+                <p className="text-xs text-muted-foreground">
+                  {leads.length} lead{leads.length === 1 ? "" : "s"} across the
+                  pipeline
+                </p>
+              </div>
+              <label className="relative block w-full md:hidden">
+                <Search
+                  className="absolute left-2.5 top-2.5 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="pl-8"
+                  placeholder="Search leads"
+                />
+              </label>
             </div>
-            <label className="relative block w-full sm:w-72">
-              <Search
-                className="absolute left-2.5 top-2.5 size-4 text-muted-foreground"
-                aria-hidden="true"
+            {filteredLeads.length === 0 ? (
+              <Empty
+                title={leads.length === 0 ? "No leads yet" : "No matching leads"}
+                detail="New customer requests and manually entered opportunities appear here."
               />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="pl-8"
-                placeholder="Search contacts"
-              />
-            </label>
-          </div>
-          {filteredContacts.length === 0 ? (
-            <Empty
-              title="No matching contacts"
-              detail="Contacts appear when leads, calls, forms, texts, or emails arrive."
-            />
-          ) : (
-            <div className="divide-y">
-              {filteredContacts.map((contact) => {
-                const contactLeads = leads.filter(
-                  (lead) => lead.contact_id === contact.id,
-                );
-                return (
+            ) : (
+              <div className="divide-y">
+                {filteredLeads.map((lead) => {
+                  const contact = contactById.get(lead.contact_id);
+                  const relatedTasks = tasks.filter(
+                    (task) => task.lead_id === lead.id,
+                  );
+                  const relatedAppointments = appointments.filter(
+                    (appointment) => appointment.lead_id === lead.id,
+                  );
+                  const relatedQuotes = quotes.filter(
+                    (quote) => quote.lead_id === lead.id,
+                  );
+
+                  return (
+                    <details key={lead.id} className="group">
+                      <summary className="grid cursor-pointer list-none gap-3 px-4 py-3 hover:bg-secondary/35 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_auto] sm:items-center">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {contactName(contact)}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {[contact?.phone, contact?.email]
+                              .filter(Boolean)
+                              .join(" · ") || "No contact details"}
+                          </p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm">
+                            {lead.service_type ?? "General inquiry"}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {lead.next_action ?? lead.summary ?? "No next action"}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {lead.urgency ? (
+                            <Badge
+                              variant="outline"
+                              className={statusClass(lead.urgency)}
+                            >
+                              {lead.urgency}
+                            </Badge>
+                          ) : null}
+                          <Badge
+                            variant="outline"
+                            className={statusClass(lead.status)}
+                          >
+                            {lead.status}
+                          </Badge>
+                        </div>
+                      </summary>
+
+                      <div className="border-t bg-secondary/15 p-4">
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <form
+                            className="space-y-3 rounded-lg border bg-card p-4"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              const form = new FormData(event.currentTarget);
+                              run(() =>
+                                updateCrmLead({
+                                  clientId,
+                                  leadId: lead.id,
+                                  serviceType: String(
+                                    form.get("service_type") ?? "",
+                                  ),
+                                  description: String(
+                                    form.get("description") ?? "",
+                                  ),
+                                  nextAction: String(
+                                    form.get("next_action") ?? "",
+                                  ),
+                                  estimatedValueMin: Number(
+                                    form.get("estimated_value_min"),
+                                  ),
+                                  estimatedValueMax: Number(
+                                    form.get("estimated_value_max"),
+                                  ),
+                                }),
+                              );
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <h3 className="text-sm font-semibold">
+                                Opportunity
+                              </h3>
+                              {canEdit ? (
+                                <Select
+                                  className="h-8 w-36 text-xs"
+                                  value={lead.status}
+                                  onChange={(event) =>
+                                    run(() =>
+                                      updateCrmLeadStage({
+                                        clientId,
+                                        leadId: lead.id,
+                                        status: event.target.value,
+                                      }),
+                                    )
+                                  }
+                                  disabled={pending}
+                                  aria-label={`Stage for ${contactName(contact)}`}
+                                >
+                                  {PIPELINE_STAGES.map((stage) => (
+                                    <option key={stage} value={stage}>
+                                      {stage.replaceAll("_", " ")}
+                                    </option>
+                                  ))}
+                                </Select>
+                              ) : null}
+                            </div>
+                            <Input
+                              name="service_type"
+                              defaultValue={lead.service_type ?? ""}
+                              placeholder="Service type"
+                              required
+                              disabled={!canEdit}
+                            />
+                            <Textarea
+                              name="description"
+                              defaultValue={lead.description ?? ""}
+                              placeholder="Customer request"
+                              disabled={!canEdit}
+                            />
+                            <Textarea
+                              name="next_action"
+                              defaultValue={lead.next_action ?? ""}
+                              placeholder="Next action"
+                              disabled={!canEdit}
+                            />
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <Input
+                                name="estimated_value_min"
+                                type="number"
+                                min="0"
+                                step="1"
+                                defaultValue={lead.estimated_value_min ?? ""}
+                                placeholder="Low estimate"
+                                disabled={!canEdit}
+                              />
+                              <Input
+                                name="estimated_value_max"
+                                type="number"
+                                min="0"
+                                step="1"
+                                defaultValue={lead.estimated_value_max ?? ""}
+                                placeholder="High estimate"
+                                disabled={!canEdit}
+                              />
+                            </div>
+                            {canEdit ? (
+                              <Button type="submit" size="sm" disabled={pending}>
+                                Save opportunity
+                              </Button>
+                            ) : null}
+                          </form>
+
+                          {contact ? (
+                            <form
+                              className="space-y-3 rounded-lg border bg-card p-4"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                const form = new FormData(event.currentTarget);
+                                run(() =>
+                                  updateCrmContact({
+                                    clientId,
+                                    contactId: contact.id,
+                                    firstName: String(
+                                      form.get("first_name") ?? "",
+                                    ),
+                                    lastName: String(
+                                      form.get("last_name") ?? "",
+                                    ),
+                                    companyName: String(
+                                      form.get("company_name") ?? "",
+                                    ),
+                                    phone: String(form.get("phone") ?? ""),
+                                    email: String(form.get("email") ?? ""),
+                                    address: String(form.get("address") ?? ""),
+                                    preferredChannel: String(
+                                      form.get("preferred_channel") ?? "",
+                                    ),
+                                  }),
+                                );
+                              }}
+                            >
+                              <h3 className="text-sm font-semibold">Customer</h3>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <Input
+                                  name="first_name"
+                                  defaultValue={contact.first_name ?? ""}
+                                  placeholder="First name"
+                                  required
+                                  disabled={!canEdit}
+                                />
+                                <Input
+                                  name="last_name"
+                                  defaultValue={contact.last_name ?? ""}
+                                  placeholder="Last name"
+                                  disabled={!canEdit}
+                                />
+                              </div>
+                              <Input
+                                name="company_name"
+                                defaultValue={contact.company_name ?? ""}
+                                placeholder="Company"
+                                disabled={!canEdit}
+                              />
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <Input
+                                  name="phone"
+                                  defaultValue={contact.phone ?? ""}
+                                  placeholder="Phone"
+                                  disabled={!canEdit}
+                                />
+                                <Input
+                                  name="email"
+                                  type="email"
+                                  defaultValue={contact.email ?? ""}
+                                  placeholder="Email"
+                                  disabled={!canEdit}
+                                />
+                              </div>
+                              <Input
+                                name="address"
+                                defaultValue={contact.address ?? ""}
+                                placeholder="Service address"
+                                disabled={!canEdit}
+                              />
+                              <Select
+                                name="preferred_channel"
+                                defaultValue={contact.preferred_channel ?? ""}
+                                disabled={!canEdit}
+                              >
+                                <option value="">No channel preference</option>
+                                <option value="phone">Phone</option>
+                                <option value="sms">SMS</option>
+                                <option value="email">Email</option>
+                              </Select>
+                              {canEdit ? (
+                                <Button
+                                  type="submit"
+                                  size="sm"
+                                  disabled={pending}
+                                >
+                                  Save customer
+                                </Button>
+                              ) : null}
+                            </form>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-md border bg-card px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">
+                              Tasks
+                            </p>
+                            <p className="mt-0.5 text-sm font-medium">
+                              {
+                                relatedTasks.filter(
+                                  (task) => task.status === "open",
+                                ).length
+                              }{" "}
+                              open
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-card px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">
+                              Appointments
+                            </p>
+                            <p className="mt-0.5 text-sm font-medium">
+                              {relatedAppointments.length}
+                            </p>
+                          </div>
+                          <div className="rounded-md border bg-card px-3 py-2">
+                            <p className="text-[11px] text-muted-foreground">
+                              Quotes
+                            </p>
+                            <p className="mt-0.5 text-sm font-medium">
+                              {relatedQuotes.length}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {contacts.length > 0 ? (
+            <section className="overflow-hidden rounded-lg border bg-card">
+              <div className="border-b px-4 py-3">
+                <h2 className="text-sm font-semibold">Customer directory</h2>
+                <p className="text-xs text-muted-foreground">
+                  {filteredContacts.length} matching contact
+                  {filteredContacts.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <div className="divide-y">
+                {filteredContacts.map((contact) => (
                   <div
                     key={contact.id}
-                    className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center"
+                    className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {contactName(contact)}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {[contact.phone, contact.email]
-                          .filter(Boolean)
-                          .join(" · ") || "No contact details"}
-                      </p>
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {contact.address ?? contact.source ?? "No address"}
+                    <p className="truncate text-sm font-medium">
+                      {contactName(contact)}
                     </p>
-                    <div className="flex flex-wrap gap-1">
-                      {contactLeads.slice(0, 2).map((lead) => (
-                        <Badge key={lead.id} variant="outline">
-                          {lead.status}
-                        </Badge>
-                      ))}
-                    </div>
+                    <p className="truncate text-xs text-muted-foreground sm:text-right">
+                      {[contact.phone, contact.email, contact.address]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
       ) : null}
 
       {view === "tasks" ? (
@@ -814,25 +1192,29 @@ export function NorthstarCrmWorkspace({
                           : ""}
                       </p>
                     </div>
-                    {canEdit && task.status === "open" ? (
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        title="Complete task"
-                        onClick={() =>
+                    {canEdit ? (
+                      <Select
+                        className="h-8 w-28 text-xs"
+                        value={task.status}
+                        onChange={(event) =>
                           run(() =>
                             setCrmTaskStatus({
                               clientId,
                               taskId: task.id,
-                              status: "done",
+                              status: event.target.value as
+                                | "open"
+                                | "done"
+                                | "cancelled",
                             }),
                           )
                         }
                         disabled={pending}
+                        aria-label={`Status for ${task.title}`}
                       >
-                        <Check aria-hidden="true" />
-                      </Button>
+                        <option value="open">Open</option>
+                        <option value="done">Done</option>
+                        <option value="cancelled">Cancelled</option>
+                      </Select>
                     ) : null}
                   </div>
                 ))}
@@ -854,6 +1236,7 @@ export function NorthstarCrmWorkspace({
                     priority: String(form.get("priority") ?? "medium"),
                     dueAt: String(form.get("due_at") ?? ""),
                     contactId: String(form.get("contact_id") ?? ""),
+                    leadId: String(form.get("lead_id") ?? ""),
                   }),
                 );
                 event.currentTarget.reset();
@@ -869,6 +1252,15 @@ export function NorthstarCrmWorkspace({
                 <option value="low">Low</option>
               </Select>
               <Input name="due_at" type="datetime-local" />
+              <Select name="lead_id" defaultValue="">
+                <option value="">No linked lead</option>
+                {openLeads.map((lead) => (
+                  <option key={lead.id} value={lead.id}>
+                    {contactName(contactById.get(lead.contact_id))} ·{" "}
+                    {lead.service_type ?? "Lead"}
+                  </option>
+                ))}
+              </Select>
               <Select name="contact_id" defaultValue="">
                 <option value="">No contact</option>
                 {contacts.map((contact) => (
@@ -1086,12 +1478,37 @@ export function NorthstarCrmWorkspace({
                           : ""}
                       </p>
                     </div>
-                    <Badge
-                      variant="outline"
-                      className={statusClass(appointment.status)}
-                    >
-                      {appointment.status}
-                    </Badge>
+                    {canEdit ? (
+                      <Select
+                        className="h-8 w-32 text-xs"
+                        value={appointment.status}
+                        onChange={(event) =>
+                          run(() =>
+                            setCrmAppointmentStatus({
+                              clientId,
+                              appointmentId: appointment.id,
+                              status: event.target.value as
+                                | "booked"
+                                | "completed"
+                                | "cancelled",
+                            }),
+                          )
+                        }
+                        disabled={pending}
+                        aria-label={`Status for ${appointment.title}`}
+                      >
+                        <option value="booked">Booked</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </Select>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className={statusClass(appointment.status)}
+                      >
+                        {appointment.status}
+                      </Badge>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1185,6 +1602,7 @@ export function NorthstarCrmWorkspace({
                       startAt: String(form.get("start_at") ?? ""),
                       durationMinutes: Number(form.get("duration")),
                       contactId: String(form.get("contact_id") ?? ""),
+                      leadId: String(form.get("lead_id") ?? ""),
                       location: String(form.get("location") ?? ""),
                       notes: String(form.get("notes") ?? ""),
                     }),
@@ -1200,6 +1618,15 @@ export function NorthstarCrmWorkspace({
                   <option value="60">60 minutes</option>
                   <option value="90">90 minutes</option>
                   <option value="120">2 hours</option>
+                </Select>
+                <Select name="lead_id" defaultValue="">
+                  <option value="">No linked lead</option>
+                  {openLeads.map((lead) => (
+                    <option key={lead.id} value={lead.id}>
+                      {contactName(contactById.get(lead.contact_id))} ·{" "}
+                      {lead.service_type ?? "Lead"}
+                    </option>
+                  ))}
                 </Select>
                 <Select name="contact_id" defaultValue="">
                   <option value="">No contact</option>
@@ -1304,7 +1731,40 @@ export function NorthstarCrmWorkspace({
                         {money(Number(quote.low_amount))}–
                         {money(Number(quote.high_amount))}
                       </p>
-                      <Badge variant="outline">{quote.status.replaceAll("_", " ")}</Badge>
+                      {canEdit ? (
+                        <Select
+                          className="mt-2 h-8 w-40 text-xs"
+                          value={quote.status}
+                          onChange={(event) =>
+                            run(() =>
+                              setCrmQuoteStatus({
+                                clientId,
+                                quoteId: quote.id,
+                                status: event.target.value as
+                                  | "internal_ballpark"
+                                  | "draft"
+                                  | "sent"
+                                  | "accepted"
+                                  | "declined",
+                              }),
+                            )
+                          }
+                          disabled={pending}
+                          aria-label={`Status for ${quote.service_type} quote`}
+                        >
+                          <option value="internal_ballpark">
+                            Internal ballpark
+                          </option>
+                          <option value="draft">Draft</option>
+                          <option value="sent">Sent</option>
+                          <option value="accepted">Accepted</option>
+                          <option value="declined">Declined</option>
+                        </Select>
+                      ) : (
+                        <Badge variant="outline">
+                          {quote.status.replaceAll("_", " ")}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1579,57 +2039,301 @@ export function NorthstarCrmWorkspace({
       ) : null}
 
       {view === "automations" ? (
-        <section className="overflow-hidden rounded-lg border bg-card">
-          <div className="border-b px-5 py-4">
-            <h2 className="text-sm font-semibold">AI automations</h2>
-          </div>
-          <Empty
-            title="No automations configured"
-            detail="Installed workflows will appear here after client setup."
-          />
-        </section>
+        <div className="space-y-5">
+          <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-3">
+            <Metric
+              label="Installed workflows"
+              value={workflows.length}
+              detail={`${workflows.filter((workflow) => workflow.status === "active").length} active`}
+              icon={Workflow}
+            />
+            <Metric
+              label="Healthy"
+              value={
+                workflows.filter((workflow) =>
+                  ["healthy", "ok"].includes(workflow.health_status),
+                ).length
+              }
+              detail="Reporting normal operation"
+              icon={Check}
+            />
+            <Metric
+              label="Needs attention"
+              value={
+                workflows.filter((workflow) =>
+                  ["failing", "degraded", "needs_attention"].includes(
+                    workflow.health_status,
+                  ),
+                ).length
+              }
+              detail="Requires partner troubleshooting"
+              icon={ClipboardCheck}
+            />
+          </section>
+
+          <section className="overflow-hidden rounded-lg border bg-card">
+            <div className="border-b px-5 py-4">
+              <h2 className="text-sm font-semibold">Installed automations</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Client users can see operation and health. Package changes are
+                managed by the partner.
+              </p>
+            </div>
+            {workflows.length === 0 ? (
+              <Empty
+                title="No automations installed"
+                detail="Workflows appear here after the partner deploys a package."
+              />
+            ) : (
+              <div className="divide-y">
+                {workflows.map((workflow) => (
+                  <div
+                    key={workflow.id}
+                    className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{workflow.name}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {workflow.template?.category ?? "Workflow"} · Last run:{" "}
+                        {when(workflow.last_run_at)}
+                      </p>
+                    </div>
+                    <Badge variant="outline">{workflow.runtime_mode}</Badge>
+                    <Badge
+                      variant="outline"
+                      className={statusClass(workflow.health_status)}
+                    >
+                      {workflow.status} · {workflow.health_status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       ) : null}
 
       {view === "crm-sync" ? (
-        <section className="overflow-hidden rounded-lg border bg-card">
-          <div className="border-b px-5 py-4">
-            <h2 className="text-sm font-semibold">CRM connections</h2>
-          </div>
-          {data.connections.length === 0 ? (
-            <Empty
-              title="No CRM connected"
-              detail="Connect an external CRM when this workspace should mirror or assist another system."
-            />
-          ) : (
-            <div className="divide-y">
-              {data.connections.map((connection) => (
-                <div
-                  key={String(connection.id)}
-                  className="flex items-center justify-between gap-3 px-5 py-4"
-                >
-                  <span className="text-sm font-medium">
-                    {String(connection.display_name ?? "CRM connection")}
-                  </span>
-                  <Badge variant="outline">
-                    {String(connection.status)}
-                  </Badge>
-                </div>
-              ))}
+        <div className="space-y-5">
+          <section className="overflow-hidden rounded-lg border bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
+              <div>
+                <h2 className="text-sm font-semibold">CRM connections</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Connection health and recent write-back activity
+                </p>
+              </div>
+              <Badge variant="outline">
+                {data.client?.crm_operating_mode.replaceAll("_", " ") ??
+                  "Northstar CRM"}
+              </Badge>
             </div>
-          )}
-        </section>
+            {crmConnections.length === 0 ? (
+              <Empty
+                title="Northstar is the system of record"
+                detail="No external CRM is connected. Your partner can add one when records should mirror or sync elsewhere."
+              />
+            ) : (
+              <div className="divide-y">
+                {crmConnections.map((connection) => (
+                  <div
+                    key={connection.id}
+                    className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {connection.display_name}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {connection.provider?.display_name ?? "External CRM"}
+                      </p>
+                    </div>
+                    <Badge variant="outline">
+                      {connection.runtime_mode}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={statusClass(connection.status)}
+                    >
+                      {connection.status.replaceAll("_", " ")}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="overflow-hidden rounded-lg border bg-card">
+            <div className="border-b px-5 py-4">
+              <h2 className="text-sm font-semibold">Recent sync activity</h2>
+            </div>
+            {crmSyncEvents.length === 0 ? (
+              <Empty
+                title="No sync activity"
+                detail="External CRM write-backs will appear here with their real delivery status."
+              />
+            ) : (
+              <div className="divide-y">
+                {crmSyncEvents.slice(0, 25).map((event) => (
+                  <div
+                    key={event.id}
+                    className="grid gap-2 px-5 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {event.event_type.replaceAll(".", " ")}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {when(event.created_at)}
+                        {event.external_object_id
+                          ? ` · ${event.external_object_id}`
+                          : ""}
+                      </p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={statusClass(event.status)}
+                    >
+                      {event.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       ) : null}
 
       {view === "settings" ? (
-        <section className="overflow-hidden rounded-lg border bg-card">
-          <div className="border-b px-5 py-4">
-            <h2 className="text-sm font-semibold">Workspace settings</h2>
-          </div>
-          <Empty
-            title="No settings available"
-            detail="Client permissions and workspace configuration will appear here."
-          />
-        </section>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]">
+          <section className="overflow-hidden rounded-lg border bg-card">
+            <div className="border-b px-5 py-4">
+              <h2 className="text-sm font-semibold">Company profile</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Business details used throughout the CRM workspace
+              </p>
+            </div>
+            {data.client ? (
+              <form
+                className="grid gap-4 p-5 sm:grid-cols-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = new FormData(event.currentTarget);
+                  run(() =>
+                    updateCrmWorkspaceSettings({
+                      clientId,
+                      name: String(form.get("name") ?? ""),
+                      industry: String(form.get("industry") ?? ""),
+                      timezone: String(form.get("timezone") ?? ""),
+                      websiteUrl: String(form.get("website_url") ?? ""),
+                      primaryContactName: String(
+                        form.get("primary_contact_name") ?? "",
+                      ),
+                      primaryContactEmail: String(
+                        form.get("primary_contact_email") ?? "",
+                      ),
+                      primaryContactPhone: String(
+                        form.get("primary_contact_phone") ?? "",
+                      ),
+                    }),
+                  );
+                }}
+              >
+                <Input
+                  name="name"
+                  defaultValue={data.client.name}
+                  placeholder="Company name"
+                  required
+                  disabled={!canEdit}
+                />
+                <Input
+                  name="industry"
+                  defaultValue={data.client.industry ?? ""}
+                  placeholder="Industry"
+                  disabled={!canEdit}
+                />
+                <Input
+                  name="website_url"
+                  type="url"
+                  defaultValue={data.client.website_url ?? ""}
+                  placeholder="Website"
+                  disabled={!canEdit}
+                />
+                <Select
+                  name="timezone"
+                  defaultValue={data.client.timezone}
+                  disabled={!canEdit}
+                >
+                  {COMMON_TIMEZONES.map((timezone) => (
+                    <option key={timezone} value={timezone}>
+                      {timezone}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  name="primary_contact_name"
+                  defaultValue={data.client.primary_contact_name ?? ""}
+                  placeholder="Primary contact"
+                  disabled={!canEdit}
+                />
+                <Input
+                  name="primary_contact_email"
+                  type="email"
+                  defaultValue={data.client.primary_contact_email ?? ""}
+                  placeholder="Primary contact email"
+                  disabled={!canEdit}
+                />
+                <Input
+                  name="primary_contact_phone"
+                  defaultValue={data.client.primary_contact_phone ?? ""}
+                  placeholder="Primary contact phone"
+                  disabled={!canEdit}
+                />
+                {canEdit ? (
+                  <div className="flex items-center sm:justify-end">
+                    <Button type="submit" disabled={pending}>
+                      Save settings
+                    </Button>
+                  </div>
+                ) : null}
+              </form>
+            ) : (
+              <Empty
+                title="Settings unavailable"
+                detail="The company profile could not be loaded."
+              />
+            )}
+          </section>
+
+          <aside className="space-y-5">
+            <section className="rounded-lg border bg-card p-5">
+              <h2 className="text-sm font-semibold">Operating mode</h2>
+              <dl className="mt-3 space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">CRM</dt>
+                  <dd className="font-medium">
+                    {data.client?.crm_operating_mode.replaceAll("_", " ") ??
+                      "Unavailable"}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">Automations</dt>
+                  <dd className="font-medium">
+                    {data.client?.default_runtime_mode.replaceAll("_", " ") ??
+                      "Unavailable"}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+            <section className="rounded-lg border bg-card p-5">
+              <h2 className="text-sm font-semibold">Team permissions</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Owners and managers can edit CRM records. Staff permissions
+                will be configured from this area in the permissions phase.
+              </p>
+            </section>
+          </aside>
+        </div>
       ) : null}
 
       {!embedded ? (

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function ClientCrmPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; search?: string; new?: string }>;
 }) {
   const portal = await loadClientPortal();
   if (portal.kind !== "ok" || !portal.access.clientId) return null;
@@ -44,6 +44,8 @@ export default async function ClientCrmPage({
         assistantPath="/client/assistant"
         data={data}
         embedded
+        initialSearch={params.search ?? ""}
+        showNewLead={params.new === "1"}
       />
     </NorthstarDesktopShell>
   );

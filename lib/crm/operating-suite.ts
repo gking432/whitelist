@@ -1,6 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type NorthstarCrmData = {
+  client: {
+    name: string;
+    industry: string | null;
+    timezone: string;
+    website_url: string | null;
+    primary_contact_name: string | null;
+    primary_contact_email: string | null;
+    primary_contact_phone: string | null;
+    crm_operating_mode: string;
+    default_runtime_mode: string;
+  } | null;
   contacts: Record<string, unknown>[];
   leads: Record<string, unknown>[];
   tasks: Record<string, unknown>[];
@@ -14,6 +25,8 @@ export type NorthstarCrmData = {
   feedback: Record<string, unknown>[];
   pendingApprovals: number;
   connections: Record<string, unknown>[];
+  workflows: Record<string, unknown>[];
+  integrationEvents: Record<string, unknown>[];
 };
 
 async function rows(
@@ -43,6 +56,9 @@ export async function loadNorthstarCrm(
     feedback,
     approvalsResult,
     connections,
+    workflows,
+    integrationEvents,
+    clientResult,
   ] = await Promise.all([
     rows(
       supabase
@@ -145,9 +161,39 @@ export async function loadNorthstarCrm(
         )
         .eq("client_id", clientId),
     ),
+    rows(
+      supabase
+        .from("client_workflow_instances")
+        .select(
+          "id, name, status, runtime_mode, health_status, last_run_at, template:workflow_templates(name, category, risk_level)",
+        )
+        .eq("client_id", clientId)
+        .order("name", { ascending: true }),
+    ),
+    rows(
+      supabase
+        .from("integration_events")
+        .select(
+          "id, connection_id, direction, event_type, status, external_object_type, external_object_id, error_message, created_at",
+        )
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+    ),
+    supabase
+      .from("client_businesses")
+      .select(
+        "name, industry, timezone, website_url, primary_contact_name, primary_contact_email, primary_contact_phone, crm_operating_mode, default_runtime_mode",
+      )
+      .eq("id", clientId)
+      .maybeSingle(),
   ]);
 
   return {
+    client:
+      clientResult.error || !clientResult.data
+        ? null
+        : (clientResult.data as NorthstarCrmData["client"]),
     contacts,
     leads,
     tasks,
@@ -161,6 +207,7 @@ export async function loadNorthstarCrm(
     feedback,
     pendingApprovals: approvalsResult.count ?? 0,
     connections,
+    workflows,
+    integrationEvents,
   };
 }
-

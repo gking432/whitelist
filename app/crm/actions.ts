@@ -134,6 +134,40 @@ async function addTimeline(
   });
 }
 
+async function resolveCrmLinks(
+  context: ActionContext,
+  input: { contactId?: string; leadId?: string },
+) {
+  let contactId = validUuid(input.contactId) ? input.contactId : null;
+  let leadId = validUuid(input.leadId) ? input.leadId : null;
+
+  if (leadId) {
+    const { data: lead } = await context.admin
+      .from("crm_leads")
+      .select("id, contact_id")
+      .eq("id", leadId)
+      .eq("client_id", context.clientId)
+      .maybeSingle();
+
+    if (!lead) {
+      leadId = null;
+    } else {
+      contactId = lead.contact_id;
+    }
+  } else if (contactId) {
+    const { data: contact } = await context.admin
+      .from("crm_contacts")
+      .select("id")
+      .eq("id", contactId)
+      .eq("client_id", context.clientId)
+      .maybeSingle();
+
+    if (!contact) contactId = null;
+  }
+
+  return { contactId, leadId };
+}
+
 async function audit(
   context: ActionContext,
   action: string,
@@ -369,6 +403,126 @@ export async function updateCrmLeadStage(input: {
   return result(`Lead moved to ${input.status.replaceAll("_", " ")}.`);
 }
 
+export async function updateCrmLead(input: {
+  clientId: string;
+  leadId: string;
+  serviceType: string;
+  description?: string;
+  nextAction?: string;
+  estimatedValueMin?: number;
+  estimatedValueMax?: number;
+}): Promise<FormState> {
+  const context = await actionContext(input.clientId, "crm_edit");
+  if ("status" in context) return context;
+
+  if (!validUuid(input.leadId)) return result("Lead not found.", "error");
+
+  const serviceType = clean(input.serviceType, 160);
+  if (!serviceType) return result("Add a service type.", "error");
+
+  const valueMin = Math.max(0, Number(input.estimatedValueMin) || 0);
+  const valueMax = Math.max(0, Number(input.estimatedValueMax) || 0);
+  if (valueMax > 0 && valueMin > valueMax) {
+    return result("The low estimate cannot exceed the high estimate.", "error");
+  }
+
+  const { data: lead, error } = await context.admin
+    .from("crm_leads")
+    .update({
+      service_type: serviceType,
+      description: clean(input.description, 4000) || null,
+      next_action: clean(input.nextAction, 1000) || null,
+      estimated_value_min: valueMin || null,
+      estimated_value_max: valueMax || null,
+    })
+    .eq("id", input.leadId)
+    .eq("client_id", context.clientId)
+    .select("id, contact_id")
+    .maybeSingle();
+
+  if (error || !lead) return result("The lead could not be updated.", "error");
+
+  await addTimeline(context, {
+    contactId: lead.contact_id,
+    leadId: lead.id,
+    kind: "system",
+    title: "Lead details updated",
+  });
+  await audit(
+    context,
+    "crm.lead_updated",
+    "crm_lead",
+    lead.id,
+    `Updated the ${serviceType} lead.`,
+  );
+
+  revalidateCrm(context.clientId);
+  return result("Lead details saved.");
+}
+
+export async function updateCrmContact(input: {
+  clientId: string;
+  contactId: string;
+  firstName: string;
+  lastName?: string;
+  companyName?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  preferredChannel?: string;
+}): Promise<FormState> {
+  const context = await actionContext(input.clientId, "crm_edit");
+  if ("status" in context) return context;
+
+  if (!validUuid(input.contactId)) return result("Contact not found.", "error");
+
+  const firstName = clean(input.firstName, 120);
+  const phone = clean(input.phone, 80);
+  const email = clean(input.email, 240).toLowerCase();
+  if (!firstName || (!phone && !email)) {
+    return result("Add a first name and a phone number or email.", "error");
+  }
+  if (email && !email.includes("@")) {
+    return result("Enter a valid email address.", "error");
+  }
+
+  const preferredChannel = ["phone", "sms", "email"].includes(
+    input.preferredChannel ?? "",
+  )
+    ? input.preferredChannel
+    : null;
+
+  const { data: contact, error } = await context.admin
+    .from("crm_contacts")
+    .update({
+      first_name: firstName,
+      last_name: clean(input.lastName, 120) || null,
+      company_name: clean(input.companyName, 200) || null,
+      phone: phone || null,
+      email: email || null,
+      address: clean(input.address, 300) || null,
+      preferred_channel: preferredChannel,
+    })
+    .eq("id", input.contactId)
+    .eq("client_id", context.clientId)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !contact) {
+    return result("The customer record could not be updated.", "error");
+  }
+
+  await audit(
+    context,
+    "crm.contact_updated",
+    "crm_contact",
+    contact.id,
+    `Updated the customer record for ${firstName}.`,
+  );
+  revalidateCrm(context.clientId);
+  return result("Customer information saved.");
+}
+
 export async function createCrmTask(input: {
   clientId: string;
   title: string;
@@ -393,14 +547,15 @@ export async function createCrmTask(input: {
     input.dueAt && !Number.isNaN(new Date(input.dueAt).getTime())
       ? new Date(input.dueAt).toISOString()
       : null;
+  const links = await resolveCrmLinks(context, input);
 
   const { data: task, error } = await context.admin
     .from("crm_tasks")
     .insert({
       partner_id: context.partnerId,
       client_id: context.clientId,
-      contact_id: validUuid(input.contactId) ? input.contactId : null,
-      lead_id: validUuid(input.leadId) ? input.leadId : null,
+      contact_id: links.contactId,
+      lead_id: links.leadId,
       title,
       description: clean(input.description, 2000) || null,
       priority,
@@ -414,8 +569,8 @@ export async function createCrmTask(input: {
   if (error || !task) return result("The task could not be created.", "error");
 
   await addTimeline(context, {
-    contactId: input.contactId,
-    leadId: input.leadId,
+    contactId: links.contactId,
+    leadId: links.leadId,
     kind: "task",
     title: `Task created: ${title}`,
   });
@@ -445,6 +600,40 @@ export async function setCrmTaskStatus(input: {
   if (error) return result("The task could not be updated.", "error");
   revalidateCrm(context.clientId);
   return result(input.status === "done" ? "Task completed." : "Task updated.");
+}
+
+export async function setCrmAppointmentStatus(input: {
+  clientId: string;
+  appointmentId: string;
+  status: "booked" | "completed" | "cancelled";
+}): Promise<FormState> {
+  const context = await actionContext(input.clientId, "crm_edit");
+  if ("status" in context) return context;
+
+  if (!validUuid(input.appointmentId)) {
+    return result("Appointment not found.", "error");
+  }
+
+  const { data: appointment, error } = await context.admin
+    .from("crm_appointments")
+    .update({ status: input.status })
+    .eq("id", input.appointmentId)
+    .eq("client_id", context.clientId)
+    .select("id, contact_id, lead_id, title")
+    .maybeSingle();
+
+  if (error || !appointment) {
+    return result("The appointment could not be updated.", "error");
+  }
+
+  await addTimeline(context, {
+    contactId: appointment.contact_id,
+    leadId: appointment.lead_id,
+    kind: "appointment",
+    title: `${appointment.title} marked ${input.status}`,
+  });
+  revalidateCrm(context.clientId);
+  return result(`Appointment marked ${input.status}.`);
 }
 
 export async function createCrmMessageDraft(input: {
@@ -682,14 +871,15 @@ export async function createCrmAppointment(input: {
     return result("Add an appointment title and valid start time.", "error");
   }
   const end = new Date(start.getTime() + duration * 60_000);
+  const links = await resolveCrmLinks(context, input);
 
   const { data: appointment, error } = await context.admin
     .from("crm_appointments")
     .insert({
       partner_id: context.partnerId,
       client_id: context.clientId,
-      contact_id: validUuid(input.contactId) ? input.contactId : null,
-      lead_id: validUuid(input.leadId) ? input.leadId : null,
+      contact_id: links.contactId,
+      lead_id: links.leadId,
       title,
       start_at: start.toISOString(),
       end_at: end.toISOString(),
@@ -705,9 +895,17 @@ export async function createCrmAppointment(input: {
     return result("The appointment could not be created.", "error");
   }
 
+  if (links.leadId) {
+    await context.admin
+      .from("crm_leads")
+      .update({ status: "scheduled" })
+      .eq("id", links.leadId)
+      .eq("client_id", context.clientId);
+  }
+
   await addTimeline(context, {
-    contactId: input.contactId,
-    leadId: input.leadId,
+    contactId: links.contactId,
+    leadId: links.leadId,
     kind: "appointment",
     title: `Appointment booked: ${title}`,
     body: start.toLocaleString(),
@@ -777,14 +975,15 @@ export async function createCrmQuote(input: {
     quantity: Number(input.quantity),
     complexity: input.complexity,
   });
+  const links = await resolveCrmLinks(context, input);
 
   const { data, error } = await context.admin
     .from("crm_quotes")
     .insert({
       partner_id: context.partnerId,
       client_id: context.clientId,
-      contact_id: validUuid(input.contactId) ? input.contactId : null,
-      lead_id: validUuid(input.leadId) ? input.leadId : null,
+      contact_id: links.contactId,
+      lead_id: links.leadId,
       service_type: serviceType,
       status: "internal_ballpark",
       low_amount: quote.low,
@@ -800,7 +999,7 @@ export async function createCrmQuote(input: {
 
   if (error || !data) return result("The quote could not be created.", "error");
 
-  if (validUuid(input.leadId)) {
+  if (links.leadId) {
     await context.admin
       .from("crm_leads")
       .update({
@@ -808,13 +1007,13 @@ export async function createCrmQuote(input: {
         estimated_value_min: quote.low,
         estimated_value_max: quote.high,
       })
-      .eq("id", input.leadId)
+      .eq("id", links.leadId)
       .eq("client_id", context.clientId);
   }
 
   await addTimeline(context, {
-    contactId: input.contactId,
-    leadId: input.leadId,
+    contactId: links.contactId,
+    leadId: links.leadId,
     kind: "note",
     title: "Internal ballpark prepared",
     body: quote.summary,
@@ -823,6 +1022,111 @@ export async function createCrmQuote(input: {
   return result(
     `Ballpark created: $${quote.low.toLocaleString()}–$${quote.high.toLocaleString()}.`,
   );
+}
+
+export async function setCrmQuoteStatus(input: {
+  clientId: string;
+  quoteId: string;
+  status: "internal_ballpark" | "draft" | "sent" | "accepted" | "declined";
+}): Promise<FormState> {
+  const context = await actionContext(input.clientId, "crm_edit");
+  if ("status" in context) return context;
+
+  if (!validUuid(input.quoteId)) return result("Quote not found.", "error");
+
+  const { data: quote, error } = await context.admin
+    .from("crm_quotes")
+    .update({ status: input.status })
+    .eq("id", input.quoteId)
+    .eq("client_id", context.clientId)
+    .select("id, contact_id, lead_id, service_type")
+    .maybeSingle();
+
+  if (error || !quote) {
+    return result("The quote could not be updated.", "error");
+  }
+
+  if (quote.lead_id) {
+    const leadStatus =
+      input.status === "accepted"
+        ? "won"
+        : input.status === "declined"
+          ? "lost"
+          : "quoted";
+    await context.admin
+      .from("crm_leads")
+      .update({ status: leadStatus })
+      .eq("id", quote.lead_id)
+      .eq("client_id", context.clientId);
+  }
+
+  await addTimeline(context, {
+    contactId: quote.contact_id,
+    leadId: quote.lead_id,
+    kind: "note",
+    title: `${quote.service_type} quote marked ${input.status.replaceAll("_", " ")}`,
+  });
+  revalidateCrm(context.clientId);
+  return result(`Quote marked ${input.status.replaceAll("_", " ")}.`);
+}
+
+export async function updateCrmWorkspaceSettings(input: {
+  clientId: string;
+  name: string;
+  industry?: string;
+  timezone: string;
+  websiteUrl?: string;
+  primaryContactName?: string;
+  primaryContactEmail?: string;
+  primaryContactPhone?: string;
+}): Promise<FormState> {
+  const context = await actionContext(input.clientId, "crm_edit");
+  if ("status" in context) return context;
+
+  const name = clean(input.name, 200);
+  const timezone = clean(input.timezone, 100);
+  const websiteUrl = clean(input.websiteUrl, 500);
+  const contactEmail = clean(input.primaryContactEmail, 240).toLowerCase();
+
+  if (!name || !timezone) {
+    return result("Company name and timezone are required.", "error");
+  }
+  if (websiteUrl && !/^https?:\/\//.test(websiteUrl)) {
+    return result("Website must start with http:// or https://.", "error");
+  }
+  if (contactEmail && !contactEmail.includes("@")) {
+    return result("Enter a valid primary contact email.", "error");
+  }
+
+  const { data: client, error } = await context.admin
+    .from("client_businesses")
+    .update({
+      name,
+      industry: clean(input.industry, 200) || null,
+      timezone,
+      website_url: websiteUrl || null,
+      primary_contact_name: clean(input.primaryContactName, 200) || null,
+      primary_contact_email: contactEmail || null,
+      primary_contact_phone: clean(input.primaryContactPhone, 80) || null,
+    })
+    .eq("id", context.clientId)
+    .eq("partner_id", context.partnerId)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !client) {
+    return result("Workspace settings could not be saved.", "error");
+  }
+
+  await audit(
+    context,
+    "crm.workspace_settings_updated",
+    "client_business",
+    client.id,
+    `Updated CRM workspace settings for ${name}.`,
+  );
+  revalidateCrm(context.clientId);
+  return result("Workspace settings saved.");
 }
 
 export async function analyzeAndSaveCrmFeedback(input: {
@@ -899,4 +1203,3 @@ export async function analyzeAndSaveCrmFeedback(input: {
     `Feedback analyzed as ${analysis.sentiment} / ${analysis.risk_level} risk (${ai.status === "ai" ? "live AI" : "sandbox fallback"}).`,
   );
 }
-
