@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import {
   BarChart3,
   Bot,
+  Cable,
   CalendarDays,
   Check,
   ChevronRight,
@@ -20,9 +21,11 @@ import {
   Plus,
   Search,
   Send,
+  Settings,
   Sparkles,
   Star,
   TrendingUp,
+  Workflow,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -171,7 +174,10 @@ const VIEW_ITEMS: {
   { key: "calls", label: "AI Calls", icon: PhoneCall },
   { key: "quotes", label: "Quotes", icon: CircleDollarSign },
   { key: "feedback", label: "Feedback", icon: Star },
+  { key: "automations", label: "AI Automations", icon: Workflow },
   { key: "reports", label: "Reports", icon: BarChart3 },
+  { key: "crm-sync", label: "CRM Sync", icon: Cable },
+  { key: "settings", label: "Settings", icon: Settings },
 ];
 
 const PIPELINE_STAGES = [
@@ -289,6 +295,7 @@ export function NorthstarCrmWorkspace({
   approvalsPath,
   assistantPath,
   data,
+  embedded = false,
 }: {
   clientId: string;
   clientName: string;
@@ -299,6 +306,7 @@ export function NorthstarCrmWorkspace({
   approvalsPath: string;
   assistantPath: string;
   data: NorthstarCrmData;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -362,6 +370,7 @@ export function NorthstarCrmWorkspace({
 
   return (
     <div className="space-y-5">
+      {!embedded ? (
       <header className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -397,7 +406,9 @@ export function NorthstarCrmWorkspace({
           ) : null}
         </div>
       </header>
+      ) : null}
 
+      {!embedded ? (
       <nav
         aria-label="CRM sections"
         className="flex gap-1 overflow-x-auto border-b"
@@ -421,6 +432,7 @@ export function NorthstarCrmWorkspace({
           );
         })}
       </nav>
+      ) : null}
 
       {actionMessage ? (
         <div
@@ -1566,6 +1578,61 @@ export function NorthstarCrmWorkspace({
         </div>
       ) : null}
 
+      {view === "automations" ? (
+        <section className="overflow-hidden rounded-lg border bg-card">
+          <div className="border-b px-5 py-4">
+            <h2 className="text-sm font-semibold">AI automations</h2>
+          </div>
+          <Empty
+            title="No automations configured"
+            detail="Installed workflows will appear here after client setup."
+          />
+        </section>
+      ) : null}
+
+      {view === "crm-sync" ? (
+        <section className="overflow-hidden rounded-lg border bg-card">
+          <div className="border-b px-5 py-4">
+            <h2 className="text-sm font-semibold">CRM connections</h2>
+          </div>
+          {data.connections.length === 0 ? (
+            <Empty
+              title="No CRM connected"
+              detail="Connect an external CRM when this workspace should mirror or assist another system."
+            />
+          ) : (
+            <div className="divide-y">
+              {data.connections.map((connection) => (
+                <div
+                  key={String(connection.id)}
+                  className="flex items-center justify-between gap-3 px-5 py-4"
+                >
+                  <span className="text-sm font-medium">
+                    {String(connection.display_name ?? "CRM connection")}
+                  </span>
+                  <Badge variant="outline">
+                    {String(connection.status)}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {view === "settings" ? (
+        <section className="overflow-hidden rounded-lg border bg-card">
+          <div className="border-b px-5 py-4">
+            <h2 className="text-sm font-semibold">Workspace settings</h2>
+          </div>
+          <Empty
+            title="No settings available"
+            detail="Client permissions and workspace configuration will appear here."
+          />
+        </section>
+      ) : null}
+
+      {!embedded ? (
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-xs text-muted-foreground">
         <p>
           Northstar CRM is the system of record when no external CRM is
@@ -1579,6 +1646,7 @@ export function NorthstarCrmWorkspace({
           <ChevronRight className="size-3.5" aria-hidden="true" />
         </Link>
       </footer>
+      ) : null}
     </div>
   );
 }

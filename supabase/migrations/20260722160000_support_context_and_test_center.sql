@@ -18,19 +18,6 @@ create unique index if not exists client_businesses_one_partner_agency_idx
   on public.client_businesses (partner_id)
   where account_kind = 'partner_agency';
 
-update public.partners
-set is_test_account = true
-where slug in ('acme-partner-operations', 'beacon-partner-group');
-
-update public.client_businesses
-set is_test_account = true
-where slug in (
-  'summit-home-services',
-  'ridgeview-roofing',
-  'lakeside-hvac',
-  'northstar-scenario-lab'
-);
-
 create table if not exists public.support_impersonation_sessions (
   id uuid primary key default extensions.gen_random_uuid(),
   actor_user_id uuid not null references auth.users (id) on delete cascade,

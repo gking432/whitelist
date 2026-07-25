@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import {
+  CLIENT_EXPERIENCE_MODES,
   CLIENT_STATUSES,
   COMMON_TIMEZONES,
   CRM_OPERATING_MODES,
@@ -184,7 +185,38 @@ export function ClientBusinessForm({
 
       <fieldset className="space-y-4" disabled={isPending}>
         <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Operating modes
+          Client experience
+        </legend>
+        <div>
+          <Label htmlFor="client_experience_mode">Home base</Label>
+          <Select
+            id="client_experience_mode"
+            name="client_experience_mode"
+            className="mt-1.5"
+            defaultValue={
+              client?.client_experience_mode ?? "background_only"
+            }
+          >
+            {CLIENT_EXPERIENCE_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode === "northstar_crm"
+                  ? "Northstar CRM"
+                  : "Background services only"}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+            Northstar CRM gives the client a complete operating workspace.
+            Background-only clients keep their current systems and use the
+            Action Center for service health and approvals.
+          </p>
+          <FieldError message={errors.client_experience_mode} />
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-4" disabled={isPending}>
+        <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Integration behavior
         </legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>

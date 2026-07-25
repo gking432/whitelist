@@ -4,11 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import type { PortalBranding } from "@/lib/clients/portal";
+import type { ClientExperienceMode } from "@/lib/clients/constants";
 import { cn } from "@/lib/utils";
 
-const navigation = [
+const backgroundNavigation = [
   { label: "Action Center", href: "/client" },
+  { label: "Assistant", href: "/client/assistant" },
+  { label: "Approvals", href: "/client/approvals" },
+  { label: "Test Center", href: "/client/test-center" },
+  { label: "Activity", href: "/client/activity" },
+];
+
+const crmNavigation = [
   { label: "CRM", href: "/client/crm" },
+  { label: "Action Center", href: "/client/action-center" },
   { label: "Assistant", href: "/client/assistant" },
   { label: "Approvals", href: "/client/approvals" },
   { label: "Test Center", href: "/client/test-center" },
@@ -20,6 +29,7 @@ type PortalShellProps = {
   banner?: React.ReactNode;
   clientName: string;
   branding: PortalBranding;
+  experienceMode: ClientExperienceMode;
   userEmail: string;
 };
 
@@ -30,9 +40,23 @@ export function PortalShell({
   banner,
   clientName,
   branding,
+  experienceMode,
   userEmail,
 }: PortalShellProps) {
   const pathname = usePathname();
+  const navigation =
+    experienceMode === "northstar_crm"
+      ? crmNavigation
+      : backgroundNavigation;
+
+  if (pathname.startsWith("/client/crm")) {
+    return (
+      <div className="min-h-screen bg-background">
+        {banner}
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-background">

@@ -66,14 +66,14 @@ export function getLocalDevLoginEmail(nextPath = "/partner") {
   }
 
   if (nextPath.startsWith("/client")) {
-    return "client.owner@example.test";
+    return "client@northstar.test";
   }
 
   if (nextPath.startsWith("/control")) {
-    return "platform.owner@example.test";
+    return "platform@northstar.test";
   }
 
-  return "partner.owner@example.test";
+  return "partner@northstar.test";
 }
 
 export function getLocalDevLoginPassword() {

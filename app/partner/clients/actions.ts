@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
 import {
+  CLIENT_EXPERIENCE_MODES,
   CLIENT_STATUSES,
   CRM_OPERATING_MODES,
   RUNTIME_MODES,
@@ -25,6 +26,7 @@ type ClientFieldValues = {
   industry: string;
   timezone: string;
   status: string;
+  clientExperienceMode: string;
   crmOperatingMode: string;
   defaultRuntimeMode: string;
   websiteUrl: string;
@@ -46,6 +48,7 @@ function readFields(formData: FormData): ClientFieldValues {
     industry: text("industry"),
     timezone: text("timezone"),
     status: text("status") || "onboarding",
+    clientExperienceMode: text("client_experience_mode"),
     crmOperatingMode: text("crm_operating_mode"),
     defaultRuntimeMode: text("default_runtime_mode"),
     websiteUrl: text("website_url"),
@@ -87,6 +90,12 @@ function validateFields(fields: ClientFieldValues): Record<string, string> {
 
   if (!CRM_OPERATING_MODES.includes(fields.crmOperatingMode as never)) {
     errors.crm_operating_mode = "Choose a CRM operating mode.";
+  }
+
+  if (
+    !CLIENT_EXPERIENCE_MODES.includes(fields.clientExperienceMode as never)
+  ) {
+    errors.client_experience_mode = "Choose a client experience.";
   }
 
   if (!RUNTIME_MODES.includes(fields.defaultRuntimeMode as never)) {
@@ -198,6 +207,7 @@ export async function createClientBusiness(
         slug,
         status: fields.status,
         industry: fields.industry,
+        client_experience_mode: fields.clientExperienceMode,
         crm_operating_mode: fields.crmOperatingMode,
         default_runtime_mode: fields.defaultRuntimeMode,
         website_url: fields.websiteUrl || null,
@@ -229,6 +239,7 @@ export async function createClientBusiness(
       afterSnapshot: {
         name: fields.name,
         status: fields.status,
+        client_experience_mode: fields.clientExperienceMode,
         crm_operating_mode: fields.crmOperatingMode,
         default_runtime_mode: fields.defaultRuntimeMode,
         client_portal_enabled: fields.clientPortalEnabled,
@@ -300,6 +311,7 @@ export async function updateClientBusiness(
         name: fields.name,
         status: fields.status,
         industry: fields.industry,
+        client_experience_mode: fields.clientExperienceMode,
         crm_operating_mode: fields.crmOperatingMode,
         default_runtime_mode: fields.defaultRuntimeMode,
         website_url: fields.websiteUrl || null,
@@ -323,12 +335,14 @@ export async function updateClientBusiness(
     const summarize = (record: {
       name: string;
       status: string;
+      client_experience_mode: string;
       crm_operating_mode: string;
       default_runtime_mode: string;
       timezone: string;
     }) => ({
       name: record.name,
       status: record.status,
+      client_experience_mode: record.client_experience_mode,
       crm_operating_mode: record.crm_operating_mode,
       default_runtime_mode: record.default_runtime_mode,
       timezone: record.timezone,
@@ -344,6 +358,7 @@ export async function updateClientBusiness(
       afterSnapshot: summarize({
         name: fields.name,
         status: fields.status,
+        client_experience_mode: fields.clientExperienceMode,
         crm_operating_mode: fields.crmOperatingMode,
         default_runtime_mode: fields.defaultRuntimeMode,
         timezone: fields.timezone,

@@ -1,0 +1,315 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import {
+  Activity,
+  BarChart3,
+  Bot,
+  Cable,
+  Calculator,
+  CalendarDays,
+  Compass,
+  Inbox,
+  Kanban,
+  LayoutDashboard,
+  ListChecks,
+  Menu,
+  Plus,
+  Search,
+  Settings,
+  Users,
+  Workflow,
+  X,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import type { CrmView } from "@/lib/crm/views";
+import { cn } from "@/lib/utils";
+
+const CRM_NAVIGATION: Array<{
+  href: string;
+  label: string;
+  view: CrmView;
+  icon: typeof LayoutDashboard;
+}> = [
+  {
+    href: "/client/crm?view=overview",
+    label: "Overview",
+    view: "overview",
+    icon: LayoutDashboard,
+  },
+  {
+    href: "/client/crm?view=inbox",
+    label: "Inbox",
+    view: "inbox",
+    icon: Inbox,
+  },
+  {
+    href: "/client/crm?view=contacts",
+    label: "Leads",
+    view: "contacts",
+    icon: Users,
+  },
+  {
+    href: "/client/crm?view=calls",
+    label: "Calls",
+    view: "calls",
+    icon: Bot,
+  },
+  {
+    href: "/client/crm?view=pipeline",
+    label: "Pipeline",
+    view: "pipeline",
+    icon: Kanban,
+  },
+  {
+    href: "/client/crm?view=tasks",
+    label: "Tasks",
+    view: "tasks",
+    icon: ListChecks,
+  },
+  {
+    href: "/client/crm?view=schedule",
+    label: "Appointments",
+    view: "schedule",
+    icon: CalendarDays,
+  },
+  {
+    href: "/client/crm?view=quotes",
+    label: "Quote Tool",
+    view: "quotes",
+    icon: Calculator,
+  },
+  {
+    href: "/client/crm?view=feedback",
+    label: "Feedback",
+    view: "feedback",
+    icon: Activity,
+  },
+  {
+    href: "/client/crm?view=automations",
+    label: "AI Automations",
+    view: "automations",
+    icon: Workflow,
+  },
+  {
+    href: "/client/crm?view=reports",
+    label: "Reports",
+    view: "reports",
+    icon: BarChart3,
+  },
+  {
+    href: "/client/crm?view=crm-sync",
+    label: "CRM Sync",
+    view: "crm-sync",
+    icon: Cable,
+  },
+  {
+    href: "/client/crm?view=settings",
+    label: "Settings",
+    view: "settings",
+    icon: Settings,
+  },
+];
+
+const PAGE_TITLES: Record<CrmView, string> = {
+  overview: "Overview",
+  inbox: "Inbox",
+  contacts: "Leads",
+  calls: "Calls",
+  pipeline: "Pipeline",
+  tasks: "Tasks",
+  schedule: "Appointments",
+  quotes: "Quote Tool",
+  feedback: "Customer Feedback",
+  automations: "AI Automations",
+  reports: "Reports",
+  "crm-sync": "CRM Sync",
+  settings: "Settings",
+};
+
+function initials(email: string) {
+  return email.trim().slice(0, 1).toUpperCase() || "U";
+}
+
+function SidebarContent({
+  clientName,
+  currentView,
+  userEmail,
+  onNavigate,
+}: {
+  clientName: string;
+  currentView: CrmView;
+  userEmail: string;
+  onNavigate?: () => void;
+}) {
+  return (
+    <>
+      <div className="flex h-16 shrink-0 items-center gap-2 border-b border-white/10 px-5">
+        <span className="flex size-8 items-center justify-center rounded-md bg-brand-gold text-brand-deep">
+          <Compass className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 leading-tight">
+          <p className="truncate text-sm font-semibold text-white">
+            {clientName}
+          </p>
+          <p className="text-[11px] text-sidebar-foreground/60">
+            Northstar Command Center
+          </p>
+        </div>
+      </div>
+
+      <nav
+        aria-label="CRM sections"
+        className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4"
+      >
+        {CRM_NAVIGATION.map((item) => {
+          const Icon = item.icon;
+          const active = item.view === currentView;
+
+          return (
+            <Link
+              key={item.view}
+              href={item.href}
+              onClick={onNavigate}
+              className={cn(
+                "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+                active
+                  ? "bg-white/10 text-white"
+                  : "text-sidebar-foreground/70 hover:bg-white/5 hover:text-white",
+              )}
+            >
+              <Icon className="size-4" aria-hidden="true" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="border-t border-white/10 p-4">
+        <Link
+          href="/client/action-center"
+          onClick={onNavigate}
+          className="mb-4 flex h-9 items-center gap-3 rounded-md border border-brand-gold/35 bg-brand-gold/10 px-3 text-sm font-medium text-brand-gold transition-colors hover:bg-brand-gold/20"
+        >
+          <Activity className="size-4" aria-hidden="true" />
+          Action Center
+        </Link>
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-medium text-white">
+            {initials(userEmail)}
+          </span>
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-medium text-white">
+              {userEmail}
+            </p>
+            <p className="text-[11px] text-sidebar-foreground/60">
+              Client workspace
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function NorthstarDesktopShell({
+  children,
+  clientName,
+  currentView,
+  userEmail,
+}: {
+  children: React.ReactNode;
+  clientName: string;
+  currentView: CrmView;
+  userEmail: string;
+}) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground lg:flex">
+        <SidebarContent
+          clientName={clientName}
+          currentView={currentView}
+          userEmail={userEmail}
+        />
+      </aside>
+
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            aria-label="Close navigation"
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside className="relative flex h-full w-72 max-w-[86vw] flex-col bg-sidebar text-sidebar-foreground shadow-xl">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="absolute right-2 top-3 z-10 text-white hover:bg-white/10 hover:text-white"
+              onClick={() => setMobileOpen(false)}
+              title="Close navigation"
+            >
+              <X aria-hidden="true" />
+            </Button>
+            <SidebarContent
+              clientName={clientName}
+              currentView={currentView}
+              userEmail={userEmail}
+              onNavigate={() => setMobileOpen(false)}
+            />
+          </aside>
+        </div>
+      ) : null}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur sm:px-6">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="lg:hidden"
+            onClick={() => setMobileOpen(true)}
+            title="Open navigation"
+          >
+            <Menu aria-hidden="true" />
+          </Button>
+          <h1 className="min-w-0 truncate text-lg font-semibold">
+            {PAGE_TITLES[currentView]}
+          </h1>
+          <form action="/client/crm" className="relative ml-auto hidden w-full max-w-xs md:block">
+            <input type="hidden" name="view" value="contacts" />
+            <Search
+              className="absolute left-2.5 top-2.5 size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              name="search"
+              placeholder="Search leads"
+              className="pl-9"
+            />
+          </form>
+          <Button asChild size="sm" className="ml-auto shrink-0 md:ml-0">
+            <Link
+              href="/client/crm?view=pipeline#new-lead"
+              aria-label="New lead"
+            >
+              <Plus aria-hidden="true" />
+              <span className="hidden sm:inline">New Lead</span>
+            </Link>
+          </Button>
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
+            {initials(userEmail)}
+          </span>
+        </header>
+
+        <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
+      </div>
+    </div>
+  );
+}

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   BriefcaseBusiness,
-  FlaskConical,
   LayoutDashboard,
   Package,
   UsersRound,
@@ -36,15 +35,9 @@ const navigation = [
     href: "/partner/packages",
     icon: Package,
   },
-  {
-    key: "lab",
-    label: "Lab",
-    href: "/partner/lab",
-    icon: FlaskConical,
-  },
 ] as const;
 
-export type PartnerNavKey = (typeof navigation)[number]["key"];
+export type PartnerNavKey = (typeof navigation)[number]["key"] | "lab";
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -64,13 +57,6 @@ export function AppShell({
   activeNav = "dashboard",
 }: AppShellProps) {
   const monogram = userEmail.slice(0, 1).toUpperCase();
-  const labEnabled =
-    process.env.NODE_ENV !== "production" ||
-    process.env.ENABLE_SCENARIO_LAB === "true";
-  const visibleNavigation = labEnabled
-    ? navigation
-    : navigation.filter((item) => item.key !== "lab");
-
   return (
     <div className="min-h-screen bg-background">
       <ImpersonationBanner />
@@ -90,7 +76,7 @@ export function AppShell({
             </div>
 
             <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-1.5">
-              {visibleNavigation.map((item) => {
+              {navigation.map((item) => {
                 const Icon = item.icon;
                 const active = item.key === activeNav;
 
@@ -153,11 +139,11 @@ export function AppShell({
             <nav
               className="grid border-t"
               style={{
-                gridTemplateColumns: `repeat(${visibleNavigation.length}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))`,
               }}
               aria-label="Partner navigation"
             >
-              {visibleNavigation.map((item) => {
+              {navigation.map((item) => {
                 const Icon = item.icon;
                 const active = item.key === activeNav;
 

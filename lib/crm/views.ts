@@ -8,7 +8,10 @@ export const CRM_VIEWS = [
   "calls",
   "quotes",
   "feedback",
+  "automations",
   "reports",
+  "crm-sync",
+  "settings",
 ] as const;
 
 export type CrmView = (typeof CRM_VIEWS)[number];

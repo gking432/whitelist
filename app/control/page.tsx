@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Eye, FlaskConical, ShieldCheck, UsersRound } from "lucide-react";
+import { Building2, Eye, ShieldCheck, UsersRound } from "lucide-react";
 
 import { startPlatformImpersonation } from "@/app/impersonation/actions";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
@@ -16,7 +16,6 @@ type PartnerRow = {
   id: string;
   name: string;
   status: string;
-  is_test_account: boolean;
 };
 
 type ClientRow = {
@@ -25,7 +24,6 @@ type ClientRow = {
   name: string;
   status: string;
   crm_operating_mode: string;
-  is_test_account: boolean;
 };
 
 export default async function ControlRoomPage() {
@@ -39,12 +37,12 @@ export default async function ControlRoomPage() {
     await Promise.all([
       admin
         .from("partners")
-        .select("id, name, status, is_test_account")
+        .select("id, name, status")
         .order("name"),
       admin
         .from("client_businesses")
         .select(
-          "id, partner_id, name, status, crm_operating_mode, is_test_account",
+          "id, partner_id, name, status, crm_operating_mode",
         )
         .eq("account_kind", "managed_client")
         .order("name"),
@@ -57,8 +55,6 @@ export default async function ControlRoomPage() {
 
   const partners = (partnerData ?? []) as PartnerRow[];
   const clients = (clientData ?? []) as ClientRow[];
-  const testPartner = partners.find((partner) => partner.is_test_account);
-  const hasTestClient = clients.some((client) => client.is_test_account);
   const clientsByPartner = new Map<string, ClientRow[]>();
 
   for (const client of clients) {
@@ -99,45 +95,6 @@ export default async function ControlRoomPage() {
             <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
             <p className="mt-3 text-2xl font-semibold">{sessionData?.length ?? 0}</p>
             <p className="text-xs text-muted-foreground">Active support views</p>
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-sky-200 bg-sky-50 p-5">
-          <div className="flex items-start gap-3">
-            <FlaskConical className="mt-0.5 size-5 text-sky-800" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <h2 className="font-semibold text-sky-950">Test identities</h2>
-              <p className="mt-1 text-sm text-sky-900/80">
-                These accounts permit full sandbox actions. Real account views below are read-only.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {testPartner ? (
-                  <form
-                    action={startPlatformImpersonation.bind(
-                      null,
-                      {
-                        targetKind: "partner",
-                        targetId: testPartner.id,
-                        requestedMode: "sandbox_full",
-                      },
-                    )}
-                  >
-                    <Button type="submit" size="sm">
-                      <UsersRound aria-hidden="true" />
-                      Act as fake partner
-                    </Button>
-                  </form>
-                ) : null}
-                {hasTestClient ? (
-                  <Button asChild size="sm" variant="outline" className="bg-white/70">
-                    <Link href="/control/pilot">
-                      <Building2 aria-hidden="true" />
-                      Run full V1 pilot
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-            </div>
           </div>
         </section>
 
