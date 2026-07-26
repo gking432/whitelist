@@ -14,13 +14,13 @@ import { cn } from "@/lib/utils";
 const navigation = [
   {
     key: "dashboard",
-    label: "Dashboard",
+    label: "Overview",
     href: "/partner",
     icon: LayoutDashboard,
   },
   {
     key: "agency",
-    label: "My Agency",
+    label: "Sales CRM",
     href: "/partner/agency",
     icon: BriefcaseBusiness,
   },
@@ -111,11 +111,6 @@ export function AppShell({
                 );
               })}
             </nav>
-
-            <p className="px-4 pb-4 text-[11px] leading-4 text-muted-foreground/80">
-              Run your agency here. Managed-client workspaces are for setup,
-              feature control, and troubleshooting.
-            </p>
 
             <div className="shrink-0 border-t px-3 py-3">
               <div className="flex items-center gap-2.5 rounded-md px-1.5 py-1">

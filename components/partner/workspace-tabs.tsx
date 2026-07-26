@@ -11,26 +11,35 @@ type WorkspaceTabsProps = {
 };
 
 const managedClientTabs = [
-  { label: "Overview", segment: "" },
-  { label: "Onboarding", segment: "setup" },
-  { label: "Test Center", segment: "test-center" },
-  { label: "Features", segment: "workflows" },
-  { label: "Automation Packs", segment: "automation-packs" },
-  { label: "Integrations", segment: "integrations" },
-  { label: "Health & Logs", segment: "runs" },
-  { label: "Launch", segment: "launch" },
+  { label: "Overview", segment: "", matches: [""] },
+  {
+    label: "Package & Setup",
+    segment: "setup",
+    matches: ["setup", "integrations", "automation-packs", "knowledge"],
+  },
+  { label: "Automations", segment: "workflows", matches: ["workflows"] },
+  { label: "Test Center", segment: "test-center", matches: ["test-center"] },
+  { label: "Launch", segment: "launch", matches: ["launch"] },
+  {
+    label: "Activity & Logs",
+    segment: "runs",
+    matches: ["runs", "audit", "approvals"],
+  },
+  { label: "Settings", segment: "settings", matches: ["settings"] },
 ];
 
 const agencyTabs = [
-  { label: "Agency Home", segment: "" },
-  { label: "Assistant", segment: "assistant" },
-  { label: "CRM", segment: "crm" },
-  { label: "Approvals", segment: "approvals" },
-  { label: "Workflows", segment: "workflows" },
-  { label: "Automation Packs", segment: "automation-packs" },
-  { label: "Integrations", segment: "integrations" },
-  { label: "Test Center", segment: "test-center" },
-  { label: "Activity", segment: "runs" },
+  { label: "CRM", segment: "crm", matches: ["crm"] },
+  { label: "Assistant", segment: "assistant", matches: ["assistant"] },
+  { label: "Approvals", segment: "approvals", matches: ["approvals"] },
+  {
+    label: "Automations",
+    segment: "workflows",
+    matches: ["workflows", "automation-packs"],
+  },
+  { label: "Integrations", segment: "integrations", matches: ["integrations"] },
+  { label: "Test Center", segment: "test-center", matches: ["test-center"] },
+  { label: "Activity", segment: "runs", matches: ["runs", "audit"] },
 ];
 
 export function WorkspaceTabs({
@@ -49,9 +58,9 @@ export function WorkspaceTabs({
     >
       {tabs.map((tab) => {
         const href = tab.segment ? `${base}/${tab.segment}` : base;
-        const isActive = tab.segment
-          ? pathname.startsWith(href)
-          : pathname === base;
+        const currentSegment =
+          pathname.slice(base.length + 1).split("/")[0] ?? "";
+        const isActive = tab.matches.includes(currentSegment);
 
         return (
           <Link

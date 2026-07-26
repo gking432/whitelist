@@ -1,24 +1,19 @@
 import Link from "next/link";
 import {
   AlertTriangle,
-  BellCheck,
+  ArrowRight,
   CheckCircle2,
-  PlugZap,
   Plus,
-  ShieldAlert,
+  Settings2,
   UsersRound,
   Workflow,
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import {
-  buildGettingStartedSteps,
-  PartnerGettingStarted,
-  shouldShowGettingStarted,
-} from "@/components/partner/partner-getting-started";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAuthenticatedUser } from "@/lib/auth/session";
 import {
   getPartnerDashboardData,
   PartnerDashboardDataError,
@@ -26,8 +21,11 @@ import {
   type ClientHealthStatus,
   type PartnerDashboardData,
 } from "@/lib/dashboard/partner-dashboard";
+import {
+  deliveryStageHref,
+  type PartnerDeliveryStage,
+} from "@/lib/dashboard/partner-delivery";
 import { formatDate, formatEnum } from "@/lib/format";
-import { requireAuthenticatedUser } from "@/lib/auth/session";
 import {
   isAccessError,
   requirePrimaryPartnerAccess,
@@ -35,7 +33,7 @@ import {
 import type { AccessContext } from "@/lib/permissions/types";
 
 export const metadata = {
-  title: "Partner Dashboard",
+  title: "Agency Overview",
 };
 
 export const dynamic = "force-dynamic";
@@ -52,6 +50,54 @@ const attentionStyles: Record<AttentionSeverity, string> = {
   critical: "bg-destructive",
   warning: "bg-amber-500",
   setup: "bg-sky-500",
+};
+
+const deliveryStages: Array<{
+  stage: PartnerDeliveryStage;
+  label: string;
+  description: string;
+}> = [
+  {
+    stage: "package",
+    label: "Package",
+    description: "Choose what the client bought",
+  },
+  {
+    stage: "setup",
+    label: "Setup",
+    description: "Connect accounts and configure",
+  },
+  {
+    stage: "test",
+    label: "Test",
+    description: "Verify each installed feature",
+  },
+  {
+    stage: "launch",
+    label: "Launch",
+    description: "Review and switch on",
+  },
+  {
+    stage: "live",
+    label: "Live",
+    description: "Monitor activity and issues",
+  },
+];
+
+const deliveryStageStyles: Record<PartnerDeliveryStage, string> = {
+  package: "border-slate-200 bg-slate-50 text-slate-700",
+  setup: "border-sky-200 bg-sky-50 text-sky-800",
+  test: "border-amber-200 bg-amber-50 text-amber-900",
+  launch: "border-violet-200 bg-violet-50 text-violet-800",
+  live: "border-emerald-200 bg-emerald-50 text-emerald-800",
+};
+
+const deliveryStageActions: Record<PartnerDeliveryStage, string> = {
+  package: "Assign package",
+  setup: "Continue setup",
+  test: "Run tests",
+  launch: "Launch client",
+  live: "View activity",
 };
 
 function AccessDenied() {
@@ -108,15 +154,15 @@ export default async function PartnerPage() {
       >
         <section className="rounded-lg border bg-card p-6">
           <div className="flex items-start gap-3">
-            <ShieldAlert
+            <AlertTriangle
               className="mt-0.5 size-5 shrink-0 text-destructive"
               aria-hidden="true"
             />
             <div>
-              <h1 className="text-lg font-semibold">Dashboard unavailable</h1>
+              <h1 className="text-lg font-semibold">Overview unavailable</h1>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Client operations could not be loaded. Try again after the data
-                service is available.
+                Client delivery data could not be loaded. Try again after the
+                data service is available.
               </p>
             </div>
           </div>
@@ -127,86 +173,43 @@ export default async function PartnerPage() {
 
   const metrics = [
     {
-      label: "Client businesses",
-      value: dashboard.metrics.totalClients,
-      detail: `${dashboard.metrics.activeClients} active, ${dashboard.metrics.onboardingClients} onboarding`,
+      label: "Active clients",
+      value: dashboard.metrics.activeClients,
+      detail: `${dashboard.metrics.totalClients} total client businesses`,
       icon: UsersRound,
+    },
+    {
+      label: "In onboarding",
+      value: dashboard.metrics.onboardingClients,
+      detail: "Clients not live yet",
+      icon: Settings2,
     },
     {
       label: "Needs attention",
       value: dashboard.metrics.clientsNeedingAttention,
-      detail: "Clients with operational issues",
+      detail: "Clients with an issue to review",
       icon: AlertTriangle,
     },
     {
-      label: "Client decisions pending",
-      value: dashboard.metrics.openApprovals,
-      detail: "Read-only visibility for support",
-      icon: BellCheck,
-    },
-    {
-      label: "Failed runs (7d)",
+      label: "Failed runs",
       value: dashboard.metrics.failedRuns7d,
-      detail: `${dashboard.metrics.totalRuns7d} total runs this week`,
+      detail: `${dashboard.metrics.totalRuns7d} automation runs in 7 days`,
       icon: Workflow,
     },
   ];
 
-  const operationalSummaries = [
-    {
-      label: "Active workflows",
-      value: `${dashboard.metrics.activeWorkflows} enabled`,
-      detail:
-        dashboard.metrics.activeWorkflows > 0
-          ? "Automations enabled across clients."
-          : "Enable workflow templates inside a client workspace.",
-      icon: Workflow,
-    },
-    {
-      label: "Integration health",
-      value:
-        dashboard.metrics.failingConnections > 0
-          ? `${dashboard.metrics.failingConnections} failing`
-          : "No failures",
-      detail:
-        dashboard.metrics.failingConnections > 0
-          ? "Open the affected client's Integrations tab."
-          : "No failing connections are recorded.",
-      icon: PlugZap,
-    },
-    {
-      label: "Client decisions",
-      value: `${dashboard.metrics.openApprovals} open`,
-      detail:
-        dashboard.metrics.openApprovals > 0
-          ? "Clients own these decisions; inspect their status when troubleshooting."
-          : "No client decisions are waiting.",
-      icon: BellCheck,
-    },
-  ];
+  const deliveryCounts = new Map<PartnerDeliveryStage, number>();
+  for (const stage of deliveryStages) {
+    deliveryCounts.set(
+      stage.stage,
+      dashboard.clients.filter(
+        (client) => client.deliveryStage === stage.stage,
+      ).length,
+    );
+  }
 
-  const displayedClients = dashboard.clients.slice(0, 8);
+  const displayedClients = dashboard.clients.slice(0, 10);
   const displayedAttention = dashboard.attentionItems.slice(0, 6);
-
-  // On-ramp: the next concrete step for a partner still getting going. Aims
-  // at the client that's mid-onboarding (or the first one), and hides once
-  // there's a client, enabled workflows, and at least one run.
-  const onboardingTarget =
-    dashboard.clients.find((client) => client.status === "onboarding") ??
-    dashboard.clients[0] ??
-    null;
-  const showGettingStarted = shouldShowGettingStarted({
-    totalClients: dashboard.metrics.totalClients,
-    activeWorkflows: dashboard.metrics.activeWorkflows,
-    totalRuns7d: dashboard.metrics.totalRuns7d,
-  });
-  const gettingStartedSteps = buildGettingStartedSteps({
-    totalClients: dashboard.metrics.totalClients,
-    activeWorkflows: dashboard.metrics.activeWorkflows,
-    totalRuns7d: dashboard.metrics.totalRuns7d,
-    targetClientId: onboardingTarget?.id ?? null,
-    targetClientName: onboardingTarget?.name ?? null,
-  });
   const canAddClient =
     !access.isImpersonating || access.impersonationMode === "sandbox_full";
 
@@ -216,23 +219,18 @@ export default async function PartnerPage() {
       userEmail={user.email ?? "Authenticated user"}
       activeNav="dashboard"
     >
-      <div className="space-y-7">
-        <header className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="space-y-6">
+        <header className="flex flex-col gap-4 border-b pb-5 md:flex-row md:items-start md:justify-between">
           <div>
-            <Badge variant="secondary" className="mb-3">
-              Partner dashboard
-            </Badge>
-            <h1 className="text-xl font-semibold tracking-tight">
-              Client operations
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Health and attention across {dashboard.partner.name} client
-              businesses.
+            <h1 className="text-xl font-semibold">Agency overview</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Run sales and client delivery from one place.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant="outline">{formatEnum(dashboard.partner.status)}</Badge>
-            <Badge variant="outline">{access.role.replaceAll("_", " ")}</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/partner/agency">Open sales CRM</Link>
+            </Button>
             {canAddClient ? (
               <Button asChild size="sm" variant="gold">
                 <Link href="/partner/clients/new">
@@ -244,12 +242,123 @@ export default async function PartnerPage() {
           </div>
         </header>
 
-        {showGettingStarted ? (
-          <PartnerGettingStarted steps={gettingStartedSteps} />
-        ) : null}
+        <section className="overflow-hidden rounded-lg border bg-card">
+          <div className="flex flex-col gap-3 border-b px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="font-semibold">Client delivery</h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Every client moves through the same path from sale to live
+                service.
+              </p>
+            </div>
+            <Link
+              href="/partner/clients"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              All clients
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          </div>
+
+          <div className="grid border-b sm:grid-cols-5">
+            {deliveryStages.map((item, index) => (
+              <div
+                key={item.stage}
+                className={`min-w-0 px-4 py-4 ${
+                  index > 0 ? "border-t sm:border-l sm:border-t-0" : ""
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">
+                    {item.label}
+                  </p>
+                  <span className="text-lg font-semibold tabular-nums">
+                    {deliveryCounts.get(item.stage) ?? 0}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {item.description}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {displayedClients.length === 0 ? (
+            <div className="flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
+              <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <UsersRound className="size-5" aria-hidden="true" />
+              </div>
+              <h3 className="mt-4 font-semibold">Add your first client</h3>
+              <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                Create the client business, assign its package, connect its
+                accounts, test the features, and launch.
+              </p>
+              {canAddClient ? (
+                <Button asChild className="mt-5">
+                  <Link href="/partner/clients/new">
+                    <Plus aria-hidden="true" />
+                    Add client
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="divide-y">
+              {displayedClients.map((client) => (
+                <div
+                  key={client.id}
+                  className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1.3fr)_0.8fr_0.7fr_auto] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <Link
+                      href={`/partner/clients/${client.id}`}
+                      className="truncate text-sm font-semibold hover:underline"
+                    >
+                      {client.name}
+                    </Link>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {client.industry ?? "Industry not set"} · Updated{" "}
+                      {formatDate(client.updatedAt)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-xs text-muted-foreground">
+                      Current step
+                    </p>
+                    <Badge
+                      variant="outline"
+                      className={deliveryStageStyles[client.deliveryStage]}
+                    >
+                      {formatEnum(client.deliveryStage)}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-xs text-muted-foreground">
+                      Health
+                    </p>
+                    <Badge
+                      variant="outline"
+                      className={healthStyles[client.health]}
+                    >
+                      {formatEnum(client.health)}
+                    </Badge>
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={deliveryStageHref(client.id, client.deliveryStage)}
+                    >
+                      {deliveryStageActions[client.deliveryStage]}
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section
-          aria-label="Partner metrics"
+          aria-label="Agency metrics"
           className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
         >
           {metrics.map((metric) => {
@@ -276,186 +385,54 @@ export default async function PartnerPage() {
           })}
         </section>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
-          <section className="overflow-hidden rounded-lg border bg-card">
-            <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
+        <section className="overflow-hidden rounded-lg border bg-card">
+          <div className="border-b px-5 py-4">
+            <h2 className="font-semibold">Needs attention</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Problems that may affect a client&apos;s service.
+            </p>
+          </div>
+
+          {displayedAttention.length === 0 ? (
+            <div className="flex items-center gap-3 px-5 py-5">
+              <CheckCircle2
+                className="size-5 shrink-0 text-emerald-600"
+                aria-hidden="true"
+              />
               <div>
-                <h2 className="font-semibold">Client health</h2>
+                <p className="text-sm font-semibold">Everything looks clear</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Highest-priority clients appear first.
+                  No client currently needs partner attention.
                 </p>
               </div>
-              <Link
-                href="/partner/clients"
-                className="text-xs font-medium text-primary hover:underline"
-              >
-                All clients
-              </Link>
             </div>
-
-            {displayedClients.length === 0 ? (
-              <div className="flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
-                <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <UsersRound className="size-5" aria-hidden="true" />
-                </div>
-                <h3 className="mt-4 font-semibold">No client businesses yet</h3>
-                <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                  Add the first client business to begin tracking operational
-                  health and attention.
-                </p>
-                {canAddClient ? (
-                  <Button asChild className="mt-5">
-                    <Link href="/partner/clients/new">
-                      <Plus aria-hidden="true" />
-                      Add client
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-            ) : (
-              <div className="divide-y">
-                {displayedClients.map((client) => (
-                  <div
-                    key={client.id}
-                    className="grid gap-4 px-5 py-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_0.85fr_0.7fr_0.6fr]"
-                  >
-                    <div className="min-w-0">
-                      <Link
-                        href={`/partner/clients/${client.id}`}
-                        className="truncate text-sm font-semibold hover:underline"
-                      >
-                        {client.name}
-                      </Link>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {client.industry ?? "Industry not set"} · Updated{" "}
-                        {formatDate(client.updatedAt)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Health</p>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className={healthStyles[client.health]}
-                        >
-                          {formatEnum(client.health)}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {formatEnum(client.status)}
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Approvals</p>
-                      <p className="mt-1.5 text-sm font-medium tabular-nums">
-                        {client.pendingApprovals} open
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">
-                        Failed (7d)
-                      </p>
-                      <p className="mt-1.5 text-sm font-medium tabular-nums">
-                        {client.failedRuns7d}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {dashboard.clients.length > displayedClients.length ? (
-              <p className="border-t px-5 py-3 text-xs text-muted-foreground">
-                Showing {displayedClients.length} highest-priority clients.
-              </p>
-            ) : null}
-          </section>
-
-          <section className="overflow-hidden rounded-lg border bg-card">
-            <div className="border-b px-5 py-4">
-              <h2 className="font-semibold">Attention queue</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Client states requiring review.
-              </p>
-            </div>
-
-            {displayedAttention.length === 0 ? (
-              <div className="flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
-                <CheckCircle2
-                  className="size-6 text-emerald-600"
-                  aria-hidden="true"
-                />
-                <h3 className="mt-3 text-sm font-semibold">
-                  No clients need attention
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  All current client statuses are clear.
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y">
-                {displayedAttention.map((item) => (
-                  <Link
-                    key={item.clientId}
-                    href={`/partner/clients/${item.clientId}`}
-                    className="flex gap-3 px-5 py-4 hover:bg-secondary/30"
-                  >
-                    <span
-                      className={`mt-1.5 size-2 shrink-0 rounded-full ${attentionStyles[item.severity]}`}
-                      aria-hidden="true"
-                    />
-                    <div className="min-w-0">
+          ) : (
+            <div className="divide-y">
+              {displayedAttention.map((item) => (
+                <Link
+                  key={item.clientId}
+                  href={`/partner/clients/${item.clientId}`}
+                  className="flex gap-3 px-5 py-4 hover:bg-secondary/30"
+                >
+                  <span
+                    className={`mt-1.5 size-2 shrink-0 rounded-full ${attentionStyles[item.severity]}`}
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <p className="truncate text-sm font-semibold">
                         {item.clientName}
                       </p>
-                      <p className="mt-1 text-xs font-medium text-foreground">
-                        {item.label}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {item.detail}
-                      </p>
+                      <p className="text-xs font-medium">{item.label}</p>
                     </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-
-        <section className="overflow-hidden rounded-lg border bg-card">
-          <div className="border-b px-5 py-4">
-            <h2 className="font-semibold">Operational signals</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Read-only client decisions, workflow activity, and integration health.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3">
-            {operationalSummaries.map((summary, index) => {
-              const Icon = summary.icon;
-
-              return (
-                <div
-                  key={summary.label}
-                  className={`flex gap-3 px-5 py-5 ${
-                    index > 0 ? "border-t lg:border-l lg:border-t-0" : ""
-                  }`}
-                >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Icon className="size-4" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {summary.label}
-                    </p>
-                    <p className="mt-1 text-sm font-semibold">{summary.value}</p>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {summary.detail}
+                      {item.detail}
                     </p>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </AppShell>

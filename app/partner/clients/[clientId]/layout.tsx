@@ -71,9 +71,15 @@ export default async function ClientWorkspaceLayout({
 
   return (
     <AppShell
-      organizationName="Partner workspace"
+      organizationName={
+        client.account_kind === "partner_agency"
+          ? client.name
+          : "Partner workspace"
+      }
       userEmail={user.email ?? "Authenticated user"}
-      activeNav="clients"
+      activeNav={
+        client.account_kind === "partner_agency" ? "agency" : "clients"
+      }
     >
       <div className="space-y-6">
         <header className="overflow-hidden rounded-lg border bg-card ns-surface">
@@ -92,7 +98,7 @@ export default async function ClientWorkspaceLayout({
                   className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
                 >
                   {client.account_kind === "partner_agency"
-                    ? "My Agency"
+                    ? "Sales CRM"
                     : "Clients"}
                 </Link>
                 <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight">
