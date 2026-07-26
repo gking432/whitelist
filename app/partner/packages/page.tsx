@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Package, Plus } from "lucide-react";
+import { Layers3, Package, Plus, UsersRound } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import {
@@ -101,12 +101,15 @@ export default async function PackagesPage() {
       activeNav="packages"
     >
       <div className="space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
+            <p className="text-[11px] font-semibold uppercase text-muted-foreground">
+              What you sell
+            </p>
             <h1 className="text-xl font-semibold">Packages</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              The offers you sell. Pick one during client setup and Northstar
-              shows exactly what to connect and test for that deal.
+              Build reusable offers, assign one during client onboarding, and
+              get the exact setup and testing checklist for that sale.
             </p>
           </div>
           <Button asChild>
@@ -115,7 +118,34 @@ export default async function PackagesPage() {
               New package
             </Link>
           </Button>
-        </div>
+        </header>
+
+        <section
+          aria-label="Package catalog summary"
+          className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-3"
+        >
+          <div className="border-b p-4 sm:border-b-0 sm:border-r">
+            <Layers3 className="size-4 text-primary" aria-hidden="true" />
+            <p className="mt-2 text-2xl font-semibold">
+              {reusablePackages.length}
+            </p>
+            <p className="text-xs text-muted-foreground">Reusable offers</p>
+          </div>
+          <div className="border-b p-4 sm:border-b-0 sm:border-r">
+            <UsersRound className="size-4 text-primary" aria-hidden="true" />
+            <p className="mt-2 text-2xl font-semibold">
+              {clientRows?.length ?? 0}
+            </p>
+            <p className="text-xs text-muted-foreground">Assigned clients</p>
+          </div>
+          <div className="p-4">
+            <Package className="size-4 text-primary" aria-hidden="true" />
+            <p className="mt-2 text-2xl font-semibold">
+              {customPackages.length}
+            </p>
+            <p className="text-xs text-muted-foreground">Client-only offers</p>
+          </div>
+        </section>
 
         {reusablePackages.length === 0 ? (
           <section className="flex min-h-64 flex-col items-center justify-center rounded-lg border bg-card px-6 py-12 text-center">
@@ -133,56 +163,68 @@ export default async function PackagesPage() {
             </div>
           </section>
         ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {reusablePackages.map((pkg) => {
-              const capabilityKeys = enabledCapabilityKeys(pkg.capabilities);
-              const clientCount = clientCounts.get(pkg.id) ?? 0;
+          <section aria-labelledby="reusable-packages-heading">
+            <div className="mb-3">
+              <h2 id="reusable-packages-heading" className="font-semibold">
+                Reusable offers
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Select one of these when onboarding a new client.
+              </p>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {reusablePackages.map((pkg) => {
+                const capabilityKeys = enabledCapabilityKeys(pkg.capabilities);
+                const clientCount = clientCounts.get(pkg.id) ?? 0;
 
-              return (
-                <section key={pkg.id} className="rounded-lg border bg-card p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <Link
-                        href={`/partner/packages/${pkg.id}`}
-                        className="font-semibold hover:underline"
-                      >
-                        {pkg.name}
-                      </Link>
-                      <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                        {pkg.description ?? "No description."}
-                      </p>
+                return (
+                  <article
+                    key={pkg.id}
+                    className="rounded-lg border bg-card p-5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Link
+                          href={`/partner/packages/${pkg.id}`}
+                          className="font-semibold hover:underline"
+                        >
+                          {pkg.name}
+                        </Link>
+                        <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                          {pkg.description ?? "No description."}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="shrink-0">
+                        {clientCount} client{clientCount === 1 ? "" : "s"}
+                      </Badge>
                     </div>
-                    <Badge variant="outline" className="shrink-0">
-                      {clientCount} client{clientCount === 1 ? "" : "s"}
-                    </Badge>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {capabilityKeys.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">
-                        Nothing toggled on yet.
-                      </span>
-                    ) : (
-                      capabilityKeys.map((key) => (
-                        <Badge key={key} variant="outline">
-                          {CAPABILITIES[key].label}
-                        </Badge>
-                      ))
-                    )}
-                  </div>
-                  <div className="mt-4 flex items-center justify-between border-t pt-3">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/partner/packages/${pkg.id}`}>Edit</Link>
-                    </Button>
-                    <ArchivePackageButton packageId={pkg.id} />
-                  </div>
-                </section>
-              );
-            })}
-          </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {capabilityKeys.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">
+                          Nothing toggled on yet.
+                        </span>
+                      ) : (
+                        capabilityKeys.map((key) => (
+                          <Badge key={key} variant="outline">
+                            {CAPABILITIES[key].label}
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                    <div className="mt-4 flex items-center justify-between border-t pt-3">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/partner/packages/${pkg.id}`}>Edit</Link>
+                      </Button>
+                      <ArchivePackageButton packageId={pkg.id} />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
         )}
 
-        {reusablePackages.length > 0 &&
-        reusablePackages.length < 3 ? (
+        {reusablePackages.length > 0 && reusablePackages.length < 3 ? (
           <StarterPackagesButton />
         ) : null}
 

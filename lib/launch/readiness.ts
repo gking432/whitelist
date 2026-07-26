@@ -92,9 +92,9 @@ export function computeLaunchReadiness(input: {
 }): LaunchReadiness {
   const deploymentReady = Boolean(
     input.packageId &&
-      input.deployment &&
-      input.deployment.packageId === input.packageId &&
-      ["ready", "needs_setup"].includes(input.deployment.status),
+    input.deployment &&
+    input.deployment.packageId === input.packageId &&
+    ["ready", "needs_setup"].includes(input.deployment.status),
   );
   const workflowByKey = new Map(
     input.workflows.map((workflow) => [workflow.templateKey, workflow]),
@@ -130,10 +130,10 @@ export function computeLaunchReadiness(input: {
   const connectionsReady = missingIntegrationIds.length === 0;
   const testsReady = Boolean(
     input.evidence &&
-      input.deployment &&
-      input.evidence.deploymentId === input.deployment.id &&
-      input.evidence.passed &&
-      ["ready", "live"].includes(input.evidence.status),
+    input.deployment &&
+    input.evidence.deploymentId === input.deployment.id &&
+    input.evidence.passed &&
+    ["ready", "live"].includes(input.evidence.status),
   );
   const hasLiveRuntime =
     input.workflows.some((workflow) => workflow.runtimeMode === "live") ||
@@ -145,14 +145,12 @@ export function computeLaunchReadiness(input: {
     blockers.push(`Restore workflows: ${missingWorkflowKeys.join(", ")}.`);
   }
   if (uncoveredTemplateKeys.length > 0) {
-    blockers.push(
-      `Add launch tests for: ${uncoveredTemplateKeys.join(", ")}.`,
-    );
+    blockers.push(`Add launch tests for: ${uncoveredTemplateKeys.join(", ")}.`);
   }
   if (missingIntegrationIds.length > 0) {
     blockers.push(`Connect: ${missingIntegrationIds.join(", ")}.`);
   }
-  if (!testsReady) blockers.push("Run and pass the package tests.");
+  if (!testsReady) blockers.push("Run and pass the final safety check.");
 
   const gates: LaunchGate[] = [
     {
@@ -181,11 +179,11 @@ export function computeLaunchReadiness(input: {
     },
     {
       key: "tests",
-      label: "Package tests passed",
+      label: "Final safety check passed",
       passed: testsReady,
       detail: testsReady
         ? "The latest deployment passed its package-derived scenarios."
-        : "Run the package test suite after setup is complete.",
+        : "Run the final package-derived scenarios after feature verification.",
     },
   ];
 

@@ -6,6 +6,7 @@ import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
 import type { FormState } from "@/lib/forms/state";
 import { loadClientLaunchContext } from "@/lib/launch/context";
+import { enabledCapabilityKeys } from "@/lib/packages/capabilities";
 import {
   isAccessError,
   requireClientWorkspaceAccess,
@@ -14,6 +15,7 @@ import { PARTNER_OPERATOR_ROLES } from "@/lib/permissions/roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getLabScenario } from "@/lib/testing/scenarios";
 import { runClientLaunchScenario } from "@/lib/testing/scenario-runner";
+import { loadFeatureTestProgress } from "@/lib/testing/progress";
 
 function errorState(error: unknown): FormState {
   if (isAccessError(error)) {
@@ -28,7 +30,8 @@ function errorState(error: unknown): FormState {
 
   return {
     status: "error",
-    message: error instanceof Error ? error.message : "The launch action failed.",
+    message:
+      error instanceof Error ? error.message : "The launch action failed.",
   };
 }
 
@@ -54,9 +57,7 @@ async function requireLaunchAccess(clientId: string) {
 }
 
 function readinessSnapshot(
-  readiness: Awaited<
-    ReturnType<typeof loadClientLaunchContext>
-  >["readiness"],
+  readiness: Awaited<ReturnType<typeof loadClientLaunchContext>>["readiness"],
 ) {
   return {
     gates: readiness.gates,
@@ -93,12 +94,26 @@ export async function runPackageTests(
       };
     }
 
+    const featureProgress = await loadFeatureTestProgress(admin, {
+      clientId,
+      packageId: context.package.id,
+      capabilityKeys: enabledCapabilityKeys(context.package.capabilities),
+    });
+    if (!featureProgress.complete) {
+      return {
+        status: "error",
+        message: `Finish Test Center before the final safety check. ${featureProgress.passed}/${featureProgress.total} package features have passed.`,
+      };
+    }
+
     if (!context.readiness.canRunTests) {
       return {
         status: "error",
         message:
           context.readiness.blockers.find(
-            (blocker) => !blocker.startsWith("Connect:") && !blocker.startsWith("Run and pass"),
+            (blocker) =>
+              !blocker.startsWith("Connect:") &&
+              !blocker.startsWith("Run and pass"),
           ) ?? "Resolve the launch blockers before running tests.",
       };
     }
@@ -135,7 +150,9 @@ export async function runPackageTests(
       const scenario = getLabScenario(planned.scenarioKey);
 
       if (!scenario) {
-        throw new Error(`Launch scenario ${planned.scenarioKey} is unavailable.`);
+        throw new Error(
+          `Launch scenario ${planned.scenarioKey} is unavailable.`,
+        );
       }
 
       const { data: testRun, error: testRunError } = await admin
@@ -195,7 +212,9 @@ export async function runPackageTests(
     }
 
     const passed = scenarioResults.every((result) => result.passed);
-    const passedCount = scenarioResults.filter((result) => result.passed).length;
+    const passedCount = scenarioResults.filter(
+      (result) => result.passed,
+    ).length;
     const completedAt = new Date().toISOString();
     const { error: finishError } = await admin
       .from("client_launches")
@@ -278,8 +297,30 @@ export async function goLive(
       clientId,
     });
 
+    if (!context.package) {
+      return {
+        status: "error",
+        message: "Assign a package before going live.",
+      };
+    }
+
+    const featureProgress = await loadFeatureTestProgress(admin, {
+      clientId,
+      packageId: context.package.id,
+      capabilityKeys: enabledCapabilityKeys(context.package.capabilities),
+    });
+    if (!featureProgress.complete) {
+      return {
+        status: "error",
+        message: `Go-live stopped: ${featureProgress.passed}/${featureProgress.total} Test Center features have passed.`,
+      };
+    }
+
     if (!context.latestLaunch || context.latestLaunch.id !== launchId) {
-      return { status: "error", message: "Run the current package tests again." };
+      return {
+        status: "error",
+        message: "Run the current package tests again.",
+      };
     }
 
     if (!context.readiness.canGoLive) {
@@ -330,7 +371,8 @@ export async function goLive(
     refreshLaunchPaths(clientId);
     return {
       status: "success",
-      message: "Client is live. The pre-launch runtime snapshot is ready for rollback.",
+      message:
+        "Client is live. The pre-launch runtime snapshot is ready for rollback.",
     };
   } catch (error) {
     refreshLaunchPaths(clientId);
@@ -356,7 +398,10 @@ export async function rollbackLaunch(
       context.latestLaunch.id !== launchId ||
       context.latestLaunch.status !== "live"
     ) {
-      return { status: "error", message: "There is no active launch to roll back." };
+      return {
+        status: "error",
+        message: "There is no active launch to roll back.",
+      };
     }
 
     const { error } = await admin.rpc("rollback_client_launch", {
@@ -380,7 +425,8 @@ export async function rollbackLaunch(
     refreshLaunchPaths(clientId);
     return {
       status: "success",
-      message: "Rollback complete. Workflows and connections are back in their pre-launch modes.",
+      message:
+        "Rollback complete. Workflows and connections are back in their pre-launch modes.",
     };
   } catch (error) {
     refreshLaunchPaths(clientId);

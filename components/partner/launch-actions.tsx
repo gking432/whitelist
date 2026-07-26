@@ -82,7 +82,8 @@ export function LaunchActions({
             {isPending ? "Restoring..." : "Roll back launch"}
           </Button>
           <span className="text-xs text-muted-foreground">
-            Restores the exact workflow, connection, and client modes from before launch.
+            Restores the exact workflow, connection, and client modes from
+            before launch.
           </span>
         </div>
       ) : (
@@ -98,7 +99,9 @@ export function LaunchActions({
             }
           >
             <FlaskConical aria-hidden="true" />
-            {isPending ? "Running package tests..." : "Run package tests"}
+            {isPending
+              ? "Running final safety check..."
+              : "Run final safety check"}
           </Button>
 
           {launchId && launchStatus === "ready" ? (
@@ -112,7 +115,8 @@ export function LaunchActions({
                   className="mt-0.5"
                 />
                 <span>
-                  I confirm approved actions may use the listed real provider connections.
+                  I confirm approved actions may use the listed real provider
+                  connections.
                 </span>
               </label>
               <Button
@@ -123,12 +127,7 @@ export function LaunchActions({
                   const formData = new FormData();
                   formData.set("confirm_live", "yes");
                   run(() =>
-                    goLive(
-                      clientId,
-                      launchId,
-                      initialFormState,
-                      formData,
-                    ),
+                    goLive(clientId, launchId, initialFormState, formData),
                   );
                 }}
               >

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowRight,
   CircleCheck,
   CircleDashed,
   FlaskConical,
@@ -14,7 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { loadClientLaunchContext } from "@/lib/launch/context";
+import { enabledCapabilityKeys } from "@/lib/packages/capabilities";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { loadFeatureTestProgress } from "@/lib/testing/progress";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Launch Control" };
@@ -33,9 +36,16 @@ const statusMeta = {
   },
   sandbox: {
     label: "Sandbox ready",
-    detail: "Run the package tests, then finish any required provider connections.",
+    detail: "Run the final safety check to unlock go-live.",
     className: "border-sky-200 bg-sky-50 text-sky-950",
     icon: FlaskConical,
+  },
+  verification: {
+    label: "Verification required",
+    detail:
+      "Finish every package feature in Test Center before release review.",
+    className: "border-amber-200 bg-amber-50 text-amber-950",
+    icon: CircleDashed,
   },
   testing: {
     label: "Testing",
@@ -69,7 +79,8 @@ const statusMeta = {
   },
   rolled_back: {
     label: "Rolled back",
-    detail: "Pre-launch runtime modes were restored. Retest before launching again.",
+    detail:
+      "Pre-launch runtime modes were restored. Retest before launching again.",
     className: "border-zinc-300 bg-zinc-50 text-zinc-900",
     icon: RotateCcw,
   },
@@ -109,22 +120,36 @@ export default async function ClientLaunchPage({ params }: PageProps) {
     );
   }
 
+  const capabilityKeys = context.package
+    ? enabledCapabilityKeys(context.package.capabilities)
+    : [];
+  const featureProgress = context.package
+    ? await loadFeatureTestProgress(supabase, {
+        clientId,
+        packageId: context.package.id,
+        capabilityKeys,
+      })
+    : null;
+  const featureVerificationComplete = featureProgress?.complete ?? false;
   const launch = context.latestLaunch;
-  const statusKey = !context.package || !context.deployment
-    ? "setup"
-    : launch?.status === "live"
-      ? "live"
-      : launch?.status === "rolled_back"
-        ? "rolled_back"
-        : launch?.status === "testing"
-          ? "testing"
-          : launch?.status === "blocked" || launch?.status === "failed"
-            ? "blocked"
-            : launch?.status === "ready" && context.readiness.canGoLive
-              ? "ready"
-              : launch?.status === "ready"
-                ? "tested"
-                : "sandbox";
+  const statusKey =
+    !context.package || !context.deployment
+      ? "setup"
+      : launch?.status === "live"
+        ? "live"
+        : launch?.status === "rolled_back"
+          ? "rolled_back"
+          : !featureVerificationComplete
+            ? "verification"
+            : launch?.status === "testing"
+              ? "testing"
+              : launch?.status === "blocked" || launch?.status === "failed"
+                ? "blocked"
+                : launch?.status === "ready" && context.readiness.canGoLive
+                  ? "ready"
+                  : launch?.status === "ready"
+                    ? "tested"
+                    : "sandbox";
   const meta = statusMeta[statusKey];
   const StatusIcon = meta.icon;
   const targetWorkflows = context.workflows.filter((workflow) =>
@@ -136,6 +161,37 @@ export default async function ClientLaunchPage({ params }: PageProps) {
   const canManage =
     workspace.access.canManageWorkflows &&
     workspace.access.canManageIntegrations;
+  const releaseGates = [
+    {
+      key: "feature_verification",
+      label: "Package features verified",
+      passed: featureVerificationComplete,
+      detail: featureProgress
+        ? `${featureProgress.passed}/${featureProgress.total} package features have a latest passing Test Center result.`
+        : "Assign a package before feature verification.",
+    },
+    ...context.readiness.gates,
+  ];
+  const releaseBlockers = [
+    !featureVerificationComplete
+      ? `Finish Test Center: ${featureProgress?.passed ?? 0}/${featureProgress?.total ?? capabilityKeys.length} features passed.`
+      : null,
+    ...context.readiness.blockers,
+  ].filter((item): item is string => Boolean(item));
+  const nextAction = !featureVerificationComplete
+    ? {
+        href: `/partner/clients/${clientId}/test-center`,
+        label: "Return to Test Center",
+      }
+    : !context.package ||
+        !context.deployment ||
+        context.readiness.missingWorkflowKeys.length > 0 ||
+        context.readiness.missingIntegrationIds.length > 0
+      ? {
+          href: `/partner/clients/${clientId}/setup`,
+          label: "Return to Setup",
+        }
+      : null;
 
   return (
     <div className="space-y-5">
@@ -168,16 +224,16 @@ export default async function ClientLaunchPage({ params }: PageProps) {
             <div>
               <h3 className="font-semibold">Release gates</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                All four gates are checked again when you tap Go live.
+                All five gates are checked again when you tap Go live.
               </p>
             </div>
             <Badge variant="outline">
-              {context.readiness.gates.filter((gate) => gate.passed).length}/4
+              {releaseGates.filter((gate) => gate.passed).length}/5
             </Badge>
           </div>
 
           <div className="mt-4 divide-y border-y">
-            {context.readiness.gates.map((gate) => (
+            {releaseGates.map((gate) => (
               <div key={gate.key} className="flex items-start gap-3 py-3.5">
                 {gate.passed ? (
                   <CircleCheck
@@ -200,13 +256,21 @@ export default async function ClientLaunchPage({ params }: PageProps) {
             ))}
           </div>
 
-          {context.readiness.blockers.length > 0 && statusKey !== "live" ? (
+          {releaseBlockers.length > 0 && statusKey !== "live" ? (
             <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-950">
               <p className="font-medium">Next action</p>
-              <p className="mt-1 leading-5">{context.readiness.blockers[0]}</p>
-              {!context.package || !context.deployment ? (
-                <Button asChild variant="outline" size="sm" className="mt-3 bg-white/70">
-                  <Link href={`/partner/clients/${clientId}/setup`}>Open setup</Link>
+              <p className="mt-1 leading-5">{releaseBlockers[0]}</p>
+              {nextAction ? (
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 bg-white/70"
+                >
+                  <Link href={nextAction.href}>
+                    {nextAction.label}
+                    <ArrowRight aria-hidden="true" />
+                  </Link>
                 </Button>
               ) : null}
             </div>
@@ -218,15 +282,20 @@ export default async function ClientLaunchPage({ params }: PageProps) {
             {statusKey === "live" ? "Live controls" : "Launch actions"}
           </h3>
           <p className="mb-4 mt-1 text-sm leading-6 text-muted-foreground">
-            Tests use synthetic customer data. Real sending stays off until Go live.
+            The final safety check reruns package workflows with synthetic data.
+            Real sending stays off until Go live.
           </p>
           <LaunchActions
             clientId={clientId}
             launchId={launch?.id ?? null}
             launchStatus={launch?.status ?? null}
             canManage={canManage}
-            canRunTests={context.readiness.canRunTests}
-            canGoLive={context.readiness.canGoLive}
+            canRunTests={
+              context.readiness.canRunTests && featureVerificationComplete
+            }
+            canGoLive={
+              context.readiness.canGoLive && featureVerificationComplete
+            }
           />
         </section>
       </div>
@@ -252,13 +321,18 @@ export default async function ClientLaunchPage({ params }: PageProps) {
             <div className="mt-2 space-y-2">
               {targetWorkflows.length > 0 ? (
                 targetWorkflows.map((workflow) => (
-                  <div key={workflow.id} className="flex items-center justify-between gap-3 border-b pb-2 text-sm">
+                  <div
+                    key={workflow.id}
+                    className="flex items-center justify-between gap-3 border-b pb-2 text-sm"
+                  >
                     <span className="min-w-0 truncate">{workflow.name}</span>
                     <Badge variant="outline">{workflow.runtimeMode}</Badge>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">No workflow targets yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  No workflow targets yet.
+                </p>
               )}
             </div>
           </div>
@@ -269,13 +343,20 @@ export default async function ClientLaunchPage({ params }: PageProps) {
             <div className="mt-2 space-y-2">
               {targetConnections.length > 0 ? (
                 targetConnections.map((connection) => (
-                  <div key={connection.id} className="flex items-center justify-between gap-3 border-b pb-2 text-sm">
-                    <span className="min-w-0 truncate">{connection.displayName}</span>
+                  <div
+                    key={connection.id}
+                    className="flex items-center justify-between gap-3 border-b pb-2 text-sm"
+                  >
+                    <span className="min-w-0 truncate">
+                      {connection.displayName}
+                    </span>
                     <Badge variant="outline">{connection.runtimeMode}</Badge>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">No connected targets yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  No connected targets yet.
+                </p>
               )}
             </div>
           </div>
@@ -304,14 +385,25 @@ export default async function ClientLaunchPage({ params }: PageProps) {
                   : null;
 
               return (
-                <div key={testRun.id} className="flex items-center justify-between gap-3 py-3">
+                <div
+                  key={testRun.id}
+                  className="flex items-center justify-between gap-3 py-3"
+                >
                   <div className="flex min-w-0 items-center gap-2.5">
                     {testRun.status === "passed" ? (
-                      <CircleCheck className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                      <CircleCheck
+                        className="size-4 shrink-0 text-emerald-600"
+                        aria-hidden="true"
+                      />
                     ) : (
-                      <AlertTriangle className="size-4 shrink-0 text-rose-600" aria-hidden="true" />
+                      <AlertTriangle
+                        className="size-4 shrink-0 text-rose-600"
+                        aria-hidden="true"
+                      />
                     )}
-                    <span className="truncate text-sm font-medium">{testRun.scenario_title}</span>
+                    <span className="truncate text-sm font-medium">
+                      {testRun.scenario_title}
+                    </span>
                   </div>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {passedAssertions !== null && totalAssertions !== null

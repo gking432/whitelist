@@ -6,9 +6,13 @@ import {
   FEATURE_TEST_DEFINITIONS,
   featureTestsForCapabilities,
 } from "../lib/testing/test-center.ts";
+import { featureTestProgress } from "../lib/testing/progress.ts";
 
 test("every package capability has a concrete test-center definition", () => {
-  assert.deepEqual(Object.keys(FEATURE_TEST_DEFINITIONS).sort(), [...CAPABILITY_KEYS].sort());
+  assert.deepEqual(
+    Object.keys(FEATURE_TEST_DEFINITIONS).sort(),
+    [...CAPABILITY_KEYS].sort(),
+  );
 });
 
 test("automated feature tests declare scenarios and an expected outcome", () => {
@@ -28,4 +32,41 @@ test("the center shows only capabilities included in the package", () => {
     ),
     ["lead_intake", "review_requests"],
   );
+});
+
+test("feature progress uses the latest result for the current package", () => {
+  const progress = featureTestProgress(
+    ["lead_intake", "reports_portal"],
+    [
+      {
+        capability_key: "lead_intake",
+        status: "passed",
+        created_at: "2026-07-25T12:00:00.000Z",
+      },
+      {
+        capability_key: "lead_intake",
+        status: "failed",
+        created_at: "2026-07-25T11:00:00.000Z",
+      },
+      {
+        capability_key: "reports_portal",
+        status: "failed",
+        created_at: "2026-07-25T10:00:00.000Z",
+      },
+      {
+        capability_key: "northstar_crm",
+        status: "passed",
+        created_at: "2026-07-25T09:00:00.000Z",
+      },
+    ],
+  );
+
+  assert.equal(progress.passed, 1);
+  assert.equal(progress.complete, false);
+  assert.deepEqual(progress.missingKeys, []);
+  assert.deepEqual(progress.failedKeys, ["reports_portal"]);
+});
+
+test("an empty capability set is already complete", () => {
+  assert.equal(featureTestProgress([], []).complete, true);
 });

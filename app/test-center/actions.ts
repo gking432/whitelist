@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
 import type { FormState } from "@/lib/forms/state";
 import { loadClientLaunchContext } from "@/lib/launch/context";
@@ -35,6 +36,135 @@ export type FeatureTestActionState = FormState & {
     detail: string;
   }[];
 };
+
+export async function recordGuidedFeatureTest(
+  clientId: string,
+  capabilityKey: CapabilityKey,
+  outcome: "passed" | "failed",
+): Promise<FeatureTestActionState> {
+  const authState = await getAuthState();
+
+  if (!authState.user) {
+    return { status: "error", message: "Sign in to record this test." };
+  }
+
+  try {
+    const access = await requireClientWorkspaceAccess(
+      authState.user.id,
+      clientId,
+      PARTNER_OPERATOR_ROLES,
+    );
+
+    if (!access.partnerId) {
+      return { status: "error", message: "The test business is unavailable." };
+    }
+
+    const definition = FEATURE_TEST_DEFINITIONS[capabilityKey];
+    if (!definition || definition.testMode !== "guided") {
+      return {
+        status: "error",
+        message: "This result can only be recorded for a guided test.",
+      };
+    }
+
+    const admin = createSupabaseAdminClient();
+    if (!admin) throw new Error("The data service is unavailable.");
+
+    const context = await loadClientLaunchContext(admin, {
+      partnerId: access.partnerId,
+      clientId,
+    });
+
+    if (
+      !context.package ||
+      !enabledCapabilityKeys(context.package.capabilities).includes(
+        capabilityKey,
+      )
+    ) {
+      return {
+        status: "error",
+        message: "This feature is not in the assigned package.",
+      };
+    }
+
+    const setupBlocker = context.readiness.gates.find(
+      (gate) => gate.key !== "tests" && !gate.passed,
+    );
+    if (setupBlocker) {
+      return {
+        status: "error",
+        message: `${setupBlocker.label} is incomplete. Finish client Setup before recording tests.`,
+      };
+    }
+
+    const completedAt = new Date().toISOString();
+    const { data: testRun, error } = await admin
+      .from("client_feature_test_runs")
+      .insert({
+        partner_id: access.partnerId,
+        client_id: clientId,
+        package_id: context.package.id,
+        capability_key: capabilityKey,
+        audience: "partner",
+        status: outcome,
+        result: {
+          manual_confirmation: true,
+          expected_result: definition.expectedResult,
+        },
+        actor_user_id: authState.user.id,
+        completed_at: completedAt,
+      })
+      .select("id")
+      .single();
+
+    if (error || !testRun) {
+      throw new Error("The guided test result could not be saved.");
+    }
+
+    await recordAuditEvent({
+      actor: access,
+      action: "client.feature_test_recorded",
+      targetType: "client_feature_test_run",
+      targetId: testRun.id,
+      summary: `${outcome === "passed" ? "Passed" : "Flagged"} the guided ${definition.capabilityKey.replaceAll("_", " ")} test.`,
+      afterSnapshot: {
+        capability_key: capabilityKey,
+        status: outcome,
+        completed_at: completedAt,
+      },
+    });
+
+    revalidatePath(`/partner/clients/${clientId}/test-center`);
+    revalidatePath(`/partner/clients/${clientId}/launch`);
+    revalidatePath("/control/pilot");
+
+    return {
+      status: outcome === "passed" ? "success" : "error",
+      message:
+        outcome === "passed"
+          ? "Guided test marked passed."
+          : "Marked as needing work. Fix the issue and run these steps again.",
+    };
+  } catch (error) {
+    if (isAccessError(error)) {
+      return {
+        status: "error",
+        message:
+          error.code === "ACCESS_DENIED"
+            ? "This account cannot record feature tests."
+            : "The Test Center is unavailable right now.",
+      };
+    }
+
+    return {
+      status: "error",
+      message:
+        error instanceof Error
+          ? error.message
+          : "The guided test result could not be saved.",
+    };
+  }
+}
 
 function audienceFor(access: AccessContext): "platform" | "partner" | "client" {
   if (isPlatformRole(access.role)) return "platform";

@@ -13,6 +13,7 @@ import {
   enabledCapabilityKeys,
 } from "@/lib/packages/capabilities";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { loadFeatureTestProgress } from "@/lib/testing/progress";
 import { featureTestsForCapabilities } from "@/lib/testing/test-center";
 
 export const metadata = { title: "Test Center" };
@@ -90,31 +91,17 @@ export default async function PartnerClientTestCenterPage({
     );
   }
 
-  const { data: runData } = await admin
-    .from("client_feature_test_runs")
-    .select("capability_key, status, completed_at, created_at")
-    .eq("client_id", clientId)
-    .order("created_at", { ascending: false });
-  const latestByCapability = new Map<
-    string,
-    { status: string; at: string | null }
-  >();
-
-  for (const run of runData ?? []) {
-    if (!latestByCapability.has(run.capability_key)) {
-      latestByCapability.set(run.capability_key, {
-        status: run.status,
-        at: run.completed_at ?? run.created_at,
-      });
-    }
-  }
-
   const capabilityKeys = enabledCapabilityKeys(context.package.capabilities);
+  const progress = await loadFeatureTestProgress(admin, {
+    clientId,
+    packageId: context.package.id,
+    capabilityKeys,
+  });
   const items: TestCenterItem[] = featureTestsForCapabilities(
     capabilityKeys,
   ).map((definition) => {
     const capability = CAPABILITIES[definition.capabilityKey];
-    const latest = latestByCapability.get(definition.capabilityKey);
+    const latest = progress.latestByCapability.get(definition.capabilityKey);
     return {
       ...definition,
       label: capability.label,
@@ -138,6 +125,7 @@ export default async function PartnerClientTestCenterPage({
       canRun={workspace.access.canManageWorkflows}
       isLive={context.readiness.hasLiveRuntime}
       activityHref={`/partner/clients/${clientId}/runs`}
+      nextHref={`/partner/clients/${clientId}/launch`}
     />
   );
 }

@@ -53,7 +53,11 @@ export function WorkspaceTabs({
 
   return (
     <nav
-      aria-label="Client workspace sections"
+      aria-label={
+        accountKind === "partner_agency"
+          ? "Agency workspace sections"
+          : "Client workspace sections"
+      }
       className="-mb-px flex gap-0.5 overflow-x-auto"
     >
       {tabs.map((tab) => {

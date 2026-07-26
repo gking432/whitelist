@@ -65,21 +65,16 @@ export default async function ClientWorkspaceLayout({
   }
 
   const { client, user } = workspace;
+  const isAgencyAccount = client.account_kind === "partner_agency";
   const hasNorthstarCrm = ["primary_crm", "mirror", "assist"].includes(
     client.crm_operating_mode,
   );
 
   return (
     <AppShell
-      organizationName={
-        client.account_kind === "partner_agency"
-          ? client.name
-          : "Partner workspace"
-      }
+      organizationName={isAgencyAccount ? client.name : "Partner workspace"}
       userEmail={user.email ?? "Authenticated user"}
-      activeNav={
-        client.account_kind === "partner_agency" ? "agency" : "clients"
-      }
+      activeNav={isAgencyAccount ? "agency" : "clients"}
     >
       <div className="space-y-6">
         <header className="overflow-hidden rounded-lg border bg-card ns-surface">
@@ -91,26 +86,24 @@ export default async function ClientWorkspaceLayout({
               <div className="min-w-0">
                 <Link
                   href={
-                    client.account_kind === "partner_agency"
-                      ? "/partner/agency"
-                      : "/partner/clients"
+                    isAgencyAccount ? "/partner/agency" : "/partner/clients"
                   }
                   className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
                 >
-                  {client.account_kind === "partner_agency"
-                    ? "Sales CRM"
-                    : "Clients"}
+                  {isAgencyAccount ? "Agency home base" : "Clients"}
                 </Link>
                 <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight">
                   {client.name}
                 </h1>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  {client.industry ?? "Industry not set"} · {client.timezone}
+                  {isAgencyAccount
+                    ? "Your internal CRM, assistants, and agency automations"
+                    : `${client.industry ?? "Industry not set"} · ${client.timezone}`}
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              {client.account_kind === "managed_client" && hasNorthstarCrm ? (
+              {!isAgencyAccount && hasNorthstarCrm ? (
                 <form
                   action={startClientSupportView.bind(
                     null,
@@ -120,24 +113,36 @@ export default async function ClientWorkspaceLayout({
                 >
                   <Button type="submit" variant="outline" size="sm">
                     <Eye aria-hidden="true" />
-                    {client.is_test_account ? "Test as client" : "View as client"}
+                    {client.is_test_account
+                      ? "Test as client"
+                      : "View as client"}
                   </Button>
                 </form>
               ) : null}
               <Badge variant="secondary">{formatEnum(client.status)}</Badge>
-              <Badge variant="outline">
-                CRM: {formatEnum(client.crm_operating_mode)}
-              </Badge>
+              {isAgencyAccount ? (
+                <Badge variant="outline">Partner-owned workspace</Badge>
+              ) : (
+                <Badge variant="outline">
+                  CRM: {formatEnum(client.crm_operating_mode)}
+                </Badge>
+              )}
               <Badge variant="outline">
                 Runtime: {formatEnum(client.default_runtime_mode)}
               </Badge>
-              <Badge variant="outline">
-                Portal: {client.client_portal_enabled ? "Enabled" : "Off"}
-              </Badge>
-              <Badge variant="outline">
-                Partner edits:{" "}
-                {client.partner_can_edit_client_data ? "Granted" : "Not granted"}
-              </Badge>
+              {!isAgencyAccount ? (
+                <>
+                  <Badge variant="outline">
+                    Portal: {client.client_portal_enabled ? "Enabled" : "Off"}
+                  </Badge>
+                  <Badge variant="outline">
+                    Partner edits:{" "}
+                    {client.partner_can_edit_client_data
+                      ? "Granted"
+                      : "Not granted"}
+                  </Badge>
+                </>
+              ) : null}
             </div>
           </div>
           <div className="mt-4 border-t px-5">
