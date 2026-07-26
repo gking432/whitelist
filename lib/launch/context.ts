@@ -129,7 +129,11 @@ export async function loadClientLaunchContext(
   }
 
   const pkg = (packageResult.data as PartnerPackageRecord | null) ?? null;
-  const requirements = pkg ? requirementsForPackage(pkg) : null;
+  const requirements = pkg
+    ? requirementsForPackage(pkg, {
+        crmOperatingMode: client.crm_operating_mode,
+      })
+    : null;
   const rawWorkflows = (workflowResult.data ?? []) as unknown as {
     id: string;
     name: string;

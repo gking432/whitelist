@@ -185,7 +185,7 @@ export async function deployPackageToClient(
   const [{ data: client }, { data: packageData }] = await Promise.all([
     supabase
       .from("client_businesses")
-      .select("id, name")
+      .select("id, name, crm_operating_mode")
       .eq("id", input.clientId)
       .eq("partner_id", input.partnerId)
       .maybeSingle(),
@@ -208,7 +208,9 @@ export async function deployPackageToClient(
     throw new Error("That package is not available for this client.");
   }
 
-  const requirements = requirementsForPackage(pkg);
+  const requirements = requirementsForPackage(pkg, {
+    crmOperatingMode: client.crm_operating_mode,
+  });
   const requiredIntegrationIds = requirements.integrations.map(
     (requirement) => requirement.id,
   );

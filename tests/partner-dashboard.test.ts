@@ -8,10 +8,10 @@ import {
 
 const baseClient = {
   packageId: "package-1",
-  activeWorkflows: 1,
   runtimeMode: "sandbox",
   clientStatus: "onboarding" as const,
   launchStatus: null,
+  deploymentStatus: "ready",
 };
 
 test("partner delivery starts with package selection", () => {
@@ -21,14 +21,17 @@ test("partner delivery starts with package selection", () => {
   );
 });
 
-test("a packaged client without active workflows remains in setup", () => {
+test("a packaged client without a ready deployment remains in setup", () => {
   assert.equal(
-    resolvePartnerDeliveryStage({ ...baseClient, activeWorkflows: 0 }),
+    resolvePartnerDeliveryStage({
+      ...baseClient,
+      deploymentStatus: null,
+    }),
     "setup",
   );
 });
 
-test("configured workflows move a client into testing", () => {
+test("a ready package deployment moves a client into testing", () => {
   assert.equal(resolvePartnerDeliveryStage(baseClient), "test");
 });
 

@@ -35,6 +35,7 @@ type ClientFieldValues = {
   primaryContactPhone: string;
   clientPortalEnabled: boolean;
   partnerCanEditClientData: boolean;
+  packageId: string;
 };
 
 function readFields(formData: FormData): ClientFieldValues {
@@ -58,10 +59,14 @@ function readFields(formData: FormData): ClientFieldValues {
     clientPortalEnabled: formData.get("client_portal_enabled") === "on",
     partnerCanEditClientData:
       formData.get("partner_can_edit_client_data") === "on",
+    packageId: text("package_id"),
   };
 }
 
-function validateFields(fields: ClientFieldValues): Record<string, string> {
+function validateFields(
+  fields: ClientFieldValues,
+  options: { requirePackage?: boolean } = {},
+): Record<string, string> {
   const errors: Record<string, string> = {};
 
   if (!fields.name) {
@@ -106,6 +111,10 @@ function validateFields(fields: ClientFieldValues): Record<string, string> {
     errors.status = "Choose a valid status.";
   }
 
+  if (options.requirePackage && !fields.packageId) {
+    errors.package_id = "Choose the package this client purchased.";
+  }
+
   if (fields.websiteUrl && !/^https?:\/\//.test(fields.websiteUrl)) {
     errors.website_url = "Website must start with http:// or https://.";
   }
@@ -148,7 +157,7 @@ export async function createClientBusiness(
   }
 
   const fields = readFields(formData);
-  const fieldErrors = validateFields(fields);
+  const fieldErrors = validateFields(fields, { requirePackage: true });
 
   if (Object.keys(fieldErrors).length > 0) {
     return {
@@ -176,6 +185,23 @@ export async function createClientBusiness(
       return {
         status: "error",
         message: "The data service is not configured for this environment.",
+      };
+    }
+
+    const { data: selectedPackage, error: packageError } = await supabase
+      .from("partner_packages")
+      .select("id, name")
+      .eq("id", fields.packageId)
+      .eq("partner_id", access.partnerId)
+      .eq("is_archived", false)
+      .is("client_id", null)
+      .maybeSingle();
+
+    if (packageError || !selectedPackage) {
+      return {
+        status: "error",
+        message: "The selected package is no longer available.",
+        fieldErrors: { package_id: "Choose an available package." },
       };
     }
 
@@ -217,6 +243,7 @@ export async function createClientBusiness(
         timezone: fields.timezone,
         client_portal_enabled: fields.clientPortalEnabled,
         partner_can_edit_client_data: fields.partnerCanEditClientData,
+        package_id: selectedPackage.id,
       })
       .select("id, name, status")
       .single();
@@ -244,6 +271,8 @@ export async function createClientBusiness(
         default_runtime_mode: fields.defaultRuntimeMode,
         client_portal_enabled: fields.clientPortalEnabled,
         partner_can_edit_client_data: fields.partnerCanEditClientData,
+        package_id: selectedPackage.id,
+        package_name: selectedPackage.name,
       },
     });
   } catch (error) {

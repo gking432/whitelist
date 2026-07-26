@@ -230,7 +230,9 @@ export default async function ClientSetupPage({
   const assignedPackage =
     packages.find((pkg) => pkg.id === client.package_id) ?? null;
   const requirements = assignedPackage
-    ? requirementsForPackage(assignedPackage)
+    ? requirementsForPackage(assignedPackage, {
+        crmOperatingMode: client.crm_operating_mode,
+      })
     : null;
 
   const options: PackageOption[] = packages.map((pkg) => ({
@@ -419,8 +421,8 @@ export default async function ClientSetupPage({
                 </div>
               ) : (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  This package predates deployment receipts. Redeploy it below
-                  to provision the complete sandbox package.
+                  This package was selected during onboarding. Provision it
+                  below to create the sandbox workflows and connection plan.
                 </p>
               )}
             </>

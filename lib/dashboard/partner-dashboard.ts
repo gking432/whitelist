@@ -49,6 +49,7 @@ export type PartnerDashboardClient = {
   packageId: string | null;
   activeWorkflows: number;
   launchStatus: string | null;
+  deploymentStatus: string | null;
   deliveryStage: PartnerDeliveryStage;
   pendingApprovals: number;
   failedRuns7d: number;
@@ -56,6 +57,7 @@ export type PartnerDashboardClient = {
 };
 
 type LaunchStatusMap = Map<string, string>;
+type DeploymentStatusMap = Map<string, string>;
 
 export type PartnerAttentionItem = {
   clientId: string;
@@ -116,6 +118,7 @@ export function buildPartnerDashboardData(
   records: ClientRecord[],
   opsCounts: Map<string, ClientOpsCounts>,
   launchStatuses: LaunchStatusMap = new Map(),
+  deploymentStatuses: DeploymentStatusMap = new Map(),
 ): PartnerDashboardData {
   const clients = records
     .filter((client) => client.status !== "archived")
@@ -123,6 +126,7 @@ export function buildPartnerDashboardData(
       const counts = opsCounts.get(client.id) ?? { ...emptyOpsCounts };
       const health = computeClientHealth(client.status, counts);
       const launchStatus = launchStatuses.get(client.id) ?? null;
+      const deploymentStatus = deploymentStatuses.get(client.id) ?? null;
 
       return {
         id: client.id,
@@ -137,12 +141,13 @@ export function buildPartnerDashboardData(
         packageId: client.package_id,
         activeWorkflows: counts.activeWorkflows,
         launchStatus,
+        deploymentStatus,
         deliveryStage: resolvePartnerDeliveryStage({
           packageId: client.package_id,
-          activeWorkflows: counts.activeWorkflows,
           runtimeMode: client.default_runtime_mode,
           clientStatus: client.status,
           launchStatus,
+          deploymentStatus,
         }),
         pendingApprovals: counts.pendingApprovals,
         failedRuns7d: counts.failedRuns7d,
@@ -220,8 +225,13 @@ export async function getPartnerDashboardData(
     );
   }
 
-  const [partnerResult, clientsResult, launchesResult, opsCounts] =
-    await Promise.all([
+  const [
+    partnerResult,
+    clientsResult,
+    launchesResult,
+    deploymentsResult,
+    opsCounts,
+  ] = await Promise.all([
       supabase
         .from("partners")
         .select("id, name, status")
@@ -237,6 +247,11 @@ export async function getPartnerDashboardData(
         .order("name", { ascending: true }),
       supabase
         .from("client_launches")
+        .select("client_id, status, created_at")
+        .eq("partner_id", partnerId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("client_package_deployments")
         .select("client_id, status, created_at")
         .eq("partner_id", partnerId)
         .order("created_at", { ascending: false }),
@@ -261,10 +276,21 @@ export async function getPartnerDashboardData(
     throw new PartnerDashboardDataError(launchesResult.error.message);
   }
 
+  if (deploymentsResult.error) {
+    throw new PartnerDashboardDataError(deploymentsResult.error.message);
+  }
+
   const launchStatuses: LaunchStatusMap = new Map();
   for (const launch of launchesResult.data ?? []) {
     if (!launchStatuses.has(launch.client_id)) {
       launchStatuses.set(launch.client_id, launch.status);
+    }
+  }
+
+  const deploymentStatuses: DeploymentStatusMap = new Map();
+  for (const deployment of deploymentsResult.data ?? []) {
+    if (!deploymentStatuses.has(deployment.client_id)) {
+      deploymentStatuses.set(deployment.client_id, deployment.status);
     }
   }
 
@@ -273,5 +299,6 @@ export async function getPartnerDashboardData(
     (clientsResult.data ?? []) as ClientRecord[],
     opsCounts ?? new Map(),
     launchStatuses,
+    deploymentStatuses,
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   archivePackage,
@@ -9,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 export function StarterPackagesButton() {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -22,6 +24,9 @@ export function StarterPackagesButton() {
           startTransition(async () => {
             const result = await createStarterPackages();
             setMessage(result.message ?? null);
+            if (result.status === "success") {
+              router.refresh();
+            }
           })
         }
       >

@@ -5,7 +5,7 @@ import {
   type CapabilityMeta,
   type IntegrationRequirement,
   type StaffRuntime,
-} from "@/lib/packages/capabilities";
+} from "./capabilities.ts";
 
 // Turns a package's capability toggles into the concrete setup checklist:
 // which integrations to connect, which workflow templates to enable, what
@@ -74,6 +74,20 @@ export function computePackageRequirements(
 
 export function requirementsForPackage(
   record: Pick<PartnerPackageRecord, "capabilities">,
+  options: { crmOperatingMode?: string } = {},
 ): PackageRequirements {
-  return computePackageRequirements(enabledCapabilityKeys(record.capabilities));
+  const requirements = computePackageRequirements(
+    enabledCapabilityKeys(record.capabilities),
+  );
+
+  if (options.crmOperatingMode !== "primary_crm") {
+    return requirements;
+  }
+
+  return {
+    ...requirements,
+    integrations: requirements.integrations.filter(
+      (requirement) => requirement.id !== "crm",
+    ),
+  };
 }

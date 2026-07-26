@@ -9,10 +9,10 @@ export type PartnerDeliveryStage =
 
 export function resolvePartnerDeliveryStage(input: {
   packageId: string | null;
-  activeWorkflows: number;
   runtimeMode: string;
   clientStatus: ClientStatus;
   launchStatus: string | null;
+  deploymentStatus: string | null;
 }): PartnerDeliveryStage {
   if (
     input.launchStatus === "live" ||
@@ -22,7 +22,7 @@ export function resolvePartnerDeliveryStage(input: {
   }
 
   if (!input.packageId) return "package";
-  if (input.activeWorkflows === 0) return "setup";
+  if (input.deploymentStatus !== "ready") return "setup";
   if (input.launchStatus === "ready") return "launch";
   return "test";
 }

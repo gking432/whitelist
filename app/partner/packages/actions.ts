@@ -292,6 +292,7 @@ export async function createStarterPackages(): Promise<FormState> {
     }
 
     revalidatePath("/partner/packages");
+    revalidatePath("/partner/clients/new");
 
     return {
       status: "success",
