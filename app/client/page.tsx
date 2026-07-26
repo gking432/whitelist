@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { ClientActionCenter } from "@/components/client/action-center";
@@ -5,7 +6,19 @@ import { loadClientPortal } from "@/lib/clients/portal";
 import { clientHomePath } from "@/lib/permissions/client-sections";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Action Center" };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const portal = await loadClientPortal();
+
+  return {
+    title: {
+      absolute:
+        portal.kind === "ok"
+          ? `Action Center | ${portal.branding.productName}`
+          : "Action Center",
+    },
+  };
+}
 
 export default async function ClientPortalPage() {
   const portal = await loadClientPortal();
