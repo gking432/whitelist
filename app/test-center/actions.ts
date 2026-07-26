@@ -5,7 +5,10 @@ import { revalidatePath } from "next/cache";
 import { getAuthState } from "@/lib/auth/session";
 import type { FormState } from "@/lib/forms/state";
 import { loadClientLaunchContext } from "@/lib/launch/context";
-import { enabledCapabilityKeys, type CapabilityKey } from "@/lib/packages/capabilities";
+import {
+  enabledCapabilityKeys,
+  type CapabilityKey,
+} from "@/lib/packages/capabilities";
 import {
   isAccessError,
   requireClientWorkspaceAccess,
@@ -87,12 +90,28 @@ export async function runFeatureTest(
     });
 
     if (!context.package) {
-      return { status: "error", message: "Assign a package before testing features." };
+      return {
+        status: "error",
+        message: "Assign a package before testing features.",
+      };
+    }
+
+    const setupBlocker = context.readiness.gates.find(
+      (gate) => gate.key !== "tests" && !gate.passed,
+    );
+    if (setupBlocker) {
+      return {
+        status: "error",
+        message: `${setupBlocker.label} is incomplete. Finish client Setup before testing.`,
+      };
     }
 
     const enabled = enabledCapabilityKeys(context.package.capabilities);
     if (!enabled.includes(capabilityKey)) {
-      return { status: "error", message: "This feature is not in the assigned package." };
+      return {
+        status: "error",
+        message: "This feature is not in the assigned package.",
+      };
     }
 
     if (context.readiness.hasLiveRuntime) {
@@ -144,7 +163,8 @@ export async function runFeatureTest(
 
     for (const scenarioKey of definition.scenarioKeys) {
       const scenario = getLabScenario(scenarioKey);
-      if (!scenario) throw new Error(`Test scenario ${scenarioKey} is unavailable.`);
+      if (!scenario)
+        throw new Error(`Test scenario ${scenarioKey} is unavailable.`);
 
       const scenarioExpectedKeys = expectedTemplateKeys.filter((key) =>
         scenario.expectation.templates.includes(key),
@@ -202,7 +222,8 @@ export async function runFeatureTest(
       })
       .eq("id", testRun.id);
 
-    if (finishError) throw new Error("The feature test result could not be saved.");
+    if (finishError)
+      throw new Error("The feature test result could not be saved.");
 
     revalidatePath(`/partner/clients/${clientId}/test-center`);
     revalidatePath("/client/test-center");
@@ -242,7 +263,8 @@ export async function runFeatureTest(
 
     return {
       status: "error",
-      message: error instanceof Error ? error.message : "The feature test failed.",
+      message:
+        error instanceof Error ? error.message : "The feature test failed.",
     };
   }
 }

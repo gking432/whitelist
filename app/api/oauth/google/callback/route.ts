@@ -19,6 +19,7 @@ import {
   requireClientWorkspaceAccess,
 } from "@/lib/permissions/access";
 import { PARTNER_OPERATOR_ROLES } from "@/lib/permissions/roles";
+import { refreshPackageDeploymentReadiness } from "@/lib/packages/deployment";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 // Google OAuth callback for the pilot stack. Google redirects the partner's
@@ -189,6 +190,11 @@ export async function GET(request: NextRequest) {
     )
     .eq("id", connectionId);
 
+  await refreshPackageDeploymentReadiness(admin, {
+    partnerId: connection.partner_id,
+    clientId,
+  });
+
   await recordAuditEvent({
     actor: { ...access, partnerId: connection.partner_id, clientId },
     action: "integration.pilot_oauth_completed",
@@ -199,5 +205,9 @@ export async function GET(request: NextRequest) {
       : `Google Calendar authorized, but the first availability check failed: ${test.detail}`,
   });
 
-  return redirectToPilot(request, clientId, test.ok ? "connected" : "verify_failed");
+  return redirectToPilot(
+    request,
+    clientId,
+    test.ok ? "connected" : "verify_failed",
+  );
 }

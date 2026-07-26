@@ -34,6 +34,7 @@ type PackagePickerProps = {
   currentPackageId: string | null;
   canManage: boolean;
   collapsedByDefault?: boolean;
+  currentPackageProvisioned?: boolean;
 };
 
 export function PackagePicker({
@@ -42,6 +43,7 @@ export function PackagePicker({
   currentPackageId,
   canManage,
   collapsedByDefault = false,
+  currentPackageProvisioned = false,
 }: PackagePickerProps) {
   const [isExpanded, setIsExpanded] = useState(!collapsedByDefault);
   const [selectedId, setSelectedId] = useState<string | null>(currentPackageId);
@@ -70,7 +72,7 @@ export function PackagePicker({
         size="sm"
         onClick={() => setIsExpanded(true)}
       >
-        Deploy, redeploy, or create a custom package
+        Change, redeploy, or create a custom package
       </Button>
     );
   }
@@ -81,8 +83,8 @@ export function PackagePicker({
         <div className="rounded-md border bg-secondary/40 px-4 py-4 text-sm leading-6">
           <p>
             You have no saved packages yet. Create the three common tiers —
-            Basic Automation, AI Assist, Full AI Operations — then pick the
-            one you sold. You can rename or retoggle them any time under{" "}
+            Basic Automation, AI Assist, Full AI Operations — then pick the one
+            you sold. You can rename or retoggle them any time under{" "}
             <span className="font-medium">Packages</span>.
           </p>
           <div className="mt-3 flex items-center gap-3">
@@ -185,10 +187,12 @@ export function PackagePicker({
             {isPending
               ? "Deploying…"
               : selectedId === currentPackageId
-                ? "Redeploy package"
+                ? currentPackageProvisioned
+                  ? "Redeploy package"
+                  : "Provision package"
                 : currentPackageId
-                ? "Switch to this package"
-                : "Deploy this package"}
+                  ? "Switch to this package"
+                  : "Deploy this package"}
           </Button>
         ) : null}
         <Button
@@ -223,8 +227,8 @@ export function PackagePicker({
             Custom package for this client only
           </p>
           <p className="mb-4 mt-1 text-xs text-muted-foreground">
-            Use this when the sold deal doesn&apos;t match a saved package.
-            It is created and assigned in one step.
+            Use this when the sold deal doesn&apos;t match a saved package. It
+            is created and assigned in one step.
           </p>
           <PackageForm
             action={boundCustomCreate}

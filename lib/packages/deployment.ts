@@ -56,6 +56,74 @@ type DeployInput = {
   userId: string;
 };
 
+export async function refreshPackageDeploymentReadiness(
+  supabase: SupabaseClient,
+  input: { partnerId: string; clientId: string },
+): Promise<{
+  status: "ready" | "needs_setup" | null;
+  missingIntegrationIds: string[];
+}> {
+  const { data: client } = await supabase
+    .from("client_businesses")
+    .select("id, package_id, crm_operating_mode")
+    .eq("id", input.clientId)
+    .eq("partner_id", input.partnerId)
+    .maybeSingle();
+
+  if (!client?.package_id) {
+    return { status: null, missingIntegrationIds: [] };
+  }
+
+  const [{ data: packageData }, { data: deployment }] = await Promise.all([
+    supabase
+      .from("partner_packages")
+      .select("*")
+      .eq("id", client.package_id)
+      .eq("partner_id", input.partnerId)
+      .maybeSingle(),
+    supabase
+      .from("client_package_deployments")
+      .select("id")
+      .eq("client_id", input.clientId)
+      .eq("package_id", client.package_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const pkg = packageData as PartnerPackageRecord | null;
+
+  if (!pkg || !deployment) {
+    return { status: null, missingIntegrationIds: [] };
+  }
+
+  const requirements = requirementsForPackage(pkg, {
+    crmOperatingMode: client.crm_operating_mode,
+  });
+  const connections = await loadConnections(supabase, input.clientId);
+  const missing = missingIntegrationRequirements(
+    requirements.integrations,
+    connections,
+  );
+  const status = missing.length === 0 ? "ready" : "needs_setup";
+  const missingIntegrationIds = missing.map((requirement) => requirement.id);
+
+  const { error } = await supabase
+    .from("client_package_deployments")
+    .update({
+      status,
+      missing_integration_ids: missingIntegrationIds,
+      error_message: null,
+    })
+    .eq("id", deployment.id);
+
+  if (error) {
+    throw new Error("Package connection readiness could not be updated.");
+  }
+
+  return { status, missingIntegrationIds };
+}
+
 async function loadConnections(
   supabase: SupabaseClient,
   clientId: string,
@@ -322,7 +390,9 @@ export async function deployPackageToClient(
         );
 
       if (error) {
-        throw new Error("The existing package workflows could not be activated.");
+        throw new Error(
+          "The existing package workflows could not be activated.",
+        );
       }
     }
 

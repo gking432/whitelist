@@ -1,5 +1,15 @@
 import Link from "next/link";
-import { CircleCheck, CircleDashed, MonitorSmartphone } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  MonitorSmartphone,
+  PlugZap,
+  Rocket,
+  Workflow,
+} from "lucide-react";
 
 import { EnablePackageWorkflowsButton } from "@/components/partner/enable-package-workflows-button";
 import { LeadSourceWizard } from "@/components/partner/lead-source-wizard";
@@ -8,14 +18,17 @@ import {
   type PackageOption,
 } from "@/components/partner/package-picker";
 import { PilotProviderCard } from "@/components/partner/pilot-provider-card";
-import { TestLeadButton } from "@/components/partner/test-lead-button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import {
   emptyIntakeAnswers,
   type IntakeAnswers,
 } from "@/lib/lead-sources/catalog";
-import { PILOT_PROVIDERS, type PilotProviderKey } from "@/lib/integrations/pilot";
+import {
+  PILOT_PROVIDERS,
+  type PilotProviderKey,
+} from "@/lib/integrations/pilot";
 import { getAppUrl } from "@/lib/env";
 import { googleRedirectUri } from "@/lib/integrations/providers/google-calendar";
 import {
@@ -27,6 +40,10 @@ import {
   requirementsForPackage,
   type PartnerPackageRecord,
 } from "@/lib/packages/requirements";
+import {
+  missingIntegrationRequirements,
+  type DeploymentReadinessConnection,
+} from "@/lib/packages/deployment-readiness";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata = {
@@ -81,15 +98,14 @@ const googleOutcomeMessages: Record<string, { ok: boolean; text: string }> = {
 
 // Which connectable providers fulfil each requirement category today.
 // Multiple entries mean "connect one of these" (e.g. either CRM).
-const CATEGORY_TO_PILOT_PROVIDERS: Partial<
-  Record<string, PilotProviderKey[]>
-> = {
-  crm: ["hubspot", "gohighlevel"],
-  sms: ["twilio"],
-  phone: ["twilio"],
-  email: ["resend"],
-  calendar: ["google_calendar"],
-};
+const CATEGORY_TO_PILOT_PROVIDERS: Partial<Record<string, PilotProviderKey[]>> =
+  {
+    crm: ["hubspot", "gohighlevel"],
+    sms: ["twilio"],
+    phone: ["twilio"],
+    email: ["resend"],
+    calendar: ["google_calendar"],
+  };
 
 type PageProps = {
   params: Promise<{ clientId: string }>;
@@ -156,7 +172,10 @@ function StepBadge({ done, label }: { done: boolean; label?: string }) {
       {label ?? "Done"}
     </Badge>
   ) : (
-    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900">
+    <Badge
+      variant="outline"
+      className="border-amber-200 bg-amber-50 text-amber-900"
+    >
       <CircleDashed className="size-3" aria-hidden="true" />
       {label ?? "Needs action"}
     </Badge>
@@ -188,34 +207,34 @@ export default async function ClientSetupPage({
     { data: instancesData },
     { data: deploymentData },
   ] = await Promise.all([
-      supabase
-        .from("partner_packages")
-        .select("*")
-        .eq("partner_id", client.partner_id)
-        .eq("is_archived", false)
-        .or(`client_id.is.null,client_id.eq.${clientId}`)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("integration_connections")
-        .select(
-          "id, status, runtime_mode, credential_status, health_summary, last_success_at, provider:integration_providers(provider_key, category, supports_inbound)",
-        )
-        .eq("client_id", clientId)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("client_workflow_instances")
-        .select("id, status, template:workflow_templates(template_key, name)")
-        .eq("client_id", clientId),
-      supabase
-        .from("client_package_deployments")
-        .select(
-          "id, package_id, package_name, status, provisioned_workflow_keys, required_integration_ids, missing_integration_ids, bridge_connection_id, error_message, deployed_at, created_at",
-        )
-        .eq("client_id", clientId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+    supabase
+      .from("partner_packages")
+      .select("*")
+      .eq("partner_id", client.partner_id)
+      .eq("is_archived", false)
+      .or(`client_id.is.null,client_id.eq.${clientId}`)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("integration_connections")
+      .select(
+        "id, status, runtime_mode, credential_status, health_summary, last_success_at, provider:integration_providers(provider_key, category, supports_inbound)",
+      )
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("client_workflow_instances")
+      .select("id, status, template:workflow_templates(template_key, name)")
+      .eq("client_id", clientId),
+    supabase
+      .from("client_package_deployments")
+      .select(
+        "id, package_id, package_name, status, provisioned_workflow_keys, required_integration_ids, missing_integration_ids, bridge_connection_id, error_message, deployed_at, created_at",
+      )
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   const packages = (packagesData ?? []) as PartnerPackageRecord[];
   const connections = (connectionsData ?? []) as unknown as ConnectionRow[];
@@ -243,13 +262,6 @@ export default async function ClientSetupPage({
     isCustomForThisClient: pkg.client_id === clientId,
   }));
 
-  // Lead intake status: any inbound-capable connection, or at least a saved
-  // wizard plan.
-  const hasInboundConnection = connections.some(
-    (connection) =>
-      connection.provider?.supports_inbound &&
-      connection.status !== "disabled",
-  );
   const profile =
     (client.lead_source_profile as {
       answers?: IntakeAnswers;
@@ -266,15 +278,6 @@ export default async function ClientSetupPage({
       activeConnectionByProviderKey.set(key, connection);
     }
   }
-
-  const connectedCategories = new Set(
-    connections
-      .filter((connection) =>
-        ["connected", "needs_attention"].includes(connection.status),
-      )
-      .map((connection) => connection.provider?.category)
-      .filter(Boolean),
-  );
 
   const enabledTemplateKeys = new Set(
     instances
@@ -315,24 +318,97 @@ export default async function ClientSetupPage({
   const deploymentStatus = latestDeployment
     ? deploymentStatusMeta[latestDeployment.status]
     : null;
-  const missingDeploymentLabels =
-    latestDeployment?.missing_integration_ids.map(
-      (id) =>
-        requirements?.integrations.find((requirement) => requirement.id === id)
-          ?.label ?? id.replaceAll("_", " "),
+  const connectableRequirements =
+    requirements?.integrations.filter(
+      (requirement) => requirement.connectableToday,
     ) ?? [];
+  const missingRequirements = missingIntegrationRequirements(
+    connectableRequirements,
+    connections as unknown as DeploymentReadinessConnection[],
+  );
+  const missingRequirementIds = new Set(
+    missingRequirements.map((requirement) => requirement.id),
+  );
+  const leadSourceReady =
+    !leadSourceRequired || !missingRequirementIds.has("lead_source");
+  const providerRequirements = integrationRequirements.filter(
+    (requirement) => requirement.connectableToday,
+  );
+  const providerConnectionsReady = providerRequirements.every(
+    (requirement) => !missingRequirementIds.has(requirement.id),
+  );
+  const packageProvisioned = Boolean(
+    assignedPackage &&
+    latestDeployment?.package_id === assignedPackage.id &&
+    ["needs_setup", "ready"].includes(latestDeployment.status),
+  );
+  const workflowsReady = requiredTemplates.length === 0 || allWorkflowsEnabled;
+  const connectionsReady =
+    packageProvisioned && leadSourceReady && providerConnectionsReady;
+  const setupReady =
+    Boolean(assignedPackage) &&
+    packageProvisioned &&
+    connectionsReady &&
+    workflowsReady;
+  const completedConnectionCount =
+    connectableRequirements.length - missingRequirements.length;
+  const firstMissingRequirement = missingRequirements[0] ?? null;
+  const setupBlockers = [
+    !assignedPackage
+      ? "Choose the package the client purchased."
+      : !packageProvisioned
+        ? "Provision the selected package in sandbox."
+        : null,
+    packageProvisioned && !leadSourceReady
+      ? "Finish the lead intake connection."
+      : null,
+    packageProvisioned && !providerConnectionsReady
+      ? `Connect ${missingRequirements
+          .filter((requirement) => requirement.id !== "lead_source")
+          .map((requirement) => requirement.label)
+          .join(", ")}.`
+      : null,
+    packageProvisioned && !workflowsReady
+      ? "Enable every workflow included in the package."
+      : null,
+  ].filter((item): item is string => Boolean(item));
+  const nextAction =
+    !assignedPackage || !packageProvisioned
+      ? {
+          href: "#provision",
+          label: assignedPackage ? "Provision package" : "Choose a package",
+          detail: assignedPackage
+            ? "Create the sandbox workflows and connection plan."
+            : "Start with exactly what the client purchased.",
+        }
+      : firstMissingRequirement
+        ? {
+            href: "#connections",
+            label: `Connect ${firstMissingRequirement.label}`,
+            detail:
+              "Open the first missing account and verify its credentials.",
+          }
+        : !workflowsReady
+          ? {
+              href: "#provision",
+              label: "Enable package workflows",
+              detail: "Turn on every workflow included in the package.",
+            }
+          : {
+              href: `${base}/test-center`,
+              label: "Open Test Center",
+              detail: "Setup is complete. Run the guided package tests next.",
+            };
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-lg border bg-card p-6">
-        <h2 className="font-semibold">Setup for {client.name}</h2>
+    <div className="space-y-6">
+      <header>
+        <h2 className="text-xl font-semibold">Set up {client.name}</h2>
         <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Pick the package you sold, and Northstar provisions its workflows and
-          automation bridge in sandbox. This checklist shows what to connect,
-          what the client&apos;s staff need installed, and what to test before
-          go-live.
+          Provision the package, connect the client&apos;s accounts, review what
+          staff need, then hand the finished setup to Test Center.
         </p>
-      </section>
+      </header>
 
       {googleOutcome ? (
         <div
@@ -346,173 +422,340 @@ export default async function ClientSetupPage({
         </div>
       ) : null}
 
-      {/* Step 1 — package */}
-      <section className="rounded-lg border bg-card p-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-semibold">1. Which package did you sell?</h3>
+      <section
+        aria-label="Setup progress"
+        className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-4"
+      >
+        {[
+          {
+            label: "1. Provision",
+            detail: packageProvisioned
+              ? (assignedPackage?.name ?? "Package ready")
+              : "Package and workflows",
+            done: packageProvisioned,
+            icon: Workflow,
+          },
+          {
+            label: "2. Connect",
+            detail: `${completedConnectionCount}/${connectableRequirements.length} accounts ready`,
+            done: connectionsReady,
+            icon: PlugZap,
+          },
+          {
+            label: "3. Install",
+            detail:
+              requirements?.staffRuntimes.length === 0
+                ? "No staff install"
+                : `${requirements?.staffRuntimes.length ?? 0} staff requirement${
+                    requirements?.staffRuntimes.length === 1 ? "" : "s"
+                  }`,
+            done: Boolean(assignedPackage),
+            icon: MonitorSmartphone,
+          },
+          {
+            label: "4. Test",
+            detail: setupReady ? "Ready to test" : "Waiting on setup",
+            done: setupReady,
+            icon: Rocket,
+          },
+        ].map((step, index) => {
+          const Icon = step.icon;
+
+          return (
+            <div
+              key={step.label}
+              className={`flex min-w-0 items-center gap-3 px-4 py-4 ${
+                index > 0 ? "border-t xl:border-l xl:border-t-0" : ""
+              } ${index % 2 === 1 ? "sm:border-l" : ""} ${
+                index >= 2 ? "sm:border-t" : "sm:border-t-0"
+              }`}
+            >
+              <span
+                className={`flex size-9 shrink-0 items-center justify-center rounded-md ${
+                  step.done
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-secondary text-muted-foreground"
+                }`}
+              >
+                <Icon className="size-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">{step.label}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {step.detail}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      <section className="flex flex-col gap-3 border-l-4 border-primary bg-primary/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">
+            Next action
+          </p>
+          <p className="mt-1 font-semibold">{nextAction.label}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {nextAction.detail}
+          </p>
+        </div>
+        <Button asChild className="shrink-0">
+          <Link href={nextAction.href}>
+            {nextAction.label}
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        </Button>
+      </section>
+
+      <section id="provision" className="scroll-mt-20 border-t pt-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">
+              Step 1
+            </p>
+            <h3 className="mt-1 text-lg font-semibold">
+              Provision the package
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Confirm what was sold and create its workflows in sandbox.
+            </p>
+          </div>
           <StepBadge
-            done={Boolean(assignedPackage)}
-            label={assignedPackage ? assignedPackage.name : "Choose a package"}
+            done={packageProvisioned}
+            label={
+              packageProvisioned
+                ? "Provisioned"
+                : assignedPackage
+                  ? "Provision required"
+                  : "Package required"
+            }
           />
         </div>
-        <div className="mt-3">
-          {assignedPackage ? (
-            <>
-              <div className="flex flex-wrap gap-1.5">
-                {enabledCapabilityKeys(assignedPackage.capabilities).map(
-                  (key) => (
-                    <Badge key={key} variant="outline">
-                      {requirements?.capabilities.find(
-                        (capability) => capability.key === key,
-                      )?.label ?? key}
-                    </Badge>
-                  ),
-                )}
-              </div>
-              {latestDeployment && deploymentStatus ? (
-                <div className="mt-4 space-y-2 border-l-2 border-primary/40 pl-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold">
-                      Latest deployment: {latestDeployment.package_name}
-                    </p>
-                    <Badge
-                      variant="outline"
-                      className={deploymentStatus.className}
-                    >
-                      {deploymentStatus.label}
-                    </Badge>
-                  </div>
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    {latestDeployment.provisioned_workflow_keys.length} workflow
-                    {latestDeployment.provisioned_workflow_keys.length === 1
-                      ? ""
-                      : "s"}{" "}
-                    provisioned
-                    {latestDeployment.bridge_connection_id
-                      ? "; automation intake bridge ready"
-                      : ""}
-                    . Last run{" "}
-                    {new Date(
-                      latestDeployment.deployed_at ??
-                        latestDeployment.created_at,
-                    ).toLocaleString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                    .
-                  </p>
-                  {missingDeploymentLabels.length > 0 ? (
-                    <p className="text-xs leading-5 text-amber-900">
-                      Connect before go-live:{" "}
-                      {missingDeploymentLabels.join(", ")}.{" "}
-                      <Link href={`${base}/integrations`} className="underline">
-                        Open integrations
-                      </Link>
-                      .
-                    </p>
-                  ) : null}
-                  {latestDeployment.error_message ? (
-                    <p className="text-xs leading-5 text-destructive">
-                      {latestDeployment.error_message}
-                    </p>
-                  ) : null}
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.6fr)]">
+          <div className="min-w-0">
+            {assignedPackage ? (
+              <div className="mb-4">
+                <p className="font-semibold">{assignedPackage.name}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {enabledCapabilityKeys(assignedPackage.capabilities).map(
+                    (key) => (
+                      <Badge key={key} variant="outline">
+                        {requirements?.capabilities.find(
+                          (capability) => capability.key === key,
+                        )?.label ?? key}
+                      </Badge>
+                    ),
+                  )}
                 </div>
-              ) : (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  This package was selected during onboarding. Provision it
-                  below to create the sandbox workflows and connection plan.
-                </p>
-              )}
-            </>
-          ) : null}
-          <div className={assignedPackage ? "mt-4" : "mt-1"}>
+              </div>
+            ) : null}
+
             <PackagePicker
               clientId={clientId}
               options={options}
               currentPackageId={client.package_id}
               canManage={access.canManageIntegrations}
-              collapsedByDefault={Boolean(assignedPackage)}
+              collapsedByDefault={packageProvisioned}
+              currentPackageProvisioned={packageProvisioned}
             />
-          </div>
-        </div>
-      </section>
 
-      {assignedPackage && requirements ? (
-        <>
-          {/* Honest limits for what was sold */}
-          {requirements.limitations.length > 0 ? (
-            <section className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3">
-              <p className="text-sm font-semibold text-sky-900">
-                Sold ahead of the product — what works today
+            {latestDeployment && deploymentStatus ? (
+              <div className="mt-4 border-l-2 border-primary/40 pl-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold">
+                    Latest deployment: {latestDeployment.package_name}
+                  </p>
+                  <Badge
+                    variant="outline"
+                    className={deploymentStatus.className}
+                  >
+                    {deploymentStatus.label}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {latestDeployment.provisioned_workflow_keys.length} workflow
+                  {latestDeployment.provisioned_workflow_keys.length === 1
+                    ? ""
+                    : "s"}{" "}
+                  provisioned
+                  {latestDeployment.bridge_connection_id
+                    ? "; automation intake bridge ready"
+                    : ""}
+                  . Last run{" "}
+                  {new Date(
+                    latestDeployment.deployed_at ?? latestDeployment.created_at,
+                  ).toLocaleString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                  .
+                </p>
+                {latestDeployment.error_message ? (
+                  <p className="mt-1 text-xs text-destructive">
+                    {latestDeployment.error_message}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="border-l pl-5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">Included workflows</p>
+              <StepBadge
+                done={workflowsReady}
+                label={workflowsReady ? "Enabled" : "Needs action"}
+              />
+            </div>
+            {requiredTemplates.length === 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                No automated workflows are included.
               </p>
-              <ul className="mt-1.5 space-y-1 text-sm leading-5 text-sky-900/90">
-                {requirements.limitations.map(({ capability, note }) => (
-                  <li key={capability.key}>
-                    <span className="font-medium">{capability.label}:</span>{" "}
-                    {note}
+            ) : (
+              <ul className="mt-3 space-y-2 text-sm">
+                {requiredTemplates.map((template) => (
+                  <li key={template.key} className="flex items-start gap-2">
+                    {template.enabled ? (
+                      <CircleCheck
+                        className="mt-0.5 size-4 shrink-0 text-emerald-600"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <CircleDashed
+                        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span>
+                      {template.name ?? template.key.replaceAll("_", " ")}
+                    </span>
                   </li>
                 ))}
               </ul>
-            </section>
-          ) : null}
-
-          {/* Step 2 — lead intake */}
-          {leadSourceRequired ? (
-            <section className="rounded-lg border bg-card p-6">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">2. Set up the lead intake</h3>
-                <StepBadge
-                  done={hasInboundConnection}
-                  label={
-                    hasInboundConnection
-                      ? "Intake connected"
-                      : savedAnswers
-                        ? "Plan saved — finish connecting"
-                        : "Needs action"
-                  }
+            )}
+            {access.canManageWorkflows &&
+            packageProvisioned &&
+            !workflowsReady ? (
+              <div className="mt-4">
+                <EnablePackageWorkflowsButton
+                  clientId={clientId}
+                  label="Enable package workflows"
                 />
               </div>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Where this client&apos;s leads come from. Use the wizard at
-                the bottom of this page — it asks plain questions and creates
-                the intake connection for you.{" "}
-                <a href="#lead-source-wizard" className="underline">
-                  Jump to the lead source wizard
-                </a>
+            ) : null}
+            {requiredTemplates.length > 0 ? (
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                Fine-tune enabled workflows under{" "}
+                <Link href={`${base}/workflows`} className="underline">
+                  Workflows
+                </Link>
                 .
               </p>
-            </section>
-          ) : null}
+            ) : null}
+          </div>
+        </div>
 
-          {/* Step 3 — required integrations */}
-          <section className="space-y-4">
-            <div className="rounded-lg border bg-card p-6">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">
-                  {leadSourceRequired ? "3" : "2"}. Connect the required
-                  integrations
-                </h3>
-                <StepBadge
-                  done={integrationRequirements
-                    .filter((requirement) => requirement.connectableToday)
-                    .every((requirement) =>
-                      connectedCategories.has(requirement.category ?? ""),
-                    )}
-                />
-              </div>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Only what this package needs. Every connection starts in dry
-                run — nothing real is sent until you switch it to live.
-              </p>
-              {integrationRequirements.length === 0 ? (
-                <p className="mt-3 text-sm text-muted-foreground">
-                  This package needs no provider connections beyond the lead
-                  intake.
-                </p>
-              ) : null}
-            </div>
+        {requirements && requirements.limitations.length > 0 ? (
+          <details className="mt-5 border-t pt-4 text-sm">
+            <summary className="cursor-pointer font-medium text-muted-foreground">
+              Current capability notes
+            </summary>
+            <ul className="mt-3 space-y-2 text-sm leading-5 text-muted-foreground">
+              {requirements.limitations.map(({ capability, note }) => (
+                <li key={capability.key}>
+                  <span className="font-medium text-foreground">
+                    {capability.label}:
+                  </span>{" "}
+                  {note}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </section>
+
+      <section id="connections" className="scroll-mt-20 border-t pt-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">
+              Step 2
+            </p>
+            <h3 className="mt-1 text-lg font-semibold">
+              Connect the client&apos;s accounts
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Open only the account you are connecting. Every provider stays in
+              dry run until launch.
+            </p>
+          </div>
+          <StepBadge
+            done={connectionsReady}
+            label={
+              connectionsReady
+                ? "All connected"
+                : `${completedConnectionCount}/${connectableRequirements.length} ready`
+            }
+          />
+        </div>
+
+        {!packageProvisioned ? (
+          <div className="mt-5 flex items-start gap-3 border border-dashed px-4 py-4 text-sm text-muted-foreground">
+            <CircleAlert
+              className="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            Provision the package first. Its exact account requirements will
+            appear here.
+          </div>
+        ) : requirements ? (
+          <div className="mt-5 space-y-3">
+            {leadSourceRequired ? (
+              <details
+                className="group overflow-hidden rounded-lg border bg-card"
+                open={
+                  !leadSourceReady &&
+                  firstMissingRequirement?.id === "lead_source"
+                }
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">Lead intake</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Choose where new leads enter the automation.
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <StepBadge
+                      done={leadSourceReady}
+                      label={
+                        leadSourceReady
+                          ? "Connected"
+                          : savedAnswers
+                            ? "Finish connection"
+                            : "Needs action"
+                      }
+                    />
+                    <ChevronDown
+                      className="size-4 transition-transform group-open:rotate-180"
+                      aria-hidden="true"
+                    />
+                  </div>
+                </summary>
+                <div className="border-t p-4">
+                  <LeadSourceWizard
+                    clientId={client.id}
+                    clientName={client.name}
+                    initialAnswers={savedAnswers ?? emptyIntakeAnswers}
+                    hasSavedPlan={Boolean(savedAnswers)}
+                    canManage={access.canManageIntegrations}
+                  />
+                </div>
+              </details>
+            ) : null}
 
             {integrationRequirements.map((requirement) => {
               if (
@@ -527,65 +770,108 @@ export default async function ClientSetupPage({
                 : [];
 
               if (pilotKeys.length > 0 && requirement.connectableToday) {
-                // If one option in the group is already connected, show only
-                // that one; otherwise offer every option ("connect one").
                 const connectedKey = pilotKeys.find((key) =>
                   activeConnectionByProviderKey.has(key),
                 );
                 const keysToShow = connectedKey ? [connectedKey] : pilotKeys;
+                const requirementReady = !missingRequirementIds.has(
+                  requirement.id,
+                );
 
                 return (
-                  <div key={requirement.id} className="space-y-4">
-                    {keysToShow.length > 1 ? (
-                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                        {requirement.label}: connect one of the following
-                      </p>
-                    ) : null}
+                  <div key={requirement.id} className="space-y-3">
                     {keysToShow.map((pilotKey) => {
                       const meta = PILOT_PROVIDERS[pilotKey];
                       const connection =
                         activeConnectionByProviderKey.get(pilotKey) ?? null;
+                      const connected = connection?.status === "connected";
+                      const isAlternative =
+                        keysToShow.length > 1 && pilotKey !== keysToShow[0];
 
                       return (
-                        <PilotProviderCard
+                        <details
                           key={pilotKey}
-                          clientId={clientId}
-                          meta={meta}
-                          connection={
-                            connection
-                              ? {
-                                  id: connection.id,
-                                  status: connection.status,
-                                  runtime_mode: connection.runtime_mode,
-                                  credential_status:
-                                    connection.credential_status,
-                                  health_summary: connection.health_summary,
-                                  last_success_at: connection.last_success_at,
+                          className="group overflow-hidden rounded-lg border bg-card"
+                          open={
+                            !requirementReady &&
+                            firstMissingRequirement?.id === requirement.id &&
+                            pilotKey === keysToShow[0]
+                          }
+                        >
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold">
+                                {meta.title}
+                                {keysToShow.length > 1 ? (
+                                  <span className="ml-1 font-normal text-muted-foreground">
+                                    for {requirement.label}
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {meta.tagline}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <StepBadge
+                                done={connected}
+                                label={
+                                  connected
+                                    ? "Connected"
+                                    : isAlternative
+                                      ? "Alternative"
+                                      : "Needs action"
                                 }
-                              : null
-                          }
-                          oauthRedirectUri={
-                            pilotKey === "google_calendar"
-                              ? googleRedirectUri()
-                              : undefined
-                          }
-                          inboundWebhookUrl={
-                            pilotKey === "twilio" && connection
-                              ? `${getAppUrl()}/api/integrations/inbound/twilio/${connection.id}`
-                              : undefined
-                          }
-                          voiceWebhookUrl={
-                            pilotKey === "twilio" && connection
-                              ? `${getAppUrl()}/api/integrations/inbound/twilio-voice/${connection.id}`
-                              : undefined
-                          }
-                          voiceStatusUrl={
-                            pilotKey === "twilio" && connection
-                              ? `${getAppUrl()}/api/integrations/inbound/twilio-voice/${connection.id}/status`
-                              : undefined
-                          }
-                          canManage={access.canManageIntegrations}
-                        />
+                              />
+                              <ChevronDown
+                                className="size-4 transition-transform group-open:rotate-180"
+                                aria-hidden="true"
+                              />
+                            </div>
+                          </summary>
+                          <div className="border-t">
+                            <PilotProviderCard
+                              clientId={clientId}
+                              meta={meta}
+                              connection={
+                                connection
+                                  ? {
+                                      id: connection.id,
+                                      status: connection.status,
+                                      runtime_mode: connection.runtime_mode,
+                                      credential_status:
+                                        connection.credential_status,
+                                      health_summary: connection.health_summary,
+                                      last_success_at:
+                                        connection.last_success_at,
+                                    }
+                                  : null
+                              }
+                              oauthRedirectUri={
+                                pilotKey === "google_calendar"
+                                  ? googleRedirectUri()
+                                  : undefined
+                              }
+                              inboundWebhookUrl={
+                                pilotKey === "twilio" && connection
+                                  ? `${getAppUrl()}/api/integrations/inbound/twilio/${connection.id}`
+                                  : undefined
+                              }
+                              voiceWebhookUrl={
+                                pilotKey === "twilio" && connection
+                                  ? `${getAppUrl()}/api/integrations/inbound/twilio-voice/${connection.id}`
+                                  : undefined
+                              }
+                              voiceStatusUrl={
+                                pilotKey === "twilio" && connection
+                                  ? `${getAppUrl()}/api/integrations/inbound/twilio-voice/${connection.id}/status`
+                                  : undefined
+                              }
+                              canManage={access.canManageIntegrations}
+                              embedded
+                            />
+                          </div>
+                        </details>
                       );
                     })}
                   </div>
@@ -593,192 +879,129 @@ export default async function ClientSetupPage({
               }
 
               return (
-                <section
+                <div
                   key={requirement.id}
-                  className="rounded-lg border border-dashed bg-card p-6"
+                  className="flex flex-col gap-2 rounded-lg border border-dashed bg-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h4 className="font-semibold">{requirement.label}</h4>
-                    <Badge
-                      variant="outline"
-                      className="border-slate-200 bg-slate-100 text-slate-600"
-                    >
-                      No adapter yet
-                    </Badge>
+                  <div>
+                    <p className="text-sm font-semibold">{requirement.label}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {requirement.purpose} {requirement.recommended}
+                    </p>
                   </div>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    {requirement.purpose} {requirement.recommended}
-                  </p>
-                </section>
+                  <Badge
+                    variant="outline"
+                    className="w-fit border-slate-200 bg-slate-100 text-slate-600"
+                  >
+                    Manual setup
+                  </Badge>
+                </div>
               );
             })}
-          </section>
+            {connectableRequirements.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                This package does not require provider connections.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
 
-          {/* Step 4 — workflows */}
-          <section className="rounded-lg border bg-card p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-semibold">
-                {leadSourceRequired ? "4" : "3"}. Included workflows
-              </h3>
-              <StepBadge
-                done={allWorkflowsEnabled || requiredTemplates.length === 0}
-                label={
-                  requiredTemplates.length === 0
-                    ? "None needed"
-                    : allWorkflowsEnabled
-                      ? "All enabled"
-                      : "Needs action"
-                }
-              />
-            </div>
-            {requiredTemplates.length === 0 ? (
+      <section className="border-t pt-6">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+            <MonitorSmartphone className="size-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">
+              Step 3
+            </p>
+            <h3 className="mt-1 text-lg font-semibold">
+              Review the staff install
+            </h3>
+            {!requirements ? (
               <p className="mt-2 text-sm text-muted-foreground">
-                This package includes no automated workflows.
+                Staff requirements appear after a package is selected.
+              </p>
+            ) : requirements.staffRuntimes.length === 0 ? (
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Nothing to install. This package runs in the background.
               </p>
             ) : (
-              <>
-                <ul className="mt-3 space-y-1.5 text-sm">
-                  {requiredTemplates.map((template) => (
-                    <li
-                      key={template.key}
-                      className="flex items-center gap-2"
-                    >
-                      {template.enabled ? (
-                        <CircleCheck
-                          className="size-4 text-emerald-600"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <CircleDashed
-                          className="size-4 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span>
-                        {template.name ??
-                          template.key.replaceAll("_", " ")}
-                      </span>
-                    </li>
+              <ul className="mt-3 space-y-3 text-sm leading-6">
+                {requirements.staffRuntimes.map((runtime) => (
+                  <li key={runtime}>
+                    <span className="font-medium">
+                      {STAFF_RUNTIME_LABELS[runtime].label}:
+                    </span>{" "}
+                    <span className="text-muted-foreground">
+                      {STAFF_RUNTIME_LABELS[runtime].detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section
+        className={`border-t px-4 pt-6 ${
+          setupReady
+            ? "border-emerald-300 bg-emerald-50/60"
+            : "border-amber-200 bg-amber-50/50"
+        } pb-5`}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            {setupReady ? (
+              <CircleCheck
+                className="mt-0.5 size-5 shrink-0 text-emerald-700"
+                aria-hidden="true"
+              />
+            ) : (
+              <CircleDashed
+                className="mt-0.5 size-5 shrink-0 text-amber-800"
+                aria-hidden="true"
+              />
+            )}
+            <div>
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
+                Step 4
+              </p>
+              <h3 className="mt-1 font-semibold">
+                {setupReady
+                  ? "Ready for Test Center"
+                  : "Finish setup before testing"}
+              </h3>
+              {setupReady ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The package, accounts, and workflows are ready for guided
+                  testing.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {setupBlockers.map((blocker) => (
+                    <li key={blocker}>{blocker}</li>
                   ))}
                 </ul>
-                {access.canManageWorkflows && !allWorkflowsEnabled ? (
-                  <div className="mt-4">
-                    <EnablePackageWorkflowsButton
-                      clientId={clientId}
-                      label="Enable this package's workflows"
-                    />
-                  </div>
-                ) : null}
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Package deployment activates these in sandbox with approval
-                  gates on. Fine-tune each one under{" "}
-                  <Link href={`${base}/workflows`} className="underline">
-                    Workflows
-                  </Link>
-                  .
-                </p>
-              </>
-            )}
-          </section>
-
-          {/* Step 5 — staff runtime */}
-          <section className="rounded-lg border bg-card p-6">
-            <div className="flex items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <MonitorSmartphone className="size-5" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold">
-                  What the client&apos;s staff need to run
-                </h3>
-                {requirements.staffRuntimes.length === 0 ? (
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    Nothing. This package runs entirely in the background — no
-                    desktop app, no browser extension, no installs.
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-2 text-sm leading-6">
-                    {requirements.staffRuntimes.map((runtime) => (
-                      <li key={runtime}>
-                        <span className="font-medium">
-                          {STAFF_RUNTIME_LABELS[runtime].label}:
-                        </span>{" "}
-                        <span className="text-muted-foreground">
-                          {STAFF_RUNTIME_LABELS[runtime].detail}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {!requirements.staffRuntimes.includes(
-                  "browser_extension_or_desktop",
-                ) ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    No desktop app is required for this package.
-                  </p>
-                ) : null}
-              </div>
+              )}
             </div>
-          </section>
-
-          {/* Step 6 — test */}
-          <section className="rounded-lg border bg-card p-6">
-            <h3 className="font-semibold">Run a test lead before go-live</h3>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Fire a realistic sample lead through the real pipeline and watch
-              it move: AI analysis, a customer-facing draft, and the built-in
-              CRM entry. Nothing real is sent — every connection stays in dry
-              run until you switch it to live, so this is safe to run now with
-              nothing connected. Once you connect a provider and go live, the
-              authorized client staff make any required customer-facing decisions.
-            </p>
-            {access.canManageWorkflows ? (
-              <div className="mt-4">
-                <TestLeadButton clientId={clientId} />
-              </div>
-            ) : (
-              <p className="mt-3 text-xs text-muted-foreground">
-                Your role can view results but not fire test leads.
-              </p>
-            )}
-            <p className="mt-3 text-xs text-muted-foreground">
-              After it runs you&apos;ll land on the run detail. Also check{" "}
-              <Link href={`${base}/approvals`} className="underline">
-                Approvals
-              </Link>{" "}
-              for the client-owned decision status and{" "}
-              <Link href={`${base}/crm`} className="underline">
-                CRM
-              </Link>{" "}
-              for the new contact. Prefer curl? The manual script is in{" "}
-              <code className="rounded bg-secondary px-1 py-0.5 text-xs">
-                docs/13-real-world-pilot-test-plan.md
-              </code>
-              .
-            </p>
-          </section>
-        </>
-      ) : (
-        <section className="rounded-lg border border-dashed bg-card p-6">
-          <p className="text-sm leading-6 text-muted-foreground">
-            Choose a package above and the rest of the checklist appears:
-            required integrations, workflow packs, staff installs, and the
-            go-live test.
-          </p>
-        </section>
-      )}
-
-      {assignedPackage && leadSourceRequired ? (
-        <div id="lead-source-wizard">
-          <LeadSourceWizard
-            clientId={client.id}
-            clientName={client.name}
-            initialAnswers={savedAnswers ?? emptyIntakeAnswers}
-            hasSavedPlan={Boolean(savedAnswers)}
-            canManage={access.canManageIntegrations}
-          />
+          </div>
+          {setupReady ? (
+            <Button asChild className="shrink-0">
+              <Link href={`${base}/test-center`}>
+                Continue to Test Center
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          ) : (
+            <Button disabled className="shrink-0">
+              Test Center locked
+            </Button>
+          )}
         </div>
-      ) : null}
+      </section>
     </div>
   );
 }

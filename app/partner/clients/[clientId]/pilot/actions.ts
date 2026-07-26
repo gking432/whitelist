@@ -39,6 +39,7 @@ import {
   requireClientWorkspaceAccess,
 } from "@/lib/permissions/access";
 import { PARTNER_OPERATOR_ROLES } from "@/lib/permissions/roles";
+import { refreshPackageDeploymentReadiness } from "@/lib/packages/deployment";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -98,7 +99,10 @@ async function ensurePilotConnection(input: {
     .maybeSingle();
 
   if (!provider) {
-    return { error: "This provider is not available yet. Apply the latest database migrations." } as const;
+    return {
+      error:
+        "This provider is not available yet. Apply the latest database migrations.",
+    } as const;
   }
 
   const { data: existing } = await supabase
@@ -135,7 +139,9 @@ async function ensurePilotConnection(input: {
     .single();
 
   if (insertError || !created) {
-    return { error: "The connection could not be created. Try again." } as const;
+    return {
+      error: "The connection could not be created. Try again.",
+    } as const;
   }
 
   return { connectionId: created.id as string, created: true } as const;
@@ -288,6 +294,11 @@ export async function connectPilotProvider(
         last_success_at: new Date().toISOString(),
       })
       .eq("id", ensured.connectionId);
+
+    await refreshPackageDeploymentReadiness(supabase, {
+      partnerId: access.partnerId!,
+      clientId,
+    });
 
     await recordAuditEvent({
       actor: access,
@@ -483,11 +494,10 @@ export async function testPilotConnection(
         ? await testHubSpotConnection(credentials)
         : { ok: false, detail: "No credentials stored yet. Connect first." };
     } else if (providerKey === "gohighlevel") {
-      const credentials =
-        await readProviderCredentials<GoHighLevelCredentials>(
-          admin,
-          connectionId,
-        );
+      const credentials = await readProviderCredentials<GoHighLevelCredentials>(
+        admin,
+        connectionId,
+      );
 
       result =
         credentials?.privateToken && credentials.locationId
@@ -552,6 +562,11 @@ export async function testPilotConnection(
             },
       )
       .eq("id", connectionId);
+
+    await refreshPackageDeploymentReadiness(supabase, {
+      partnerId: access.partnerId!,
+      clientId,
+    });
 
     revalidatePath(`/partner/clients/${clientId}/setup`);
 

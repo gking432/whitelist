@@ -40,6 +40,7 @@ type PilotProviderCardProps = {
   voiceWebhookUrl?: string;
   voiceStatusUrl?: string;
   canManage: boolean;
+  embedded?: boolean;
 };
 
 const statusStyles: Record<string, string> = {
@@ -60,6 +61,7 @@ export function PilotProviderCard({
   voiceWebhookUrl,
   voiceStatusUrl,
   canManage,
+  embedded = false,
 }: PilotProviderCardProps) {
   const isGoogle = meta.connectMethod === "oauth";
   const boundConnect = isGoogle
@@ -79,44 +81,52 @@ export function PilotProviderCard({
   const isLive = connection?.runtime_mode === "live";
 
   return (
-    <section className="rounded-lg border bg-card p-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="font-semibold">{meta.title}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{meta.tagline}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {connection ? (
-            <>
+    <section
+      className={cn(
+        embedded
+          ? "bg-card px-4 pb-5 pt-2 sm:px-5"
+          : "rounded-lg border bg-card p-6",
+      )}
+    >
+      {!embedded ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="font-semibold">{meta.title}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{meta.tagline}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {connection ? (
+              <>
+                <Badge
+                  variant="outline"
+                  className={statusStyles[connection.status] ?? ""}
+                >
+                  {formatEnum(connection.status)}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    isLive
+                      ? "border-red-200 bg-red-50 text-red-900"
+                      : "border-slate-200 bg-slate-50 text-slate-700",
+                  )}
+                >
+                  {isLive ? "LIVE" : formatEnum(connection.runtime_mode)}
+                </Badge>
+              </>
+            ) : (
               <Badge
                 variant="outline"
-                className={statusStyles[connection.status] ?? ""}
+                className="border-slate-200 bg-slate-50 text-slate-700"
               >
-                {formatEnum(connection.status)}
+                Not set up
               </Badge>
-              <Badge
-                variant="outline"
-                className={cn(
-                  isLive
-                    ? "border-red-200 bg-red-50 text-red-900"
-                    : "border-slate-200 bg-slate-50 text-slate-700",
-                )}
-              >
-                {isLive ? "LIVE" : formatEnum(connection.runtime_mode)}
-              </Badge>
-            </>
-          ) : (
-            <Badge
-              variant="outline"
-              className="border-slate-200 bg-slate-50 text-slate-700"
-            >
-              Not set up
-            </Badge>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <div className={cn("grid gap-4 sm:grid-cols-2", !embedded && "mt-4")}>
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             What this lets Northstar do
@@ -182,8 +192,8 @@ export function PilotProviderCard({
           {voiceStatusUrl ? (
             <>
               <p className="mt-3 text-sm leading-5">
-                Set the call status callback to this URL (HTTP POST) so
-                hangups always finish the transcript and CRM pipeline:
+                Set the call status callback to this URL (HTTP POST) so hangups
+                always finish the transcript and CRM pipeline:
               </p>
               <code className="mt-2 block overflow-x-auto rounded bg-background px-3 py-2 font-mono text-xs">
                 {voiceStatusUrl}
@@ -201,7 +211,8 @@ export function PilotProviderCard({
           <p className="mt-1 text-sm leading-5">{connection.health_summary}</p>
           {connection.last_success_at ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              Last confirmed working: {formatDateTime(connection.last_success_at)}
+              Last confirmed working:{" "}
+              {formatDateTime(connection.last_success_at)}
             </p>
           ) : null}
         </div>
@@ -254,7 +265,9 @@ export function PilotProviderCard({
                 size="sm"
                 onClick={() => setShowForm((value) => !value)}
               >
-                {showForm ? "Hide credentials form" : "Reconnect / update credentials"}
+                {showForm
+                  ? "Hide credentials form"
+                  : "Reconnect / update credentials"}
               </Button>
             </>
           ) : null}
