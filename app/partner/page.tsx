@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
@@ -26,11 +27,13 @@ import {
   type PartnerDeliveryStage,
 } from "@/lib/dashboard/partner-delivery";
 import { formatDate, formatEnum } from "@/lib/format";
+import { partnerOnboardingIsComplete } from "@/lib/onboarding/partner";
 import {
   isAccessError,
   requirePrimaryPartnerAccess,
 } from "@/lib/permissions/access";
 import type { AccessContext } from "@/lib/permissions/types";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata = {
   title: "Agency Overview",
@@ -119,7 +122,11 @@ function AccessDenied() {
   );
 }
 
-export default async function PartnerPage() {
+export default async function PartnerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ onboarding?: string }>;
+}) {
   const user = await requireAuthenticatedUser("/partner");
 
   let access: AccessContext;
@@ -138,6 +145,20 @@ export default async function PartnerPage() {
     return <AccessDenied />;
   }
 
+  const supabase = await createSupabaseServerClient();
+  const { data: onboarding } = supabase
+    ? await supabase
+        .from("partner_onboarding")
+        .select("status, completed_at")
+        .eq("partner_id", access.partnerId)
+        .maybeSingle()
+    : { data: null };
+
+  if (!partnerOnboardingIsComplete(onboarding)) {
+    redirect("/partner/onboarding");
+  }
+
+  const params = await searchParams;
   let dashboard: PartnerDashboardData;
 
   try {
@@ -220,6 +241,18 @@ export default async function PartnerPage() {
       activeNav="dashboard"
     >
       <div className="space-y-6">
+        {params.onboarding === "complete" ? (
+          <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <CheckCircle2
+              className="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <p>
+              Partner setup is complete. Your agency workspace is ready for its
+              first client.
+            </p>
+          </div>
+        ) : null}
         <header className="flex flex-col gap-4 border-b pb-5 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-xl font-semibold">Agency overview</h1>

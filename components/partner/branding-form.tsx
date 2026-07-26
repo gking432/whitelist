@@ -78,9 +78,11 @@ function ColorField({
 export function BrandingForm({
   action,
   initial,
+  submitLabel = "Save branding",
 }: {
   action: (previousState: FormState, formData: FormData) => Promise<FormState>;
   initial: BrandingFormValue;
+  submitLabel?: string;
 }) {
   const [state, formAction, pending] = useActionState(
     action,
@@ -329,7 +331,7 @@ export function BrandingForm({
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>
           <Upload aria-hidden="true" />
-          {pending ? "Saving..." : "Save branding"}
+          {pending ? "Saving..." : submitLabel}
         </Button>
       </div>
     </form>

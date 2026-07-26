@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { ArrowRight, BriefcaseBusiness, Package, Palette } from "lucide-react";
+import {
+  ArrowRight,
+  BriefcaseBusiness,
+  ClipboardCheck,
+  Package,
+  Palette,
+} from "lucide-react";
 
 import { updatePartnerBranding } from "@/app/partner/settings/actions";
 import { AppShell } from "@/components/layout/app-shell";
@@ -109,7 +115,7 @@ export default async function PartnerBrandingPage() {
 
         <nav
           aria-label="Partner settings areas"
-          className="grid overflow-hidden rounded-lg border bg-card md:grid-cols-3"
+          className="grid overflow-hidden rounded-lg border bg-card md:grid-cols-4"
         >
           <div className="border-b p-4 md:border-b-0 md:border-r">
             <Palette className="size-4 text-primary" aria-hidden="true" />
@@ -139,7 +145,7 @@ export default async function PartnerBrandingPage() {
           </Link>
           <Link
             href="/partner/agency"
-            className="group p-4 transition-colors hover:bg-secondary/40"
+            className="group border-b p-4 transition-colors hover:bg-secondary/40 md:border-b-0 md:border-r"
           >
             <BriefcaseBusiness
               className="size-4 text-primary"
@@ -154,6 +160,22 @@ export default async function PartnerBrandingPage() {
             </p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               Use the CRM and AI tools inside your own business.
+            </p>
+          </Link>
+          <Link
+            href="/partner/onboarding?step=agency"
+            className="group p-4 transition-colors hover:bg-secondary/40"
+          >
+            <ClipboardCheck className="size-4 text-primary" aria-hidden="true" />
+            <p className="mt-2 flex items-center justify-between gap-2 text-sm font-semibold">
+              Onboarding and plan
+              <ArrowRight
+                className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                aria-hidden="true"
+              />
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Review setup, team access, agency tools, and partner pricing.
             </p>
           </Link>
         </nav>
