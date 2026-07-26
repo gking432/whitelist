@@ -26,90 +26,77 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { brandStyleVariables, type BrandColors } from "@/lib/branding";
 import type { CrmView } from "@/lib/crm/views";
 import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 import { cn } from "@/lib/utils";
 
 const CRM_NAVIGATION: Array<{
-  href: string;
   label: string;
   view: CrmView;
   icon: typeof LayoutDashboard;
 }> = [
   {
-    href: "/client/crm?view=overview",
     label: "Overview",
     view: "overview",
     icon: LayoutDashboard,
   },
   {
-    href: "/client/crm?view=inbox",
     label: "Inbox",
     view: "inbox",
     icon: Inbox,
   },
   {
-    href: "/client/crm?view=contacts",
     label: "Leads",
     view: "contacts",
     icon: Users,
   },
   {
-    href: "/client/crm?view=calls",
     label: "Calls",
     view: "calls",
     icon: Bot,
   },
   {
-    href: "/client/crm?view=pipeline",
     label: "Pipeline",
     view: "pipeline",
     icon: Kanban,
   },
   {
-    href: "/client/crm?view=tasks",
     label: "Tasks",
     view: "tasks",
     icon: ListChecks,
   },
   {
-    href: "/client/crm?view=schedule",
     label: "Appointments",
     view: "schedule",
     icon: CalendarDays,
   },
   {
-    href: "/client/crm?view=quotes",
     label: "Quote Tool",
     view: "quotes",
     icon: Calculator,
   },
   {
-    href: "/client/crm?view=marketing",
     label: "Marketing",
     view: "marketing",
     icon: Activity,
   },
   {
-    href: "/client/crm?view=automations",
     label: "AI Automations",
     view: "automations",
     icon: Workflow,
   },
   {
-    href: "/client/crm?view=reports",
     label: "Reports",
     view: "reports",
     icon: BarChart3,
   },
   {
-    href: "/client/crm?view=crm-sync",
     label: "CRM Sync",
     view: "crm-sync",
     icon: Cable,
   },
   {
-    href: "/client/crm?view=settings",
     label: "Settings",
     view: "settings",
     icon: Settings,
@@ -143,7 +130,10 @@ function SidebarContent({
   currentView,
   userEmail,
   visibleSections,
-  canViewActionCenter,
+  basePath,
+  actionCenterLink,
+  homeLink,
+  workspaceLabel,
   onNavigate,
 }: {
   clientName: string;
@@ -152,7 +142,10 @@ function SidebarContent({
   currentView: CrmView;
   userEmail: string;
   visibleSections: ClientSectionKey[];
-  canViewActionCenter: boolean;
+  basePath: string;
+  actionCenterLink: { href: string; label: string } | null;
+  homeLink: { href: string; label: string } | null;
+  workspaceLabel: string;
   onNavigate?: () => void;
 }) {
   return (
@@ -189,7 +182,7 @@ function SidebarContent({
           return (
             <Link
               key={item.view}
-              href={item.href}
+              href={`${basePath}?view=${item.view}`}
               onClick={onNavigate}
               className={cn(
                 "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
@@ -206,14 +199,24 @@ function SidebarContent({
       </nav>
 
       <div className="border-t border-sidebar-foreground/10 p-4">
-        {canViewActionCenter ? (
+        {actionCenterLink ? (
           <Link
-            href="/client/action-center"
+            href={actionCenterLink.href}
             onClick={onNavigate}
             className="mb-4 flex h-9 items-center gap-3 rounded-md border border-brand-gold/35 bg-brand-gold/10 px-3 text-sm font-medium text-brand-gold transition-colors hover:bg-brand-gold/20"
           >
             <Activity className="size-4" aria-hidden="true" />
-            Action Center
+            {actionCenterLink.label}
+          </Link>
+        ) : null}
+        {homeLink ? (
+          <Link
+            href={homeLink.href}
+            onClick={onNavigate}
+            className="mb-4 flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground"
+          >
+            <LayoutDashboard className="size-4" aria-hidden="true" />
+            {homeLink.label}
           </Link>
         ) : null}
         <div className="flex items-center gap-3">
@@ -225,7 +228,7 @@ function SidebarContent({
               {userEmail}
             </p>
             <p className="text-[11px] text-sidebar-foreground/60">
-              Client workspace
+              {workspaceLabel}
             </p>
           </div>
         </div>
@@ -245,6 +248,14 @@ export function NorthstarDesktopShell({
   canViewActionCenter,
   canEditCrmData,
   unreadNotificationCount,
+  basePath = "/client/crm",
+  assistantPath,
+  notificationsPath = "/client/notifications",
+  actionCenterPath = "/client/action-center",
+  actionCenterLabel = "Action Center",
+  homeLink = null,
+  workspaceLabel = "Client workspace",
+  brandColors,
 }: {
   children: React.ReactNode;
   clientName: string;
@@ -256,11 +267,32 @@ export function NorthstarDesktopShell({
   canViewActionCenter: boolean;
   canEditCrmData: boolean;
   unreadNotificationCount: number;
+  basePath?: string;
+  assistantPath?: string | null;
+  notificationsPath?: string | null;
+  actionCenterPath?: string | null;
+  actionCenterLabel?: string;
+  homeLink?: { href: string; label: string } | null;
+  workspaceLabel?: string;
+  brandColors?: BrandColors;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const resolvedAssistantPath =
+    assistantPath === undefined
+      ? visibleSections.includes("assistant")
+        ? "/client/assistant"
+        : null
+      : assistantPath;
+  const actionCenterLink =
+    canViewActionCenter && actionCenterPath
+      ? { href: actionCenterPath, label: actionCenterLabel }
+      : null;
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div
+      className="flex min-h-screen bg-background"
+      style={brandColors ? brandStyleVariables(brandColors) : undefined}
+    >
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground lg:flex">
         <SidebarContent
           clientName={clientName}
@@ -269,7 +301,10 @@ export function NorthstarDesktopShell({
           currentView={currentView}
           userEmail={userEmail}
           visibleSections={visibleSections}
-          canViewActionCenter={canViewActionCenter}
+          basePath={basePath}
+          actionCenterLink={actionCenterLink}
+          homeLink={homeLink}
+          workspaceLabel={workspaceLabel}
         />
       </aside>
 
@@ -299,7 +334,10 @@ export function NorthstarDesktopShell({
               currentView={currentView}
               userEmail={userEmail}
               visibleSections={visibleSections}
-              canViewActionCenter={canViewActionCenter}
+              basePath={basePath}
+              actionCenterLink={actionCenterLink}
+              homeLink={homeLink}
+              workspaceLabel={workspaceLabel}
               onNavigate={() => setMobileOpen(false)}
             />
           </aside>
@@ -323,7 +361,7 @@ export function NorthstarDesktopShell({
           </h1>
           {visibleSections.includes("contacts") ? (
             <form
-              action="/client/crm"
+              action={basePath}
               className="relative ml-auto hidden w-full max-w-xs md:block"
             >
               <input type="hidden" name="view" value="contacts" />
@@ -340,22 +378,17 @@ export function NorthstarDesktopShell({
           ) : (
             <span className="ml-auto" />
           )}
-          {visibleSections.includes("assistant") ? (
+          {resolvedAssistantPath ? (
             <Button asChild size="icon" variant="outline">
-              <Link href="/client/assistant" aria-label="Open AI assistant">
+              <Link href={resolvedAssistantPath} aria-label="Open AI assistant">
                 <Bot aria-hidden="true" />
               </Link>
             </Button>
           ) : null}
-          {visibleSections.includes("notifications") ? (
-            <Button
-              asChild
-              size="icon"
-              variant="outline"
-              className="relative"
-            >
+          {notificationsPath && visibleSections.includes("notifications") ? (
+            <Button asChild size="icon" variant="outline" className="relative">
               <Link
-                href="/client/notifications"
+                href={notificationsPath}
                 aria-label={`Notifications${
                   unreadNotificationCount > 0
                     ? `, ${unreadNotificationCount} unread`
@@ -376,7 +409,7 @@ export function NorthstarDesktopShell({
             visibleSections.includes("contacts")) ? (
             <Button asChild size="sm" className="ml-auto shrink-0 md:ml-0">
               <Link
-                href="/client/crm?view=pipeline&new=1#new-lead"
+                href={`${basePath}?view=pipeline&new=1#new-lead`}
                 aria-label="New lead"
               >
                 <Plus aria-hidden="true" />

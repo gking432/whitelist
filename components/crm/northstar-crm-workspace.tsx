@@ -355,6 +355,7 @@ export function NorthstarCrmWorkspace({
   visibleSections,
   approvalsPath,
   assistantPath,
+  actionCenterPath,
   data,
   embedded = false,
   initialSearch = "",
@@ -371,6 +372,7 @@ export function NorthstarCrmWorkspace({
   visibleSections?: ClientSectionKey[];
   approvalsPath: string;
   assistantPath: string;
+  actionCenterPath?: string | null;
   data: NorthstarCrmData;
   embedded?: boolean;
   initialSearch?: string;
@@ -1998,7 +2000,7 @@ export function NorthstarCrmWorkspace({
           }}
           actionCenterPath={
             visibleSections?.includes("action-center")
-              ? "/client/action-center"
+              ? (actionCenterPath ?? null)
               : null
           }
         />

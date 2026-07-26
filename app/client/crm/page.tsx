@@ -85,6 +85,7 @@ export default async function ClientCrmPage({
         visibleSections={portal.access.visibleClientSections}
         approvalsPath="/client/approvals"
         assistantPath="/client/assistant"
+        actionCenterPath="/client/action-center"
         data={data}
         embedded
         initialSearch={params.search ?? ""}
