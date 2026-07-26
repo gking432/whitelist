@@ -346,6 +346,7 @@ function Empty({
 export function NorthstarCrmWorkspace({
   clientId,
   clientName,
+  productName = "CRM",
   basePath,
   view,
   canEdit,
@@ -361,6 +362,7 @@ export function NorthstarCrmWorkspace({
 }: {
   clientId: string;
   clientName: string;
+  productName?: string;
   basePath: string;
   view: CrmView;
   canEdit: boolean;
@@ -498,7 +500,7 @@ export function NorthstarCrmWorkspace({
             <div>
               <h1 className="font-semibold">{clientName} CRM</h1>
               <p className="text-xs text-muted-foreground">
-                Northstar AI operations suite
+                {productName} AI operations suite
               </p>
             </div>
           </div>
@@ -568,7 +570,7 @@ export function NorthstarCrmWorkspace({
       {pending ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
-          Northstar is working…
+          {productName} is working…
         </div>
       ) : null}
 
@@ -1531,7 +1533,7 @@ export function NorthstarCrmWorkspace({
                 {availability.length === 0 ? (
                   <Empty
                     title="Default hours active"
-                    detail="Until custom hours are added, Northstar proposes weekdays from 9 AM to 5 PM."
+                    detail={`Until custom hours are added, ${productName} proposes weekdays from 9 AM to 5 PM.`}
                   />
                 ) : null}
               </div>
@@ -2014,12 +2016,12 @@ export function NorthstarCrmWorkspace({
               </div>
               <Badge variant="outline">
                 {data.client?.crm_operating_mode.replaceAll("_", " ") ??
-                  "Northstar CRM"}
+                  productName}
               </Badge>
             </div>
             {crmConnections.length === 0 ? (
               <Empty
-                title="Northstar is the system of record"
+                title={`${productName} is the system of record`}
                 detail="No external CRM is connected. Your partner can add one when records should mirror or sync elsewhere."
               />
             ) : (
@@ -2228,7 +2230,7 @@ export function NorthstarCrmWorkspace({
       {!embedded ? (
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-xs text-muted-foreground">
         <p>
-          Northstar CRM is the system of record when no external CRM is
+          {productName} is the system of record when no external CRM is
           connected; mirror and assist modes keep it alongside another CRM.
         </p>
         <Link

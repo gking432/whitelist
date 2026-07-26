@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+
 import { PortalShell } from "@/components/client/portal-shell";
 import { ImpersonationBanner } from "@/components/impersonation/impersonation-banner";
 import { loadClientPortal } from "@/lib/clients/portal";
@@ -6,9 +8,20 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = {
-  title: "Client Portal",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const portal = await loadClientPortal();
+  const productName =
+    portal.kind === "ok"
+      ? portal.branding.productName.replaceAll("%", "").trim() || "CRM"
+      : "Client Portal";
+
+  return {
+    title: {
+      default: productName,
+      template: `%s | ${productName}`,
+    },
+  };
+}
 
 export default async function ClientPortalLayout({
   children,

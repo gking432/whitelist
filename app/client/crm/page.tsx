@@ -5,6 +5,7 @@ import { loadNorthstarCrm } from "@/lib/crm/operating-suite";
 import { CRM_VIEWS, parseCrmView } from "@/lib/crm/views";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { loadUnreadNotificationCount } from "@/lib/notifications/client";
+import { clientHomePath } from "@/lib/permissions/client-sections";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,9 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata() {
   const portal = await loadClientPortal();
   return {
-    title: portal.kind === "ok" ? portal.branding.productName : "CRM",
+    title: {
+      absolute: portal.kind === "ok" ? portal.branding.productName : "CRM",
+    },
   };
 }
 
@@ -40,7 +43,10 @@ export default async function ClientCrmPage({
     redirect(
       allowedViews.length > 0
         ? `/client/crm?view=${allowedViews[0]}`
-        : "/client/assistant",
+        : clientHomePath(
+            portal.access.visibleClientSections,
+            portal.client.client_experience_mode,
+          ),
     );
   }
 
@@ -70,6 +76,7 @@ export default async function ClientCrmPage({
       <NorthstarCrmWorkspace
         clientId={portal.access.clientId}
         clientName={portal.client.name}
+        productName={portal.branding.productName}
         basePath="/client/crm"
         view={view}
         canEdit={portal.access.canEditCrmData}

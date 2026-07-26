@@ -5,6 +5,7 @@ import { loadClientPortal } from "@/lib/clients/portal";
 import { clientHomePath } from "@/lib/permissions/client-sections";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Action Center" };
 
 export default async function ClientPortalPage() {
   const portal = await loadClientPortal();

@@ -407,7 +407,7 @@ function buildActions(input: {
     state: hasLeadBearingRun ? "works_now" : "waiting",
     stateLabel: hasLeadBearingRun ? "Works now" : "No lead yet",
     detail: hasLeadBearingRun
-      ? "Creates the AI-suggested follow-up task for the latest lead in Northstar's task list."
+      ? "Creates the AI-suggested follow-up task in the built-in CRM task list."
       : "Appears once a lead has come through — the AI suggests the task.",
     href: null,
     enabled: hasLeadBearingRun,
@@ -768,7 +768,7 @@ export async function buildAssistantContext(
     detail: !capabilities.has("crm_sync")
       ? "CRM sync is not part of this package."
       : !crmConn.connected
-        ? "No CRM connected — contacts stay in Northstar only."
+        ? "No external CRM connected — contacts stay in the built-in CRM."
         : crmStatus === "synced"
           ? `Contact is in HubSpot${crmSnapshot?.contact_id ? ` (${crmSnapshot.contact_id})` : ""} with an AI Assistant note.`
           : crmStatus === "dry_run"

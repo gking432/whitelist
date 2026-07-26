@@ -135,12 +135,14 @@ export async function ClientActionCenter() {
             {pendingApprovals} item{pendingApprovals === 1 ? "" : "s"} waiting
             for your approval.
           </p>
-          <Link
-            href="/client/approvals"
-            className="mt-1 inline-block text-sm font-medium text-amber-900 underline"
-          >
-            Review approvals
-          </Link>
+          {access.visibleClientSections.includes("approvals") ? (
+            <Link
+              href="/client/approvals"
+              className="mt-1 inline-block text-sm font-medium text-amber-900 underline"
+            >
+              Review approvals
+            </Link>
+          ) : null}
         </section>
       ) : null}
 
@@ -176,12 +178,14 @@ export async function ClientActionCenter() {
       <section className="overflow-hidden rounded-lg border bg-card">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="text-sm font-semibold">Recent activity</h2>
-          <Link
-            href="/client/activity"
-            className="text-xs font-medium text-primary hover:underline"
-          >
-            View all
-          </Link>
+          {access.visibleClientSections.includes("activity") ? (
+            <Link
+              href="/client/activity"
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              View all
+            </Link>
+          ) : null}
         </div>
         {recentRuns.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-muted-foreground">

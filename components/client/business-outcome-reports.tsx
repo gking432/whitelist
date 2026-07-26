@@ -401,7 +401,7 @@ export function BusinessOutcomeReports({
                   </div>
                   <p className="mt-3 text-sm leading-6 text-muted-foreground">
                     A defensible ROI percentage requires realized invoice
-                    revenue, ad spend, labor cost, and Northstar service cost.
+                    revenue, ad spend, labor cost, and service cost.
                     This report will not substitute estimates for those actual
                     inputs.
                   </p>

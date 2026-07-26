@@ -266,7 +266,7 @@ export function ClientAutomationHealth({
                           ?.required_provider_categories?.length ?? 0) === 0 ? (
                           <Badge variant="outline">
                             <PlugZap aria-hidden="true" />
-                            Northstar built-in
+                            Built-in
                           </Badge>
                         ) : null}
                         {item.connections.map((connection) => (

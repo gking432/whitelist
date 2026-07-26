@@ -177,7 +177,9 @@ export function resolveClientPermissions(input: {
           CLIENT_SECTION_KEYS.includes(section as ClientSectionKey),
       )
     : defaults.visibleSections;
-  const visibleSections = [...new Set(storedSections)];
+  const visibleSections: ClientSectionKey[] = [
+    ...new Set(storedSections.filter((section) => section !== "action-center")),
+  ];
   const canViewActionCenter = storedBoolean(
     input.stored?.view_action_center,
     defaults.canViewActionCenter,
@@ -245,5 +247,5 @@ export function clientHomePath(
   if (sections.includes("assistant")) return "/client/assistant";
   if (sections.includes("approvals")) return "/client/approvals";
   if (sections.includes("activity")) return "/client/activity";
-  return "/client/crm";
+  return "/client/no-access";
 }

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildAccessContext } from "../lib/permissions/roles.ts";
+import {
+  clientHomePath,
+  resolveClientPermissions,
+} from "../lib/permissions/client-sections.ts";
 
 test("managed-client partners can configure service but cannot operate customer actions", () => {
   const access = buildAccessContext({
@@ -128,4 +132,26 @@ test("full sandbox client impersonation supports end-to-end test actions", () =>
   assert.equal(access.canResolveApprovals, true);
   assert.equal(access.canOperateCustomerActions, true);
   assert.equal(access.canEditCrmData, true);
+});
+
+test("action center visibility follows its authority flag", () => {
+  const access = resolveClientPermissions({
+    role: "client_staff",
+    jobRole: "staff",
+    stored: {
+      sections: ["overview", "action-center"],
+      view_action_center: false,
+    },
+  });
+
+  assert.deepEqual(access.visibleSections, ["overview"]);
+  assert.equal(access.canViewActionCenter, false);
+});
+
+test("clients without an available section land on a stable access page", () => {
+  assert.equal(
+    clientHomePath(["overview"], "background_only"),
+    "/client/no-access",
+  );
+  assert.equal(clientHomePath([], "northstar_crm"), "/client/no-access");
 });

@@ -56,7 +56,7 @@ async function actionContext(
   const auth = await getAuthState();
 
   if (!auth.user || !validUuid(clientId)) {
-    return result("Sign in to use Northstar CRM.", "error");
+    return result("Sign in to use the CRM.", "error");
   }
 
   try {
@@ -68,7 +68,7 @@ async function actionContext(
         !access.canOperateCustomerActions)
     ) {
       return result(
-        "This workspace is read-only for your role. Enter the client portal or use an authorized sandbox session to operate customer actions.",
+        "This workspace is read-only for your role. Use an account with customer-action access to continue.",
         "error",
       );
     }
@@ -337,7 +337,7 @@ export async function createCrmLead(input: {
     title:
       ai.status === "ai"
         ? "AI analyzed the new lead"
-        : "Lead analysis completed with the sandbox fallback",
+        : "Lead analyzed with built-in automation",
     body: `${analysis.summary}\n\nNext: ${analysis.recommended_next_action}`,
   });
   await audit(
@@ -350,7 +350,7 @@ export async function createCrmLead(input: {
 
   revalidateCrm(context.clientId);
   return result(
-    `Lead created and analyzed (${ai.status === "ai" ? "live AI" : "sandbox fallback"}).`,
+    `Lead created and analyzed (${ai.status === "ai" ? "AI" : "built-in automation"}).`,
   );
 }
 
@@ -689,7 +689,7 @@ export async function createCrmMessageDraft(input: {
       type: "customer_message",
       status: "pending",
       title: `${input.channel.toUpperCase()} draft: ${name || to}`,
-      summary: `${input.objective.replaceAll("_", " ")} draft created from Northstar CRM. Review before sending.`,
+      summary: `${input.objective.replaceAll("_", " ")} draft created in the CRM. Review before sending.`,
       risk_level: "medium",
       editable_content: draft.body,
       proposed_payload: {
@@ -742,7 +742,7 @@ export async function createCrmMessageDraft(input: {
 
   revalidateCrm(context.clientId);
   return result(
-    `Draft created (${ai.status === "ai" ? "live AI" : "sandbox fallback"}) and sent to Approvals.`,
+    `Draft created (${ai.status === "ai" ? "AI" : "built-in automation"}) and sent to Approvals.`,
   );
 }
 
@@ -911,7 +911,7 @@ export async function createCrmAppointment(input: {
     body: start.toLocaleString(),
   });
   revalidateCrm(context.clientId);
-  return result("Appointment added to Northstar.");
+  return result("Appointment added to the CRM.");
 }
 
 export async function saveCrmAvailability(input: {
@@ -1200,6 +1200,6 @@ export async function analyzeAndSaveCrmFeedback(input: {
   );
   revalidateCrm(context.clientId);
   return result(
-    `Feedback analyzed as ${analysis.sentiment} / ${analysis.risk_level} risk (${ai.status === "ai" ? "live AI" : "sandbox fallback"}).`,
+    `Feedback analyzed as ${analysis.sentiment} / ${analysis.risk_level} risk (${ai.status === "ai" ? "AI" : "built-in automation"}).`,
   );
 }

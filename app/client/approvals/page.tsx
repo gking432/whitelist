@@ -10,6 +10,7 @@ import { clientHomePath } from "@/lib/permissions/client-sections";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Approvals" };
 
 type ApprovalRow = {
   id: string;

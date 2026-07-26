@@ -167,10 +167,10 @@ function SidebarContent({
           )}
         </span>
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-semibold text-sidebar-foreground">
+          <p className="line-clamp-2 text-xs font-semibold leading-4 text-sidebar-foreground">
             {productName}
           </p>
-          <p className="text-[11px] text-sidebar-foreground/60">
+          <p className="truncate text-[11px] text-sidebar-foreground/60">
             {clientName}
           </p>
         </div>
