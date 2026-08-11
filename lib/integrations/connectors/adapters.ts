@@ -11,6 +11,11 @@ import { callRailAdapter } from "../providers/callrail";
 import { ringCentralAdapter } from "../providers/ringcentral";
 import { dialpadAdapter } from "../providers/dialpad";
 import { openPhoneAdapter } from "../providers/openphone";
+import { metaAdapter } from "../providers/meta";
+import { googleAdsAdapter } from "../providers/google-ads";
+import { googleBusinessProfileAdapter } from "../providers/google-business-profile";
+import { podiumAdapter } from "../providers/podium";
+import { birdeyeAdapter } from "../providers/birdeye";
 import type { ConnectorAdapter } from "./types";
 
 const ADAPTERS: Record<string, ConnectorAdapter> = {
@@ -27,6 +32,11 @@ const ADAPTERS: Record<string, ConnectorAdapter> = {
   ringcentral: ringCentralAdapter as ConnectorAdapter,
   dialpad: dialpadAdapter as ConnectorAdapter,
   openphone: openPhoneAdapter as ConnectorAdapter,
+  meta: metaAdapter as ConnectorAdapter,
+  google_ads: googleAdsAdapter as ConnectorAdapter,
+  google_business_profile: googleBusinessProfileAdapter as ConnectorAdapter,
+  podium: podiumAdapter as ConnectorAdapter,
+  birdeye: birdeyeAdapter as ConnectorAdapter,
 };
 
 export function getConnectorAdapter(providerKey: string): ConnectorAdapter | null {

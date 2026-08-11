@@ -397,6 +397,7 @@ export function NorthstarCrmWorkspace({
     data.transcriptTurns as unknown as TranscriptTurn[];
   const quotes = data.quotes as unknown as Quote[];
   const feedback = data.feedback as unknown as Feedback[];
+  const campaigns = data.campaigns;
   const timeline = data.timeline as unknown as TimelineEntry[];
   const workflows = data.workflows as unknown as AutomationWorkflow[];
   const workflowRuns = data.workflowRuns as unknown as AutomationRun[];
@@ -1971,6 +1972,7 @@ export function NorthstarCrmWorkspace({
           leads={leads}
           appointments={appointments}
           feedback={feedback}
+          campaigns={campaigns}
         />
       ) : null}
 

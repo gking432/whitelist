@@ -117,6 +117,26 @@ export function ConnectionLinkForm({ action, hasActiveLink }: Props) {
       </fieldset>
 
       <fieldset>
+        <legend className="mb-2 text-sm font-medium">Marketing and reputation</legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[PILOT_PROVIDERS.meta, PILOT_PROVIDERS.google_ads, PILOT_PROVIDERS.google_business_profile, PILOT_PROVIDERS.podium, PILOT_PROVIDERS.birdeye].map((provider) => (
+            <label key={provider.key} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm">
+              <Checkbox name="providers" value={provider.key} />
+              <span>{provider.title}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium">Other lead sources</legend>
+        <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm sm:max-w-md">
+          <Checkbox name="providers" value="universal_lead_email" />
+          <span>Forwarded Lead Inbox (Angi, Thumbtack, Yelp, and others)</span>
+        </label>
+      </fieldset>
+
+      <fieldset>
         <legend className="mb-2 text-sm font-medium">Business phone system</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {[

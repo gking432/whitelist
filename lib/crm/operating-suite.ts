@@ -23,6 +23,7 @@ export type NorthstarCrmData = {
   transcriptTurns: Record<string, unknown>[];
   quotes: Record<string, unknown>[];
   feedback: Record<string, unknown>[];
+  campaigns: Record<string, unknown>[];
   pendingApprovals: number;
   connections: Record<string, unknown>[];
   workflows: Record<string, unknown>[];
@@ -57,6 +58,7 @@ export async function loadNorthstarCrm(
     transcriptTurns,
     quotes,
     feedback,
+    campaigns,
     approvalsResult,
     connections,
     workflows,
@@ -154,6 +156,14 @@ export async function loadNorthstarCrm(
         .order("created_at", { ascending: false })
         .limit(100),
     ),
+    rows(
+      supabase
+        .from("marketing_campaign_snapshots")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("spend", { ascending: false })
+        .limit(250),
+    ),
     supabase
       .from("approval_items")
       .select("id", { count: "exact", head: true })
@@ -235,6 +245,7 @@ export async function loadNorthstarCrm(
     transcriptTurns,
     quotes,
     feedback,
+    campaigns,
     pendingApprovals: approvalsResult.count ?? 0,
     connections,
     workflows,

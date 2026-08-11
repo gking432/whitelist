@@ -36,6 +36,7 @@ import { stripeAdapter, type StripeCredentials } from "@/lib/integrations/provid
 import { callRailAdapter, type CallRailCredentials } from "@/lib/integrations/providers/callrail";
 import { openPhoneAdapter, type OpenPhoneCredentials } from "@/lib/integrations/providers/openphone";
 import { registerConnectionWebhooks } from "@/lib/integrations/connectors/webhook-runner";
+import { birdeyeAdapter, type BirdeyeCredentials } from "@/lib/integrations/providers/birdeye";
 
 type ConnectionScope = {
   partnerId: string;
@@ -45,7 +46,7 @@ type ConnectionScope = {
 
 type CredentialProviderKey = Exclude<
   PilotProviderKey,
-  "google_calendar" | "google_workspace" | "microsoft_365" | "jobber" | "quickbooks_online" | "square" | "ringcentral" | "dialpad"
+  "google_calendar" | "google_workspace" | "microsoft_365" | "jobber" | "quickbooks_online" | "square" | "ringcentral" | "dialpad" | "meta" | "google_ads" | "google_business_profile" | "podium" | "universal_lead_email"
 >;
 
 export async function ensureProviderConnection(
@@ -126,6 +127,9 @@ async function verifyProviderCredentials(
   }
   if (providerKey === "openphone") {
     return openPhoneAdapter.testConnection({ connectionId: "verify", partnerId: "verify", clientId: "verify", credentials: credentials as unknown as OpenPhoneCredentials, config: {} });
+  }
+  if (providerKey === "birdeye") {
+    return birdeyeAdapter.testConnection({ connectionId: "verify", partnerId: "verify", clientId: "verify", credentials: credentials as unknown as BirdeyeCredentials, config: {} });
   }
   return testTwilioConnection(credentials as unknown as TwilioCredentials);
 }
@@ -244,7 +248,7 @@ export async function saveProviderCredentials(
     healthDetail = `${healthDetail} ${hooks.detail}`;
     await supabase.from("integration_connections").update({ health_summary: healthDetail }).eq("id", connectionId);
   }
-  if (["housecall_pro", "servicetitan", "workiz", "stripe", "callrail", "openphone"].includes(providerKey)) {
+  if (["housecall_pro", "servicetitan", "workiz", "stripe", "callrail", "openphone", "birdeye"].includes(providerKey)) {
     await enqueueInitialConnectorSync(supabase, {
       partnerId: scope.partnerId,
       clientId: scope.clientId,

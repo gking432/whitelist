@@ -39,6 +39,12 @@ stack.
 | Desktop phone assistant | Real foundation — Electron tray app, hosted authenticated assistant route, active-call always-on-top behavior, launch-at-login, server configuration, and macOS/Windows/Linux packaging are present |
 | Scoped client connection links | Real — partners can send expiring provider-specific links so the client can enter its own credentials without exposing them to the partner |
 | Automation-pack installation | Real foundation — researched catalog, readiness checks, native workflow installation, install records, and n8n/Zapier export/deployer contracts are present; no shared live Zapier/n8n account is configured |
+| Field-service connectors | Real contracts — Jobber OAuth; Housecall Pro, ServiceTitan, and Workiz credential verification; customer/lead/job/appointment sync into canonical records and the built-in CRM |
+| Finance and attribution connectors | Real contracts — QuickBooks and Square OAuth, Stripe key verification, CallRail credential verification, normalized customer/payment/call attribution sync |
+| Retained phone connectors | Real contracts — RingCentral and Dialpad OAuth plus signed webhooks; Quo/OpenPhone credential setup; caller matching, screen-pop events, SMS intake, and post-call workflows |
+| Marketing and reputation connectors | Real contracts — Meta Lead Ads/webhooks and campaign metrics; Google Ads lead forms/campaign metrics; GBP, Podium, and Birdeye reviews; approval-gated replies where supported |
+| Forwarded lead inbox | Real — Resend Receiving signature validation, unique per-client address, message retrieval/parsing, idempotent intake, and normal AI workflow routing |
+| Integration request and escalation center | Real — client-to-partner support, partner-to-owner escalation, durable triage/routing, guarded Codex handoff, review and release states |
 | Audit + redaction | All new actions audited; every logged payload passes redactAuditValue |
 
 ## Preview / not built (still honest)
@@ -50,8 +56,8 @@ stack.
 | SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
 | Appointment reschedule/cancel | Not built — book-only today |
 | Browser extension / third-party CRM overlay | Not built. The Electron desktop assistant is the supported V1 overlay; direct CRM write-back is preferred whenever a connector supports it |
-| Home-service application catalog | Jobber, Housecall Pro, ServiceTitan, Workiz, QuickBooks, CallRail, Microsoft 365, Meta, Google Business Profile, and review-platform connectors are not built yet; see docs/25 |
-| Integration-request/Codex fulfillment center | Not built yet; see docs/25 for the guarded request, review, staging, and release design |
+| Provider live verification | Connector contracts are implemented and tested locally, but each vendor still needs production app approval and at least one real account pilot before being labeled live-verified |
+| Marketplace native APIs | Angi, Thumbtack, Yelp, and similar broad lead APIs remain vendor-restricted; private forwarded email and signed webhook intake are the supported V1 paths |
 | Per-client custom field mapping | Defaults only (docs/16) |
 | Billing/usage pricing on packages | Not built by request |
 

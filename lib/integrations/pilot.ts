@@ -23,6 +23,12 @@ export const PILOT_PROVIDER_KEYS = [
   "ringcentral",
   "dialpad",
   "openphone",
+  "meta",
+  "google_ads",
+  "google_business_profile",
+  "universal_lead_email",
+  "podium",
+  "birdeye",
 ] as const;
 
 export type PilotProviderKey = (typeof PILOT_PROVIDER_KEYS)[number];
@@ -46,7 +52,7 @@ export type PilotProviderMeta = {
   allows: string[];
   // What Northstar will NOT do with this connection (honesty beats surprise).
   neverDoes: string[];
-  connectMethod: "credentials" | "oauth";
+  connectMethod: "credentials" | "oauth" | "managed";
   fields: PilotCredentialField[];
   whereToGet: string;
 };
@@ -371,6 +377,43 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
       { name: "phoneNumberIds", label: "Phone number IDs (optional)", placeholder: "PN123, PN456", help: "Comma-separated Quo phone-number IDs. Leave blank to use all resources the API permits.", secret: false, optional: true },
     ],
     whereToGet: "Quo → Settings → API → Create API key. An Owner or Admin must create it.",
+  },
+  meta: {
+    key: "meta", title: "Facebook and Instagram", tagline: "Sends Meta Lead Ads into the CRM and shows campaign performance in Marketing.",
+    allows: ["Create or update a CRM lead seconds after a Facebook or Instagram Lead Ad is submitted.", "Show campaign spend, clicks, and outcomes in the marketing dashboard."],
+    neverDoes: ["Never publishes posts or changes ad budgets.", "Never contacts a lead until the configured workflow and approval rules allow it."],
+    connectMethod: "oauth", fields: [], whereToGet: "Sign in with the Meta user who manages the client's Facebook Page and ad account.",
+  },
+  google_ads: {
+    key: "google_ads", title: "Google Ads and Local Services", tagline: "Brings Google lead forms and campaign performance into the CRM and Marketing dashboard.",
+    allows: ["Sync Google lead form submissions into the CRM.", "Show campaign impressions, clicks, spend, conversions, and conversion value."],
+    neverDoes: ["Never edits campaigns, bids, or budgets.", "Never uploads customer data without an explicit approved feature."],
+    connectMethod: "oauth", fields: [], whereToGet: "Sign in with a Google user who can access the client's Google Ads account.",
+  },
+  google_business_profile: {
+    key: "google_business_profile", title: "Google Business Profile", tagline: "Shows Google ratings and reviews and supports approved review replies.",
+    allows: ["Sync reviews, star ratings, and existing replies into Marketing.", "Publish a review reply only after an authorized user approves it."],
+    neverDoes: ["Never edits the public business profile or deletes reviews.", "Never posts an AI-generated reply without approval."],
+    connectMethod: "oauth", fields: [], whereToGet: "Sign in with a Google user who is an Owner or Manager of the client's Business Profile.",
+  },
+  universal_lead_email: {
+    key: "universal_lead_email", title: "Forwarded Lead Inbox", tagline: "Turns lead-notification emails from unsupported marketplaces and forms into CRM leads.",
+    allows: ["Create a private forwarding address for this business.", "Parse forwarded lead notifications and run the same intake workflows as native sources."],
+    neverDoes: ["Never reads the client's normal inbox.", "Never sends a reply to the marketplace email address."],
+    connectMethod: "managed", fields: [], whereToGet: "Activate the address, then add it as the lead-notification or forwarding destination in Angi, Thumbtack, Yelp, or any other source.",
+  },
+  podium: {
+    key: "podium", title: "Podium", tagline: "Syncs customer reviews and supports approval-gated public replies.",
+    allows: ["Show Podium reviews and ratings in Marketing.", "Publish an approved response to a review."], neverDoes: ["Never sends messages or review requests without an approved feature.", "Never posts an AI draft without approval."],
+    connectMethod: "oauth", fields: [], whereToGet: "Sign in with a Podium administrator account.",
+  },
+  birdeye: {
+    key: "birdeye", title: "Birdeye", tagline: "Syncs aggregated reviews and ratings into Marketing.",
+    allows: ["Read customer reviews, ratings, sources, and existing responses."], neverDoes: ["Never changes Birdeye campaigns or sends review requests."],
+    connectMethod: "credentials", fields: [
+      { name: "businessId", label: "Business ID", placeholder: "Birdeye business ID", help: "Birdeye → Settings → Integrations → API.", secret: false },
+      { name: "apiKey", label: "API key", placeholder: "Paste API key", help: "Generate it beside the Business ID in Birdeye's API settings.", secret: true },
+    ], whereToGet: "Birdeye → Settings → Integrations → API → copy the Business ID and generate an API key.",
   },
 };
 

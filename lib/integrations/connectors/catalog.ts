@@ -6,15 +6,9 @@ const PLANNED_CONNECTORS: readonly (readonly [
   string,
   string,
 ])[] = [
-  ["meta", "Facebook and Instagram", "lead_source", "Lead Ads, campaign attribution, and approved conversion feedback."],
-  ["google_ads", "Google Ads and Local Services", "lead_source", "Google advertising leads and campaign attribution."],
-  ["google_business_profile", "Google Business Profile", "reputation", "Business messages, reviews, replies, and profile activity."],
-  ["podium", "Podium", "reputation", "Customer conversations, review requests, and review events."],
-  ["birdeye", "Birdeye", "reputation", "Review requests, reviews, replies, and customer conversations."],
   ["angi", "Angi", "marketplace", "Lead intake when partner API access is approved."],
   ["thumbtack", "Thumbtack", "marketplace", "Lead intake when partner API access is approved."],
   ["yelp", "Yelp", "marketplace", "Lead intake when reseller API access is approved."],
-  ["universal_lead_email", "Lead Email Inbox", "lead_source", "Parse forwarded lead notifications when no direct API is available."],
 ];
 
 export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
@@ -51,6 +45,38 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
     description: "Call, message, transcript, and summary events from Quo.", authStrategy: "api_key",
     capabilities: ["lead.read", "lead.webhook", "message.webhook"], verificationStatus: "contract_verified", requestable: false,
     docsUrl: "https://www.quo.com/docs/mdx/api-reference", webhookEvents: ["call.ringing", "call.completed", "call.summary.completed", "call.transcript.completed", "message.received"],
+  },
+  {
+    key: "meta", name: "Facebook and Instagram", category: "lead_source",
+    description: "Lead Ads, campaign performance, and attribution from Meta.", authStrategy: "oauth2",
+    capabilities: ["lead.read", "lead.webhook", "campaign.read"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://developers.facebook.com/docs/marketing-api/guides/lead-ads", webhookEvents: ["leadgen"],
+  },
+  {
+    key: "google_ads", name: "Google Ads and Local Services", category: "lead_source",
+    description: "Lead forms, campaign performance, spend, calls, and conversion outcomes from Google Ads.", authStrategy: "oauth2",
+    capabilities: ["lead.read", "campaign.read"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://developers.google.com/google-ads/api/docs/start",
+  },
+  {
+    key: "google_business_profile", name: "Google Business Profile", category: "reputation",
+    description: "Locations, customer reviews, ratings, and approved replies.", authStrategy: "oauth2",
+    capabilities: ["review.read", "review.update"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://developers.google.com/my-business/reference/rest",
+  },
+  {
+    key: "universal_lead_email", name: "Forwarded Lead Inbox", category: "lead_source",
+    description: "Private inbound address that parses forwarded marketplace and form leads.", authStrategy: "managed",
+    capabilities: ["lead.webhook"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://resend.com/docs/dashboard/receiving/introduction", webhookEvents: ["email.received"],
+  },
+  {
+    key: "podium", name: "Podium", category: "reputation", description: "Customer reviews and approval-gated responses from Podium.", authStrategy: "oauth2",
+    capabilities: ["review.read", "review.update"], verificationStatus: "contract_verified", requestable: false, docsUrl: "https://docs.podium.com/reference",
+  },
+  {
+    key: "birdeye", name: "Birdeye", category: "reputation", description: "Aggregated customer reviews and ratings from Birdeye.", authStrategy: "api_key",
+    capabilities: ["review.read"], verificationStatus: "contract_verified", requestable: false, docsUrl: "https://developers.birdeye.com/",
   },
   {
     key: "jobber", name: "Jobber", category: "field_service",

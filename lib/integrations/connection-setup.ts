@@ -23,6 +23,12 @@ export const CONNECTION_SETUP_PROVIDER_KEYS = [
   "ringcentral",
   "dialpad",
   "openphone",
+  "meta",
+  "google_ads",
+  "google_business_profile",
+  "universal_lead_email",
+  "podium",
+  "birdeye",
 ] as const;
 
 export type ConnectionSetupProviderKey =

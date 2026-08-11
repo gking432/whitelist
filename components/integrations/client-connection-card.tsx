@@ -11,6 +11,8 @@ import {
   startClientJobberConnect,
   startClientCommerceConnect,
   startClientTelephonyConnect,
+  startClientMarketingConnect,
+  activateClientManagedConnector,
 } from "@/app/connect/[token]/actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,6 +26,7 @@ type Props = {
   token: string;
   provider: PilotProviderMeta;
   connected: boolean;
+  connectionDetail: string | null;
   productName: string;
   supportName: string;
   googleReady: boolean;
@@ -33,6 +36,11 @@ type Props = {
   squareReady: boolean;
   ringCentralReady: boolean;
   dialpadReady: boolean;
+  metaReady: boolean;
+  googleMarketingReady: boolean;
+  googleAdsReady: boolean;
+  podiumReady: boolean;
+  managedInboxReady: boolean;
   managedTwilioReady: boolean;
 };
 
@@ -54,6 +62,7 @@ export function ClientConnectionCard({
   token,
   provider,
   connected,
+  connectionDetail,
   productName,
   supportName,
   googleReady,
@@ -63,6 +72,11 @@ export function ClientConnectionCard({
   squareReady,
   ringCentralReady,
   dialpadReady,
+  metaReady,
+  googleMarketingReady,
+  googleAdsReady,
+  podiumReady,
+  managedInboxReady,
   managedTwilioReady,
 }: Props) {
   const [showExistingTwilio, setShowExistingTwilio] = useState(false);
@@ -101,6 +115,15 @@ export function ClientConnectionCard({
     startClientTelephonyConnect.bind(null, token, telephonyProvider),
     initialFormState,
   );
+  const marketingProvider = provider.key === "meta" || provider.key === "google_ads" || provider.key === "google_business_profile" || provider.key === "podium" ? provider.key : "meta";
+  const [marketingState, submitMarketing, marketingPending] = useActionState(
+    startClientMarketingConnect.bind(null, token, marketingProvider),
+    initialFormState,
+  );
+  const [managedState, submitManaged, managedPending] = useActionState(
+    activateClientManagedConnector.bind(null, token, "universal_lead_email"),
+    initialFormState,
+  );
 
   return (
     <article className="rounded-lg border bg-card p-5 sm:p-6">
@@ -118,8 +141,24 @@ export function ClientConnectionCard({
 
       {connected ? (
         <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          Verified. No additional access is needed.
+          {connectionDetail ? <><span className="block font-medium">Connected</span><span className="mt-1 block break-all">{connectionDetail}</span></> : "Verified. No additional access is needed."}
         </div>
+      ) : provider.key === "universal_lead_email" ? (
+        <form action={submitManaged} className="mt-5">
+          <div className="rounded-md bg-secondary/40 px-3 py-2 text-xs leading-5 text-muted-foreground">{provider.whereToGet}</div>
+          <Button type="submit" className="mt-3" disabled={managedPending || !managedInboxReady}><PlugZap aria-hidden="true" />{managedPending ? "Activating..." : "Activate private lead inbox"}</Button>
+          {!managedInboxReady ? <p className="mt-2 text-xs text-amber-800">{supportName} is still preparing the private lead inbox. No action is required from you yet.</p> : null}
+          <ResultMessage state={managedState} />
+        </form>
+      ) : provider.key === "meta" || provider.key === "google_ads" || provider.key === "google_business_profile" || provider.key === "podium" ? (
+        <form action={submitMarketing} className="mt-5">
+          <Button type="submit" disabled={marketingPending || (provider.key === "meta" ? !metaReady : provider.key === "google_ads" ? !googleAdsReady : provider.key === "podium" ? !podiumReady : !googleMarketingReady)}>
+            <ExternalLink aria-hidden="true" />
+            {marketingPending ? "Opening sign-in..." : `Connect ${provider.title}`}
+          </Button>
+          {(provider.key === "meta" ? !metaReady : provider.key === "google_ads" ? !googleAdsReady : provider.key === "podium" ? !podiumReady : !googleMarketingReady) ? <p className="mt-2 text-xs text-amber-800">{supportName} is still preparing {provider.title} access. No action is required from you yet.</p> : null}
+          <ResultMessage state={marketingState} />
+        </form>
       ) : provider.key === "ringcentral" || provider.key === "dialpad" ? (
         <form action={submitTelephony} className="mt-5">
           <Button type="submit" disabled={telephonyPending || (provider.key === "ringcentral" ? !ringCentralReady : !dialpadReady)}>

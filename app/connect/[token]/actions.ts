@@ -12,6 +12,10 @@ import {
   getSquareOAuthClient,
   getRingCentralOAuthClient,
   getDialpadOAuthClient,
+  getMetaOAuthClient,
+  getGoogleAdsDeveloperToken,
+  getResendInboundConfig,
+  getPodiumOAuthClient,
 } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
@@ -39,8 +43,10 @@ import { provisionManagedTwilioNumber } from "@/lib/integrations/providers/twili
 import { buildJobberAuthorizationUrl } from "@/lib/integrations/providers/jobber-oauth";
 import { buildCommerceAuthorizationUrl, type CommerceOAuthProviderKey } from "@/lib/integrations/providers/commerce-oauth";
 import { buildTelephonyAuthorizationUrl, type TelephonyOAuthProviderKey } from "@/lib/integrations/providers/telephony-oauth";
+import { buildMarketingAuthorizationUrl, type MarketingOAuthProviderKey } from "@/lib/integrations/providers/marketing-oauth";
 import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { refreshPackageDeploymentReadiness } from "@/lib/packages/deployment";
 
 async function loadAuthorizedSetup(token: string, providerKey: string) {
   const admin = createSupabaseAdminClient();
@@ -76,6 +82,11 @@ export async function connectClientAccount(
     || providerKey === "square"
     || providerKey === "ringcentral"
     || providerKey === "dialpad"
+    || providerKey === "meta"
+    || providerKey === "google_ads"
+    || providerKey === "google_business_profile"
+    || providerKey === "podium"
+    || providerKey === "universal_lead_email"
   ) {
     return { status: "error", message: "That account cannot be connected here." };
   }
@@ -126,6 +137,39 @@ export async function startClientTelephonyConnect(
   const connectionId = await ensureProviderConnection(context.admin, { partnerId: context.session.partner_id, clientId: context.session.client_id, createdBy: context.session.created_by! }, providerKey);
   await context.admin.from("integration_connections").update({ credential_status: "rotating", health_summary: `Waiting for ${providerKey === "ringcentral" ? "RingCentral" : "Dialpad"} authorization to finish.` }).eq("id", connectionId);
   redirect(buildTelephonyAuthorizationUrl(providerKey, oauthClient, connectionId, context.session.id));
+}
+
+export async function startClientMarketingConnect(
+  token: string,
+  providerKey: MarketingOAuthProviderKey,
+  _previousState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  if (!isSecretsEncryptionConfigured()) return { status: "error", message: "Secure credential storage is unavailable." };
+  const oauthClient = providerKey === "meta" ? getMetaOAuthClient() : providerKey === "podium" ? getPodiumOAuthClient() : getGoogleOAuthClient();
+  const ready = Boolean(oauthClient) && (providerKey !== "google_ads" || Boolean(getGoogleAdsDeveloperToken()));
+  if (!oauthClient || !ready) return { status: "error", message: `${providerKey === "meta" ? "Facebook and Instagram" : providerKey === "google_ads" ? "Google Ads" : providerKey === "podium" ? "Podium" : "Google Business Profile"} access is still being prepared. No action is required from you yet.` };
+  const context = await loadAuthorizedSetup(token, providerKey); if (!context) return { status: "error", message: "This setup link is invalid or expired." };
+  const connectionId = await ensureProviderConnection(context.admin, { partnerId: context.session.partner_id, clientId: context.session.client_id, createdBy: context.session.created_by! }, providerKey);
+  await context.admin.from("integration_connections").update({ credential_status: "rotating", health_summary: "Waiting for business account authorization to finish." }).eq("id", connectionId);
+  redirect(buildMarketingAuthorizationUrl(providerKey, oauthClient, connectionId, context.session.id));
+}
+
+export async function activateClientManagedConnector(
+  token: string,
+  providerKey: "universal_lead_email",
+  _previousState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  const inbound = getResendInboundConfig();
+  if (!inbound) return { status: "error", message: "The private lead inbox is still being prepared. No action is required from you yet." };
+  const context = await loadAuthorizedSetup(token, providerKey); if (!context) return { status: "error", message: "This setup link is invalid or expired." };
+  const connectionId = await ensureProviderConnection(context.admin, { partnerId: context.session.partner_id, clientId: context.session.client_id, createdBy: context.session.created_by! }, providerKey);
+  const inboundAddress = `lead-${connectionId}@${inbound.domain}`;
+  await context.admin.from("integration_connections").update({ status: "connected", credential_status: "configured", config: { inbound_address: inboundAddress }, external_account_id: inboundAddress, external_account_name: inboundAddress, connector_version: "1.0.0", health_summary: "Private lead inbox is active. Forward marketplace and form notifications to this address.", last_success_at: new Date().toISOString(), last_checked_at: new Date().toISOString() }).eq("id", connectionId);
+  await refreshPackageDeploymentReadiness(context.admin, { partnerId: context.session.partner_id, clientId: context.session.client_id });
+  revalidatePath(connectionSetupPath(token));
+  return { status: "success", message: `Lead inbox active: ${inboundAddress}` };
 }
 
 export async function startClientCommerceConnect(

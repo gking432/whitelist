@@ -24,6 +24,11 @@ import { callRailAdapter } from "../lib/integrations/providers/callrail.ts";
 import { ringCentralAdapter } from "../lib/integrations/providers/ringcentral.ts";
 import { dialpadAdapter } from "../lib/integrations/providers/dialpad.ts";
 import { openPhoneAdapter } from "../lib/integrations/providers/openphone.ts";
+import { metaAdapter } from "../lib/integrations/providers/meta.ts";
+import { googleAdsAdapter } from "../lib/integrations/providers/google-ads.ts";
+import { googleBusinessProfileAdapter } from "../lib/integrations/providers/google-business-profile.ts";
+import { podiumAdapter } from "../lib/integrations/providers/podium.ts";
+import { birdeyeAdapter } from "../lib/integrations/providers/birdeye.ts";
 
 test("connector catalog has unique valid manifests", () => {
   assert.ok(CONNECTOR_CATALOG.length >= 20);
@@ -76,6 +81,17 @@ test("retained phone connectors expose real call and message contracts", () => {
     assert.ok(connector.capabilities.includes("message.webhook"));
     assert.deepEqual(validateConnectorAdapter(adapter), [], adapter.manifest.key);
   }
+});
+
+test("marketing and reputation connectors expose executable contracts", () => {
+  for (const adapter of [metaAdapter, googleAdsAdapter, googleBusinessProfileAdapter, podiumAdapter, birdeyeAdapter]) {
+    const connector = CONNECTOR_CATALOG.find((item) => item.key === adapter.manifest.key);
+    assert.ok(connector, `${adapter.manifest.key} is in the catalog`);
+    assert.equal(connector.verificationStatus, "contract_verified");
+    assert.deepEqual(validateConnectorAdapter(adapter), [], adapter.manifest.key);
+  }
+  assert.equal(CONNECTOR_CATALOG.find((item) => item.key === "universal_lead_email")?.verificationStatus, "contract_verified");
+  for (const key of ["angi", "thumbtack", "yelp"]) assert.equal(CONNECTOR_CATALOG.find((item) => item.key === key)?.verificationStatus, "restricted");
 });
 
 test("QuickBooks customers map into the shared CRM contact shape", () => {

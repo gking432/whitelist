@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { CheckCircle2, LockKeyhole } from "lucide-react";
 
 import { ClientConnectionCard } from "@/components/integrations/client-connection-card";
-import { getDialpadOAuthClient, getGoogleOAuthClient, getJobberOAuthClient, getMicrosoftOAuthClient, getQuickBooksOAuthClient, getRingCentralOAuthClient, getSquareOAuthClient } from "@/lib/env";
+import { getDialpadOAuthClient, getGoogleAdsDeveloperToken, getGoogleOAuthClient, getJobberOAuthClient, getMetaOAuthClient, getMicrosoftOAuthClient, getPodiumOAuthClient, getQuickBooksOAuthClient, getResendInboundConfig, getRingCentralOAuthClient, getSquareOAuthClient } from "@/lib/env";
 import { loadActiveConnectionSetupSession } from "@/lib/integrations/connection-setup";
 import { PILOT_PROVIDERS, type PilotProviderKey } from "@/lib/integrations/pilot";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -38,7 +38,7 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
       admin.from("partner_branding").select("product_name, logo_url, primary_color").eq("partner_id", session.partner_id).maybeSingle(),
       admin
         .from("integration_connections")
-        .select("status, provider:integration_providers(provider_key)")
+        .select("status, external_account_name, provider:integration_providers(provider_key)")
         .eq("client_id", session.client_id),
       admin
         .from("partner_provider_connections")
@@ -55,6 +55,7 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
       .map((connection) => (connection.provider as unknown as { provider_key: string } | null)?.provider_key)
       .filter(Boolean),
   );
+  const connectionNames = new Map((connections ?? []).map((connection) => [(connection.provider as unknown as { provider_key: string } | null)?.provider_key, connection.external_account_name as string | null]));
   const requestedProviders = session.allowed_provider_keys.filter(
     (key): key is PilotProviderKey => key in PILOT_PROVIDERS,
   );
@@ -129,6 +130,7 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
                 token={token}
                 provider={PILOT_PROVIDERS[key]}
                 connected={connectedKeys.has(key)}
+                connectionDetail={connectionNames.get(key) ?? null}
                 productName={productName}
                 supportName={partner.name}
                 googleReady={Boolean(getGoogleOAuthClient())}
@@ -138,6 +140,11 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
                 squareReady={Boolean(getSquareOAuthClient())}
                 ringCentralReady={Boolean(getRingCentralOAuthClient())}
                 dialpadReady={Boolean(getDialpadOAuthClient())}
+                metaReady={Boolean(getMetaOAuthClient())}
+                googleMarketingReady={Boolean(getGoogleOAuthClient())}
+                googleAdsReady={Boolean(getGoogleOAuthClient() && getGoogleAdsDeveloperToken())}
+                podiumReady={Boolean(getPodiumOAuthClient())}
+                managedInboxReady={Boolean(getResendInboundConfig())}
                 managedTwilioReady={partnerTwilio?.status === "connected"}
               />
             ))}

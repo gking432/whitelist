@@ -20,14 +20,20 @@ Don't make accounts for things that aren't wired yet.
 | RingCentral / Dialpad / Quo | Platform OAuth for RingCentral and Dialpad; client API key for Quo | Real calls open the assistant, match CRM contacts, and create post-call activity |
 | Jobber / Housecall Pro / ServiceTitan / Workiz | OAuth or vendor credentials | Customers, leads, jobs, and appointments sync with the built-in CRM |
 | QuickBooks / Stripe / Square / CallRail | OAuth or restricted vendor credentials | Financial status and attributed leads sync into reporting and CRM context |
-| Anything else (GBP, Facebook, IG, Typeform…) | Native connector when listed; otherwise secured inbound bridge | Bridged leads flow through the AI |
+| Meta Lead Ads / Google Ads | Platform OAuth app; client signs in once | Leads enter the CRM and the latest 30-day campaign metrics appear in Marketing |
+| Google Business Profile / Podium / Birdeye | OAuth for GBP and Podium; Birdeye API key | Reviews populate reputation reporting; approved replies can be pushed where supported |
+| Angi / Thumbtack / Yelp / other email-notification sources | Activate the private forwarded lead inbox | Notification emails are authenticated, parsed, and routed through normal lead intake |
+| Anything else | Native connector when listed; otherwise secured inbound webhook | Bridged leads flow through the same AI and workflow pipeline |
 
 **Restricted or still awaiting vendor access:**
 
-- **Native Google Business Profile / social connectors.** Route them in via
-  an automation bridge to the webhook instead.
 - **Marketplaces such as Angi, Thumbtack, and Yelp.** Their broad lead APIs
-  require approved commercial access. Forwarded lead email remains the fallback.
+  require approved commercial access. The private forwarded lead inbox is the
+  built-in fallback and does not require the client to open another automation account.
+- **Google Local Services lead delivery and some provider review APIs** require
+  product approval or account eligibility beyond ordinary OAuth. The connector
+  remains disabled until the vendor grants that access; the lead inbox/webhook
+  fallback remains available.
 
 ---
 
@@ -168,7 +174,43 @@ send for real.
 - **Forms:** point your form's submit (or a Zapier step) at the generic
   inbound webhook (below).
 
-### Unsupported sources (via bridge)
+### Meta Lead Ads and campaign reporting
+1. Create one platform Meta app and set `META_APP_ID`, `META_APP_SECRET`, and
+   `META_WEBHOOK_VERIFY_TOKEN`.
+2. Add `https://<your-app>/api/oauth/meta/callback` as the OAuth redirect and
+   `https://<your-app>/api/integrations/inbound/meta` as the Page webhook.
+3. Obtain Meta App Review approval for the scopes listed in `.env.example`.
+4. In the secure client link, the client signs into Facebook and authorizes
+   its Page. The app discovers the Page and ad account, subscribes leadgen
+   webhooks, and syncs 30-day campaign snapshots.
+
+### Google Ads and Google Business Profile
+1. Add these OAuth redirects to the same Google Cloud web client:
+   `https://<your-app>/api/oauth/google_ads/callback` and
+   `https://<your-app>/api/oauth/google_business_profile/callback`.
+2. Set `GOOGLE_ADS_DEVELOPER_TOKEN` for Ads API access.
+3. The client authorizes each product from the secure setup link. The app
+   discovers the first accessible Ads customer or Business Profile location,
+   verifies it, and queues the matching campaign, lead, or review sync.
+
+### Podium and Birdeye
+1. Set the platform `PODIUM_OAUTH_CLIENT_ID` and `PODIUM_OAUTH_CLIENT_SECRET`,
+   with redirect `https://<your-app>/api/oauth/podium/callback`.
+2. Podium clients authorize with OAuth. Birdeye clients enter their own
+   Business ID and API key in the secure setup page.
+3. Reviews enter Marketing/Reputation. Public replies remain approval-gated.
+
+### Private forwarded lead inbox
+1. Configure Resend Receiving and set `PLATFORM_RESEND_API_KEY`,
+   `RESEND_WEBHOOK_SECRET`, and `RESEND_INBOUND_DOMAIN`.
+2. Point Resend's receiving webhook at
+   `https://<your-app>/api/integrations/inbound/email/resend`.
+3. The client clicks **Activate private lead inbox** and receives a unique
+   `lead-<connection-id>@<domain>` address.
+4. Put that address in Angi, Thumbtack, Yelp, or any source that can email a
+   lead notification. The client does not need Zapier, Make, or n8n.
+
+### Unsupported sources (via webhook bridge)
 When a native connector is not available, connect a
 **generic inbound web form** source — it gives you a webhook URL + token.
 Then in Zapier/Make, trigger on a new GBP message / FB lead / IG DM and send

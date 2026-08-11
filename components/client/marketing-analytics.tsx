@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import {
   buildMarketingAnalytics,
+  marketingSourceLabel,
   type MarketingAppointment,
   type MarketingContact,
   type MarketingDateRange,
@@ -26,6 +27,13 @@ import {
 import { cn } from "@/lib/utils";
 
 type MarketingView = "overview" | "sources" | "reputation";
+type PaidMediaSummary = {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  conversionValue: number;
+};
 
 const RANGE_LABELS: Record<MarketingDateRange, string> = {
   "30d": "Last 30 days",
@@ -111,11 +119,13 @@ export function MarketingAnalyticsDashboard({
   leads,
   appointments,
   feedback,
+  campaigns,
 }: {
   contacts: MarketingContact[];
   leads: MarketingLead[];
   appointments: MarketingAppointment[];
   feedback: MarketingFeedback[];
+  campaigns: Record<string, unknown>[];
 }) {
   const [range, setRange] = useState<MarketingDateRange>("90d");
   const [source, setSource] = useState("all");
@@ -135,7 +145,32 @@ export function MarketingAnalyticsDashboard({
   const hasData =
     analytics.leadCount > 0 ||
     analytics.reviewCount > 0 ||
-    analytics.appointmentCount > 0;
+    analytics.appointmentCount > 0 ||
+    campaigns.length > 0;
+  const paidMedia = useMemo(
+    () =>
+      campaigns.reduce<PaidMediaSummary>(
+        (summary, campaign) => ({
+          spend: summary.spend + Number(campaign.spend ?? 0),
+          impressions:
+            summary.impressions + Number(campaign.impressions ?? 0),
+          clicks: summary.clicks + Number(campaign.clicks ?? 0),
+          conversions:
+            summary.conversions + Number(campaign.conversions ?? 0),
+          conversionValue:
+            summary.conversionValue +
+            Number(campaign.conversion_value ?? 0),
+        }),
+        {
+          spend: 0,
+          impressions: 0,
+          clicks: 0,
+          conversions: 0,
+          conversionValue: 0,
+        },
+      ),
+    [campaigns],
+  );
   const maxTrend = Math.max(
     1,
     ...analytics.trend.map((point) => point.leads),
@@ -384,16 +419,49 @@ export function MarketingAnalyticsDashboard({
               <section className="flex flex-col gap-3 border-y bg-secondary/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold">
-                    Paid-media cost data is not connected
+                    {campaigns.length > 0
+                      ? "Paid-media performance"
+                      : "Paid-media cost data is not connected"}
                   </p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Lead, conversion, and estimated revenue attribution are
-                    available now. Cost per lead and true ROI appear after an
-                    ad platform or spend feed is connected.
+                    {campaigns.length > 0
+                      ? "Latest synced 30-day window from connected ad platforms."
+                      : "Lead, conversion, and estimated revenue attribution are available now. Cost per lead and true ROI appear after an ad platform or spend feed is connected."}
                   </p>
                 </div>
-                <Badge variant="outline">Attribution active</Badge>
+                <Badge variant="outline">
+                  {campaigns.length > 0
+                    ? `${campaigns.length} campaigns`
+                    : "Attribution active"}
+                </Badge>
               </section>
+
+              {campaigns.length > 0 ? (
+                <section className="overflow-hidden rounded-lg border bg-card">
+                  <div className="grid border-b sm:grid-cols-4">
+                    <Metric label="Ad spend" value={money(paidMedia.spend)} detail="Latest provider window" icon={CircleDollarSign} />
+                    <Metric label="Impressions" value={compactNumber(paidMedia.impressions)} detail="Latest provider window" icon={Megaphone} />
+                    <Metric label="Clicks" value={compactNumber(paidMedia.clicks)} detail={paidMedia.impressions > 0 ? `${((paidMedia.clicks / paidMedia.impressions) * 100).toFixed(1)}% click rate` : "No impressions"} icon={Target} />
+                    <Metric label="Platform conversions" value={paidMedia.conversions.toFixed(1)} detail={`${money(paidMedia.conversionValue)} reported value`} icon={Users} />
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[42rem] text-left text-xs">
+                      <thead className="border-b bg-secondary/30 text-[10px] uppercase text-muted-foreground"><tr><th className="px-5 py-3">Campaign</th><th className="px-4 py-3">Source</th><th className="px-4 py-3 text-right">Spend</th><th className="px-4 py-3 text-right">Clicks</th><th className="px-5 py-3 text-right">Conversions</th></tr></thead>
+                      <tbody className="divide-y">
+                        {campaigns.slice(0, 20).map((campaign) => (
+                          <tr key={String(campaign.id)}>
+                            <td className="px-5 py-3 font-medium">{String(campaign.name ?? "Campaign")}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{marketingSourceLabel(String(campaign.source ?? "unknown"))}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{money(Number(campaign.spend ?? 0))}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{compactNumber(Number(campaign.clicks ?? 0))}</td>
+                            <td className="px-5 py-3 text-right tabular-nums">{Number(campaign.conversions ?? 0).toFixed(1)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ) : null}
 
               <section className="overflow-hidden rounded-lg border bg-card">
                 <div className="border-b px-5 py-4">

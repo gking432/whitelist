@@ -91,6 +91,33 @@ export function getDialpadOAuthClient() {
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
+export function getMetaOAuthClient() {
+  const clientId = process.env.META_APP_ID;
+  const clientSecret = process.env.META_APP_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getGoogleAdsDeveloperToken() {
+  return process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? null;
+}
+
+export function getMetaWebhookVerifyToken() {
+  return process.env.META_WEBHOOK_VERIFY_TOKEN ?? null;
+}
+
+export function getResendInboundConfig() {
+  const apiKey = process.env.PLATFORM_RESEND_API_KEY;
+  const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+  const domain = process.env.RESEND_INBOUND_DOMAIN;
+  return apiKey && webhookSecret && domain ? { apiKey, webhookSecret, domain } : null;
+}
+
+export function getPodiumOAuthClient() {
+  const clientId = process.env.PODIUM_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.PODIUM_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
 export function isLocalDevAutoLoginEnabled() {
   const usesLocalSupabase =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??

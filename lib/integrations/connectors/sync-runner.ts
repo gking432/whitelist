@@ -6,6 +6,7 @@ import { refreshQuickBooksCredentials, refreshSquareCredentials, type QuickBooks
 import { refreshTelephonyCredentials } from "@/lib/integrations/providers/telephony-oauth";
 import type { RingCentralCredentials } from "@/lib/integrations/providers/ringcentral";
 import type { DialpadCredentials } from "@/lib/integrations/providers/dialpad";
+import { refreshGoogleMarketingCredentials, refreshPodiumCredentials, type GoogleAdsCredentials, type GoogleBusinessProfileCredentials, type PodiumCredentials } from "@/lib/integrations/providers/marketing-oauth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 import { getConnectorAdapter } from "./adapters";
@@ -156,6 +157,55 @@ async function projectCanonicalRecord(
     }
     return appointmentId;
   }
+
+  if (record.objectType === "review") {
+    const rawRating = record.data.rating;
+    const ratingNames: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
+    const rating = typeof rawRating === "number" ? Math.max(1, Math.min(5, Math.round(rawRating))) : ratingNames[String(rawRating ?? "").toUpperCase()] ?? null;
+    const feedbackText = value(record.data, "comment") ?? "Rating received without a written comment.";
+    const sentiment = rating === null ? "mixed" : rating >= 4 ? "positive" : rating <= 2 ? "negative" : "mixed";
+    const riskLevel = rating !== null && rating <= 1 ? "high" : rating !== null && rating <= 2 ? "medium" : "low";
+    const feedbackValues = {
+      partner_id: job.partner_id,
+      client_id: job.client_id,
+      source: value(record.data, "source") ?? job.provider?.provider_key ?? "external_review",
+      rating,
+      feedback_text: feedbackText,
+      sentiment: sentiment,
+      risk_level: riskLevel,
+      summary: feedbackText.slice(0, 500),
+      suggested_internal_action: rating !== null && rating <= 2 ? "Review the customer experience and assign a follow-up." : null,
+      suggested_customer_response: value(record.data, "reply"),
+      tags: [job.provider?.provider_key ?? "external_review"],
+      ai_status: "fallback",
+      raw_output: record.source,
+    };
+    let feedbackId = existingLink?.native_object_id ?? null;
+    if (feedbackId) await admin.from("crm_feedback").update(feedbackValues).eq("id", feedbackId).eq("client_id", job.client_id);
+    else { const { data } = await admin.from("crm_feedback").insert(feedbackValues).select("id").single(); feedbackId = data?.id ?? null; }
+    return feedbackId;
+  }
+
+  if (record.objectType === "campaign") {
+    const number = (key: string) => { const raw = record.data[key]; const parsed = Number(raw ?? 0); return Number.isFinite(parsed) ? parsed : 0; };
+    const { data } = await admin.from("marketing_campaign_snapshots").upsert({
+      partner_id: job.partner_id,
+      client_id: job.client_id,
+      connection_id: job.connection_id,
+      external_campaign_id: record.externalId,
+      source: value(record.data, "source") ?? job.provider?.provider_key ?? "external_campaign",
+      name: value(record.data, "name") ?? "Campaign",
+      status: value(record.data, "status"),
+      impressions: number("impressions"),
+      clicks: number("clicks"),
+      spend: number("spend"),
+      conversions: number("conversions"),
+      conversion_value: number("conversion_value"),
+      raw_metrics: record.source,
+      synced_at: new Date().toISOString(),
+    }, { onConflict: "connection_id,external_campaign_id" }).select("id").single();
+    return data?.id ?? null;
+  }
   return null;
 }
 
@@ -298,7 +348,7 @@ export async function processConnectorSyncJobs(limit = 20) {
       .eq("id", job.id).in("status", ["queued", "failed"]).select("id").maybeSingle();
     if (!claimed.data) continue;
     let credentials = await readProviderCredentials<unknown>(admin, job.connection_id);
-    if (["jobber", "quickbooks_online", "square", "ringcentral", "dialpad"].includes(job.provider?.provider_key ?? "") && credentials) {
+    if (["jobber", "quickbooks_online", "square", "ringcentral", "dialpad", "google_ads", "google_business_profile", "podium"].includes(job.provider?.provider_key ?? "") && credentials) {
       try {
         const providerKey = job.provider?.provider_key;
         const refreshed = providerKey === "jobber"
@@ -307,7 +357,11 @@ export async function processConnectorSyncJobs(limit = 20) {
             ? await refreshQuickBooksCredentials(credentials as QuickBooksCredentials)
             : providerKey === "square"
               ? await refreshSquareCredentials(credentials as SquareCredentials)
-              : await refreshTelephonyCredentials(providerKey as "ringcentral" | "dialpad", credentials as RingCentralCredentials | DialpadCredentials);
+              : providerKey === "ringcentral" || providerKey === "dialpad"
+                ? await refreshTelephonyCredentials(providerKey, credentials as RingCentralCredentials | DialpadCredentials)
+                : providerKey === "podium"
+                  ? await refreshPodiumCredentials(credentials as PodiumCredentials)
+                  : await refreshGoogleMarketingCredentials(credentials as GoogleAdsCredentials | GoogleBusinessProfileCredentials);
         credentials = refreshed;
         const stored = encryptProviderCredentials(refreshed as unknown as Record<string, string>);
         await admin.from("integration_secrets").update({ encrypted_value: stored.encrypted_value, last_four: stored.last_four, updated_at: new Date().toISOString() })
