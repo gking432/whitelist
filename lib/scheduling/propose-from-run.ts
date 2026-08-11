@@ -11,6 +11,7 @@ import {
   describeConstraints,
   parseSchedulingConstraints,
 } from "@/lib/scheduling/constraints";
+import { resolveSchedulingProvider } from "@/lib/scheduling/provider";
 import {
   computeOpenSlots,
   formatSlotLabel,
@@ -238,7 +239,19 @@ export async function proposeBookingFromRun(
     .limit(1)
     .maybeSingle();
 
-  if (!connection) {
+  const { data: client } = await admin
+    .from("client_businesses")
+    .select("timezone, crm_operating_mode")
+    .eq("id", input.clientId)
+    .eq("partner_id", input.partnerId)
+    .maybeSingle();
+  const schedulingProvider = resolveSchedulingProvider({
+    hasGoogleCalendar: Boolean(connection),
+    crmOperatingMode: client?.crm_operating_mode,
+  });
+  const usesInternalCalendar = schedulingProvider === "northstar_internal";
+
+  if (!schedulingProvider) {
     return {
       step: {
         name: "Booking proposal skipped",
@@ -279,7 +292,7 @@ export async function proposeBookingFromRun(
     await admin.from("integration_events").insert({
       partner_id: input.partnerId,
       client_id: input.clientId,
-      connection_id: connection.id,
+      connection_id: connection?.id ?? null,
       workflow_run_id: input.runId,
       direction: "outbound",
       event_type: eventType,
@@ -291,23 +304,6 @@ export async function proposeBookingFromRun(
   };
 
   try {
-    const credentials = await readProviderCredentials<GoogleCalendarCredentials>(
-      admin,
-      connection.id,
-    );
-
-    if (!credentials?.refreshToken) {
-      throw new Error(
-        "Google Calendar authorization is incomplete. Reconnect it in Setup.",
-      );
-    }
-
-    const { data: client } = await admin
-      .from("client_businesses")
-      .select("timezone")
-      .eq("id", input.clientId)
-      .maybeSingle();
-
     const timezone = client?.timezone ?? "America/New_York";
     const now = new Date();
     const weekOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -325,12 +321,37 @@ export async function proposeBookingFromRun(
     const constraints = parseSchedulingConstraints(constraintText);
     const constraintsDescription = describeConstraints(constraints);
 
-    // REAL availability from the connected calendar.
-    const busy = await getBusyIntervals(
-      credentials,
-      now.toISOString(),
-      weekOut.toISOString(),
-    );
+    let busy: { start: string; end: string }[];
+
+    if (usesInternalCalendar) {
+      const { data: appointments } = await admin
+        .from("crm_appointments")
+        .select("start_at, end_at")
+        .eq("client_id", input.clientId)
+        .in("status", ["proposed", "booked", "confirmed"])
+        .lt("start_at", weekOut.toISOString())
+        .gt("end_at", now.toISOString());
+      busy = (appointments ?? []).map((appointment) => ({
+        start: appointment.start_at,
+        end: appointment.end_at,
+      }));
+    } else {
+      const credentials = await readProviderCredentials<GoogleCalendarCredentials>(
+        admin,
+        connection!.id,
+      );
+
+      if (!credentials?.refreshToken) {
+        throw new Error(
+          "Google Calendar authorization is incomplete. Reconnect it in Setup.",
+        );
+      }
+      busy = await getBusyIntervals(
+        credentials,
+        now.toISOString(),
+        weekOut.toISOString(),
+      );
+    }
 
     let slots = computeOpenSlots(busy, {
       timezone,
@@ -390,8 +411,8 @@ export async function proposeBookingFromRun(
       type: "appointment_booking",
       status: "pending",
       title: `Book appointment: ${contactName} — ${primary.label}`,
-      summary: `Approving books ${primary.label} (${timezone}) on the connected Google Calendar${
-        connection.runtime_mode === "live"
+      summary: `Approving books ${primary.label} (${timezone}) on ${usesInternalCalendar ? "the built-in calendar" : "the connected Google Calendar"}${
+        usesInternalCalendar || connection!.runtime_mode === "live"
           ? ""
           : " — the connection is not live, so approval records a dry run"
       }. Open alternatives: ${
@@ -406,7 +427,7 @@ export async function proposeBookingFromRun(
       risk_level: "high",
       proposed_payload: {
         kind: "appointment_booking",
-        provider: "google_calendar",
+        provider: schedulingProvider,
         timezone,
         duration_minutes: knowledge?.appointment_duration_minutes ?? 60,
         constraints_understood: constraintsDescription,
@@ -435,7 +456,7 @@ export async function proposeBookingFromRun(
     return {
       step: {
         name: "Booking proposed",
-        detail: `Found ${labeled.length} real open slot${labeled.length === 1 ? "" : "s"}; proposed ${primary.label}. Waiting for approval — nothing is booked yet.`,
+        detail: `Found ${labeled.length} open slot${labeled.length === 1 ? "" : "s"} from ${usesInternalCalendar ? "the built-in schedule" : "the connected calendar"}; proposed ${primary.label}. Waiting for approval — nothing is booked yet.`,
       },
       booking: {
         status: "proposed",
