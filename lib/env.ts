@@ -67,6 +67,18 @@ export function getJobberOAuthClient() {
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
+export function getQuickBooksOAuthClient() {
+  const clientId = process.env.QUICKBOOKS_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.QUICKBOOKS_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getSquareOAuthClient() {
+  const clientId = process.env.SQUARE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.SQUARE_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
 export function isLocalDevAutoLoginEnabled() {
   const usesLocalSupabase =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??

@@ -4,6 +4,10 @@ import { housecallProAdapter } from "../providers/housecall-pro";
 import { jobberAdapter } from "../providers/jobber";
 import { serviceTitanAdapter } from "../providers/servicetitan";
 import { workizAdapter } from "../providers/workiz";
+import { quickBooksOnlineAdapter } from "../providers/quickbooks-online";
+import { stripeAdapter } from "../providers/stripe";
+import { squareAdapter } from "../providers/square";
+import { callRailAdapter } from "../providers/callrail";
 import type { ConnectorAdapter } from "./types";
 
 const ADAPTERS: Record<string, ConnectorAdapter> = {
@@ -13,6 +17,10 @@ const ADAPTERS: Record<string, ConnectorAdapter> = {
   jobber: jobberAdapter as ConnectorAdapter,
   servicetitan: serviceTitanAdapter as ConnectorAdapter,
   workiz: workizAdapter as ConnectorAdapter,
+  quickbooks_online: quickBooksOnlineAdapter as ConnectorAdapter,
+  stripe: stripeAdapter as ConnectorAdapter,
+  square: squareAdapter as ConnectorAdapter,
+  callrail: callRailAdapter as ConnectorAdapter,
 };
 
 export function getConnectorAdapter(providerKey: string): ConnectorAdapter | null {

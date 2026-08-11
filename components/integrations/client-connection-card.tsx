@@ -9,6 +9,7 @@ import {
   startClientGoogleConnect,
   startClientWorkspaceConnect,
   startClientJobberConnect,
+  startClientCommerceConnect,
 } from "@/app/connect/[token]/actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,6 +28,8 @@ type Props = {
   googleReady: boolean;
   microsoftReady: boolean;
   jobberReady: boolean;
+  quickBooksReady: boolean;
+  squareReady: boolean;
   managedTwilioReady: boolean;
 };
 
@@ -53,6 +56,8 @@ export function ClientConnectionCard({
   googleReady,
   microsoftReady,
   jobberReady,
+  quickBooksReady,
+  squareReady,
   managedTwilioReady,
 }: Props) {
   const [showExistingTwilio, setShowExistingTwilio] = useState(false);
@@ -81,6 +86,11 @@ export function ClientConnectionCard({
     startClientJobberConnect.bind(null, token),
     initialFormState,
   );
+  const commerceProvider = provider.key === "square" ? "square" : "quickbooks_online";
+  const [commerceState, submitCommerce, commercePending] = useActionState(
+    startClientCommerceConnect.bind(null, token, commerceProvider),
+    initialFormState,
+  );
 
   return (
     <article className="rounded-lg border bg-card p-5 sm:p-6">
@@ -100,6 +110,17 @@ export function ClientConnectionCard({
         <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           Verified. No additional access is needed.
         </div>
+      ) : provider.key === "quickbooks_online" || provider.key === "square" ? (
+        <form action={submitCommerce} className="mt-5">
+          <Button type="submit" disabled={commercePending || (provider.key === "quickbooks_online" ? !quickBooksReady : !squareReady)}>
+            <ExternalLink aria-hidden="true" />
+            {commercePending ? "Opening sign-in..." : `Connect ${provider.title}`}
+          </Button>
+          {(provider.key === "quickbooks_online" ? !quickBooksReady : !squareReady) ? (
+            <p className="mt-2 text-xs text-amber-800">{supportName} is still preparing {provider.title} access. No action is required from you yet.</p>
+          ) : null}
+          <ResultMessage state={commerceState} />
+        </form>
       ) : provider.key === "jobber" ? (
         <form action={submitJobber} className="mt-5">
           <Button type="submit" disabled={jobberPending || !jobberReady}>

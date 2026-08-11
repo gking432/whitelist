@@ -32,6 +32,8 @@ import { housecallProAdapter, type HousecallProCredentials } from "@/lib/integra
 import { serviceTitanAdapter, type ServiceTitanCredentials } from "@/lib/integrations/providers/servicetitan";
 import { workizAdapter, type WorkizCredentials } from "@/lib/integrations/providers/workiz";
 import { enqueueInitialConnectorSync } from "@/lib/integrations/connectors/sync-runner";
+import { stripeAdapter, type StripeCredentials } from "@/lib/integrations/providers/stripe";
+import { callRailAdapter, type CallRailCredentials } from "@/lib/integrations/providers/callrail";
 
 type ConnectionScope = {
   partnerId: string;
@@ -41,7 +43,7 @@ type ConnectionScope = {
 
 type CredentialProviderKey = Exclude<
   PilotProviderKey,
-  "google_calendar" | "google_workspace" | "microsoft_365" | "jobber"
+  "google_calendar" | "google_workspace" | "microsoft_365" | "jobber" | "quickbooks_online" | "square"
 >;
 
 export async function ensureProviderConnection(
@@ -113,6 +115,12 @@ async function verifyProviderCredentials(
   }
   if (providerKey === "workiz") {
     return workizAdapter.testConnection({ connectionId: "verify", partnerId: "verify", clientId: "verify", credentials: credentials as unknown as WorkizCredentials, config: {} });
+  }
+  if (providerKey === "stripe") {
+    return stripeAdapter.testConnection({ connectionId: "verify", partnerId: "verify", clientId: "verify", credentials: credentials as unknown as StripeCredentials, config: {} });
+  }
+  if (providerKey === "callrail") {
+    return callRailAdapter.testConnection({ connectionId: "verify", partnerId: "verify", clientId: "verify", credentials: credentials as unknown as CallRailCredentials, config: {} });
   }
   return testTwilioConnection(credentials as unknown as TwilioCredentials);
 }
@@ -221,7 +229,7 @@ export async function saveProviderCredentials(
     partnerId: scope.partnerId,
     clientId: scope.clientId,
   });
-  if (["housecall_pro", "servicetitan", "workiz"].includes(providerKey)) {
+  if (["housecall_pro", "servicetitan", "workiz", "stripe", "callrail"].includes(providerKey)) {
     await enqueueInitialConnectorSync(supabase, {
       partnerId: scope.partnerId,
       clientId: scope.clientId,

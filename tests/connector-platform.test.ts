@@ -17,6 +17,10 @@ import {
   connectorRetryDelayMinutes,
   executeConnectorSyncJob,
 } from "../lib/integrations/connectors/sync-executor.ts";
+import { quickBooksOnlineAdapter, mapQuickBooksCustomer } from "../lib/integrations/providers/quickbooks-online.ts";
+import { stripeAdapter } from "../lib/integrations/providers/stripe.ts";
+import { squareAdapter } from "../lib/integrations/providers/square.ts";
+import { callRailAdapter } from "../lib/integrations/providers/callrail.ts";
 
 test("connector catalog has unique valid manifests", () => {
   assert.ok(CONNECTOR_CATALOG.length >= 20);
@@ -46,6 +50,32 @@ test("field-service launch connectors have executable contracts", () => {
     assert.equal(connector.verificationStatus, "contract_verified");
     assert.ok(connector.capabilities.some((capability) => capability.endsWith(".read")));
   }
+});
+
+test("finance and attribution connectors have executable contracts", () => {
+  for (const key of ["quickbooks_online", "stripe", "square", "callrail"]) {
+    const connector = CONNECTOR_CATALOG.find((item) => item.key === key);
+    assert.ok(connector, `${key} is in the catalog`);
+    assert.equal(connector.verificationStatus, "contract_verified");
+    assert.ok(connector.capabilities.some((capability) => capability.endsWith(".read")));
+  }
+  for (const adapter of [quickBooksOnlineAdapter, stripeAdapter, squareAdapter, callRailAdapter]) {
+    assert.deepEqual(validateConnectorAdapter(adapter), [], adapter.manifest.key);
+  }
+});
+
+test("QuickBooks customers map into the shared CRM contact shape", () => {
+  const mapped = mapQuickBooksCustomer({
+    Id: "42",
+    DisplayName: "Acme Plumbing",
+    PrimaryEmailAddr: { Address: "office@acme.test" },
+    PrimaryPhone: { FreeFormNumber: "+13125550100" },
+    MetaData: { LastUpdatedTime: "2026-08-11T12:00:00Z" },
+  });
+  assert.equal(mapped.objectType, "customer");
+  assert.equal(mapped.externalId, "42");
+  assert.equal(mapped.data.email, "office@acme.test");
+  assert.equal(mapped.data.phone, "+13125550100");
 });
 
 test("available adapters must implement the operations they advertise", () => {

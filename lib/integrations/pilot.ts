@@ -16,6 +16,10 @@ export const PILOT_PROVIDER_KEYS = [
   "housecall_pro",
   "servicetitan",
   "workiz",
+  "quickbooks_online",
+  "stripe",
+  "square",
+  "callrail",
 ] as const;
 
 export type PilotProviderKey = (typeof PILOT_PROVIDER_KEYS)[number];
@@ -306,6 +310,39 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
     neverDoes: ["Never deletes leads or changes job status."], connectMethod: "credentials",
     fields: [{ name: "apiToken", label: "Workiz API token", placeholder: "Paste API token", help: "Generate the token in the Workiz account's developer/API settings.", secret: true }],
     whereToGet: "Open the Workiz account's developer/API settings and generate an API token for the business.",
+  },
+  quickbooks_online: {
+    key: "quickbooks_online", title: "QuickBooks Online", tagline: "Keeps customers, invoices, and payment status in sync with QuickBooks.",
+    allows: ["Read customers, invoices, and payments for reporting.", "Create a QuickBooks customer from an approved CRM record."],
+    neverDoes: ["Never moves money or changes bank data.", "Never deletes accounting records."],
+    connectMethod: "oauth", fields: [],
+    whereToGet: "Sign in with the administrator of the client's QuickBooks Online company. No API key is required.",
+  },
+  stripe: {
+    key: "stripe", title: "Stripe", tagline: "Syncs customers, invoices, payments, and approved payment links.",
+    allows: ["Read customers, invoices, and payment status.", "Create an approved customer or hosted payment link."],
+    neverDoes: ["Never refunds, transfers, or moves money.", "Never stores card numbers."],
+    connectMethod: "credentials",
+    fields: [{ name: "apiKey", label: "Restricted API key", placeholder: "rk_live_... or rk_test_...", help: "Stripe Dashboard → Developers → API keys → Create restricted key. Grant read access to Customers, Invoices, and Payment Intents; write access to Customers and Payment Links.", secret: true }],
+    whereToGet: "Stripe Dashboard → Developers → API keys → Create restricted key. Use a test key first; switch to a live restricted key only after validation.",
+  },
+  square: {
+    key: "square", title: "Square", tagline: "Syncs customers, invoices, payments, and approved payment links.",
+    allows: ["Read customers, invoices, and payment status.", "Create an approved customer or hosted checkout link."],
+    neverDoes: ["Never refunds or moves settled funds.", "Never stores card numbers."],
+    connectMethod: "oauth", fields: [],
+    whereToGet: "Sign in with the administrator of the client's Square seller account. No API key is required.",
+  },
+  callrail: {
+    key: "callrail", title: "CallRail", tagline: "Brings tracked calls and website forms into lead intake with attribution.",
+    allows: ["Read calls and form submissions as attributed leads.", "Preserve campaign, source, answer status, and call duration."],
+    neverDoes: ["Never changes tracking numbers or call routing.", "Never publishes recordings outside the client's account."],
+    connectMethod: "credentials",
+    fields: [
+      { name: "apiKey", label: "API v3 key", placeholder: "Paste CallRail API key", help: "CallRail → Integrations → Data access → API Keys → Create New API v3 Key.", secret: true },
+      { name: "accountId", label: "Account ID", placeholder: "ACC...", help: "Open the CallRail dashboard and copy the account ID shown after /a/ in the URL.", secret: false },
+    ],
+    whereToGet: "CallRail → Integrations → Data access → API Keys. The key is only fully visible for 15 minutes; enter it directly here.",
   },
 };
 

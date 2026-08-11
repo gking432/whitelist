@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { encryptProviderCredentials, PROVIDER_CREDENTIALS_KIND, readProviderCredentials } from "@/lib/integrations/credentials";
 import { refreshJobberCredentials, type JobberCredentials } from "@/lib/integrations/providers/jobber-oauth";
+import { refreshQuickBooksCredentials, refreshSquareCredentials, type QuickBooksCredentials, type SquareCredentials } from "@/lib/integrations/providers/commerce-oauth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 import { getConnectorAdapter } from "./adapters";
@@ -294,15 +295,19 @@ export async function processConnectorSyncJobs(limit = 20) {
       .eq("id", job.id).in("status", ["queued", "failed"]).select("id").maybeSingle();
     if (!claimed.data) continue;
     let credentials = await readProviderCredentials<unknown>(admin, job.connection_id);
-    if (job.provider?.provider_key === "jobber" && credentials) {
+    if (["jobber", "quickbooks_online", "square"].includes(job.provider?.provider_key ?? "") && credentials) {
       try {
-        const refreshed = await refreshJobberCredentials(credentials as JobberCredentials);
+        const refreshed = job.provider?.provider_key === "jobber"
+          ? await refreshJobberCredentials(credentials as JobberCredentials)
+          : job.provider?.provider_key === "quickbooks_online"
+            ? await refreshQuickBooksCredentials(credentials as QuickBooksCredentials)
+            : await refreshSquareCredentials(credentials as SquareCredentials);
         credentials = refreshed;
         const stored = encryptProviderCredentials(refreshed as unknown as Record<string, string>);
         await admin.from("integration_secrets").update({ encrypted_value: stored.encrypted_value, last_four: stored.last_four, updated_at: new Date().toISOString() })
           .eq("connection_id", job.connection_id).eq("secret_kind", PROVIDER_CREDENTIALS_KIND);
       } catch (error) {
-        const detail = error instanceof Error ? error.message : "Jobber token refresh failed.";
+        const detail = error instanceof Error ? error.message : "Provider token refresh failed.";
         await admin.from("integration_connections").update({ status: "needs_attention", credential_status: "invalid", health_summary: detail, last_failure_at: new Date().toISOString() }).eq("id", job.connection_id);
         await admin.from("integration_sync_jobs").update({ status: "failed", attempts: job.attempts + 1, last_error: detail, scheduled_for: new Date(Date.now() + connectorRetryDelayMinutes(job.attempts + 1) * 60_000).toISOString(), locked_at: null, locked_by: null }).eq("id", job.id);
         failed += 1;

@@ -97,6 +97,26 @@ export function ConnectionLinkForm({ action, hasActiveLink }: Props) {
       </fieldset>
 
       <fieldset>
+        <legend className="mb-2 text-sm font-medium">Accounting and payments</legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[PILOT_PROVIDERS.quickbooks_online, PILOT_PROVIDERS.stripe, PILOT_PROVIDERS.square].map((provider) => (
+            <label key={provider.key} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm">
+              <Checkbox name="providers" value={provider.key} />
+              <span>{provider.title}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium">Call tracking</legend>
+        <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm sm:max-w-72">
+          <Checkbox name="providers" value="callrail" />
+          <span>{PILOT_PROVIDERS.callrail.title}</span>
+        </label>
+      </fieldset>
+
+      <fieldset>
         <legend className="mb-2 text-sm font-medium">Phone and optional sending</legend>
         <div className="grid gap-2 sm:grid-cols-2">
         {[PILOT_PROVIDERS.twilio, PILOT_PROVIDERS.resend]

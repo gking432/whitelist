@@ -10,6 +10,8 @@ import {
   getGoogleOAuthClient,
   getMicrosoftOAuthClient,
   getJobberOAuthClient,
+  getQuickBooksOAuthClient,
+  getSquareOAuthClient,
 } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
@@ -31,6 +33,11 @@ import { buildJobberAuthorizationUrl, type JobberCredentials } from "@/lib/integ
 import { serviceTitanAdapter, type ServiceTitanCredentials } from "@/lib/integrations/providers/servicetitan";
 import { workizAdapter, type WorkizCredentials } from "@/lib/integrations/providers/workiz";
 import { enqueueInitialConnectorSync } from "@/lib/integrations/connectors/sync-runner";
+import { buildCommerceAuthorizationUrl, type CommerceOAuthProviderKey, type QuickBooksCredentials, type SquareCredentials } from "@/lib/integrations/providers/commerce-oauth";
+import { quickBooksOnlineAdapter } from "@/lib/integrations/providers/quickbooks-online";
+import { stripeAdapter, type StripeCredentials } from "@/lib/integrations/providers/stripe";
+import { squareAdapter } from "@/lib/integrations/providers/square";
+import { callRailAdapter, type CallRailCredentials } from "@/lib/integrations/providers/callrail";
 import {
   buildWorkspaceAuthorizationUrl,
   type WorkspaceCredentials,
@@ -214,6 +221,8 @@ export async function connectPilotProvider(
     providerKey === "google_workspace" ||
     providerKey === "microsoft_365" ||
     providerKey === "jobber"
+    || providerKey === "quickbooks_online"
+    || providerKey === "square"
   ) {
     return { status: "error", message: "Unknown pilot provider." };
   }
@@ -292,6 +301,10 @@ export async function connectPilotProvider(
                 ? await serviceTitanAdapter.testConnection({ connectionId: "verify", partnerId: access.partnerId!, clientId, credentials: credentials as unknown as ServiceTitanCredentials, config: {} })
                 : providerKey === "workiz"
                   ? await workizAdapter.testConnection({ connectionId: "verify", partnerId: access.partnerId!, clientId, credentials: credentials as unknown as WorkizCredentials, config: {} })
+                  : providerKey === "stripe"
+                    ? await stripeAdapter.testConnection({ connectionId: "verify", partnerId: access.partnerId!, clientId, credentials: credentials as unknown as StripeCredentials, config: {} })
+                    : providerKey === "callrail"
+                      ? await callRailAdapter.testConnection({ connectionId: "verify", partnerId: access.partnerId!, clientId, credentials: credentials as unknown as CallRailCredentials, config: {} })
                   : await testTwilioConnection(credentials as unknown as TwilioCredentials);
 
     if (!test.ok) {
@@ -372,7 +385,7 @@ export async function connectPilotProvider(
       partnerId: access.partnerId!,
       clientId,
     });
-    if (["housecall_pro", "servicetitan", "workiz"].includes(providerKey)) {
+    if (["housecall_pro", "servicetitan", "workiz", "stripe", "callrail"].includes(providerKey)) {
       await enqueueInitialConnectorSync(supabase, { partnerId: access.partnerId!, clientId, connectionId: ensured.connectionId, providerKey });
     }
 
@@ -597,6 +610,30 @@ export async function startJobberConnect(
   redirect(authorizationUrl);
 }
 
+export async function startCommerceConnect(
+  clientId: string,
+  providerKey: CommerceOAuthProviderKey,
+  _previousState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  const auth = await getAuthState();
+  if (!auth.user) return { status: "error", message: "Sign in to manage integrations." };
+  if (!isSecretsEncryptionConfigured()) return { status: "error", message: "Secure credential storage is not configured." };
+  const oauthClient = providerKey === "quickbooks_online" ? getQuickBooksOAuthClient() : getSquareOAuthClient();
+  if (!oauthClient) return { status: "error", message: `${PILOT_PROVIDERS[providerKey].title} authorization is not configured on the platform yet.` };
+  let authorizationUrl: string;
+  try {
+    const context = await loadPilotContext(auth.user.id, clientId);
+    if (!context) return { status: "error", message: "The data service is unavailable." };
+    const { access, supabase } = context;
+    const ensured = await ensurePilotConnection({ supabase, partnerId: access.partnerId!, clientId, userId: access.userId, providerKey, displayName: PILOT_PROVIDERS[providerKey].title });
+    if ("error" in ensured) return { status: "error", message: ensured.error };
+    await supabase.from("integration_connections").update({ credential_status: "rotating", health_summary: `Waiting for ${PILOT_PROVIDERS[providerKey].title} authorization to finish.` }).eq("id", ensured.connectionId);
+    authorizationUrl = buildCommerceAuthorizationUrl(providerKey, oauthClient, ensured.connectionId);
+  } catch (error) { return deniedState(error); }
+  redirect(authorizationUrl);
+}
+
 // Re-test a stored connection on demand. Reads the encrypted credentials via
 // the service-role client (browser roles cannot see them) after the same
 // permission check every management action uses.
@@ -742,11 +779,31 @@ export async function testPilotConnection(
       result = credentials?.clientId && credentials.clientSecret && credentials.appKey && credentials.tenantId
         ? await serviceTitanAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
         : { ok: false, detail: "ServiceTitan credentials are incomplete." };
-    } else {
+    } else if (providerKey === "workiz") {
       const credentials = await readProviderCredentials<WorkizCredentials>(admin, connectionId);
       result = credentials?.apiToken
         ? await workizAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
         : { ok: false, detail: "No Workiz API token is stored." };
+    } else if (providerKey === "quickbooks_online") {
+      const credentials = await readProviderCredentials<QuickBooksCredentials>(admin, connectionId);
+      result = credentials?.accessToken && credentials.realmId
+        ? await quickBooksOnlineAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
+        : { ok: false, detail: "QuickBooks authorization is incomplete. Connect again." };
+    } else if (providerKey === "stripe") {
+      const credentials = await readProviderCredentials<StripeCredentials>(admin, connectionId);
+      result = credentials?.apiKey
+        ? await stripeAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
+        : { ok: false, detail: "No Stripe restricted key is stored." };
+    } else if (providerKey === "square") {
+      const credentials = await readProviderCredentials<SquareCredentials>(admin, connectionId);
+      result = credentials?.accessToken
+        ? await squareAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
+        : { ok: false, detail: "Square authorization is incomplete. Connect again." };
+    } else {
+      const credentials = await readProviderCredentials<CallRailCredentials>(admin, connectionId);
+      result = credentials?.apiKey && credentials.accountId
+        ? await callRailAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
+        : { ok: false, detail: "CallRail credentials are incomplete." };
     }
 
     await supabase

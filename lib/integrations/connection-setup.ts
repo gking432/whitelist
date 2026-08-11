@@ -16,6 +16,10 @@ export const CONNECTION_SETUP_PROVIDER_KEYS = [
   "housecall_pro",
   "servicetitan",
   "workiz",
+  "quickbooks_online",
+  "stripe",
+  "square",
+  "callrail",
 ] as const;
 
 export type ConnectionSetupProviderKey =
