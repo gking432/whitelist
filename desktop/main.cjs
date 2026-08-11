@@ -12,11 +12,16 @@ const {
 const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs");
 const path = require("node:path");
+const { normalizeAppUrl } = require("./runtime-config.cjs");
 
-const PRODUCT_NAME = "Northstar Phone Assistant";
+const PRODUCT_NAME = "Business Assistant";
 const LOCAL_APP_URL = "http://localhost:3000";
+const desktopTestMode = process.env.DESKTOP_TEST_MODE === "true";
 
-app.setPath("userData", path.join(app.getPath("appData"), PRODUCT_NAME));
+app.setPath(
+  "userData",
+  process.env.DESKTOP_USER_DATA_DIR || path.join(app.getPath("appData"), PRODUCT_NAME),
+);
 
 let window = null;
 let tray = null;
@@ -46,25 +51,6 @@ async function reportDesktopError(error, context = {}) {
     });
   } catch {
     // The reporter must not destabilize the assistant.
-  }
-}
-
-function normalizeAppUrl(value, allowLocalhost = false) {
-  try {
-    const parsed = new URL(String(value || "").trim());
-    const isLocal =
-      parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-
-    if (parsed.username || parsed.password) return null;
-    if (parsed.protocol !== "https:" && !(allowLocalhost && isLocal)) {
-      return null;
-    }
-
-    parsed.hash = "";
-    parsed.search = "";
-    return parsed.origin;
-  } catch {
-    return null;
   }
 }
 
@@ -400,7 +386,7 @@ ipcMain.handle("northstar:save-server", async (_event, submittedUrl) => {
     return {
       ok: false,
       error: app.isPackaged
-        ? "Enter the secure HTTPS address supplied by Northstar."
+        ? "Enter the secure HTTPS address supplied by your service partner."
         : "Enter an HTTPS address or a local development address.",
     };
   }
@@ -441,14 +427,18 @@ if (!singleInstanceLock) {
     app.setName(PRODUCT_NAME);
     createTray();
 
-    if (app.isPackaged && readRuntimeConfig().launchAtLogin === undefined) {
+    if (app.isPackaged && desktopTestMode) {
+      app.setLoginItemSettings({ openAtLogin: false });
+    } else if (app.isPackaged && readRuntimeConfig().launchAtLogin === undefined) {
       setLaunchAtLogin(true);
       rebuildTrayMenu();
     }
 
     createWindow();
-    setTimeout(() => void checkForUpdates({ quiet: true }), 10_000);
-    setInterval(() => void checkForUpdates({ quiet: true }), 6 * 60 * 60 * 1000);
+    if (!desktopTestMode) {
+      setTimeout(() => void checkForUpdates({ quiet: true }), 10_000);
+      setInterval(() => void checkForUpdates({ quiet: true }), 6 * 60 * 60 * 1000);
+    }
 
     app.on("activate", () => {
       if (!window) createWindow();

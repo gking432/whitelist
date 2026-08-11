@@ -136,7 +136,10 @@ export function getLocalDevLoginEmail(nextPath = "/partner") {
     return process.env.DEV_AUTO_LOGIN_EMAIL;
   }
 
-  if (nextPath.startsWith("/client")) {
+  if (
+    nextPath.startsWith("/client") ||
+    nextPath.startsWith("/desktop")
+  ) {
     return "client@northstar.test";
   }
 

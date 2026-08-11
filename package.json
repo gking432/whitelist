@@ -13,10 +13,12 @@
     "desktop:dev": "NORTHSTAR_APP_URL=http://localhost:3000 NORTHSTAR_DEV_AUTO_LOGIN=true electron desktop/main.cjs",
     "desktop:icon": "node desktop/generate-icon.mjs",
     "desktop:deps": "npm ci --prefix desktop --omit=dev",
-    "desktop:pack": "npm run desktop:icon && npm run desktop:deps && electron-builder --dir",
-    "desktop:dist": "npm run desktop:icon && npm run desktop:deps && electron-builder",
-    "desktop:dist:mac": "npm run desktop:icon && npm run desktop:deps && electron-builder --mac dmg zip",
-    "desktop:release": "npm run desktop:icon && npm run desktop:deps && electron-builder --publish always",
+    "desktop:clean": "node scripts/clean-desktop-release.mjs",
+    "desktop:pack": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder --dir",
+    "desktop:dist": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder",
+    "desktop:dist:mac": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder --mac dmg zip",
+    "desktop:release": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder --publish always",
+    "verify:desktop-bundle": "node scripts/verify-desktop-bundle.mjs",
     "voice-stream": "node services/voice-stream/server.cjs",
     "verify:restore": "node scripts/verify-database-restore.mjs",
     "lint": "eslint .",
@@ -59,8 +61,8 @@
     "sharp": "0.35.3"
   },
   "build": {
-    "appId": "com.northstar.phoneassistant",
-    "productName": "Northstar Phone Assistant",
+    "appId": "com.businessassistant.desktop",
+    "productName": "Business Assistant",
     "asar": true,
     "files": ["**/*"],
     "directories": {

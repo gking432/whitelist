@@ -80,7 +80,9 @@ export function PortalShell({
       <div className="min-h-screen bg-background" style={brandStyle}>
         {banner}
         {children}
-        {visibleSections.includes("assistant") ? <LiveCallOverlay /> : null}
+        {visibleSections.includes("assistant") ? (
+          <LiveCallOverlay productName={branding.productName} />
+        ) : null}
       </div>
     );
   }
@@ -183,7 +185,9 @@ export function PortalShell({
           </p>
         </div>
       </footer>
-      {visibleSections.includes("assistant") ? <LiveCallOverlay /> : null}
+      {visibleSections.includes("assistant") ? (
+        <LiveCallOverlay productName={branding.productName} />
+      ) : null}
     </div>
   );
 }

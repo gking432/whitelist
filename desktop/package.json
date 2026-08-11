@@ -1,8 +1,8 @@
 {
-  "name": "northstar-phone-assistant",
+  "name": "business-assistant",
   "version": "0.1.0",
-  "description": "Northstar white-label live phone and scheduling assistant.",
-  "author": "Northstar",
+  "description": "White-label live phone and scheduling assistant.",
+  "author": "Business Assistant",
   "private": true,
   "main": "main.cjs",
   "dependencies": {

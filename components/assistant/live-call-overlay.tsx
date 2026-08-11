@@ -33,6 +33,7 @@ declare global {
 type LiveCallOverlayProps = {
   standalone?: boolean;
   clientId?: string;
+  productName?: string;
 };
 
 function Field({
@@ -57,6 +58,7 @@ function Field({
 export function LiveCallOverlay({
   standalone = false,
   clientId,
+  productName = "Business",
 }: LiveCallOverlayProps) {
   const [context, setContext] = useState<AssistantContextData | null>(null);
   const [expanded, setExpanded] = useState(true);
@@ -189,7 +191,7 @@ export function LiveCallOverlay({
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-semibold">Northstar phone assistant</p>
+              <p className="text-sm font-semibold">{productName} assistant</p>
               <Badge className="border-emerald-300/30 bg-emerald-400/10 text-emerald-200">
                 Live
               </Badge>
@@ -357,7 +359,7 @@ export function LiveCallOverlay({
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
           <p className="text-[11px] text-muted-foreground">
             {context.crm.providerLabel === "Northstar CRM"
-              ? "Saving to Northstar CRM"
+              ? `Saving to ${productName}`
               : `Will sync to ${context.crm.providerLabel} after the call`}
           </p>
           <div className="flex items-center gap-2">

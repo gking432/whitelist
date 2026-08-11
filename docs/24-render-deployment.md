@@ -94,3 +94,5 @@ installers and update metadata. Before tagging a release:
 
 The app checks GitHub Releases automatically and offers restart-to-install after
 an update downloads. The workflow fails instead of publishing unsigned builds.
+Run `npm run verify:desktop-bundle` against the distribution artifact and follow
+the update/forward-rollback procedure in `docs/26-desktop-release-and-rollback.md`.

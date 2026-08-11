@@ -40,5 +40,7 @@ export default async function DesktopAssistantPage() {
     );
   }
 
-  return <LiveCallOverlay standalone />;
+  return (
+    <LiveCallOverlay standalone productName={portal.branding.productName} />
+  );
 }
