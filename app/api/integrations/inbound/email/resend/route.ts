@@ -22,7 +22,7 @@ function firstMatch(value: string, pattern: RegExp) { return value.match(pattern
 
 export async function POST(request: NextRequest) {
   const config = getResendInboundConfig(); if (!config) return NextResponse.json({ error: "Unavailable." }, { status: 503 });
-  const rate = checkRateLimit("resend:inbound"); if (!rate.allowed) return NextResponse.json({ error: "Rate limited." }, { status: 429 });
+  const rate = await checkRateLimit("resend:inbound"); if (!rate.allowed) return NextResponse.json({ error: "Rate limited." }, { status: 429 });
   const raw = await request.text(); if (!verifySvix(raw, request, config.webhookSecret)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   let event: { type?: string; data?: { email_id?: string; to?: string[]; from?: string; subject?: string; message_id?: string } }; try { event = JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid payload." }, { status: 400 }); }
   if (event.type !== "email.received" || !event.data?.email_id) return NextResponse.json({ received: true });

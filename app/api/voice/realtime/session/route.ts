@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     return json(400, { error: "Send JSON with client_id." });
   }
 
-  const rate = checkRateLimit(`voice-mint:${authState.user.id}`);
+  const rate = await checkRateLimit(`voice-mint:${authState.user.id}`);
 
   if (!rate.allowed) {
     return json(429, { error: "Slow down a moment and try again." });

@@ -90,7 +90,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const provider = rawProvider as ProviderKey;
   const validationToken = request.headers.get("validation-token");
   if (provider === "ringcentral" && validationToken) return new NextResponse(null, { status: 200, headers: { "Validation-Token": validationToken } });
-  const rate = checkRateLimit(`phone:${provider}:${connectionId}`);
+  const rate = await checkRateLimit(`phone:${provider}:${connectionId}`);
   if (!rate.allowed) return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "Unavailable." }, { status: 503 });

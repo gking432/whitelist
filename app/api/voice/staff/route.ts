@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     return json(401, { error: "Sign in to operate the phone assistant." });
   }
 
-  const rate = checkRateLimit(`staff-voice:${auth.user.id}`);
+  const rate = await checkRateLimit(`staff-voice:${auth.user.id}`);
 
   if (!rate.allowed) {
     return json(429, { error: "Slow down a moment and try again." });

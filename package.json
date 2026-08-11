@@ -12,9 +12,11 @@
     "desktop": "electron desktop/main.cjs",
     "desktop:dev": "NORTHSTAR_APP_URL=http://localhost:3000 NORTHSTAR_DEV_AUTO_LOGIN=true electron desktop/main.cjs",
     "desktop:icon": "node desktop/generate-icon.mjs",
-    "desktop:pack": "npm run desktop:icon && electron-builder --dir",
-    "desktop:dist": "npm run desktop:icon && electron-builder",
-    "desktop:dist:mac": "npm run desktop:icon && electron-builder --mac dmg zip",
+    "desktop:deps": "npm ci --prefix desktop --omit=dev",
+    "desktop:pack": "npm run desktop:icon && npm run desktop:deps && electron-builder --dir",
+    "desktop:dist": "npm run desktop:icon && npm run desktop:deps && electron-builder",
+    "desktop:dist:mac": "npm run desktop:icon && npm run desktop:deps && electron-builder --mac dmg zip",
+    "desktop:release": "npm run desktop:icon && npm run desktop:deps && electron-builder --publish always",
     "voice-stream": "node services/voice-stream/server.cjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -29,7 +31,7 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "lucide-react": "1.21.0",
-    "next": "16.2.12",
+    "next": "16.3.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "tailwind-merge": "3.6.0",
@@ -37,39 +39,46 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.3.1",
+    "@tailwindcss/postcss": "4.3.3",
     "@types/node": "26.0.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "electron": "43.2.0",
     "electron-builder": "^26.15.3",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.0",
     "sharp": "0.35.3",
     "supabase": "^2.107.0",
-    "tailwindcss": "4.3.1",
+    "tailwindcss": "4.3.3",
     "typescript": "6.0.3"
   },
   "overrides": {
     "js-yaml": "5.2.2",
-    "postcss": "8.5.18",
+    "postcss": "8.5.23",
     "sharp": "0.35.3"
   },
   "build": {
     "appId": "com.northstar.phoneassistant",
     "productName": "Northstar Phone Assistant",
     "asar": true,
-    "files": [
-      "desktop/**/*",
-      "package.json"
-    ],
+    "files": ["**/*"],
     "directories": {
+      "app": "desktop",
       "output": "release"
     },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "gking432",
+        "repo": "whitelist",
+        "releaseType": "release"
+      }
+    ],
     "mac": {
       "category": "public.app-category.business",
       "icon": "desktop/build/icon.png",
+      "notarize": true,
       "target": [
         "dmg",
         "zip"

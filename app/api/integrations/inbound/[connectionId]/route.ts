@@ -69,7 +69,7 @@ export async function POST(
     return json(404, { error: "Unknown endpoint." });
   }
 
-  const rate = checkRateLimit(`inbound:${connectionId}`);
+  const rate = await checkRateLimit(`inbound:${connectionId}`);
 
   if (!rate.allowed) {
     return NextResponse.json(

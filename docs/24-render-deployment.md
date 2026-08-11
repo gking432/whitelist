@@ -1,16 +1,19 @@
-# Render test deployment
+# Production deployment and operations
 
-Northstar uses two public services:
+Northstar uses three Render services:
 
-- `northstar-app`: the web application, APIs, and Twilio webhooks.
-- `northstar-voice-stream`: the WebSocket gateway for staff-assisted calls.
+- `northstar-app`: the web application, APIs, provider webhooks, and health endpoint.
+- `northstar-voice-stream`: the always-on WebSocket gateway for staff-assisted calls.
+- `northstar-jobs`: a five-minute cron worker for retries and operational retention.
 
 ## Prerequisites
 
-1. Create a hosted Supabase project and apply every migration in
-   `supabase/migrations`.
+1. Create a paid hosted Supabase project and apply every migration in
+   `supabase/migrations` in filename order.
 2. Create an OpenAI project API key with billing enabled.
 3. Create a Render account and connect the GitHub repository.
+4. Have one real test account ready for each provider being launched. Code-level
+   support does not replace the vendor's application approval or account setup.
 
 ## Deploy
 
@@ -22,10 +25,61 @@ Northstar uses two public services:
    - App `NORTHSTAR_VOICE_STREAM_URL`: the voice service URL using
      `wss://...onrender.com/twilio`.
    - Voice `NORTHSTAR_APP_URL`: the app's `https://...onrender.com` URL.
-4. Redeploy both services after setting the URLs. Public Next.js variables are
+   - Jobs `NORTHSTAR_APP_URL`: the same app URL.
+4. Redeploy all services after setting the URLs. Public Next.js variables are
    embedded during the app build, so the app must be rebuilt after they change.
-5. Open `/partner/onboarding`, create the test client, and connect Twilio and
-   Google Calendar from the client's Setup workspace.
+5. Confirm `GET /api/health` returns `200` and `database: "ready"`.
+6. Confirm the `northstar-jobs` cron has a successful run in Render.
+7. Complete `/partner/onboarding`, create the pilot client, select its package,
+   and connect the accounts listed in the client's Setup workspace.
+8. Keep every client in sandbox until its Test Center passes. Switch an
+   integration to live only after a real inbound and outbound pilot succeeds.
 
 Use paid always-on instances for phone testing. Sleeping services can add enough
 cold-start delay for an inbound phone call to fail before the app answers.
+
+## Environment ownership
+
+The platform owner controls Supabase, Render, OpenAI, Resend, release signing,
+and the production domain. Each partner connects its own Twilio parent account.
+Each client connects its own CRM, calendar, email, retained phone provider,
+payments, marketing, reputation, and field-service accounts through scoped setup
+links. Credentials are encrypted and never shown again after submission.
+
+The complete variable inventory and optional provider keys live in
+`.env.example`. `NEXT_PUBLIC_*` values are public by design; service-role,
+encryption, webhook, and provider secrets must never use that prefix.
+
+## Backups and retention
+
+- Use Supabase Pro or higher so production receives daily backups. Enable PITR
+  before onboarding paying clients when the recovery window matters.
+- Perform a restore into a staging project before launch and once per quarter.
+- `northstar-jobs` removes expired setup sessions, old rate-limit windows, and
+  successful/cancelled sync jobs after `OPERATIONAL_RETENTION_DAYS` (default 90).
+- Customer records, audit history, failed jobs, support tickets, and business
+  configuration are not removed by the operational cleanup.
+
+## Monitoring
+
+Enable Render deploy-failure, service-health, and cron-failure notifications for
+all three services. A failed database check makes `/api/health` return `503` so
+Render does not route traffic to an app that cannot safely serve tenants. The
+owner Control Center, action jobs, integration events, sync jobs, support queue,
+and audit trail provide application-level failure visibility.
+
+## Desktop releases
+
+The GitHub `Desktop release` workflow publishes signed macOS and Windows
+installers and update metadata. Before tagging a release:
+
+1. Set both `package.json` and `desktop/package.json` to the same version.
+2. Add repository secrets `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`,
+   `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, `WIN_CSC_LINK`, and
+   `WIN_CSC_KEY_PASSWORD`.
+3. Push a matching tag such as `v0.2.0`.
+4. Install and verify the resulting GitHub Release on one clean Mac and Windows
+   machine before sending it to partners.
+
+The app checks GitHub Releases automatically and offers restart-to-install after
+an update downloads. The workflow fails instead of publishing unsigned builds.

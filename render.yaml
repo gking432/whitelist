@@ -6,7 +6,7 @@ services:
     region: ohio
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /login
+    healthCheckPath: /api/health
     autoDeployTrigger: commit
     envVars:
       - key: NEXT_PUBLIC_APP_URL
@@ -31,6 +31,24 @@ services:
         generateValue: true
       - key: ENABLE_SCENARIO_LAB
         value: "false"
+
+  - type: cron
+    name: northstar-jobs
+    runtime: docker
+    plan: starter
+    region: ohio
+    schedule: "*/5 * * * *"
+    dockerfilePath: ./deploy/jobs.Dockerfile
+    dockerContext: .
+    autoDeployTrigger: commit
+    envVars:
+      - key: NORTHSTAR_APP_URL
+        sync: false
+      - key: CRON_SECRET
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: CRON_SECRET
 
   - type: web
     name: northstar-voice-stream

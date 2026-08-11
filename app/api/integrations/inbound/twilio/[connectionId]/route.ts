@@ -43,7 +43,7 @@ export async function POST(
     return reject(404);
   }
 
-  const rate = checkRateLimit(`inbound-twilio:${connectionId}`);
+  const rate = await checkRateLimit(`inbound-twilio:${connectionId}`);
 
   if (!rate.allowed) {
     return reject(429);

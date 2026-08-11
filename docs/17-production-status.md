@@ -31,12 +31,14 @@ stack.
 | Website AI chat widget | Real — hosted page + iframe embed, public rotatable key, rate-limited, AI replies from approved knowledge with scripted fallback; completed chats become normal intake events (docs/19) |
 | Scheduling constraints | Real — "after 5"/"mornings"/"not tomorrow"/weekday parsing (unit-tested) intersects the knowledge-base booking window in slot proposals; approval summaries say what was honored |
 | Booking confirmation drafts | Real — approved bookings queue a NEW approval-gated confirmation message; booking approval never implies message approval |
-| Background job runner | Real — POST /api/jobs/run (CRON_SECRET) retries failed jobs with exponential backoff; manual retry retained; needs an external scheduler |
+| Background job runner | Real — POST /api/jobs/run (CRON_SECRET) retries failed jobs with exponential backoff; the Render Blueprint provisions its five-minute scheduler; manual retry retained |
 | OpenAI Realtime voice agent | Real — registered provider adapter, per-client instructions from approved knowledge, ephemeral session minting (key stays server-side), tool calls into real actions (contact lookup/save, notes, real slot proposals, approval-gated booking + message requests, escalation), and simulated-call harness exercising the full pipeline (docs/21) |
 | Twilio AI-answering calls | Real — signed inbound voice webhooks create a durable call session, Twilio Gather carries customer turns to the configured AI voice tools, responses return as TwiML, and call completion runs the normal CRM/post-call pipeline |
 | Staff-assisted Twilio calls | Real foundation — Twilio forwards the call to staff while an always-on WebSocket service streams call audio for transcription, signs transcript events back to the app, and feeds the desktop assistant |
 | Managed Twilio provisioning | Real — a partner-owned Twilio parent account can create a client subaccount, purchase a voice/SMS number, and configure messaging, voice, and status webhooks automatically |
-| Desktop phone assistant | Real foundation — Electron tray app, hosted authenticated assistant route, active-call always-on-top behavior, launch-at-login, server configuration, and macOS/Windows/Linux packaging are present |
+| Desktop phone assistant | Real foundation — Electron tray app, hosted authenticated assistant route, active-call always-on-top behavior, launch-at-login, server configuration, signed macOS/Windows release workflow, and automatic updates are present |
+| Production health and abuse controls | Real — database-aware `/api/health`, durable atomic Postgres rate limits with bounded outage fallback, security headers, and Render health routing |
+| Operational retention | Real — scheduled cleanup removes expired setup sessions, rate windows, and completed sync jobs while preserving audit, failed work, tickets, customers, and business data |
 | Scoped client connection links | Real — partners can send expiring provider-specific links so the client can enter its own credentials without exposing them to the partner |
 | Package-driven automation installation | Real — choosing the sold package provisions its native workflows and only its included launch automations in sandbox, records per-pack readiness, identifies the minimum missing client accounts, and feeds the test and launch gates |
 | n8n/Zapier/Make expansion recipes | Real export/deployer contracts — 14 researched recipes can bridge unusual external apps; clients do not need these accounts for native connectors, and no shared platform automation account is configured |
@@ -78,9 +80,15 @@ stack.
   link-local/metadata destinations rejected at delivery (unit-tested).
 - **Tests**: `npm test` — node:test suites for the slot engine, Twilio
   signature validation, and outbound-webhook destination blocking/signing.
-- **Known gaps before real customer data**: error monitoring, backups,
-  rate limits exist only on inbound endpoints, no queue worker, legal
-  review of AI disclosure (docs/12) still pending.
+- **Operations**: Render health and cron notifications must be enabled on the
+  production account. Supabase production must use paid daily backups; enable
+  PITR when the recovery requirement warrants it and complete a staging restore
+  drill before launch. Durable rate limits cover every public inbound/voice
+  surface and the scheduled queue worker is included in `render.yaml`.
+- **Known gaps before real customer data**: production credentials and vendor
+  approvals, one real-account pilot per enabled provider, desktop signing
+  certificates, external exception aggregation, and legal review of AI
+  disclosure (docs/12) still remain owner launch tasks.
 
 ## UI modernization pass (2026-07)
 

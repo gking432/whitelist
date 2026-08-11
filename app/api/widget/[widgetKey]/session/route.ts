@@ -26,7 +26,7 @@ export async function POST(
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 
-  const rate = checkRateLimit(`widget-session:${widgetKey}:${ip}`);
+  const rate = await checkRateLimit(`widget-session:${widgetKey}:${ip}`);
 
   if (!rate.allowed) {
     return json(429, { error: "Too many chats started. Try again shortly." });

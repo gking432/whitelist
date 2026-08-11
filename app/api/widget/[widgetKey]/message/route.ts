@@ -51,7 +51,7 @@ export async function POST(
     return json(400, { error: "Send JSON with session_id and message." });
   }
 
-  const rate = checkRateLimit(`widget-message:${sessionId}`);
+  const rate = await checkRateLimit(`widget-message:${sessionId}`);
 
   if (!rate.allowed) {
     return json(429, { error: "Slow down a moment and try again." });

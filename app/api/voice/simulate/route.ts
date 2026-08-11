@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     return json(400, { error: "Send a JSON body with an action." });
   }
 
-  const rate = checkRateLimit(`voice-simulate:${authState.user.id}`);
+  const rate = await checkRateLimit(`voice-simulate:${authState.user.id}`);
 
   if (!rate.allowed) {
     return json(429, { error: "Slow down a moment and try again." });

@@ -53,7 +53,7 @@ export async function POST(
     return rejectVoiceWebhook(404);
   }
 
-  const rate = checkRateLimit(`inbound-twilio-voice:${connectionId}`);
+  const rate = await checkRateLimit(`inbound-twilio-voice:${connectionId}`);
 
   if (!rate.allowed) {
     return rejectVoiceWebhook(429);

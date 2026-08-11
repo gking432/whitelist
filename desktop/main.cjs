@@ -9,6 +9,7 @@ const {
   shell,
   Tray,
 } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -22,6 +23,7 @@ let tray = null;
 let activeCall = false;
 let appUrl = null;
 let quitting = false;
+let updateState = "idle";
 
 function normalizeAppUrl(value, allowLocalhost = false) {
   try {
@@ -171,6 +173,26 @@ function rebuildTrayMenu() {
         label: "Workspace server...",
         click: showServerSetup,
       },
+      {
+        label:
+          updateState === "checking"
+            ? "Checking for updates..."
+            : updateState === "downloading"
+              ? "Downloading update..."
+            : updateState === "ready"
+              ? "Restart to install update"
+              : "Check for updates",
+        enabled: !["checking", "downloading"].includes(updateState),
+        click: () => {
+          if (updateState === "ready") {
+            quitting = true;
+            autoUpdater.quitAndInstall();
+            return;
+          }
+
+          void checkForUpdates();
+        },
+      },
       { type: "separator" },
       {
         label: "Launch at login",
@@ -192,6 +214,48 @@ function rebuildTrayMenu() {
     ]),
   );
 }
+
+async function checkForUpdates({ quiet = false } = {}) {
+  if (!app.isPackaged) return;
+
+  updateState = "checking";
+  rebuildTrayMenu();
+
+  try {
+    const result = await autoUpdater.checkForUpdatesAndNotify();
+
+    if (!result?.updateInfo || result.updateInfo.version === app.getVersion()) {
+      updateState = "idle";
+      if (!quiet) tray?.displayBalloon?.({
+        title: PRODUCT_NAME,
+        content: "You already have the latest version.",
+      });
+    }
+  } catch (error) {
+    updateState = "error";
+    if (!quiet) {
+      console.error("Desktop update check failed:", error);
+    }
+  }
+
+  rebuildTrayMenu();
+}
+
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.on("update-available", () => {
+  updateState = "downloading";
+  rebuildTrayMenu();
+});
+autoUpdater.on("update-downloaded", () => {
+  updateState = "ready";
+  rebuildTrayMenu();
+});
+autoUpdater.on("error", (error) => {
+  updateState = "error";
+  console.error("Desktop updater error:", error);
+  rebuildTrayMenu();
+});
 
 function createTray() {
   const iconPath = path.join(__dirname, "build", "icon.png");
@@ -344,6 +408,8 @@ if (!singleInstanceLock) {
     }
 
     createWindow();
+    setTimeout(() => void checkForUpdates({ quiet: true }), 10_000);
+    setInterval(() => void checkForUpdates({ quiet: true }), 6 * 60 * 60 * 1000);
 
     app.on("activate", () => {
       if (!window) createWindow();

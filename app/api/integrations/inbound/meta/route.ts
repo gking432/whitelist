@@ -22,7 +22,7 @@ function verify(raw: string, signature: string) { const secret = getMetaOAuthCli
 function fields(value: unknown) { return Object.fromEntries((Array.isArray(value) ? value : []).map((raw) => { const field = raw as { name?: string; values?: unknown[] }; return [field.name ?? "field", field.values?.[0] ?? null]; })); }
 
 export async function POST(request: NextRequest) {
-  const rate = checkRateLimit("meta:webhook"); if (!rate.allowed) return NextResponse.json({ error: "Rate limited." }, { status: 429 });
+  const rate = await checkRateLimit("meta:webhook"); if (!rate.allowed) return NextResponse.json({ error: "Rate limited." }, { status: 429 });
   const raw = await request.text(); if (!verify(raw, request.headers.get("x-hub-signature-256") ?? "")) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   let payload: { entry?: { id?: string; changes?: { field?: string; value?: { leadgen_id?: string } }[] }[] };
   try { payload = JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid payload." }, { status: 400 }); }
