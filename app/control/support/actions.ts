@@ -6,6 +6,10 @@ import { redirect } from "next/navigation";
 import { getAuthState } from "@/lib/auth/session";
 import { requirePlatformRole } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  codeRequestReadyForValidation,
+  supportReleaseCanComplete,
+} from "@/lib/support/release-gates";
 
 function field(formData: FormData, key: string, max = 4000) {
   const value = formData.get(key);
@@ -79,8 +83,12 @@ export async function startRequesterValidation(formData: FormData) {
   const stagingUrl = field(formData, "staging_url", 500) || null;
   const evidence = field(formData, "test_evidence", 3000);
   if (!branchName) return;
-  const { data: ticket } = await admin.from("support_tickets").select("partner_id, client_id").eq("id", ticketId).maybeSingle();
+  const [{ data: ticket }, { data: codeRequest }] = await Promise.all([
+    admin.from("support_tickets").select("partner_id, client_id").eq("id", ticketId).maybeSingle(),
+    admin.from("integration_requests").select("id, status").eq("support_ticket_id", ticketId).maybeSingle(),
+  ]);
   if (!ticket) return;
+  if (!codeRequestReadyForValidation(codeRequest?.status)) return;
   await Promise.all([
     admin.from("support_ticket_releases").upsert({ ticket_id: ticketId, partner_id: ticket.partner_id, client_id: ticket.client_id, branch_name: branchName, feature_flag_key: featureFlagKey, staging_url: stagingUrl, status: "requester_validation", test_evidence: { summary: evidence }, approved_by: user.id, approved_at: new Date().toISOString() }, { onConflict: "ticket_id" }),
     admin.from("support_tickets").update({ status: "validation", current_route: "partner" }).eq("id", ticketId),
@@ -94,15 +102,27 @@ export async function markSupportReleaseComplete(formData: FormData) {
   const ticketId = field(formData, "ticket_id", 80);
   const resolution = field(formData, "resolution", 3000);
   const { user, admin } = await ownerContext(`/control/support/${ticketId}`);
-  const { data: release } = await admin.from("support_ticket_releases").select("id, partner_id, client_id, status").eq("ticket_id", ticketId).maybeSingle();
-  if (!release || release.status !== "requester_approved") return;
+  const [{ data: release }, { data: codeRequest }] = await Promise.all([
+    admin.from("support_ticket_releases").select("id, partner_id, client_id, status").eq("ticket_id", ticketId).maybeSingle(),
+    admin.from("integration_requests").select("id, status").eq("support_ticket_id", ticketId).maybeSingle(),
+  ]);
+  if (!release || !supportReleaseCanComplete({
+    releaseStatus: release.status,
+    codeRequestStatus: codeRequest?.status,
+  })) return;
   const now = new Date().toISOString();
-  await Promise.all([
+  const updates = [
     admin.from("support_ticket_releases").update({ status: "released", released_at: now }).eq("id", release.id),
     admin.from("support_tickets").update({ status: "resolved", current_route: "owner", resolved_by: user.id, resolved_at: now, resolution: resolution || "Requester validated the change and the owner marked the release complete." }).eq("id", ticketId),
     admin.from("support_ticket_events").insert({ ticket_id: ticketId, partner_id: release.partner_id, client_id: release.client_id, actor_id: user.id, event_type: "ticket.release_completed", audience: "partner", summary: "Requester-approved release marked complete by the platform owner." }),
-  ]);
+  ];
+  if (codeRequest) {
+    updates.push(
+      admin.from("integration_requests").update({ status: "released", released_at: now }).eq("id", codeRequest.id),
+      admin.from("connector_development_tasks").update({ status: "released", completed_at: now }).eq("request_id", codeRequest.id),
+    );
+  }
+  await Promise.all(updates);
   revalidatePath(`/control/support/${ticketId}`);
   revalidatePath(`/partner/support/${ticketId}`);
 }
-

@@ -19,7 +19,11 @@ export default async function IntegrationRequestQueuePage() {
   await requirePlatformRole(user.id);
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
-  const { data: requests } = await supabase.from("integration_requests").select("*, partner:partners(name), client:client_businesses(name), task:connector_development_tasks(id, status, branch_name, error_message)").order("updated_at", { ascending: false });
+  const { data: requests, error: requestsError } = await supabase
+    .from("integration_requests")
+    .select("*, partner:partners!integration_requests_partner_id_fkey(name), client:client_businesses!integration_requests_client_id_fkey(name), task:connector_development_tasks(id, status, branch_name, error_message)")
+    .order("updated_at", { ascending: false });
+  if (requestsError) throw new Error(`Could not load integration requests: ${requestsError.message}`);
 
   return <div className="min-h-screen bg-background"><header className="border-b bg-card"><div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6"><NorthstarMark surface="light" subtitle="Integration Queue" /><Button asChild variant="ghost" size="sm"><Link href="/control"><ArrowLeft aria-hidden="true" />Control room</Link></Button></div></header><main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-6"><div><div className="flex items-center gap-2"><Wrench className="size-5 text-primary" aria-hidden="true" /><h1 className="text-xl font-semibold">Integration requests</h1></div><p className="mt-2 text-sm text-muted-foreground">Research, build, test, and release reusable connectors requested by partners.</p></div>{(requests ?? []).length === 0 ? <section className="rounded-lg border bg-card p-8 text-sm text-muted-foreground">No requests are waiting.</section> : (requests ?? []).map((request) => {
     const partner = request.partner as unknown as { name?: string } | null;

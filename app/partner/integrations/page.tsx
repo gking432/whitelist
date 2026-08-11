@@ -17,11 +17,15 @@ export default async function PartnerIntegrationsPage() {
   const supabase = await createSupabaseServerClient();
   if (!supabase || !access.partnerId) return null;
 
-  const [{ data: partner }, { data: clients }, { data: requests }] = await Promise.all([
+  const [partnerResult, clientsResult, requestsResult] = await Promise.all([
     supabase.from("partners").select("name").eq("id", access.partnerId).maybeSingle(),
     supabase.from("client_businesses").select("id, name").eq("partner_id", access.partnerId).eq("account_kind", "managed_client").neq("status", "archived").order("name"),
-    supabase.from("integration_requests").select("id, application_name, status, priority, updated_at, client:client_businesses(name)").eq("partner_id", access.partnerId).order("updated_at", { ascending: false }),
+    supabase.from("integration_requests").select("id, application_name, status, priority, updated_at, client:client_businesses!integration_requests_client_id_fkey(name)").eq("partner_id", access.partnerId).order("updated_at", { ascending: false }),
   ]);
+  if (requestsResult.error) throw new Error(`Could not load integration requests: ${requestsResult.error.message}`);
+  const partner = partnerResult.data;
+  const clients = clientsResult.data;
+  const requests = requestsResult.data;
   const ready = CONNECTOR_CATALOG.filter((item) => item.verificationStatus === "contract_verified" || item.verificationStatus === "live_verified");
 
   return (

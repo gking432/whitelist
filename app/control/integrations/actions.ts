@@ -12,6 +12,7 @@ import { runCodexConnectorTask } from "@/lib/integrations/codex-worker";
 import { requirePlatformRole } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { supportReleaseCanComplete } from "@/lib/support/release-gates";
 
 const STATUSES = ["requested", "researching", "needs_information", "building", "testing", "ready", "released", "blocked", "declined"];
 
@@ -32,7 +33,10 @@ export async function updateIntegrationRequest(formData: FormData) {
   if (!request) return;
   if (status === "released" && request.support_ticket_id && admin) {
     const { data: release } = await admin.from("support_ticket_releases").select("status").eq("ticket_id", request.support_ticket_id).maybeSingle();
-    if (release?.status !== "requester_approved") return;
+    if (!supportReleaseCanComplete({
+      releaseStatus: release?.status,
+      codeRequestStatus: request.status,
+    })) return;
   }
   await supabase.from("integration_requests").update({ status, released_at: status === "released" ? new Date().toISOString() : null }).eq("id", requestId);
   if (message) {
@@ -41,18 +45,23 @@ export async function updateIntegrationRequest(formData: FormData) {
   if (request.support_ticket_id && admin) {
     const mappedStatus = status === "needs_information"
       ? "waiting_requester"
-      : status === "ready"
-        ? "validation"
-        : status === "released" || status === "declined"
+      : status === "released" || status === "declined"
           ? "resolved"
           : "platform_working";
+    const now = new Date().toISOString();
     await admin.from("support_tickets").update({
       status: mappedStatus,
-      current_route: status === "ready" ? "partner" : status === "released" ? "owner" : "platform",
+      current_route: status === "ready" || status === "released" ? "owner" : "platform",
       resolved_by: mappedStatus === "resolved" ? auth.user.id : null,
-      resolved_at: mappedStatus === "resolved" ? new Date().toISOString() : null,
+      resolved_at: mappedStatus === "resolved" ? now : null,
       resolution: status === "declined" ? message || "The connector request was declined." : undefined,
     }).eq("id", request.support_ticket_id);
+    if (status === "released") {
+      await Promise.all([
+        admin.from("support_ticket_releases").update({ status: "released", released_at: now }).eq("ticket_id", request.support_ticket_id),
+        admin.from("connector_development_tasks").update({ status: "released", completed_at: now }).eq("request_id", requestId),
+      ]);
+    }
     if (message) {
       await admin.from("support_ticket_messages").insert({ ticket_id: request.support_ticket_id, partner_id: request.partner_id, client_id: request.client_id, author_id: auth.user.id, author_kind: "platform", audience: internal ? "internal" : "partner", body: message });
     }
