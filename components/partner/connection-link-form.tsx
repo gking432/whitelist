@@ -117,23 +117,29 @@ export function ConnectionLinkForm({ action, hasActiveLink }: Props) {
       </fieldset>
 
       <fieldset>
-        <legend className="mb-2 text-sm font-medium">Phone and optional sending</legend>
+        <legend className="mb-2 text-sm font-medium">Business phone system</legend>
         <div className="grid gap-2 sm:grid-cols-2">
-        {[PILOT_PROVIDERS.twilio, PILOT_PROVIDERS.resend]
-          .map((provider) => (
-          <label
-            key={provider.key}
-            className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm"
-          >
-            <Checkbox
-              name="providers"
-              value={provider.key}
-              defaultChecked={provider.key === "twilio"}
-            />
-            <span>{provider.title}</span>
-          </label>
-        ))}
+          {[
+            { value: "twilio", label: "Managed phone service (Twilio)" },
+            { value: "ringcentral", label: PILOT_PROVIDERS.ringcentral.title },
+            { value: "dialpad", label: PILOT_PROVIDERS.dialpad.title },
+            { value: "openphone", label: PILOT_PROVIDERS.openphone.title },
+          ].map((option, index) => (
+            <label key={option.value} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm">
+              <input type="radio" name="phone_provider" value={option.value} defaultChecked={index === 0} className="size-4 accent-primary" />
+              <span>{option.label}</span>
+            </label>
+          ))}
         </div>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">Managed Twilio supports AI answering and the full live scheduling coach. Retained systems support caller screen-pop, CRM matching, logging, and the post-call AI features their APIs expose.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium">Optional email sending</legend>
+        <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm sm:max-w-72">
+          <Checkbox name="providers" value="resend" />
+          <span>{PILOT_PROVIDERS.resend.title}</span>
+        </label>
       </fieldset>
 
       <Button type="submit" disabled={pending}>

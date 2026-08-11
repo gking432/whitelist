@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { CheckCircle2, LockKeyhole } from "lucide-react";
 
 import { ClientConnectionCard } from "@/components/integrations/client-connection-card";
-import { getGoogleOAuthClient, getJobberOAuthClient, getMicrosoftOAuthClient, getQuickBooksOAuthClient, getSquareOAuthClient } from "@/lib/env";
+import { getDialpadOAuthClient, getGoogleOAuthClient, getJobberOAuthClient, getMicrosoftOAuthClient, getQuickBooksOAuthClient, getRingCentralOAuthClient, getSquareOAuthClient } from "@/lib/env";
 import { loadActiveConnectionSetupSession } from "@/lib/integrations/connection-setup";
 import { PILOT_PROVIDERS, type PilotProviderKey } from "@/lib/integrations/pilot";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -14,12 +14,12 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ google?: string; workspace?: string; commerce?: string }>;
+  searchParams: Promise<{ google?: string; workspace?: string; commerce?: string; phone?: string }>;
 };
 
 export default async function ClientConnectionPage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const { google, workspace, commerce } = await searchParams;
+  const { google, workspace, commerce, phone } = await searchParams;
   const admin = createSupabaseAdminClient();
   if (!admin) notFound();
   const session = await loadActiveConnectionSetupSession(admin, token);
@@ -107,9 +107,9 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
           <span className="text-sm font-medium tabular-nums">{completeCount}/{requestedProviders.length}</span>
         </div>
 
-        {google || workspace || commerce ? (
+        {google || workspace || commerce || phone ? (
           <div className="mt-5 rounded-md border bg-card px-4 py-3 text-sm">
-            {(google ?? workspace ?? commerce) === "connected"
+            {(google ?? workspace ?? commerce ?? phone) === "connected"
               ? "Business account connected and verified."
               : "The business account needs attention. Open its card and try again."}
           </div>
@@ -136,6 +136,8 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
                 jobberReady={Boolean(getJobberOAuthClient())}
                 quickBooksReady={Boolean(getQuickBooksOAuthClient())}
                 squareReady={Boolean(getSquareOAuthClient())}
+                ringCentralReady={Boolean(getRingCentralOAuthClient())}
+                dialpadReady={Boolean(getDialpadOAuthClient())}
                 managedTwilioReady={partnerTwilio?.status === "connected"}
               />
             ))}

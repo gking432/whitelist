@@ -8,6 +8,9 @@ import { quickBooksOnlineAdapter } from "../providers/quickbooks-online";
 import { stripeAdapter } from "../providers/stripe";
 import { squareAdapter } from "../providers/square";
 import { callRailAdapter } from "../providers/callrail";
+import { ringCentralAdapter } from "../providers/ringcentral";
+import { dialpadAdapter } from "../providers/dialpad";
+import { openPhoneAdapter } from "../providers/openphone";
 import type { ConnectorAdapter } from "./types";
 
 const ADAPTERS: Record<string, ConnectorAdapter> = {
@@ -21,6 +24,9 @@ const ADAPTERS: Record<string, ConnectorAdapter> = {
   stripe: stripeAdapter as ConnectorAdapter,
   square: squareAdapter as ConnectorAdapter,
   callrail: callRailAdapter as ConnectorAdapter,
+  ringcentral: ringCentralAdapter as ConnectorAdapter,
+  dialpad: dialpadAdapter as ConnectorAdapter,
+  openphone: openPhoneAdapter as ConnectorAdapter,
 };
 
 export function getConnectorAdapter(providerKey: string): ConnectorAdapter | null {

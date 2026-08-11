@@ -51,6 +51,8 @@ export async function createConnectionSetupLink(
   if (isConnectionSetupProviderKey(fieldServiceProvider)) {
     requested.push(fieldServiceProvider);
   }
+  const phoneProvider = String(formData.get("phone_provider") ?? "twilio");
+  if (isConnectionSetupProviderKey(phoneProvider)) requested.push(phoneProvider);
   const providers = Array.from(new Set(requested));
   if (providers.length === 0) {
     return {

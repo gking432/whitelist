@@ -20,6 +20,9 @@ export const CONNECTION_SETUP_PROVIDER_KEYS = [
   "stripe",
   "square",
   "callrail",
+  "ringcentral",
+  "dialpad",
+  "openphone",
 ] as const;
 
 export type ConnectionSetupProviderKey =

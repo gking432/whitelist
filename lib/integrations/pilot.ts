@@ -20,6 +20,9 @@ export const PILOT_PROVIDER_KEYS = [
   "stripe",
   "square",
   "callrail",
+  "ringcentral",
+  "dialpad",
+  "openphone",
 ] as const;
 
 export type PilotProviderKey = (typeof PILOT_PROVIDER_KEYS)[number];
@@ -343,6 +346,31 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
       { name: "accountId", label: "Account ID", placeholder: "ACC...", help: "Open the CallRail dashboard and copy the account ID shown after /a/ in the URL.", secret: false },
     ],
     whereToGet: "CallRail → Integrations → Data access → API Keys. The key is only fully visible for 15 minutes; enter it directly here.",
+  },
+  ringcentral: {
+    key: "ringcentral", title: "RingCentral", tagline: "Keeps the existing RingCentral system and opens the assistant when real calls arrive.",
+    allows: ["Open the desktop assistant on incoming calls and match the caller to the CRM.", "Sync call history and SMS events.", "Create post-call notes and follow-up work from available call data."],
+    neverDoes: ["Never changes the client's RingCentral routing or phone numbers.", "Live in-call transcription and coaching requires a compatible media stream; Twilio is the supported live-audio path."],
+    connectMethod: "oauth", fields: [],
+    whereToGet: "Sign in with a RingCentral administrator account. No API key is required.",
+  },
+  dialpad: {
+    key: "dialpad", title: "Dialpad", tagline: "Keeps the existing Dialpad system and opens the assistant from live call events.",
+    allows: ["Open the desktop assistant on incoming calls and match the caller to the CRM.", "Sync call history and SMS events.", "Use recordings or transcripts after a call when the Dialpad account grants those scopes."],
+    neverDoes: ["Never changes the client's Dialpad routing or numbers.", "Live in-call coaching depends on Dialpad approving media/transcript scopes; Twilio is the default live-audio path."],
+    connectMethod: "oauth", fields: [],
+    whereToGet: "Sign in with a Dialpad company administrator account. The platform's Dialpad app must be approved for the requested scopes.",
+  },
+  openphone: {
+    key: "openphone", title: "Quo / OpenPhone", tagline: "Keeps Quo and sends live call, message, transcript, and summary events to the assistant.",
+    allows: ["Open the desktop assistant when a real call rings.", "Receive SMS, completed-call, recording, transcript, and summary events supported by the workspace.", "Sync call history into the CRM."],
+    neverDoes: ["Never changes phone routing or numbers.", "Live in-call audio coaching is not available through the standard Quo API; Twilio is the supported live-audio path."],
+    connectMethod: "credentials",
+    fields: [
+      { name: "apiKey", label: "Quo API key", placeholder: "Paste API key", help: "Quo → Settings → API. The key is entered directly here and encrypted.", secret: true },
+      { name: "phoneNumberIds", label: "Phone number IDs (optional)", placeholder: "PN123, PN456", help: "Comma-separated Quo phone-number IDs. Leave blank to use all resources the API permits.", secret: false, optional: true },
+    ],
+    whereToGet: "Quo → Settings → API → Create API key. An Owner or Admin must create it.",
   },
 };
 

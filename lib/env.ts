@@ -79,6 +79,18 @@ export function getSquareOAuthClient() {
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
+export function getRingCentralOAuthClient() {
+  const clientId = process.env.RINGCENTRAL_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.RINGCENTRAL_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getDialpadOAuthClient() {
+  const clientId = process.env.DIALPAD_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.DIALPAD_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
 export function isLocalDevAutoLoginEnabled() {
   const usesLocalSupabase =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??

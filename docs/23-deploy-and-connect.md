@@ -17,15 +17,17 @@ Don't make accounts for things that aren't wired yet.
 | Google Calendar | Your own OAuth client (per-connection) | AI proposes real slots; approving books an event |
 | Resend (email) | API key + verified sender domain | Approved emails actually send |
 | Website | Chat widget embed, or forms → intake webhook | Visitors/forms become leads |
-| Anything else (GBP, Facebook, IG, Typeform…) | Zapier/Make → generic inbound webhook | Bridged leads flow through the AI |
+| RingCentral / Dialpad / Quo | Platform OAuth for RingCentral and Dialpad; client API key for Quo | Real calls open the assistant, match CRM contacts, and create post-call activity |
+| Jobber / Housecall Pro / ServiceTitan / Workiz | OAuth or vendor credentials | Customers, leads, jobs, and appointments sync with the built-in CRM |
+| QuickBooks / Stripe / Square / CallRail | OAuth or restricted vendor credentials | Financial status and attributed leads sync into reporting and CRM context |
+| Anything else (GBP, Facebook, IG, Typeform…) | Native connector when listed; otherwise secured inbound bridge | Bridged leads flow through the AI |
 
-**Not yet available as native connections:**
+**Restricted or still awaiting vendor access:**
 
 - **Native Google Business Profile / social connectors.** Route them in via
   an automation bridge to the webhook instead.
-- **Home-service CRM catalog.** Jobber, Housecall Pro, ServiceTitan, and Workiz
-  are planned in docs/25; the currently verified CRM adapters are HubSpot and
-  GoHighLevel.
+- **Marketplaces such as Angi, Thumbtack, and Yelp.** Their broad lead APIs
+  require approved commercial access. Forwarded lead email remains the fallback.
 
 ---
 
@@ -64,6 +66,10 @@ Import the repo in Vercel and set these environment variables:
 | `OPENAI_API_KEY` | your key | voice assistant (docs/21) |
 | `VOICE_PROVIDER` | `openai_realtime` | enables the voice adapter |
 | `CRON_SECRET` | `openssl rand -hex 24` | the retry job runner |
+
+Add the platform OAuth application credentials from `.env.example` for every
+provider you plan to offer. Clients authorize their own accounts; partners do
+not see or store the resulting access tokens.
 
 Deploy. Set `NEXT_PUBLIC_APP_URL` to the real URL Vercel gives you and
 redeploy if it changed.
@@ -135,6 +141,13 @@ note appear in HubSpot.
 5. Existing business numbers can forward to the provisioned Twilio number for
    a pilot and can be ported later.
 
+### Keep an existing RingCentral, Dialpad, or Quo phone system
+1. In the partner's client connection link, select the phone system the client already uses.
+2. The client signs into RingCentral or Dialpad, or enters its Quo API key, on the branded secure page.
+3. The platform registers signed webhooks automatically after deployment over HTTPS.
+4. A ringing event opens the desktop assistant and resolves the caller against the CRM. Messages enter the normal SMS workflow; completed calls create CRM activity and follow-up work.
+5. Retained systems support the live and post-call data their standard APIs expose. The full in-call audio scheduling coach uses managed Twilio unless the retained provider grants compatible live media access.
+
 ### Google Calendar (booking)
 1. Google Cloud Console → create an **OAuth client (Web application)**. Set
    the **Authorized redirect URI** to
@@ -155,8 +168,8 @@ send for real.
 - **Forms:** point your form's submit (or a Zapier step) at the generic
   inbound webhook (below).
 
-### GBP, Facebook, Instagram, etc. (via bridge)
-There's no native connector, but this works today: in the app, connect a
+### Unsupported sources (via bridge)
+When a native connector is not available, connect a
 **generic inbound web form** source — it gives you a webhook URL + token.
 Then in Zapier/Make, trigger on a new GBP message / FB lead / IG DM and send
 a POST to that URL with header `x-webhook-token: <token>` and body:
@@ -190,5 +203,5 @@ customer-facing goes out until both are true.
   can be called production-proven.
 - No self-serve signup or in-app billing yet — bootstrap or invite the initial
   partner account before onboarding.
-- The broader connector catalog and integration-request center are scheduled
-  in docs/25.
+- Connector contracts are tested against published vendor APIs. Each provider
+  still needs one live credential verification before it is marked live-verified.

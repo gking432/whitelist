@@ -21,6 +21,9 @@ import { quickBooksOnlineAdapter, mapQuickBooksCustomer } from "../lib/integrati
 import { stripeAdapter } from "../lib/integrations/providers/stripe.ts";
 import { squareAdapter } from "../lib/integrations/providers/square.ts";
 import { callRailAdapter } from "../lib/integrations/providers/callrail.ts";
+import { ringCentralAdapter } from "../lib/integrations/providers/ringcentral.ts";
+import { dialpadAdapter } from "../lib/integrations/providers/dialpad.ts";
+import { openPhoneAdapter } from "../lib/integrations/providers/openphone.ts";
 
 test("connector catalog has unique valid manifests", () => {
   assert.ok(CONNECTOR_CATALOG.length >= 20);
@@ -60,6 +63,17 @@ test("finance and attribution connectors have executable contracts", () => {
     assert.ok(connector.capabilities.some((capability) => capability.endsWith(".read")));
   }
   for (const adapter of [quickBooksOnlineAdapter, stripeAdapter, squareAdapter, callRailAdapter]) {
+    assert.deepEqual(validateConnectorAdapter(adapter), [], adapter.manifest.key);
+  }
+});
+
+test("retained phone connectors expose real call and message contracts", () => {
+  for (const adapter of [ringCentralAdapter, dialpadAdapter, openPhoneAdapter]) {
+    const connector = CONNECTOR_CATALOG.find((item) => item.key === adapter.manifest.key);
+    assert.ok(connector, `${adapter.manifest.key} is in the catalog`);
+    assert.equal(connector.verificationStatus, "contract_verified");
+    assert.ok(connector.capabilities.includes("lead.webhook"));
+    assert.ok(connector.capabilities.includes("message.webhook"));
     assert.deepEqual(validateConnectorAdapter(adapter), [], adapter.manifest.key);
   }
 });

@@ -3,6 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { encryptProviderCredentials, PROVIDER_CREDENTIALS_KIND, readProviderCredentials } from "@/lib/integrations/credentials";
 import { refreshJobberCredentials, type JobberCredentials } from "@/lib/integrations/providers/jobber-oauth";
 import { refreshQuickBooksCredentials, refreshSquareCredentials, type QuickBooksCredentials, type SquareCredentials } from "@/lib/integrations/providers/commerce-oauth";
+import { refreshTelephonyCredentials } from "@/lib/integrations/providers/telephony-oauth";
+import type { RingCentralCredentials } from "@/lib/integrations/providers/ringcentral";
+import type { DialpadCredentials } from "@/lib/integrations/providers/dialpad";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 import { getConnectorAdapter } from "./adapters";
@@ -295,13 +298,16 @@ export async function processConnectorSyncJobs(limit = 20) {
       .eq("id", job.id).in("status", ["queued", "failed"]).select("id").maybeSingle();
     if (!claimed.data) continue;
     let credentials = await readProviderCredentials<unknown>(admin, job.connection_id);
-    if (["jobber", "quickbooks_online", "square"].includes(job.provider?.provider_key ?? "") && credentials) {
+    if (["jobber", "quickbooks_online", "square", "ringcentral", "dialpad"].includes(job.provider?.provider_key ?? "") && credentials) {
       try {
-        const refreshed = job.provider?.provider_key === "jobber"
+        const providerKey = job.provider?.provider_key;
+        const refreshed = providerKey === "jobber"
           ? await refreshJobberCredentials(credentials as JobberCredentials)
-          : job.provider?.provider_key === "quickbooks_online"
+          : providerKey === "quickbooks_online"
             ? await refreshQuickBooksCredentials(credentials as QuickBooksCredentials)
-            : await refreshSquareCredentials(credentials as SquareCredentials);
+            : providerKey === "square"
+              ? await refreshSquareCredentials(credentials as SquareCredentials)
+              : await refreshTelephonyCredentials(providerKey as "ringcentral" | "dialpad", credentials as RingCentralCredentials | DialpadCredentials);
         credentials = refreshed;
         const stored = encryptProviderCredentials(refreshed as unknown as Record<string, string>);
         await admin.from("integration_secrets").update({ encrypted_value: stored.encrypted_value, last_four: stored.last_four, updated_at: new Date().toISOString() })

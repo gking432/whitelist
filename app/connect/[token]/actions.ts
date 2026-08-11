@@ -10,6 +10,8 @@ import {
   getJobberOAuthClient,
   getQuickBooksOAuthClient,
   getSquareOAuthClient,
+  getRingCentralOAuthClient,
+  getDialpadOAuthClient,
 } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
@@ -36,6 +38,7 @@ import {
 import { provisionManagedTwilioNumber } from "@/lib/integrations/providers/twilio";
 import { buildJobberAuthorizationUrl } from "@/lib/integrations/providers/jobber-oauth";
 import { buildCommerceAuthorizationUrl, type CommerceOAuthProviderKey } from "@/lib/integrations/providers/commerce-oauth";
+import { buildTelephonyAuthorizationUrl, type TelephonyOAuthProviderKey } from "@/lib/integrations/providers/telephony-oauth";
 import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -71,6 +74,8 @@ export async function connectClientAccount(
     providerKey === "jobber"
     || providerKey === "quickbooks_online"
     || providerKey === "square"
+    || providerKey === "ringcentral"
+    || providerKey === "dialpad"
   ) {
     return { status: "error", message: "That account cannot be connected here." };
   }
@@ -105,6 +110,22 @@ export async function connectClientAccount(
       message: error instanceof Error ? error.message : "The account could not be connected.",
     };
   }
+}
+
+export async function startClientTelephonyConnect(
+  token: string,
+  providerKey: TelephonyOAuthProviderKey,
+  _previousState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  if (!isSecretsEncryptionConfigured()) return { status: "error", message: "Secure credential storage is unavailable." };
+  const oauthClient = providerKey === "ringcentral" ? getRingCentralOAuthClient() : getDialpadOAuthClient();
+  if (!oauthClient) return { status: "error", message: `${providerKey === "ringcentral" ? "RingCentral" : "Dialpad"} access is still being prepared. No action is required from you yet.` };
+  const context = await loadAuthorizedSetup(token, providerKey);
+  if (!context) return { status: "error", message: "This setup link is invalid or expired." };
+  const connectionId = await ensureProviderConnection(context.admin, { partnerId: context.session.partner_id, clientId: context.session.client_id, createdBy: context.session.created_by! }, providerKey);
+  await context.admin.from("integration_connections").update({ credential_status: "rotating", health_summary: `Waiting for ${providerKey === "ringcentral" ? "RingCentral" : "Dialpad"} authorization to finish.` }).eq("id", connectionId);
+  redirect(buildTelephonyAuthorizationUrl(providerKey, oauthClient, connectionId, context.session.id));
 }
 
 export async function startClientCommerceConnect(

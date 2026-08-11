@@ -114,6 +114,7 @@ export type WebhookRegistration = {
   externalRegistrationId?: string | null;
   expiresAt?: string | null;
   metadata?: Record<string, unknown>;
+  secret?: string;
 };
 
 export type ConnectorAdapter<TCredentials = unknown> = {

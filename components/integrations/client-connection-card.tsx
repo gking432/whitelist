@@ -10,6 +10,7 @@ import {
   startClientWorkspaceConnect,
   startClientJobberConnect,
   startClientCommerceConnect,
+  startClientTelephonyConnect,
 } from "@/app/connect/[token]/actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,6 +31,8 @@ type Props = {
   jobberReady: boolean;
   quickBooksReady: boolean;
   squareReady: boolean;
+  ringCentralReady: boolean;
+  dialpadReady: boolean;
   managedTwilioReady: boolean;
 };
 
@@ -58,6 +61,8 @@ export function ClientConnectionCard({
   jobberReady,
   quickBooksReady,
   squareReady,
+  ringCentralReady,
+  dialpadReady,
   managedTwilioReady,
 }: Props) {
   const [showExistingTwilio, setShowExistingTwilio] = useState(false);
@@ -91,6 +96,11 @@ export function ClientConnectionCard({
     startClientCommerceConnect.bind(null, token, commerceProvider),
     initialFormState,
   );
+  const telephonyProvider = provider.key === "dialpad" ? "dialpad" : "ringcentral";
+  const [telephonyState, submitTelephony, telephonyPending] = useActionState(
+    startClientTelephonyConnect.bind(null, token, telephonyProvider),
+    initialFormState,
+  );
 
   return (
     <article className="rounded-lg border bg-card p-5 sm:p-6">
@@ -110,6 +120,17 @@ export function ClientConnectionCard({
         <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           Verified. No additional access is needed.
         </div>
+      ) : provider.key === "ringcentral" || provider.key === "dialpad" ? (
+        <form action={submitTelephony} className="mt-5">
+          <Button type="submit" disabled={telephonyPending || (provider.key === "ringcentral" ? !ringCentralReady : !dialpadReady)}>
+            <ExternalLink aria-hidden="true" />
+            {telephonyPending ? "Opening sign-in..." : `Connect ${provider.title}`}
+          </Button>
+          {(provider.key === "ringcentral" ? !ringCentralReady : !dialpadReady) ? (
+            <p className="mt-2 text-xs text-amber-800">{supportName} is still preparing {provider.title} access. No action is required from you yet.</p>
+          ) : null}
+          <ResultMessage state={telephonyState} />
+        </form>
       ) : provider.key === "quickbooks_online" || provider.key === "square" ? (
         <form action={submitCommerce} className="mt-5">
           <Button type="submit" disabled={commercePending || (provider.key === "quickbooks_online" ? !quickBooksReady : !squareReady)}>

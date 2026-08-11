@@ -6,9 +6,6 @@ const PLANNED_CONNECTORS: readonly (readonly [
   string,
   string,
 ])[] = [
-  ["ringcentral", "RingCentral", "phone", "Call and message events for businesses retaining RingCentral."],
-  ["dialpad", "Dialpad", "phone", "Call and message events for businesses retaining Dialpad."],
-  ["openphone", "OpenPhone", "phone", "Call and message events for businesses retaining OpenPhone."],
   ["meta", "Facebook and Instagram", "lead_source", "Lead Ads, campaign attribution, and approved conversion feedback."],
   ["google_ads", "Google Ads and Local Services", "lead_source", "Google advertising leads and campaign attribution."],
   ["google_business_profile", "Google Business Profile", "reputation", "Business messages, reviews, replies, and profile activity."],
@@ -36,6 +33,24 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
     verificationStatus: "contract_verified",
     requestable: false,
     docsUrl: "https://www.twilio.com/docs/usage/api",
+  },
+  {
+    key: "ringcentral", name: "RingCentral", category: "phone",
+    description: "Live call signals, SMS events, and call history from RingCentral.", authStrategy: "oauth2",
+    capabilities: ["lead.read", "lead.webhook", "message.webhook"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://developers.ringcentral.com/guide", webhookEvents: ["call.ringing", "call.completed", "message.received"],
+  },
+  {
+    key: "dialpad", name: "Dialpad", category: "phone",
+    description: "Live call and SMS events plus call history from Dialpad.", authStrategy: "oauth2",
+    capabilities: ["lead.read", "lead.webhook", "message.webhook"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://developers.dialpad.com/docs", webhookEvents: ["call.ringing", "call.completed", "message.received"],
+  },
+  {
+    key: "openphone", name: "Quo / OpenPhone", category: "phone",
+    description: "Call, message, transcript, and summary events from Quo.", authStrategy: "api_key",
+    capabilities: ["lead.read", "lead.webhook", "message.webhook"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://www.quo.com/docs/mdx/api-reference", webhookEvents: ["call.ringing", "call.completed", "call.summary.completed", "call.transcript.completed", "message.received"],
   },
   {
     key: "jobber", name: "Jobber", category: "field_service",
