@@ -19,6 +19,7 @@ export const CLIENT_SECTION_KEYS = [
   "assistant",
   "approvals",
   "activity",
+  "support",
 ] as const;
 
 export type ClientSectionKey = (typeof CLIENT_SECTION_KEYS)[number];
@@ -71,6 +72,7 @@ export const CLIENT_SECTION_LABELS: Record<ClientSectionKey, string> = {
   assistant: "Assistant",
   approvals: "Approvals",
   activity: "Activity",
+  support: "Support",
 };
 
 const ALL_SECTIONS = [...CLIENT_SECTION_KEYS];

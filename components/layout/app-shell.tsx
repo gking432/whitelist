@@ -5,6 +5,7 @@ import {
   Package,
   PlugZap,
   Settings,
+  LifeBuoy,
   UsersRound,
 } from "lucide-react";
 
@@ -42,6 +43,12 @@ const navigation = [
     label: "Integrations",
     href: "/partner/integrations",
     icon: PlugZap,
+  },
+  {
+    key: "support",
+    label: "Support",
+    href: "/partner/support",
+    icon: LifeBuoy,
   },
   {
     key: "settings",

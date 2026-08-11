@@ -21,6 +21,7 @@ const backgroundNavigation = [
   { label: "Assistant", href: "/client/assistant", section: "assistant" },
   { label: "Approvals", href: "/client/approvals", section: "approvals" },
   { label: "Activity", href: "/client/activity", section: "activity" },
+  { label: "Support", href: "/client/support", section: "support" },
 ];
 
 const crmNavigation = [
@@ -38,6 +39,7 @@ const crmNavigation = [
   { label: "Assistant", href: "/client/assistant", section: "assistant" },
   { label: "Approvals", href: "/client/approvals", section: "approvals" },
   { label: "Activity", href: "/client/activity", section: "activity" },
+  { label: "Support", href: "/client/support", section: "support" },
 ];
 
 type PortalShellProps = {

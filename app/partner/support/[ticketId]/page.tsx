@@ -1,0 +1,33 @@
+import Link from "next/link";
+import { ArrowLeft, Bot, ExternalLink } from "lucide-react";
+import { notFound } from "next/navigation";
+
+import { addPartnerSupportMessage, confirmRequesterValidation, escalatePartnerSupportTicket, resolvePartnerSupportTicket } from "@/app/partner/support/actions";
+import { AppShell } from "@/components/layout/app-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { requireAuthenticatedUser } from "@/lib/auth/session";
+import { requirePrimaryPartnerAccess } from "@/lib/permissions/access";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { supportReference, supportStatusLabel } from "@/lib/support/presentation";
+
+export const dynamic = "force-dynamic";
+
+export default async function PartnerSupportTicketPage({ params }: { params: Promise<{ ticketId: string }> }) {
+  const { ticketId } = await params;
+  const user = await requireAuthenticatedUser(`/partner/support/${ticketId}`);
+  const access = await requirePrimaryPartnerAccess(user.id);
+  const supabase = await createSupabaseServerClient();
+  if (!supabase || !access.partnerId) return null;
+  const [{ data: partner }, { data: ticket }, { data: messages }, { data: release }] = await Promise.all([
+    supabase.from("partners").select("name").eq("id", access.partnerId).maybeSingle(),
+    supabase.from("support_tickets").select("*, client:client_businesses!support_tickets_client_id_fkey(name)").eq("id", ticketId).eq("partner_id", access.partnerId).maybeSingle(),
+    supabase.from("support_ticket_messages").select("id, author_kind, audience, body, created_at").eq("ticket_id", ticketId).order("created_at"),
+    supabase.from("support_ticket_releases").select("*").eq("ticket_id", ticketId).maybeSingle(),
+  ]);
+  if (!ticket) notFound();
+  const client = ticket.client as unknown as { name?: string } | null;
+  const active = !["resolved", "closed"].includes(ticket.status);
+  return <AppShell organizationName={partner?.name ?? "Partner workspace"} userEmail={user.email ?? ""} activeNav="support"><div className="space-y-5"><Button asChild variant="ghost" size="sm"><Link href="/partner/support"><ArrowLeft aria-hidden="true" />Support queue</Link></Button><header className="border-b pb-5"><div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold">{ticket.title}</h1><Badge variant="outline">{supportStatusLabel(ticket.status)}</Badge><Badge variant="outline">{ticket.priority}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{supportReference(ticket.id)} · {client?.name ?? "Agency-wide"} · Routed to {ticket.current_route.replaceAll("_", " ")}</p>{ticket.client_id ? <Button asChild variant="link" size="sm" className="mt-2 h-auto p-0"><Link href={`/partner/clients/${ticket.client_id}`}>Open client account <ExternalLink aria-hidden="true" /></Link></Button> : null}</header>{ticket.ai_diagnosis ? <section className="rounded-lg border bg-card p-5"><div className="flex items-center gap-2"><Bot className="size-4 text-primary" aria-hidden="true" /><h2 className="text-sm font-semibold">Account-aware triage</h2><Badge variant="outline">{ticket.ai_confidence} confidence</Badge></div><p className="mt-3 text-sm leading-6">{ticket.ai_diagnosis}</p><p className="mt-2 text-sm font-medium">Next: {ticket.ai_recommended_action}</p></section> : null}<section className="space-y-3">{(messages ?? []).map((message) => <article key={message.id} className="rounded-lg border bg-card p-4"><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><p className="text-xs font-semibold uppercase text-muted-foreground">{message.author_kind}</p><Badge variant="outline">{message.audience === "client" ? "Visible to client" : "Partner only"}</Badge></div><time className="text-xs text-muted-foreground">{new Date(message.created_at).toLocaleString()}</time></div><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{message.body}</p></article>)}</section>{release ? <section className="rounded-lg border bg-card p-5"><h2 className="font-semibold">Requester validation</h2><p className="mt-1 text-sm text-muted-foreground">Status: {release.status.replaceAll("_", " ")}{release.staging_url ? ` · ${release.staging_url}` : ""}</p>{release.status === "requester_validation" ? <form action={confirmRequesterValidation} className="mt-4"><input type="hidden" name="ticket_id" value={ticket.id} /><Textarea name="notes" rows={3} placeholder="What you tested and the result" /><Button type="submit" className="mt-3">Confirm it works</Button></form> : null}</section> : null}{active ? <div className="grid gap-4 lg:grid-cols-2"><form action={addPartnerSupportMessage} className="rounded-lg border bg-card p-4"><input type="hidden" name="ticket_id" value={ticket.id} /><Textarea name="body" required rows={4} placeholder="Reply or add a partner note" /><div className="mt-3 flex items-center justify-between gap-3">{ticket.client_id ? <select name="audience" className="h-9 rounded-md border bg-background px-3 text-sm"><option value="client">Reply to client</option><option value="partner">Partner-only note</option></select> : <input type="hidden" name="audience" value="partner" />}<Button type="submit">Send</Button></div></form><form action={escalatePartnerSupportTicket} className="rounded-lg border bg-card p-4"><input type="hidden" name="ticket_id" value={ticket.id} /><Textarea name="reason" required rows={4} placeholder="What you checked, what failed, and what platform support needs to do" /><Button type="submit" variant="outline" className="mt-3">Escalate to platform</Button></form><form action={resolvePartnerSupportTicket} className="rounded-lg border bg-card p-4 lg:col-span-2"><input type="hidden" name="ticket_id" value={ticket.id} /><Textarea name="resolution" required rows={3} placeholder="Resolution shared with the requester" /><Button type="submit" className="mt-3">Mark resolved</Button></form></div> : ticket.resolution ? <section className="rounded-lg border border-primary/30 bg-primary/5 p-4"><p className="text-sm font-semibold">Resolution</p><p className="mt-1 text-sm">{ticket.resolution}</p></section> : null}</div></AppShell>;
+}

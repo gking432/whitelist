@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Eye, PlugZap, ShieldCheck, UsersRound } from "lucide-react";
+import { Building2, Eye, LifeBuoy, PlugZap, ShieldCheck, UsersRound } from "lucide-react";
 
 import { startPlatformImpersonation } from "@/app/impersonation/actions";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
@@ -81,6 +81,12 @@ export default async function ControlRoomPage() {
         </div>
 
         <div className="flex justify-end">
+          <Button asChild variant="outline" size="sm" className="mr-2">
+            <Link href="/control/support">
+              <LifeBuoy aria-hidden="true" />
+              Support queue
+            </Link>
+          </Button>
           <Button asChild variant="outline" size="sm">
             <Link href="/control/integrations">
               <PlugZap aria-hidden="true" />

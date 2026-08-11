@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import { recordAuditEvent } from "@/lib/audit/audit";
 import { requirePrimaryPartnerAccess } from "@/lib/permissions/access";
 import { PARTNER_MANAGER_ROLES } from "@/lib/permissions/roles";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { triageAndPersistSupportTicket } from "@/lib/support/service";
 import { getAuthState } from "@/lib/auth/session";
 
 export type RequestIntegrationState = {
@@ -81,6 +83,31 @@ export async function requestIntegration(
     return { status: "error", message: "The request could not be created." };
   }
 
+  const admin = createSupabaseAdminClient();
+  if (admin) {
+    const title = `Connect ${applicationName}`;
+    const description = `Trigger: ${triggerDescription}\n\nDesired result: ${desiredResult}`;
+    const { data: ticket } = await admin.from("support_tickets").insert({
+      partner_id: access.partnerId,
+      client_id: clientId,
+      requested_by: auth.user.id,
+      origin: "partner",
+      category: "integration_request",
+      title,
+      description,
+      affected_area: applicationName,
+      current_route: "platform",
+    }).select("id").single();
+    if (ticket) {
+      await Promise.all([
+        admin.from("integration_requests").update({ support_ticket_id: ticket.id }).eq("id", created.id),
+        admin.from("support_ticket_messages").insert({ ticket_id: ticket.id, partner_id: access.partnerId, client_id: clientId, author_id: auth.user.id, author_kind: "partner", audience: "partner", body: description }),
+        admin.from("support_ticket_events").insert({ ticket_id: ticket.id, partner_id: access.partnerId, client_id: clientId, actor_id: auth.user.id, event_type: "ticket.integration_requested", audience: "partner", summary: `Connector requested for ${applicationName}.`, metadata: { integration_request_id: created.id } }),
+      ]);
+      await triageAndPersistSupportTicket({ supabase: admin, ticketId: ticket.id, partnerId: access.partnerId, clientId, origin: "partner", title, description, affectedArea: applicationName });
+    }
+  }
+
   await recordAuditEvent({
     actor: access,
     action: "integration.request_created",
@@ -90,5 +117,7 @@ export async function requestIntegration(
   });
   revalidatePath("/partner/integrations");
   revalidatePath("/control/integrations");
+  revalidatePath("/partner/support");
+  revalidatePath("/control/support");
   return { status: "success", message: "Integration request created." };
 }
