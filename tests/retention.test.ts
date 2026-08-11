@@ -31,6 +31,10 @@ test("operational retention uses narrow tables, statuses, and cutoffs", async ()
           calls.push({ table, operation: "in", args: [column, values] });
           return chain;
         },
+        not(column: string, operator: string, value: unknown) {
+          calls.push({ table, operation: "not", args: [column, operator, value] });
+          return chain;
+        },
         lt(column: string, value: string) {
           calls.push({ table, operation: "lt", args: [column, value] });
           return Promise.resolve(resultFor(table.length));
@@ -58,6 +62,7 @@ test("operational retention uses narrow tables, statuses, and cutoffs", async ()
       "api_rate_limit_windows",
       "client_connection_setup_sessions",
       "integration_sync_jobs",
+      "platform_error_events",
     ],
   );
   assert.deepEqual(
@@ -66,6 +71,6 @@ test("operational retention uses narrow tables, statuses, and cutoffs", async ()
   );
   assert.deepEqual(
     calls.filter((call) => call.operation === "lt").map((call) => call.args[0]),
-    ["window_started_at", "expires_at", "completed_at"],
+    ["window_started_at", "expires_at", "completed_at", "resolved_at"],
   );
 });

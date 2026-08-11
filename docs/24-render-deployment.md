@@ -54,7 +54,15 @@ encryption, webhook, and provider secrets must never use that prefix.
 
 - Use Supabase Pro or higher so production receives daily backups. Enable PITR
   before onboarding paying clients when the recovery window matters.
-- Perform a restore into a staging project before launch and once per quarter.
+- Run `npm run verify:restore` against the local Supabase stack before every
+  release. It restores the full application schema and data into a disposable
+  same-version database, compares every table count plus policies and functions,
+  and removes the disposable copy when finished.
+- Perform a managed Supabase restore into a separate staging project before
+  launch and once per quarter. Confirm owner, partner, and client login after the
+  restore; the local drill intentionally copies tenant identities only and does
+  not claim to test recovery of passwords, sessions, MFA, or provider-managed
+  Auth infrastructure.
 - `northstar-jobs` removes expired setup sessions, old rate-limit windows, and
   successful/cancelled sync jobs after `OPERATIONAL_RETENTION_DAYS` (default 90).
 - Customer records, audit history, failed jobs, support tickets, and business
@@ -65,8 +73,11 @@ encryption, webhook, and provider secrets must never use that prefix.
 Enable Render deploy-failure, service-health, and cron-failure notifications for
 all three services. A failed database check makes `/api/health` return `503` so
 Render does not route traffic to an app that cannot safely serve tenants. The
-owner Control Center, action jobs, integration events, sync jobs, support queue,
-and audit trail provide application-level failure visibility.
+owner Control Center aggregates sanitized server, browser, desktop, voice, and
+worker failures under Platform errors. Set `PLATFORM_ALERT_WEBHOOK_URL` to a
+private public-HTTPS Slack/incident webhook for first-occurrence alerts. Action
+jobs, integration events, sync jobs, support, and audit remain the operational
+record for expected provider failures.
 
 ## Desktop releases
 

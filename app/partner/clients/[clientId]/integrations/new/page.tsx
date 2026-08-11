@@ -6,7 +6,10 @@ import { ConnectionForm } from "@/components/partner/connection-form";
 import { Button } from "@/components/ui/button";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { getAppUrl } from "@/lib/env";
-import type { IntegrationProviderRecord } from "@/lib/integrations/types";
+import {
+  SELF_SERVICE_CONNECTION_PROVIDER_KEYS,
+  type IntegrationProviderRecord,
+} from "@/lib/integrations/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata = {
@@ -51,6 +54,7 @@ export default async function NewConnectionPage({ params }: PageProps) {
     .from("integration_providers")
     .select("*")
     .eq("is_active", true)
+    .in("provider_key", [...SELF_SERVICE_CONNECTION_PROVIDER_KEYS])
     .order("display_name", { ascending: true });
 
   if (error || !data || data.length === 0) {
@@ -77,10 +81,15 @@ export default async function NewConnectionPage({ params }: PageProps) {
         </Button>
         <h2 className="mt-2 text-lg font-semibold">Add connection</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Website chat and generic webhooks work immediately. HubSpot,
-          GoHighLevel, Twilio SMS, Resend, and Google Calendar connect when you
-          add the provider credentials.
+          Create a hosted website chat or a secure inbound/outbound endpoint.
+          Client-owned business accounts are authorized through Connection
+          Setup so their credentials stay private.
         </p>
+        <Button asChild variant="outline" size="sm" className="mt-3">
+          <Link href={`/partner/clients/${clientId}/connections`}>
+            Connect client accounts
+          </Link>
+        </Button>
       </div>
 
       <div className="rounded-lg border bg-card p-6">

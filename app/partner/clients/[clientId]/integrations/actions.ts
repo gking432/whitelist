@@ -15,6 +15,8 @@ import {
 import {
   OUTBOUND_WEBHOOK_PROVIDER_KEY,
   inboundWebhookPath,
+  isSelfServiceConnectionProvider,
+  isTokenInboundProvider,
   type IntegrationProviderRecord,
 } from "@/lib/integrations/types";
 import {
@@ -113,9 +115,20 @@ export async function createIntegrationConnection(
     }
 
     const providerRecord = provider as IntegrationProviderRecord;
-    // Every inbound-capable provider (generic webhook, web chat intake, …)
-    // gets a generated endpoint + credential on the shared intake path.
-    const isInboundWebhook = providerRecord.supports_inbound;
+    if (!isSelfServiceConnectionProvider(providerRecord.provider_key)) {
+      return {
+        status: "error",
+        message:
+          "Client-owned accounts must be authorized through a secure setup link.",
+        fieldErrors: {
+          provider_id: "Open Connection Setup and send the client a secure link.",
+        },
+      };
+    }
+
+    const isInboundWebhook = isTokenInboundProvider(
+      providerRecord.provider_key,
+    );
     const isOutboundWebhook =
       providerRecord.provider_key === OUTBOUND_WEBHOOK_PROVIDER_KEY;
 
@@ -170,13 +183,10 @@ export async function createIntegrationConnection(
       healthSummary = "Waiting for the first inbound event.";
     } else if (isOutboundWebhook) {
       config.destination_url = outboundUrl;
-      status = "not_connected";
+      status = "connected";
       credentialStatus = "configured";
       healthSummary =
-        "Signing secret stored. Outbound delivery is not enabled in this release.";
-    } else {
-      healthSummary =
-        "Provider adapter is not yet available. Connection is tracked for planning.";
+        "Ready to deliver signed CRM contact syncs when this connection is live.";
     }
 
     const { data: created, error: insertError } = await supabase

@@ -53,13 +53,14 @@ Don't make accounts for things that aren't wired yet.
    This creates every table plus the **provider catalog and workflow
    templates** (those live in migrations, not the seed).
 3. Auth → URL Configuration: add your future app URL's callback to **Redirect
-   URLs**: `https://<your-app>.vercel.app/auth/callback`. Email sign-in works
+   URLs**: `https://<your-app>/auth/callback`. Email sign-in works
    on Supabase's built-in email out of the box (low rate limits — add SMTP
    later for volume).
 
-### A2. Vercel (the app)
+### A2. Render (app, voice stream, and worker)
 
-Import the repo in Vercel and set these environment variables:
+Create a Blueprint from `render.yaml`. It provisions the web app, always-on
+voice stream, and five-minute job runner. Enter these values when prompted:
 
 | Variable | Value | Needed for |
 | --- | --- | --- |
@@ -67,7 +68,7 @@ Import the repo in Vercel and set these environment variables:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | required |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key | required (server) |
 | `SECRETS_ENCRYPTION_KEY` | `openssl rand -base64 32` | encrypts stored provider tokens |
-| `NEXT_PUBLIC_APP_URL` | `https://<your-app>.vercel.app` | OAuth + webhook URLs |
+| `NEXT_PUBLIC_APP_URL` | `https://<your-app>` | OAuth + webhook URLs |
 | `ANTHROPIC_API_KEY` | your key | real AI (else labeled fallback) |
 | `OPENAI_API_KEY` | your key | voice assistant (docs/21) |
 | `VOICE_PROVIDER` | `openai_realtime` | enables the voice adapter |
@@ -77,15 +78,15 @@ Add the platform OAuth application credentials from `.env.example` for every
 provider you plan to offer. Clients authorize their own accounts; partners do
 not see or store the resulting access tokens.
 
-Deploy. Set `NEXT_PUBLIC_APP_URL` to the real URL Vercel gives you and
-redeploy if it changed.
+After Render reserves the service URLs, set the cross-service URLs described
+in docs/24 and redeploy so public Next.js values are embedded correctly.
 
 ### A3. Give yourself an account (there's no signup yet)
 
 The app only lets in emails that already have a membership. Bootstrap
 yourself once:
 
-1. Go to `https://<your-app>.vercel.app/login`, enter **your real email**,
+1. Go to `https://<your-app>/login`, enter **your real email**,
    click the sign-in link. (This creates your auth user + profile via a
    trigger. You'll land on "Partner access required" — expected.)
 2. In Supabase → SQL Editor, run:
@@ -106,10 +107,10 @@ yourself once:
 3. Sign in again → you land on the partner dashboard with the **Start here**
    guide.
 
-### A4. (optional) Background job retries
+### A4. Background jobs
 
-In Vercel → Cron Jobs, schedule `POST /api/jobs/run` every few minutes with
-header `Authorization: Bearer <CRON_SECRET>`.
+The Render Blueprint creates `northstar-jobs` automatically. Confirm its first
+run succeeds; no separate scheduler setup is required.
 
 ---
 
@@ -159,7 +160,7 @@ note appear in HubSpot.
 ### Google Calendar (booking)
 1. Google Cloud Console → create an **OAuth client (Web application)**. Set
    the **Authorized redirect URI** to
-   `https://<your-app>.vercel.app/api/oauth/google/callback`.
+   `https://<your-app>/api/oauth/google/callback`.
 2. In the app, paste the **OAuth client ID** and **secret**, click Connect,
    approve with your Google account. It runs a live free/busy check to verify.
 3. A scheduling lead now proposes real open slots; approving books a real

@@ -18,6 +18,7 @@
     "desktop:dist:mac": "npm run desktop:icon && npm run desktop:deps && electron-builder --mac dmg zip",
     "desktop:release": "npm run desktop:icon && npm run desktop:deps && electron-builder --publish always",
     "voice-stream": "node services/voice-stream/server.cjs",
+    "verify:restore": "node scripts/verify-database-restore.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test \"tests/*.test.ts\""

@@ -1,62 +1,84 @@
-# 16 — Provider Capability Matrix & Field Mapping
+# Provider capability matrix
 
-What each connectable provider can actually do in the current release.
-"Approval-gated" means a human approves the exact content first; "live
-mode only" means the connection's runtime mode must be `live` or the
-action records an honest dry run instead.
+This is the launch-facing description of what the current release can do.
+The code of record for external connector capabilities is
+`lib/integrations/connectors/catalog.ts`; provider-specific adapters live in
+`lib/integrations/providers`.
 
-## Capability matrix
+## Verification labels
 
-| Provider | Category | Connect method | What works today | What does not |
-| --- | --- | --- | --- | --- |
-| HubSpot | CRM | Private app token (verified before storing) | Additive contact upsert + "AI Assistant" note on every lead-bearing run; manual re-sync; dry-run payload preview | No deal/stage writes, no deletes, no email via HubSpot |
-| GoHighLevel | CRM | Private Integration token + Location ID (verified) | Same contract as HubSpot: contact upsert + AI note, dry-run preview, retry | No pipeline/opportunity writes, no messaging via GHL |
-| Generic outbound webhook | CRM fallback | Generated signing secret + HTTPS destination | Signed `crm.contact_sync` JSON delivery (HMAC-SHA256 `X-Northstar-Signature`); private-network destinations blocked | Receiver must verify + map fields itself; no reads back |
-| Twilio | SMS | Account SID + auth token + number (verified) | Approval-gated outbound SMS (live only); inbound SMS webhook with signature validation → AI intake routing | No voice/calls yet; no MMS |
-| Resend | Email | API key + from address (verified, domain check) | Approval-gated outbound email (live only), plain-text | No inbound email parsing; no templates/HTML yet |
-| Google Calendar | Calendar | Partner's OAuth client + Google consent | Real free/busy availability, slot proposals on scheduling requests, approval-gated event creation (live only) | No multi-calendar/worker routing, no reschedule flow yet |
-| Northstar intake (webhook / web chat / forms) | Lead source | Generated endpoint + token | Token-authenticated intake, idempotency, rate limits, AI routing | Website chat widget UI not built (endpoint is real) |
-| Phone / voice provider | Phone | — | Nothing — no adapter exists | Live call assistant, AI answering, transcripts |
+- `contract_verified`: implemented against the provider's published API and
+  covered by local fixtures/contract tests. It still requires a real vendor
+  account pilot before production use.
+- `live_verified`: a real credential, inbound event, and outbound action have
+  passed in the deployed production environment. No provider is promoted to
+  this label from code tests alone.
+- `restricted`: implementation depends on commercial or product approval that
+  an ordinary customer account cannot supply.
 
-Every outbound attempt (send/book/sync) also records a durable
-`action_jobs` row with retry from Runs / Logs. Retries re-run the exact
-approved payload through the same gate — approval and live-mode rules
-apply on every attempt.
+## Native operating paths
 
-## Field mapping defaults
+| Provider/path | What works in this release | Important boundary |
+| --- | --- | --- |
+| Built-in CRM | Contacts, leads, pipeline, inbox/drafts, calls, notes, tasks, appointments, quotes, marketing, reports, permissions, automation health | Native data replaces an outside CRM/calendar requirement only when the client selects the built-in operating mode |
+| Managed Twilio | Partner parent-account validation; client subaccount/number provisioning; signed inbound SMS and voice; approval-gated SMS; turn-based AI phone answering; staff forwarding; Media Streams transcription; caller matching; post-call CRM/workflow actions | AI answering is turn-based Gather/TwiML, not full-duplex AI audio; the live staff coach requires the always-on voice-stream service and desktop app |
+| Northstar web chat | Hosted page and iframe; approved-knowledge answers; contact/service capture; rate limits; completed-conversation intake; CRM/workflow/approval routing | The public widget key starts chat sessions only; customer-facing actions remain approval-gated |
+| Generic inbound webhook | Generated token, idempotency, normalized event intake, AI routing, redacted event history | The sender must map its payload to the documented event envelope |
+| Generic outbound webhook | Public-HTTPS validation, private-network blocking, HMAC signing, additive contact/AI-note sync, retries | The receiver must verify the signature and map the payload; no remote reads |
+| Resend | Verified sending-domain connection, approval-gated email, private forwarded lead inbox, signed receiving webhook and parsing | HTML/template campaigns are not the V1 email path |
+| Google Calendar | OAuth, free/busy, constraint-aware slot proposals, approval-gated event creation | Book-only in V1; reschedule/cancel remain manual |
 
-Northstar normalizes intake payloads to: `name` (split into first/last),
-`email`, `phone`, `address`, `message`. Adapters map them as follows
-(code of record: `lib/crm/contact-fields.ts`):
+## External business systems
 
-| Northstar field | HubSpot | GoHighLevel | Outbound webhook payload |
-| --- | --- | --- | --- |
-| first name | `firstname` | `firstName` | `data.contact.first_name` |
-| last name | `lastname` | `lastName` | `data.contact.last_name` |
-| email | `email` | `email` | `data.contact.email` |
-| phone | `phone` | `phone` | `data.contact.phone` |
-| address | `address` | `address1` | `data.contact.address` |
-| AI summary note | Note object (association 202) | Contact note | `data.note` |
+All entries below are `contract_verified` until a production pilot proves the
+real account and vendor approval path.
 
-Mappings are additive-only: empty fields are omitted, never cleared.
-Per-client custom field mapping is a future setting; these defaults are
-what ships.
+| Group | Providers | Implemented contract |
+| --- | --- | --- |
+| CRM | HubSpot, GoHighLevel | Contact lookup/upsert and additive AI Assistant notes; dry-run previews and durable retry. No destructive writes or broad deal-stage control |
+| Productivity | Google Workspace | Google contacts, Gmail messages/drafts, calendar read/create/update/delete, OAuth refresh and sync jobs |
+| Productivity | Microsoft 365 | Outlook contacts, mail, and calendar read/write through Microsoft Graph, OAuth refresh and sync jobs |
+| Field service | Jobber, Housecall Pro | Customer read/create and job read |
+| Field service | ServiceTitan | Customer/job/appointment read and lead create |
+| Field service | Workiz | Lead read/create and job read |
+| Accounting | QuickBooks Online | Customer read/create plus invoice/payment reads |
+| Payments | Stripe, Square | Customer/invoice/payment reads, customer create, and hosted payment-link creation |
+| Call attribution | CallRail | Attributed calls and form/text lead ingestion where the account exposes them |
+| Retained phone | RingCentral, Dialpad, Quo/OpenPhone | Signed call/message events, caller matching, CRM screen-pop events, history/transcript/summary ingestion where exposed, post-call workflows |
+| Lead and campaign | Meta Lead Ads, Google Ads | Lead intake or polling, campaign/spend snapshots, attribution into Marketing |
+| Reputation | Google Business Profile, Podium | Review reads and approval-gated reply updates where the account/API permits |
+| Reputation | Birdeye | Review and rating reads |
+| Forwarded sources | Angi, Thumbtack, Yelp, form/marketplace email | Private per-client receiving address through Resend; normalized intake without a client Zapier account |
 
-## Outbound webhook envelope
+Retained phone systems do not automatically gain Twilio Media Streams. They
+receive live screen-pop or post-call behavior according to the events and media
+their standard API exposes. Managed Twilio is the V1 path for the complete
+in-call scheduling coach.
 
-```json
-{
-  "event_type": "crm.contact_sync",
-  "sent_at": "2026-07-05T18:00:00.000Z",
-  "data": {
-    "contact": { "first_name": "…", "last_name": "…", "email": "…", "phone": "…", "address": "…" },
-    "note": "AI Assistant — Northstar …",
-    "source_event_type": "lead.created",
-    "client_name": "Pilot Plumbing Co"
-  }
-}
-```
+## Restricted providers
 
-Header: `X-Northstar-Signature: base64(hmacSHA256(signing_secret, raw_body))`.
-Destinations must be public HTTPS; localhost and private/link-local IP
-ranges are rejected.
+Broad Angi, Thumbtack, and Yelp lead APIs remain `restricted` until commercial
+access is granted. Google Local Services lead delivery and some review/reply
+operations also depend on account eligibility or product approval. The
+forwarded lead inbox and signed webhooks are the supported fallbacks; the UI
+must not imply that restricted APIs are available.
+
+## Connection ownership
+
+- The platform owner supplies hosting, database, AI, platform OAuth apps,
+  Resend receiving, monitoring, and release infrastructure.
+- Each partner connects its own Twilio parent account and provisions isolated
+  client subaccounts.
+- Each client authorizes its own CRM, calendar, email, field-service, finance,
+  retained-phone, marketing, and reputation accounts through an expiring
+  scoped setup link. The partner never receives the plaintext credentials.
+- Northstar chat and generic webhook endpoints are created directly by the
+  partner because they are platform-owned endpoints, not client vendor accounts.
+
+## Default CRM mapping
+
+Lead intake normalizes `name`, `email`, `phone`, `address`, and `message`.
+HubSpot maps names to `firstname`/`lastname`; GoHighLevel maps them to
+`firstName`/`lastName`; the signed webhook uses
+`data.contact.first_name`/`last_name`. Empty fields are omitted and never clear
+existing provider data. Per-client custom field mapping is not part of V1.

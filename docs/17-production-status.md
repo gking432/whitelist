@@ -38,7 +38,9 @@ stack.
 | Managed Twilio provisioning | Real — a partner-owned Twilio parent account can create a client subaccount, purchase a voice/SMS number, and configure messaging, voice, and status webhooks automatically |
 | Desktop phone assistant | Real foundation — Electron tray app, hosted authenticated assistant route, active-call always-on-top behavior, launch-at-login, server configuration, signed macOS/Windows release workflow, and automatic updates are present |
 | Production health and abuse controls | Real — database-aware `/api/health`, durable atomic Postgres rate limits with bounded outage fallback, security headers, and Render health routing |
-| Operational retention | Real — scheduled cleanup removes expired setup sessions, rate windows, and completed sync jobs while preserving audit, failed work, tickets, customers, and business data |
+| Exception monitoring | Real — Next.js server instrumentation, browser/global error capture, desktop process reporting, PII/secret sanitization, fingerprint aggregation, owner-only resolution queue, and optional private alert webhook |
+| Backup restore verification | Real locally — `npm run verify:restore` restores every application table into a disposable same-version Supabase Postgres database and compares table inventory, row counts, RLS policies, and functions; managed Auth/PITR staging recovery remains a launch gate |
+| Operational retention | Real — scheduled cleanup removes expired setup sessions, rate windows, completed sync jobs, and old resolved platform errors while preserving audit, failed work, tickets, customers, and business data |
 | Scoped client connection links | Real — partners can send expiring provider-specific links so the client can enter its own credentials without exposing them to the partner |
 | Package-driven automation installation | Real — choosing the sold package provisions its native workflows and only its included launch automations in sandbox, records per-pack readiness, identifies the minimum missing client accounts, and feeds the test and launch gates |
 | n8n/Zapier/Make expansion recipes | Real export/deployer contracts — 14 researched recipes can bridge unusual external apps; clients do not need these accounts for native connectors, and no shared platform automation account is configured |
@@ -87,7 +89,7 @@ stack.
   surface and the scheduled queue worker is included in `render.yaml`.
 - **Known gaps before real customer data**: production credentials and vendor
   approvals, one real-account pilot per enabled provider, desktop signing
-  certificates, external exception aggregation, and legal review of AI
+  certificates, alert-webhook configuration, and legal review of AI
   disclosure (docs/12) still remain owner launch tasks.
 
 ## UI modernization pass (2026-07)

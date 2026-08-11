@@ -191,14 +191,8 @@ export function ConnectionForm({
       {isOutbound ? (
         <p className="rounded-md border bg-secondary/40 px-4 py-3 text-xs leading-5 text-muted-foreground">
           A signing secret is generated and stored encrypted. Outbound delivery
-          is not enabled in this release; the connection is tracked and
-          configured ahead of that capability.
-        </p>
-      ) : null}
-      {!isInbound && !isOutbound ? (
-        <p className="rounded-md border bg-secondary/40 px-4 py-3 text-xs leading-5 text-muted-foreground">
-          This provider&apos;s adapter is not yet available. The connection is
-          recorded for planning and appears as not connected.
+          sends additive CRM contact and AI-note payloads in live mode. The
+          receiver must verify the signature before accepting them.
         </p>
       ) : null}
 

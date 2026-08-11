@@ -145,7 +145,7 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
                     editableContent={item.editable_content}
                     consequence={
                       item.type === "customer_message"
-                        ? "Approving records the final message content. Live delivery to customers requires an outbound integration, which is not enabled in this release."
+                        ? "Approving locks the final message content and queues delivery through the connected live SMS or email provider."
                         : "Approving completes the paused workflow run; rejecting cancels it."
                     }
                   />

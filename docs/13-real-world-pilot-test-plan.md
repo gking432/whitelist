@@ -39,15 +39,15 @@ Real and testable end-to-end today (see docs/17 for the full matrix):
 - **Built-in CRM** (contacts, leads, timeline, tasks, appointments) fills
   automatically for clients in primary/mirror/assist CRM mode.
 
-Not fully real yet (documented, not hidden):
+Implemented since this pilot was first written:
 
-- **Voice/phone calls** are design contracts only (see docs/11); Twilio
-  here is SMS-only. Live call/scheduling assistant popups need a phone
-  provider with live audio.
-- **Website chat widget UI** is not built (the chat intake endpoint is).
-- The run engine executes synchronously in the request; action jobs make
-  outcomes durable/retryable, but there is no background worker yet.
-- Reschedule/cancel flows for booked appointments are manual.
+- Managed Twilio now supports signed voice webhooks, turn-based AI answering,
+  staff forwarding, Media Streams transcription, and desktop assistant events.
+- The website chat has a hosted page and iframe embed.
+- `render.yaml` provisions the five-minute durable-job worker.
+
+Remaining boundary: appointment reschedule/cancel is manual, and every live
+provider still requires its own deployed-account pilot before launch.
 
 ---
 

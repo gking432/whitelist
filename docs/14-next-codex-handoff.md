@@ -1,5 +1,9 @@
 # 14 — Next Codex Handoff
 
+> Archived historical handoff. It describes the repository before the voice,
+> desktop, connector, support, package-deployment, and production-hardening
+> work. Use docs/17, docs/24, and docs/25 for current state.
+
 Use this document to restart the work from another Codex chat without needing the full conversation history.
 
 ## Current Repo State
@@ -515,4 +519,3 @@ When explaining flows, say exactly what the partner clicks and what happens.
 The user is thinking out loud often. Capture important product ideas in docs before they get lost.
 
 When testing, prefer real-world proof over only simulated demos, but do not skip UX proof. The staff popup/assistant UI matters.
-

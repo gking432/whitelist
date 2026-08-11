@@ -69,9 +69,29 @@ export type IntegrationEventRecord = {
 
 export const INBOUND_WEBHOOK_PROVIDER_KEY = "generic_inbound_webhook";
 export const OUTBOUND_WEBHOOK_PROVIDER_KEY = "generic_outbound_webhook";
+export const WEB_CHAT_PROVIDER_KEY = "northstar_web_chat";
+
+export const SELF_SERVICE_CONNECTION_PROVIDER_KEYS = [
+  INBOUND_WEBHOOK_PROVIDER_KEY,
+  OUTBOUND_WEBHOOK_PROVIDER_KEY,
+  WEB_CHAT_PROVIDER_KEY,
+] as const;
+
+export function isSelfServiceConnectionProvider(providerKey: string): boolean {
+  return SELF_SERVICE_CONNECTION_PROVIDER_KEYS.includes(
+    providerKey as (typeof SELF_SERVICE_CONNECTION_PROVIDER_KEYS)[number],
+  );
+}
+
+export function isTokenInboundProvider(providerKey: string): boolean {
+  return (
+    providerKey === INBOUND_WEBHOOK_PROVIDER_KEY ||
+    providerKey === WEB_CHAT_PROVIDER_KEY
+  );
+}
 
 export function isFunctionalProvider(providerKey: string): boolean {
-  return providerKey === INBOUND_WEBHOOK_PROVIDER_KEY;
+  return isSelfServiceConnectionProvider(providerKey);
 }
 
 export function inboundWebhookPath(connectionId: string): string {

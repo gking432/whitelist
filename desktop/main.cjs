@@ -25,6 +25,30 @@ let appUrl = null;
 let quitting = false;
 let updateState = "idle";
 
+async function reportDesktopError(error, context = {}) {
+  const destination = resolveAppUrl();
+  if (!destination) return;
+
+  const value = error instanceof Error ? error : new Error(String(error));
+  try {
+    await net.fetch(`${destination}/api/monitoring/client-error`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "desktop",
+        name: value.name,
+        message: value.message || "Desktop process error",
+        stack: value.stack,
+        path: "/desktop/assistant",
+        version: app.getVersion(),
+        ...context,
+      }),
+    });
+  } catch {
+    // The reporter must not destabilize the assistant.
+  }
+}
+
 function normalizeAppUrl(value, allowLocalhost = false) {
   try {
     const parsed = new URL(String(value || "").trim());
@@ -254,6 +278,7 @@ autoUpdater.on("update-downloaded", () => {
 autoUpdater.on("error", (error) => {
   updateState = "error";
   console.error("Desktop updater error:", error);
+  void reportDesktopError(error, { path: "/desktop/updater" });
   rebuildTrayMenu();
 });
 
@@ -327,6 +352,20 @@ function createWindow() {
       app.isPackaged && app.getLoginItemSettings().wasOpenedAtLogin;
 
     if (!app.commandLine.hasSwitch("hidden") && !openedAtLogin) showWindow();
+  });
+
+  window.webContents.on("did-fail-load", (_event, code, description, url) => {
+    void reportDesktopError(
+      new Error(`Assistant page failed to load (${code}): ${description}`),
+      { path: url },
+    );
+  });
+
+  window.webContents.on("render-process-gone", (_event, details) => {
+    void reportDesktopError(
+      new Error(`Assistant renderer stopped: ${details.reason}`),
+      { path: "/desktop/assistant" },
+    );
   });
 
   loadAssistant();
@@ -420,6 +459,10 @@ if (!singleInstanceLock) {
 
 app.on("before-quit", () => {
   quitting = true;
+});
+
+process.on("unhandledRejection", (reason) => {
+  void reportDesktopError(reason, { path: "/desktop/main" });
 });
 
 app.on("window-all-closed", (event) => {

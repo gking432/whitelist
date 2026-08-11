@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Eye, LifeBuoy, PlugZap, ShieldCheck, UsersRound } from "lucide-react";
+import { Building2, Eye, LifeBuoy, PlugZap, ShieldCheck, TriangleAlert, UsersRound } from "lucide-react";
 
 import { startPlatformImpersonation } from "@/app/impersonation/actions";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
@@ -33,7 +33,12 @@ export default async function ControlRoomPage() {
 
   if (!admin) return null;
 
-  const [{ data: partnerData }, { data: clientData }, { data: sessionData }] =
+  const [
+    { data: partnerData },
+    { data: clientData },
+    { data: sessionData },
+    { count: unresolvedErrorCount },
+  ] =
     await Promise.all([
       admin
         .from("partners")
@@ -51,6 +56,10 @@ export default async function ControlRoomPage() {
         .select("id")
         .is("ended_at", null)
         .gt("expires_at", new Date().toISOString()),
+      admin
+        .from("platform_error_events")
+        .select("id", { count: "exact", head: true })
+        .is("resolved_at", null),
     ]);
 
   const partners = (partnerData ?? []) as PartnerRow[];
@@ -80,7 +89,7 @@ export default async function ControlRoomPage() {
           </p>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button asChild variant="outline" size="sm" className="mr-2">
             <Link href="/control/support">
               <LifeBuoy aria-hidden="true" />
@@ -93,9 +102,15 @@ export default async function ControlRoomPage() {
               Integration requests
             </Link>
           </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/control/errors">
+              <TriangleAlert aria-hidden="true" />
+              Platform errors
+            </Link>
+          </Button>
         </div>
 
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border bg-card p-4">
             <UsersRound className="size-4 text-primary" aria-hidden="true" />
             <p className="mt-3 text-2xl font-semibold">{partners.length}</p>
@@ -111,6 +126,11 @@ export default async function ControlRoomPage() {
             <p className="mt-3 text-2xl font-semibold">{sessionData?.length ?? 0}</p>
             <p className="text-xs text-muted-foreground">Active support views</p>
           </div>
+          <Link href="/control/errors" className="rounded-lg border bg-card p-4 transition-colors hover:bg-secondary/40">
+            <TriangleAlert className="size-4 text-primary" aria-hidden="true" />
+            <p className="mt-3 text-2xl font-semibold">{unresolvedErrorCount ?? 0}</p>
+            <p className="text-xs text-muted-foreground">Unresolved platform errors</p>
+          </Link>
         </section>
 
         <section className="overflow-hidden rounded-lg border bg-card">
