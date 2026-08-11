@@ -19,6 +19,8 @@ services:
         sync: false
       - key: SECRETS_ENCRYPTION_KEY
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: VOICE_PROVIDER
@@ -29,7 +31,59 @@ services:
         generateValue: true
       - key: CRON_SECRET
         generateValue: true
+      - key: PLATFORM_ALERT_WEBHOOK_URL
+        sync: false
+      - key: PLATFORM_RESEND_API_KEY
+        sync: false
+      - key: PLATFORM_ALERT_FROM_EMAIL
+        sync: false
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: RESEND_INBOUND_DOMAIN
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: JOBBER_OAUTH_CLIENT_ID
+        sync: false
+      - key: JOBBER_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: QUICKBOOKS_OAUTH_CLIENT_ID
+        sync: false
+      - key: QUICKBOOKS_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: SQUARE_OAUTH_CLIENT_ID
+        sync: false
+      - key: SQUARE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: RINGCENTRAL_OAUTH_CLIENT_ID
+        sync: false
+      - key: RINGCENTRAL_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: DIALPAD_OAUTH_CLIENT_ID
+        sync: false
+      - key: DIALPAD_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_ADS_DEVELOPER_TOKEN
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: PODIUM_OAUTH_CLIENT_ID
+        sync: false
+      - key: PODIUM_OAUTH_CLIENT_SECRET
+        sync: false
       - key: ENABLE_SCENARIO_LAB
+        value: "false"
+      - key: ENABLE_CODEX_CONNECTOR_WORKER
         value: "false"
 
   - type: cron

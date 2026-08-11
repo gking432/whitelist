@@ -6,6 +6,7 @@ import {
   connectorBranchName,
   redactConnectorRequestText,
 } from "../lib/integrations/connector-development.ts";
+import { validConnectorBranchName } from "../lib/integrations/codex-worker.ts";
 
 const request = {
   id: "12345678-1234-1234-1234-123456789abc",
@@ -29,7 +30,11 @@ test("connector task prompts isolate untrusted request text", () => {
 });
 
 test("connector branch names are stable and bounded", () => {
-  assert.equal(connectorBranchName(request), "codex/connector-example-crm-12345678");
+  const branchName = connectorBranchName(request);
+  assert.equal(branchName, "codex/connector-example-crm-12345678");
+  assert.equal(validConnectorBranchName(branchName), true);
+  assert.equal(validConnectorBranchName("main"), false);
+  assert.equal(validConnectorBranchName("codex/connector-../../production"), false);
 });
 
 test("request sanitizer removes private keys", () => {

@@ -8,7 +8,10 @@ import {
   buildConnectorDevelopmentPrompt,
   connectorBranchName,
 } from "@/lib/integrations/connector-development";
-import { runCodexConnectorTask } from "@/lib/integrations/codex-worker";
+import {
+  codexConnectorWorkerReady,
+  runCodexConnectorTask,
+} from "@/lib/integrations/codex-worker";
 import { requirePlatformRole } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -127,16 +130,17 @@ export async function runConnectorTask(formData: FormData) {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
   if (!supabase) return;
+  if (!codexConnectorWorkerReady()) return;
   const taskId = String(formData.get("task_id") ?? "");
-  const { data: task } = await supabase.from("connector_development_tasks").select("id, request_id, prompt_snapshot, status").eq("id", taskId).maybeSingle();
+  const { data: task } = await supabase.from("connector_development_tasks").select("id, request_id, prompt_snapshot, branch_name, status").eq("id", taskId).maybeSingle();
   if (!task || task.status !== "queued") return;
   await supabase.from("connector_development_tasks").update({ status: "running", started_at: new Date().toISOString(), error_message: null }).eq("id", taskId);
   await supabase.from("integration_requests").update({ status: "building" }).eq("id", task.request_id);
   const { data: linked } = admin ? await admin.from("integration_requests").select("support_ticket_id").eq("id", task.request_id).maybeSingle() : { data: null };
   if (linked?.support_ticket_id && admin) await admin.from("support_tickets").update({ status: "platform_working", current_route: "codex" }).eq("id", linked.support_ticket_id);
   try {
-    const result = await runCodexConnectorTask(task.prompt_snapshot);
-    await supabase.from("connector_development_tasks").update({ status: "succeeded", codex_thread_id: result.threadId, final_response: result.finalResponse, completed_at: new Date().toISOString() }).eq("id", taskId);
+    const result = await runCodexConnectorTask(task.prompt_snapshot, task.branch_name);
+    await supabase.from("connector_development_tasks").update({ status: "succeeded", codex_thread_id: result.threadId, final_response: `${result.finalResponse}\n\nWorktree: ${result.worktreePath}`, completed_at: new Date().toISOString() }).eq("id", taskId);
     await supabase.from("integration_requests").update({ status: "testing" }).eq("id", task.request_id);
     if (linked?.support_ticket_id && admin) await admin.from("support_tickets").update({ status: "platform_working", current_route: "platform" }).eq("id", linked.support_ticket_id);
   } catch (error) {
