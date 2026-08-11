@@ -53,6 +53,15 @@ export function integrationRequirementIsMet(
     );
   }
 
+  if (requirement.id === "crm") {
+    return connections.some(
+      (connection) =>
+        isConnected(connection) &&
+        (connection.provider?.category === "crm" ||
+          connection.provider?.category === "field_service"),
+    );
+  }
+
   return connections.some(
     (connection) =>
       isConnected(connection) &&

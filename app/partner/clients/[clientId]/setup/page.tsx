@@ -100,7 +100,7 @@ const googleOutcomeMessages: Record<string, { ok: boolean; text: string }> = {
 // Multiple entries mean "connect one of these" (e.g. either CRM).
 const CATEGORY_TO_PILOT_PROVIDERS: Partial<Record<string, PilotProviderKey[]>> =
   {
-    crm: ["hubspot", "gohighlevel"],
+    crm: ["hubspot", "gohighlevel", "jobber", "housecall_pro", "servicetitan", "workiz"],
     sms: ["twilio"],
     phone: ["twilio"],
     email: ["google_workspace", "microsoft_365", "resend"],

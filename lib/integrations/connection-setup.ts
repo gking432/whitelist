@@ -12,6 +12,10 @@ export const CONNECTION_SETUP_PROVIDER_KEYS = [
   "google_calendar",
   "google_workspace",
   "microsoft_365",
+  "jobber",
+  "housecall_pro",
+  "servicetitan",
+  "workiz",
 ] as const;
 
 export type ConnectionSetupProviderKey =

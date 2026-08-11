@@ -28,6 +28,10 @@ import {
   type TwilioCredentials,
 } from "@/lib/integrations/providers/twilio";
 import { refreshPackageDeploymentReadiness } from "@/lib/packages/deployment";
+import { housecallProAdapter, type HousecallProCredentials } from "@/lib/integrations/providers/housecall-pro";
+import { serviceTitanAdapter, type ServiceTitanCredentials } from "@/lib/integrations/providers/servicetitan";
+import { workizAdapter, type WorkizCredentials } from "@/lib/integrations/providers/workiz";
+import { enqueueInitialConnectorSync } from "@/lib/integrations/connectors/sync-runner";
 
 type ConnectionScope = {
   partnerId: string;
@@ -37,7 +41,7 @@ type ConnectionScope = {
 
 type CredentialProviderKey = Exclude<
   PilotProviderKey,
-  "google_calendar" | "google_workspace" | "microsoft_365"
+  "google_calendar" | "google_workspace" | "microsoft_365" | "jobber"
 >;
 
 export async function ensureProviderConnection(
@@ -100,6 +104,15 @@ async function verifyProviderCredentials(
   }
   if (providerKey === "resend") {
     return testEmailConnection(credentials as unknown as EmailCredentials);
+  }
+  if (providerKey === "housecall_pro") {
+    return housecallProAdapter.testConnection({ connectionId: "verify", partnerId: "verify", clientId: "verify", credentials: credentials as unknown as HousecallProCredentials, config: {} });
+  }
+  if (providerKey === "servicetitan") {
+    return serviceTitanAdapter.testConnection({ connectionId: "verify", partnerId: "verify", clientId: "verify", credentials: credentials as unknown as ServiceTitanCredentials, config: {} });
+  }
+  if (providerKey === "workiz") {
+    return workizAdapter.testConnection({ connectionId: "verify", partnerId: "verify", clientId: "verify", credentials: credentials as unknown as WorkizCredentials, config: {} });
   }
   return testTwilioConnection(credentials as unknown as TwilioCredentials);
 }
@@ -208,6 +221,14 @@ export async function saveProviderCredentials(
     partnerId: scope.partnerId,
     clientId: scope.clientId,
   });
+  if (["housecall_pro", "servicetitan", "workiz"].includes(providerKey)) {
+    await enqueueInitialConnectorSync(supabase, {
+      partnerId: scope.partnerId,
+      clientId: scope.clientId,
+      connectionId,
+      providerKey,
+    });
+  }
 
   return { connectionId, detail: healthDetail };
 }

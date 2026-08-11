@@ -45,6 +45,12 @@ export async function createConnectionSetupLink(
   if (isConnectionSetupProviderKey(productivityProvider)) {
     requested.push(productivityProvider);
   }
+  const fieldServiceProvider = String(
+    formData.get("field_service_provider") ?? "",
+  );
+  if (isConnectionSetupProviderKey(fieldServiceProvider)) {
+    requested.push(fieldServiceProvider);
+  }
   const providers = Array.from(new Set(requested));
   if (providers.length === 0) {
     return {

@@ -8,6 +8,7 @@ import {
   setPilotLiveMode,
   startGoogleConnect,
   startWorkspaceConnect,
+  startJobberConnect,
   testPilotConnection,
 } from "@/app/partner/clients/[clientId]/pilot/actions";
 import { Badge } from "@/components/ui/badge";
@@ -66,9 +67,12 @@ export function PilotProviderCard({
 }: PilotProviderCardProps) {
   const isLegacyGoogle = meta.key === "google_calendar";
   const isWorkspace = meta.key === "google_workspace" || meta.key === "microsoft_365";
-  const isOAuth = isLegacyGoogle || isWorkspace;
+  const isJobber = meta.key === "jobber";
+  const isOAuth = isLegacyGoogle || isWorkspace || isJobber;
   const workspaceKey = meta.key === "microsoft_365" ? "microsoft_365" : "google_workspace";
-  const boundConnect = isWorkspace
+  const boundConnect = isJobber
+    ? startJobberConnect.bind(null, clientId)
+    : isWorkspace
     ? startWorkspaceConnect.bind(null, clientId, workspaceKey)
     : isLegacyGoogle
       ? startGoogleConnect.bind(null, clientId)

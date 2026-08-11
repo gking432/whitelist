@@ -39,6 +39,15 @@ test("workspace connectors expose contacts, calendar, and mail capabilities", ()
   }
 });
 
+test("field-service launch connectors have executable contracts", () => {
+  for (const key of ["jobber", "housecall_pro", "servicetitan", "workiz"]) {
+    const connector = CONNECTOR_CATALOG.find((item) => item.key === key);
+    assert.ok(connector, `${key} is in the catalog`);
+    assert.equal(connector.verificationStatus, "contract_verified");
+    assert.ok(connector.capabilities.some((capability) => capability.endsWith(".read")));
+  }
+});
+
 test("available adapters must implement the operations they advertise", () => {
   const adapter = {
     manifest: {

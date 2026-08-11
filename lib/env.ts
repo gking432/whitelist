@@ -61,6 +61,12 @@ export function getMicrosoftOAuthClient() {
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
+export function getJobberOAuthClient() {
+  const clientId = process.env.JOBBER_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.JOBBER_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
 export function isLocalDevAutoLoginEnabled() {
   const usesLocalSupabase =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??

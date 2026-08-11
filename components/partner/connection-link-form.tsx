@@ -54,6 +54,24 @@ export function ConnectionLinkForm({ action, hasActiveLink }: Props) {
       </fieldset>
 
       <fieldset>
+        <legend className="mb-2 text-sm font-medium">Field-service system</legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[
+            { value: "", label: "None / built-in CRM" },
+            { value: "jobber", label: "Jobber" },
+            { value: "housecall_pro", label: "Housecall Pro" },
+            { value: "servicetitan", label: "ServiceTitan" },
+            { value: "workiz", label: "Workiz" },
+          ].map((option, index) => (
+            <label key={option.label} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm">
+              <input type="radio" name="field_service_provider" value={option.value} defaultChecked={index === 0} className="size-4 accent-primary" />
+              <span>{option.label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset>
         <legend className="mb-2 text-sm font-medium">Email and calendar</legend>
         <div className="grid gap-2 sm:grid-cols-3">
           {[

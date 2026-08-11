@@ -131,6 +131,15 @@ test("workspace suites satisfy both email and calendar requirements", () => {
   );
 });
 
+test("field-service systems satisfy the external CRM requirement", () => {
+  assert.equal(
+    integrationRequirementIsMet(requirement({ id: "crm", category: "crm" }), [
+      connection({ category: "field_service", provider: { provider_key: "jobber", category: "field_service", supports_inbound: false } }),
+    ]),
+    true,
+  );
+});
+
 test("readiness omits sold-ahead requirements that cannot connect yet", () => {
   const requirements = [
     requirement({ id: "crm", category: "crm" }),

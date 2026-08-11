@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { readProviderCredentials } from "@/lib/integrations/credentials";
+import { encryptProviderCredentials, PROVIDER_CREDENTIALS_KIND, readProviderCredentials } from "@/lib/integrations/credentials";
+import { refreshJobberCredentials, type JobberCredentials } from "@/lib/integrations/providers/jobber-oauth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 import { getConnectorAdapter } from "./adapters";
@@ -73,7 +74,55 @@ async function projectCanonicalRecord(
     return contactId;
   }
 
-  if (record.objectType === "appointment") {
+  if (record.objectType === "lead") {
+    const email = value(record.data, "email");
+    const phone = value(record.data, "phone");
+    let contactId: string | null = null;
+    if (email) {
+      const { data } = await admin.from("crm_contacts").select("id").eq("client_id", job.client_id).eq("email", email).limit(1).maybeSingle();
+      contactId = data?.id ?? null;
+    }
+    if (!contactId && phone) {
+      const { data } = await admin.from("crm_contacts").select("id").eq("client_id", job.client_id).eq("phone", phone).limit(1).maybeSingle();
+      contactId = data?.id ?? null;
+    }
+    if (!contactId) {
+      const fullName = value(record.data, "name") ?? "External lead";
+      const parts = fullName.split(/\s+/);
+      const { data } = await admin.from("crm_contacts").insert({
+        partner_id: job.partner_id,
+        client_id: job.client_id,
+        first_name: value(record.data, "first_name") ?? parts[0],
+        last_name: value(record.data, "last_name") ?? (parts.slice(1).join(" ") || null),
+        email,
+        phone,
+        source: job.provider?.provider_key ?? "external_sync",
+      }).select("id").single();
+      contactId = data?.id ?? null;
+    }
+    if (!contactId) return null;
+    let leadId = existingLink?.native_object_id ?? null;
+    const status = value(record.data, "status")?.toLowerCase();
+    const nativeStatus = ["new", "contacted", "quoted", "scheduled", "won", "lost"].includes(status ?? "") ? status : "new";
+    const leadValues = {
+      partner_id: job.partner_id,
+      client_id: job.client_id,
+      contact_id: contactId,
+      title: value(record.data, "title") ?? value(record.data, "name") ?? "External lead",
+      description: value(record.data, "description"),
+      status: nativeStatus,
+      source_event_type: `${job.provider?.provider_key ?? "external"}.lead_sync`,
+    };
+    if (leadId) {
+      await admin.from("crm_leads").update(leadValues).eq("id", leadId).eq("client_id", job.client_id);
+    } else {
+      const { data } = await admin.from("crm_leads").insert(leadValues).select("id").single();
+      leadId = data?.id ?? null;
+    }
+    return leadId;
+  }
+
+  if (record.objectType === "appointment" || record.objectType === "job") {
     const startAt = value(record.data, "start_at");
     const endAt = value(record.data, "end_at");
     if (!startAt || !endAt) return null;
@@ -84,7 +133,7 @@ async function projectCanonicalRecord(
       title: value(record.data, "title") ?? "Calendar appointment",
       start_at: startAt,
       end_at: endAt,
-      status: statusValue === "cancelled" ? "cancelled" : "booked",
+      status: statusValue?.toLowerCase().includes("cancel") ? "cancelled" : "booked",
       external_ref: record.externalId,
       source: job.provider?.provider_key ?? "external_sync",
       notes: value(record.data, "description"),
@@ -173,11 +222,18 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
   };
 }
 
-export async function enqueueInitialWorkspaceSync(
+export async function enqueueInitialConnectorSync(
   admin: SupabaseClient,
-  scope: { partnerId: string; clientId: string; connectionId: string },
+  scope: { partnerId: string; clientId: string; connectionId: string; providerKey: string },
 ) {
-  for (const objectType of ["customer", "appointment", "message"] as const) {
+  const adapter = getConnectorAdapter(scope.providerKey);
+  if (!adapter) return;
+  const objectTypes = Array.from(new Set(
+    adapter.manifest.capabilities
+      .filter((capability) => capability.endsWith(".read"))
+      .map((capability) => capability.split(".")[0]),
+  ));
+  for (const objectType of objectTypes) {
     const idempotencyKey = `initial-${objectType}`;
     const { data: existing } = await admin.from("integration_sync_jobs")
       .select("id")
@@ -237,7 +293,22 @@ export async function processConnectorSyncJobs(limit = 20) {
     const claimed = await admin.from("integration_sync_jobs").update({ status: "running", locked_at: new Date().toISOString(), locked_by: "cron" })
       .eq("id", job.id).in("status", ["queued", "failed"]).select("id").maybeSingle();
     if (!claimed.data) continue;
-    const credentials = await readProviderCredentials<unknown>(admin, job.connection_id);
+    let credentials = await readProviderCredentials<unknown>(admin, job.connection_id);
+    if (job.provider?.provider_key === "jobber" && credentials) {
+      try {
+        const refreshed = await refreshJobberCredentials(credentials as JobberCredentials);
+        credentials = refreshed;
+        const stored = encryptProviderCredentials(refreshed as unknown as Record<string, string>);
+        await admin.from("integration_secrets").update({ encrypted_value: stored.encrypted_value, last_four: stored.last_four, updated_at: new Date().toISOString() })
+          .eq("connection_id", job.connection_id).eq("secret_kind", PROVIDER_CREDENTIALS_KIND);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Jobber token refresh failed.";
+        await admin.from("integration_connections").update({ status: "needs_attention", credential_status: "invalid", health_summary: detail, last_failure_at: new Date().toISOString() }).eq("id", job.connection_id);
+        await admin.from("integration_sync_jobs").update({ status: "failed", attempts: job.attempts + 1, last_error: detail, scheduled_for: new Date(Date.now() + connectorRetryDelayMinutes(job.attempts + 1) * 60_000).toISOString(), locked_at: null, locked_by: null }).eq("id", job.id);
+        failed += 1;
+        continue;
+      }
+    }
     const outcome = await executeConnectorSyncJob({
       adapter,
       context: {

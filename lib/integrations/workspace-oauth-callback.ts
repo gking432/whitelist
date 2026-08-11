@@ -22,7 +22,7 @@ import {
 import { isAccessError, requireClientWorkspaceAccess } from "@/lib/permissions/access";
 import { PARTNER_OPERATOR_ROLES } from "@/lib/permissions/roles";
 import { refreshPackageDeploymentReadiness } from "@/lib/packages/deployment";
-import { enqueueInitialWorkspaceSync } from "@/lib/integrations/connectors/sync-runner";
+import { enqueueInitialConnectorSync } from "@/lib/integrations/connectors/sync-runner";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 function redirectAfterOAuth(
@@ -169,10 +169,11 @@ export async function completeWorkspaceOAuth(
     partnerId: connection.partner_id,
     clientId: connection.client_id,
   });
-  await enqueueInitialWorkspaceSync(admin, {
+  await enqueueInitialConnectorSync(admin, {
     partnerId: connection.partner_id,
     clientId: connection.client_id,
     connectionId: connection.id,
+    providerKey: expectedProvider,
   });
 
   if (access) {

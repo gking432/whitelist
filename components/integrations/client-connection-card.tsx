@@ -8,6 +8,7 @@ import {
   provisionClientPhoneNumber,
   startClientGoogleConnect,
   startClientWorkspaceConnect,
+  startClientJobberConnect,
 } from "@/app/connect/[token]/actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,6 +26,7 @@ type Props = {
   supportName: string;
   googleReady: boolean;
   microsoftReady: boolean;
+  jobberReady: boolean;
   managedTwilioReady: boolean;
 };
 
@@ -50,6 +52,7 @@ export function ClientConnectionCard({
   supportName,
   googleReady,
   microsoftReady,
+  jobberReady,
   managedTwilioReady,
 }: Props) {
   const [showExistingTwilio, setShowExistingTwilio] = useState(false);
@@ -74,6 +77,10 @@ export function ClientConnectionCard({
     startClientWorkspaceConnect.bind(null, token, workspaceProvider),
     initialFormState,
   );
+  const [jobberState, submitJobber, jobberPending] = useActionState(
+    startClientJobberConnect.bind(null, token),
+    initialFormState,
+  );
 
   return (
     <article className="rounded-lg border bg-card p-5 sm:p-6">
@@ -93,6 +100,15 @@ export function ClientConnectionCard({
         <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           Verified. No additional access is needed.
         </div>
+      ) : provider.key === "jobber" ? (
+        <form action={submitJobber} className="mt-5">
+          <Button type="submit" disabled={jobberPending || !jobberReady}>
+            <ExternalLink aria-hidden="true" />
+            {jobberPending ? "Opening Jobber..." : "Connect Jobber"}
+          </Button>
+          {!jobberReady ? <p className="mt-2 text-xs text-amber-800">{supportName} is still preparing Jobber access. No action is required from you yet.</p> : null}
+          <ResultMessage state={jobberState} />
+        </form>
       ) : provider.key === "google_workspace" || provider.key === "microsoft_365" ? (
         <form action={submitWorkspace} className="mt-5">
           <Button

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { CheckCircle2, LockKeyhole } from "lucide-react";
 
 import { ClientConnectionCard } from "@/components/integrations/client-connection-card";
-import { getGoogleOAuthClient, getMicrosoftOAuthClient } from "@/lib/env";
+import { getGoogleOAuthClient, getJobberOAuthClient, getMicrosoftOAuthClient } from "@/lib/env";
 import { loadActiveConnectionSetupSession } from "@/lib/integrations/connection-setup";
 import { PILOT_PROVIDERS, type PilotProviderKey } from "@/lib/integrations/pilot";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -133,6 +133,7 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
                 supportName={partner.name}
                 googleReady={Boolean(getGoogleOAuthClient())}
                 microsoftReady={Boolean(getMicrosoftOAuthClient())}
+                jobberReady={Boolean(getJobberOAuthClient())}
                 managedTwilioReady={partnerTwilio?.status === "connected"}
               />
             ))}

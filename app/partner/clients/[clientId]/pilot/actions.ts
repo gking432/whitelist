@@ -9,6 +9,7 @@ import {
   getAppUrl,
   getGoogleOAuthClient,
   getMicrosoftOAuthClient,
+  getJobberOAuthClient,
 } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
@@ -24,6 +25,12 @@ import {
 } from "@/lib/integrations/providers/google-calendar";
 import { googleWorkspaceAdapter } from "@/lib/integrations/providers/google-workspace";
 import { microsoft365Adapter } from "@/lib/integrations/providers/microsoft-365";
+import { housecallProAdapter, type HousecallProCredentials } from "@/lib/integrations/providers/housecall-pro";
+import { jobberAdapter } from "@/lib/integrations/providers/jobber";
+import { buildJobberAuthorizationUrl, type JobberCredentials } from "@/lib/integrations/providers/jobber-oauth";
+import { serviceTitanAdapter, type ServiceTitanCredentials } from "@/lib/integrations/providers/servicetitan";
+import { workizAdapter, type WorkizCredentials } from "@/lib/integrations/providers/workiz";
+import { enqueueInitialConnectorSync } from "@/lib/integrations/connectors/sync-runner";
 import {
   buildWorkspaceAuthorizationUrl,
   type WorkspaceCredentials,
@@ -205,7 +212,8 @@ export async function connectPilotProvider(
     !isPilotProviderKey(providerKey) ||
     providerKey === "google_calendar" ||
     providerKey === "google_workspace" ||
-    providerKey === "microsoft_365"
+    providerKey === "microsoft_365" ||
+    providerKey === "jobber"
   ) {
     return { status: "error", message: "Unknown pilot provider." };
   }
@@ -278,9 +286,13 @@ export async function connectPilotProvider(
             ? await testEmailConnection(
                 credentials as unknown as EmailCredentials,
               )
-            : await testTwilioConnection(
-                credentials as unknown as TwilioCredentials,
-              );
+            : providerKey === "housecall_pro"
+              ? await housecallProAdapter.testConnection({ connectionId: "verify", partnerId: access.partnerId!, clientId, credentials: credentials as unknown as HousecallProCredentials, config: {} })
+              : providerKey === "servicetitan"
+                ? await serviceTitanAdapter.testConnection({ connectionId: "verify", partnerId: access.partnerId!, clientId, credentials: credentials as unknown as ServiceTitanCredentials, config: {} })
+                : providerKey === "workiz"
+                  ? await workizAdapter.testConnection({ connectionId: "verify", partnerId: access.partnerId!, clientId, credentials: credentials as unknown as WorkizCredentials, config: {} })
+                  : await testTwilioConnection(credentials as unknown as TwilioCredentials);
 
     if (!test.ok) {
       return {
@@ -360,6 +372,9 @@ export async function connectPilotProvider(
       partnerId: access.partnerId!,
       clientId,
     });
+    if (["housecall_pro", "servicetitan", "workiz"].includes(providerKey)) {
+      await enqueueInitialConnectorSync(supabase, { partnerId: access.partnerId!, clientId, connectionId: ensured.connectionId, providerKey });
+    }
 
     await recordAuditEvent({
       actor: access,
@@ -559,6 +574,29 @@ export async function startWorkspaceConnect(
   redirect(authorizationUrl);
 }
 
+export async function startJobberConnect(
+  clientId: string,
+  _previousState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  const auth = await getAuthState();
+  if (!auth.user) return { status: "error", message: "Sign in to manage integrations." };
+  if (!isSecretsEncryptionConfigured()) return { status: "error", message: "Secure credential storage is not configured." };
+  const oauthClient = getJobberOAuthClient();
+  if (!oauthClient) return { status: "error", message: "Jobber authorization is not configured on the platform yet." };
+  let authorizationUrl: string;
+  try {
+    const context = await loadPilotContext(auth.user.id, clientId);
+    if (!context) return { status: "error", message: "The data service is unavailable." };
+    const { access, supabase } = context;
+    const ensured = await ensurePilotConnection({ supabase, partnerId: access.partnerId!, clientId, userId: access.userId, providerKey: "jobber", displayName: "Jobber" });
+    if ("error" in ensured) return { status: "error", message: ensured.error };
+    await supabase.from("integration_connections").update({ credential_status: "rotating", health_summary: "Waiting for Jobber authorization to finish." }).eq("id", ensured.connectionId);
+    authorizationUrl = buildJobberAuthorizationUrl(oauthClient, ensured.connectionId);
+  } catch (error) { return deniedState(error); }
+  redirect(authorizationUrl);
+}
+
 // Re-test a stored connection on demand. Reads the encrypted credentials via
 // the service-role client (browser roles cannot see them) after the same
 // permission check every management action uses.
@@ -670,7 +708,7 @@ export async function testPilotConnection(
       } else {
         result = await testCalendarAccess(credentials);
       }
-    } else {
+    } else if (providerKey === "google_workspace" || providerKey === "microsoft_365") {
       const credentials = await readProviderCredentials<WorkspaceCredentials>(
         admin,
         connectionId,
@@ -689,6 +727,26 @@ export async function testPilotConnection(
           config: {},
         });
       }
+    } else if (providerKey === "jobber") {
+      const credentials = await readProviderCredentials<JobberCredentials>(admin, connectionId);
+      result = credentials?.accessToken
+        ? await jobberAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
+        : { ok: false, detail: "Jobber authorization is incomplete. Connect again." };
+    } else if (providerKey === "housecall_pro") {
+      const credentials = await readProviderCredentials<HousecallProCredentials>(admin, connectionId);
+      result = credentials?.apiKey
+        ? await housecallProAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
+        : { ok: false, detail: "No Housecall Pro API key is stored." };
+    } else if (providerKey === "servicetitan") {
+      const credentials = await readProviderCredentials<ServiceTitanCredentials>(admin, connectionId);
+      result = credentials?.clientId && credentials.clientSecret && credentials.appKey && credentials.tenantId
+        ? await serviceTitanAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
+        : { ok: false, detail: "ServiceTitan credentials are incomplete." };
+    } else {
+      const credentials = await readProviderCredentials<WorkizCredentials>(admin, connectionId);
+      result = credentials?.apiToken
+        ? await workizAdapter.testConnection({ connectionId, partnerId: access.partnerId!, clientId, credentials, config: {} })
+        : { ok: false, detail: "No Workiz API token is stored." };
     }
 
     await supabase
