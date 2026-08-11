@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { generateStructured, isAIConfigured } from "@/lib/ai/provider";
 import type { AIExecutionInfo } from "@/lib/ai/schemas";
+import { extractFallbackName } from "@/lib/chat/fallback-extraction";
 import {
   buildKnowledgeBlock,
   KNOWLEDGE_GUARDRAILS,
@@ -82,8 +83,6 @@ Reply as the assistant for ${input.clientName}.`;
 
 const EMAIL_PATTERN = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
 const PHONE_PATTERN = /(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
-const NAME_PATTERN =
-  /\b(?:i['’]?m|i am|my name is|this is)\s+([a-z][a-z' -]{1,40})(?=[,.]|\s+(?:and|my|at)\b|$)/i;
 const ADDRESS_PATTERN =
   /\b\d{1,6}\s+[a-z0-9][a-z0-9 .'-]{1,60}\s(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|way)\b/i;
 const APPOINTMENT_PATTERN =
@@ -101,7 +100,7 @@ export function fallbackChatReply(
   const email = visitorMessage.match(EMAIL_PATTERN)?.[0] ?? null;
   const phone = visitorMessage.match(PHONE_PATTERN)?.[0] ?? null;
   const trimmed = visitorMessage.trim();
-  const name = visitorMessage.match(NAME_PATTERN)?.[1]?.trim() ?? null;
+  const name = extractFallbackName(visitorMessage);
   const address = visitorMessage.match(ADDRESS_PATTERN)?.[0] ?? null;
   const appointmentPreference =
     visitorMessage.match(APPOINTMENT_PATTERN)?.[0] ?? null;
