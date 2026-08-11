@@ -87,7 +87,8 @@ export function requirementsForPackage(
   return {
     ...requirements,
     integrations: requirements.integrations.filter(
-      (requirement) => requirement.id !== "crm",
+      (requirement) =>
+        requirement.id !== "crm" && requirement.id !== "calendar",
     ),
   };
 }

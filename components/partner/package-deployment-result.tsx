@@ -71,8 +71,20 @@ export function PackageDeploymentResult({
       <p className="text-xs leading-5 text-muted-foreground">
         {deployment.provisionedWorkflowKeys.length} workflow
         {deployment.provisionedWorkflowKeys.length === 1 ? "" : "s"} provisioned;
-        {` ${deployment.createdWorkflowCount} newly created.`}
+        {` ${deployment.createdWorkflowCount} newly created. `}
+        {deployment.automationPackNames.length} package automation
+        {deployment.automationPackNames.length === 1 ? "" : "s"} installed.
       </p>
+
+      {deployment.automationPackNames.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {deployment.automationPackNames.map((name) => (
+            <Badge key={name} variant="outline">
+              {name}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
 
       {deployment.missingIntegrationLabels.length > 0 ? (
         <div className="flex items-start gap-2 text-sm text-amber-900">

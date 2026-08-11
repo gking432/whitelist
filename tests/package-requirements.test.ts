@@ -8,6 +8,7 @@ const packageWithCrmSync = {
     northstar_crm: true,
     crm_sync: true,
     lead_intake: true,
+    appointment_booking: true,
   },
 };
 
@@ -29,6 +30,12 @@ test("Northstar CRM clients do not require an external CRM connection", () => {
 
   assert.equal(
     requirements.integrations.some((requirement) => requirement.id === "crm"),
+    false,
+  );
+  assert.equal(
+    requirements.integrations.some(
+      (requirement) => requirement.id === "calendar",
+    ),
     false,
   );
   assert.equal(

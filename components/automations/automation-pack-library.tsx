@@ -13,7 +13,6 @@ import {
 
 import {
   AutomationPackControls,
-  AutomationStackControls,
 } from "@/components/automations/automation-pack-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -192,6 +191,8 @@ export function AutomationPackLibrary({
   canManage,
   inboundEndpoint,
   integrationsPath,
+  packageName,
+  includedPackKeys,
 }: {
   packs: AutomationPack[];
   installs: AutomationPackInstallRecord[];
@@ -199,12 +200,17 @@ export function AutomationPackLibrary({
   canManage: boolean;
   inboundEndpoint: string | null;
   integrationsPath: string;
+  packageName: string | null;
+  includedPackKeys: string[];
 }) {
   const installByKey = new Map(
     installs.map((install) => [install.pack_key, install]),
   );
   const launchPacks = packs
-    .filter((pack) => pack.launchScope === "v1")
+    .filter(
+      (pack) =>
+        pack.launchScope === "v1" && includedPackKeys.includes(pack.key),
+    )
     .sort((left, right) => left.priority - right.priority);
   const nextPacks = packs
     .filter((pack) => pack.launchScope === "next")
@@ -222,8 +228,9 @@ export function AutomationPackLibrary({
             <h1 className="text-xl font-semibold">Automation installer</h1>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            Connect the client&apos;s accounts once, install the selected packs,
-            then verify each one with a real customer event.
+            {packageName
+              ? `${packageName} installed these automations automatically. Connect the client's accounts once, then verify each one with a real customer event.`
+              : "Choose and deploy the client's sold package first. Its included automations will appear here automatically."}
           </p>
         </div>
         <div className="flex flex-wrap items-start justify-end gap-3">
@@ -236,18 +243,10 @@ export function AutomationPackLibrary({
           <Button asChild size="sm" variant="outline">
             <Link href={integrationsPath}>Connected accounts</Link>
           </Button>
-          <AutomationStackControls
-            clientId={clientId}
-            installedCount={installs.filter((install) =>
-              launchPacks.some((pack) => pack.key === install.pack_key),
-            ).length}
-            totalCount={launchPacks.length}
-            canManage={canManage}
-          />
         </div>
       </header>
 
-      <section>
+      {launchPacks.length > 0 ? <section>
         <div className="mb-3 flex items-center gap-2">
           <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
           <h2 className="text-sm font-semibold">Launch packs</h2>
@@ -263,7 +262,17 @@ export function AutomationPackLibrary({
             />
           ))}
         </div>
-      </section>
+      </section> : (
+        <section className="border border-dashed px-5 py-8 text-center">
+          <p className="text-sm font-semibold">No package automations installed</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Deploy the client&apos;s sold package from Package &amp; Setup.
+          </p>
+          <Button asChild size="sm" className="mt-4">
+            <Link href={integrationsPath.replace(/\/connections$/, "/setup")}>Open package setup</Link>
+          </Button>
+        </section>
+      )}
 
       <section className="border-t pt-6">
         <div className="mb-3 flex items-center gap-2">

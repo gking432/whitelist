@@ -12,6 +12,7 @@ import {
   type AutomationConnection,
 } from "../lib/automation-packs/readiness.ts";
 import { n8nWorkflow } from "../lib/automation-packs/exports.ts";
+import { automationPacksForPackage } from "../lib/automation-packs/package-selection.ts";
 import {
   buildZapierWorkflowRequest,
   deployZapierWorkflow,
@@ -100,6 +101,37 @@ test("Northstar CRM satisfies the CRM requirement only in primary mode", () => {
       crmOperatingMode: "primary_crm",
     }).missingKeys,
     [],
+  );
+});
+
+test("sold package capabilities select only the matching launch automations", () => {
+  assert.deepEqual(
+    automationPacksForPackage({ lead_intake: true }).map((pack) => pack.key),
+    ["universal-lead-capture"],
+  );
+  assert.deepEqual(
+    automationPacksForPackage({
+      lead_intake: true,
+      ai_intake_routing: true,
+      message_drafting: true,
+    }).map((pack) => pack.key),
+    ["universal-lead-capture", "speed-to-lead"],
+  );
+  assert.deepEqual(
+    automationPacksForPackage({
+      lead_intake: true,
+      ai_phone_answering: true,
+      live_call_assistant: true,
+      live_scheduling_assistant: true,
+      appointment_booking: true,
+    }).map((pack) => pack.key),
+    [
+      "universal-lead-capture",
+      "missed-call-rescue",
+      "ai-phone-answering",
+      "live-call-assistant",
+      "booking-confirmations",
+    ],
   );
 });
 

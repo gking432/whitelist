@@ -1,6 +1,7 @@
 import { AutomationPackLibrary } from "@/components/automations/automation-pack-library";
 import { AUTOMATION_PACKS } from "@/lib/automation-packs/catalog";
 import type { AutomationPackInstallRecord } from "@/lib/automation-packs/install";
+import { automationPacksForPackage } from "@/lib/automation-packs/package-selection";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { getAppUrl } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -20,7 +21,7 @@ export default async function AutomationPacksPage({
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
 
-  const [{ data: connections }, { data: installs }] = await Promise.all([
+  const [{ data: connections }, { data: installs }, { data: client }] = await Promise.all([
     supabase
       .from("integration_connections")
       .select(
@@ -34,7 +35,23 @@ export default async function AutomationPacksPage({
       .select("*")
       .eq("client_id", clientId)
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("client_businesses")
+      .select("package_id")
+      .eq("id", clientId)
+      .maybeSingle(),
   ]);
+
+  const { data: packageData } = client?.package_id
+    ? await supabase
+        .from("partner_packages")
+        .select("name, capabilities")
+        .eq("id", client.package_id)
+        .maybeSingle()
+    : { data: null };
+  const includedPackKeys = automationPacksForPackage(
+    packageData?.capabilities as Record<string, unknown> | null,
+  ).map((pack) => pack.key);
 
   const connection = connections?.[0] ?? null;
   const endpoint = connection
@@ -50,6 +67,8 @@ export default async function AutomationPacksPage({
       canManage={workspace.access.canManageIntegrations}
       inboundEndpoint={endpoint}
       integrationsPath={`${base}/connections`}
+      packageName={packageData?.name ?? null}
+      includedPackKeys={includedPackKeys}
     />
   );
 }

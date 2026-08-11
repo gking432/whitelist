@@ -41,7 +41,7 @@ export function missingAutomationConnections(
 ): AutomationConnectionRequirement[] {
   return pack.connectionRequirements.filter((requirement) => {
     if (
-      requirement.key === "crm" &&
+      (requirement.key === "crm" || requirement.key === "calendar") &&
       options.crmOperatingMode === "primary_crm"
     ) {
       return false;

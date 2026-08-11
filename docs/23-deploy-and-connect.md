@@ -118,7 +118,9 @@ header `Authorization: Bearer <CRON_SECRET>`.
 In the app: **Add client** → open it → **Setup**. Work the checklist: pick a
 package, fill in the **Knowledge** tab (your real services, hours, rules —
 this is the only info the AI is allowed to use), and enable the workflows.
-Everything starts in **dry run**.
+Everything starts in **dry run**. Deploying a package also installs only the
+automation packs implied by the capabilities sold in that package. Partners
+do not need to visit a second installer or enable every catalog recipe.
 
 ---
 

@@ -268,6 +268,7 @@ export async function assignPackageToClient(
         deployment_id: deployment.id,
         deployment_status: deployment.status,
         workflow_keys: deployment.provisionedWorkflowKeys,
+        automation_pack_keys: deployment.automationPackKeys,
         missing_integration_ids: deployment.missingIntegrationIds,
         bridge_connection_id: deployment.bridge?.connectionId ?? null,
       },

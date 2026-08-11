@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { installAutomationPackForClient } from "@/lib/automation-packs/install";
+import { automationPacksForPackage } from "@/lib/automation-packs/package-selection";
 import { getAppUrl } from "@/lib/env";
 import {
   encryptSecret,
@@ -38,6 +40,8 @@ export type PackageDeploymentSummary = {
   packageName: string;
   status: "ready" | "needs_setup";
   provisionedWorkflowKeys: string[];
+  automationPackKeys: string[];
+  automationPackNames: string[];
   createdWorkflowCount: number;
   requiredIntegrationIds: string[];
   missingIntegrationIds: string[];
@@ -471,6 +475,17 @@ export async function deployPackageToClient(
       throw new Error("The provisioned package could not be assigned.");
     }
 
+    const automationPacks = automationPacksForPackage(pkg.capabilities);
+
+    for (const pack of automationPacks) {
+      await installAutomationPackForClient(supabase, {
+        partnerId: input.partnerId,
+        clientId: input.clientId,
+        userId: input.userId,
+        packKey: pack.key,
+      });
+    }
+
     const { error: finishError } = await supabase
       .from("client_package_deployments")
       .update({
@@ -495,6 +510,8 @@ export async function deployPackageToClient(
       packageName: pkg.name,
       status,
       provisionedWorkflowKeys: requirements.workflowTemplateKeys,
+      automationPackKeys: automationPacks.map((pack) => pack.key),
+      automationPackNames: automationPacks.map((pack) => pack.name),
       createdWorkflowCount: toCreate.length,
       requiredIntegrationIds,
       missingIntegrationIds: missingRequirements.map(
