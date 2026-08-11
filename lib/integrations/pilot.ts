@@ -10,6 +10,8 @@ export const PILOT_PROVIDER_KEYS = [
   "twilio",
   "resend",
   "google_calendar",
+  "google_workspace",
+  "microsoft_365",
 ] as const;
 
 export type PilotProviderKey = (typeof PILOT_PROVIDER_KEYS)[number];
@@ -232,6 +234,40 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
     ],
     whereToGet:
       "console.cloud.google.com → create a project → enable the Google Calendar API → OAuth consent screen (External, add your test account) → Credentials → Create OAuth client ID (Web application) with the redirect URI shown on this card.",
+  },
+  google_workspace: {
+    key: "google_workspace",
+    title: "Google Workspace",
+    tagline: "Connects Gmail, Google Calendar, and Google Contacts with one sign-in.",
+    allows: [
+      "Sync contacts with the CRM and create new contacts from leads.",
+      "Read availability and create or update approved appointments.",
+      "Read inbox metadata and send approved email through the business account.",
+    ],
+    neverDoes: [
+      "Never sends customer email without an approved workflow or user action.",
+      "Never exposes Google credentials to the service partner.",
+    ],
+    connectMethod: "oauth",
+    fields: [],
+    whereToGet: "Sign in with the Google account the business already uses. No API key is required.",
+  },
+  microsoft_365: {
+    key: "microsoft_365",
+    title: "Microsoft 365",
+    tagline: "Connects Outlook Mail, Calendar, and Contacts with one sign-in.",
+    allows: [
+      "Sync Outlook contacts with the CRM and create new contacts from leads.",
+      "Read availability and create or update approved appointments.",
+      "Read inbox metadata and send approved email through the business account.",
+    ],
+    neverDoes: [
+      "Never sends customer email without an approved workflow or user action.",
+      "Never exposes Microsoft credentials to the service partner.",
+    ],
+    connectMethod: "oauth",
+    fields: [],
+    whereToGet: "Sign in with the Microsoft account the business already uses. No API key is required.",
   },
 };
 

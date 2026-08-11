@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { CheckCircle2, LockKeyhole } from "lucide-react";
 
 import { ClientConnectionCard } from "@/components/integrations/client-connection-card";
-import { getGoogleOAuthClient } from "@/lib/env";
+import { getGoogleOAuthClient, getMicrosoftOAuthClient } from "@/lib/env";
 import { loadActiveConnectionSetupSession } from "@/lib/integrations/connection-setup";
 import { PILOT_PROVIDERS, type PilotProviderKey } from "@/lib/integrations/pilot";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -14,12 +14,12 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ google?: string }>;
+  searchParams: Promise<{ google?: string; workspace?: string }>;
 };
 
 export default async function ClientConnectionPage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const { google } = await searchParams;
+  const { google, workspace } = await searchParams;
   const admin = createSupabaseAdminClient();
   if (!admin) notFound();
   const session = await loadActiveConnectionSetupSession(admin, token);
@@ -107,11 +107,11 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
           <span className="text-sm font-medium tabular-nums">{completeCount}/{requestedProviders.length}</span>
         </div>
 
-        {google ? (
+        {google || workspace ? (
           <div className="mt-5 rounded-md border bg-card px-4 py-3 text-sm">
-            {google === "connected"
-              ? "Google Calendar connected and verified."
-              : "Google Calendar needs attention. Open its card and try again."}
+            {(google ?? workspace) === "connected"
+              ? "Business account connected and verified."
+              : "The business account needs attention. Open its card and try again."}
           </div>
         ) : null}
 
@@ -132,6 +132,7 @@ export default async function ClientConnectionPage({ params, searchParams }: Pag
                 productName={productName}
                 supportName={partner.name}
                 googleReady={Boolean(getGoogleOAuthClient())}
+                microsoftReady={Boolean(getMicrosoftOAuthClient())}
                 managedTwilioReady={partnerTwilio?.status === "connected"}
               />
             ))}

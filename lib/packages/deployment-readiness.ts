@@ -42,6 +42,17 @@ export function integrationRequirementIsMet(
     );
   }
 
+  if (requirement.id === "email" || requirement.id === "calendar") {
+    return connections.some(
+      (connection) =>
+        isConnected(connection) &&
+        (connection.provider?.category === requirement.category ||
+          ["google_workspace", "microsoft_365"].includes(
+            connection.provider?.provider_key ?? "",
+          )),
+    );
+  }
+
   return connections.some(
     (connection) =>
       isConnected(connection) &&

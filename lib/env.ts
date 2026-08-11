@@ -54,6 +54,13 @@ export function getGoogleOAuthClient() {
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
+export function getMicrosoftOAuthClient() {
+  const clientId = process.env.MICROSOFT_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.MICROSOFT_OAUTH_CLIENT_SECRET;
+
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
 export function isLocalDevAutoLoginEnabled() {
   const usesLocalSupabase =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??

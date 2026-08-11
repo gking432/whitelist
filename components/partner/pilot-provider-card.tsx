@@ -7,6 +7,7 @@ import {
   connectPilotProvider,
   setPilotLiveMode,
   startGoogleConnect,
+  startWorkspaceConnect,
   testPilotConnection,
 } from "@/app/partner/clients/[clientId]/pilot/actions";
 import { Badge } from "@/components/ui/badge";
@@ -63,10 +64,15 @@ export function PilotProviderCard({
   canManage,
   embedded = false,
 }: PilotProviderCardProps) {
-  const isGoogle = meta.connectMethod === "oauth";
-  const boundConnect = isGoogle
-    ? startGoogleConnect.bind(null, clientId)
-    : connectPilotProvider.bind(null, clientId, meta.key);
+  const isLegacyGoogle = meta.key === "google_calendar";
+  const isWorkspace = meta.key === "google_workspace" || meta.key === "microsoft_365";
+  const isOAuth = isLegacyGoogle || isWorkspace;
+  const workspaceKey = meta.key === "microsoft_365" ? "microsoft_365" : "google_workspace";
+  const boundConnect = isWorkspace
+    ? startWorkspaceConnect.bind(null, clientId, workspaceKey)
+    : isLegacyGoogle
+      ? startGoogleConnect.bind(null, clientId)
+      : connectPilotProvider.bind(null, clientId, meta.key);
 
   const [connectState, connectAction, connectPending] = useActionState(
     boundConnect,
@@ -292,7 +298,7 @@ export function PilotProviderCard({
           <div className="rounded-md border bg-secondary/40 px-4 py-3 text-sm leading-6">
             <p className="font-medium">Where to get these</p>
             <p className="mt-1 text-muted-foreground">{meta.whereToGet}</p>
-            {isGoogle && oauthRedirectUri ? (
+            {isLegacyGoogle && oauthRedirectUri ? (
               <div className="mt-2">
                 <p className="font-medium">
                   Authorized redirect URI (paste into Google Cloud):
@@ -346,15 +352,16 @@ export function PilotProviderCard({
               <ShieldCheck aria-hidden="true" />
               {connectPending
                 ? "Checking…"
-                : isGoogle
-                  ? "Save & authorize with Google"
+                : isOAuth
+                  ? `Authorize with ${meta.title}`
                   : connection
                     ? "Verify & save new credentials"
                     : "Verify & connect"}
             </Button>
             <p className="text-xs text-muted-foreground">
-              Credentials are checked against {meta.title} first, then stored
-              encrypted. They are never shown again.
+              {isOAuth
+                ? `The client signs in directly with ${meta.title}; tokens are encrypted and never shown to the partner.`
+                : `Credentials are checked against ${meta.title} first, then stored encrypted. They are never shown again.`}
             </p>
           </div>
 

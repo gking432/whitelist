@@ -10,6 +10,8 @@ export const CONNECTION_SETUP_PROVIDER_KEYS = [
   "twilio",
   "resend",
   "google_calendar",
+  "google_workspace",
+  "microsoft_365",
 ] as const;
 
 export type ConnectionSetupProviderKey =

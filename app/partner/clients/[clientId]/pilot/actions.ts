@@ -5,7 +5,11 @@ import { redirect } from "next/navigation";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
-import { getAppUrl } from "@/lib/env";
+import {
+  getAppUrl,
+  getGoogleOAuthClient,
+  getMicrosoftOAuthClient,
+} from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
   encryptProviderCredentials,
@@ -18,6 +22,13 @@ import {
   testCalendarAccess,
   type GoogleCalendarCredentials,
 } from "@/lib/integrations/providers/google-calendar";
+import { googleWorkspaceAdapter } from "@/lib/integrations/providers/google-workspace";
+import { microsoft365Adapter } from "@/lib/integrations/providers/microsoft-365";
+import {
+  buildWorkspaceAuthorizationUrl,
+  type WorkspaceCredentials,
+  type WorkspaceProviderKey,
+} from "@/lib/integrations/providers/workspace-oauth";
 import {
   testEmailConnection,
   type EmailCredentials,
@@ -190,7 +201,12 @@ export async function connectPilotProvider(
     return { status: "error", message: "Sign in to manage integrations." };
   }
 
-  if (!isPilotProviderKey(providerKey) || providerKey === "google_calendar") {
+  if (
+    !isPilotProviderKey(providerKey) ||
+    providerKey === "google_calendar" ||
+    providerKey === "google_workspace" ||
+    providerKey === "microsoft_365"
+  ) {
     return { status: "error", message: "Unknown pilot provider." };
   }
 
@@ -478,6 +494,71 @@ export async function startGoogleConnect(
   redirect(authorizationUrl);
 }
 
+export async function startWorkspaceConnect(
+  clientId: string,
+  providerKey: WorkspaceProviderKey,
+  _previousState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  const authState = await getAuthState();
+  if (!authState.user) return { status: "error", message: "Sign in to manage integrations." };
+  if (!isSecretsEncryptionConfigured()) {
+    return { status: "error", message: "Secure credential storage is not configured." };
+  }
+  const oauthClient = providerKey === "google_workspace"
+    ? getGoogleOAuthClient()
+    : getMicrosoftOAuthClient();
+  if (!oauthClient) {
+    return { status: "error", message: `${PILOT_PROVIDERS[providerKey].title} authorization is not configured on the platform yet.` };
+  }
+
+  let authorizationUrl: string;
+  try {
+    const context = await loadPilotContext(authState.user.id, clientId);
+    if (!context) return { status: "error", message: "The data service is unavailable." };
+    const { access, supabase } = context;
+    const ensured = await ensurePilotConnection({
+      supabase,
+      partnerId: access.partnerId!,
+      clientId,
+      userId: access.userId,
+      providerKey,
+      displayName: PILOT_PROVIDERS[providerKey].title,
+    });
+    if ("error" in ensured) return { status: "error", message: ensured.error };
+
+    const stored = await storeCredentials({
+      supabase,
+      partnerId: access.partnerId!,
+      clientId,
+      connectionId: ensured.connectionId,
+      credentials: oauthClient,
+    });
+    if (!stored) return { status: "error", message: "Authorization could not be prepared." };
+
+    await supabase.from("integration_connections").update({
+      credential_status: "rotating",
+      health_summary: `Waiting for ${PILOT_PROVIDERS[providerKey].title} authorization to finish.`,
+    }).eq("id", ensured.connectionId);
+
+    await recordAuditEvent({
+      actor: access,
+      action: "integration.workspace_oauth_started",
+      targetType: "integration_connection",
+      targetId: ensured.connectionId,
+      summary: `Started ${PILOT_PROVIDERS[providerKey].title} authorization.`,
+    });
+    authorizationUrl = buildWorkspaceAuthorizationUrl(
+      providerKey,
+      oauthClient,
+      ensured.connectionId,
+    );
+  } catch (error) {
+    return deniedState(error);
+  }
+  redirect(authorizationUrl);
+}
+
 // Re-test a stored connection on demand. Reads the encrypted credentials via
 // the service-role client (browser roles cannot see them) after the same
 // permission check every management action uses.
@@ -568,7 +649,7 @@ export async function testPilotConnection(
         credentials?.apiKey && credentials.fromEmail
           ? await testEmailConnection(credentials)
           : { ok: false, detail: "No credentials stored yet. Connect first." };
-    } else {
+    } else if (providerKey === "google_calendar") {
       const credentials =
         await readProviderCredentials<GoogleCalendarCredentials>(
           admin,
@@ -588,6 +669,25 @@ export async function testPilotConnection(
         };
       } else {
         result = await testCalendarAccess(credentials);
+      }
+    } else {
+      const credentials = await readProviderCredentials<WorkspaceCredentials>(
+        admin,
+        connectionId,
+      );
+      if (!credentials?.refreshToken) {
+        result = { ok: false, detail: "Account authorization is incomplete. Connect again." };
+      } else {
+        const adapter = providerKey === "google_workspace"
+          ? googleWorkspaceAdapter
+          : microsoft365Adapter;
+        result = await adapter.testConnection({
+          connectionId,
+          partnerId: access.partnerId!,
+          clientId,
+          credentials,
+          config: {},
+        });
       }
     }
 

@@ -23,6 +23,17 @@ test("connected Google Calendar remains the preferred scheduling provider", () =
   );
 });
 
+test("connected Microsoft 365 calendar is selected for scheduling", () => {
+  assert.equal(
+    resolveSchedulingProvider({
+      hasGoogleCalendar: true,
+      externalProvider: "microsoft_365",
+      crmOperatingMode: "primary_crm",
+    }),
+    "microsoft_365",
+  );
+});
+
 test("external CRM mode requires a calendar connection", () => {
   assert.equal(
     resolveSchedulingProvider({

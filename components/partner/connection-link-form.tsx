@@ -54,16 +54,44 @@ export function ConnectionLinkForm({ action, hasActiveLink }: Props) {
       </fieldset>
 
       <fieldset>
-        <legend className="mb-2 text-sm font-medium">Business systems</legend>
+        <legend className="mb-2 text-sm font-medium">Email and calendar</legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[
+            { value: "google_workspace", label: PILOT_PROVIDERS.google_workspace.title },
+            { value: "microsoft_365", label: PILOT_PROVIDERS.microsoft_365.title },
+            { value: "", label: "Built-in calendar + Resend" },
+          ].map((option, index) => (
+            <label
+              key={option.label}
+              className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm"
+            >
+              <input
+                type="radio"
+                name="productivity_provider"
+                value={option.value}
+                defaultChecked={index === 0}
+                className="size-4 accent-primary"
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium">Phone and optional sending</legend>
         <div className="grid gap-2 sm:grid-cols-2">
-        {Object.values(PILOT_PROVIDERS)
-          .filter((provider) => provider.key !== "hubspot" && provider.key !== "gohighlevel")
+        {[PILOT_PROVIDERS.twilio, PILOT_PROVIDERS.resend]
           .map((provider) => (
           <label
             key={provider.key}
             className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm"
           >
-            <Checkbox name="providers" value={provider.key} defaultChecked />
+            <Checkbox
+              name="providers"
+              value={provider.key}
+              defaultChecked={provider.key === "twilio"}
+            />
             <span>{provider.title}</span>
           </label>
         ))}

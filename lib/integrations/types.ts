@@ -21,6 +21,12 @@ export type IntegrationProviderRecord = {
   supports_oauth: boolean;
   supports_api_key: boolean;
   is_active: boolean;
+  description?: string | null;
+  auth_strategy?: string;
+  capabilities?: string[];
+  connector_status?: string;
+  docs_url?: string | null;
+  is_requestable?: boolean;
 };
 
 export type IntegrationConnectionRecord = {

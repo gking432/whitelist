@@ -27,6 +27,18 @@ test("connector catalog has unique valid manifests", () => {
   }
 });
 
+test("workspace connectors expose contacts, calendar, and mail capabilities", () => {
+  for (const key of ["google_workspace", "microsoft_365"]) {
+    const connector = CONNECTOR_CATALOG.find((item) => item.key === key);
+    assert.ok(connector, `${key} is in the catalog`);
+    assert.equal(connector.authStrategy, "oauth2");
+    assert.equal(connector.verificationStatus, "contract_verified");
+    assert.ok(connector.capabilities.includes("customer.read"));
+    assert.ok(connector.capabilities.includes("appointment.create"));
+    assert.ok(connector.capabilities.includes("message.create"));
+  }
+});
+
 test("available adapters must implement the operations they advertise", () => {
   const adapter = {
     manifest: {

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import {
   getAppUrl,
   getGoogleOAuthClient,
+  getMicrosoftOAuthClient,
 } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
@@ -25,6 +26,10 @@ import {
 import { isPilotProviderKey } from "@/lib/integrations/pilot";
 import { readPartnerTwilioCredentials } from "@/lib/integrations/partner-provider";
 import { buildAuthorizationUrl } from "@/lib/integrations/providers/google-calendar";
+import {
+  buildWorkspaceAuthorizationUrl,
+  type WorkspaceProviderKey,
+} from "@/lib/integrations/providers/workspace-oauth";
 import { provisionManagedTwilioNumber } from "@/lib/integrations/providers/twilio";
 import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -53,7 +58,12 @@ export async function connectClientAccount(
   if (!isSecretsEncryptionConfigured()) {
     return { status: "error", message: "Secure credential storage is unavailable." };
   }
-  if (!isPilotProviderKey(providerKey) || providerKey === "google_calendar") {
+  if (
+    !isPilotProviderKey(providerKey) ||
+    providerKey === "google_calendar" ||
+    providerKey === "google_workspace" ||
+    providerKey === "microsoft_365"
+  ) {
     return { status: "error", message: "That account cannot be connected here." };
   }
 
@@ -87,6 +97,67 @@ export async function connectClientAccount(
       message: error instanceof Error ? error.message : "The account could not be connected.",
     };
   }
+}
+
+export async function startClientWorkspaceConnect(
+  token: string,
+  providerKey: WorkspaceProviderKey,
+  _previousState: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  if (!isSecretsEncryptionConfigured()) {
+    return { status: "error", message: "Secure credential storage is unavailable." };
+  }
+  const oauthClient =
+    providerKey === "google_workspace"
+      ? getGoogleOAuthClient()
+      : getMicrosoftOAuthClient();
+  if (!oauthClient) {
+    return {
+      status: "error",
+      message: `${providerKey === "google_workspace" ? "Google Workspace" : "Microsoft 365"} access is still being prepared. No action is required from you yet.`,
+    };
+  }
+  const context = await loadAuthorizedSetup(token, providerKey);
+  if (!context) return { status: "error", message: "This setup link is invalid or expired." };
+
+  const connectionId = await ensureProviderConnection(
+    context.admin,
+    {
+      partnerId: context.session.partner_id,
+      clientId: context.session.client_id,
+      createdBy: context.session.created_by!,
+    },
+    providerKey,
+  );
+  const { encrypted_value, last_four } = encryptProviderCredentials(oauthClient);
+  const { error } = await context.admin.from("integration_secrets").upsert(
+    {
+      partner_id: context.session.partner_id,
+      client_id: context.session.client_id,
+      connection_id: connectionId,
+      secret_kind: PROVIDER_CREDENTIALS_KIND,
+      encrypted_value,
+      last_four,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "connection_id,secret_kind" },
+  );
+  if (error) return { status: "error", message: "Authorization could not be started." };
+
+  await context.admin.from("integration_connections").update({
+    credential_status: "rotating",
+    health_summary: `Waiting for ${providerKey === "google_workspace" ? "Google" : "Microsoft"} authorization to finish.`,
+  }).eq("id", connectionId);
+
+  redirect(
+    buildWorkspaceAuthorizationUrl(
+      providerKey,
+      oauthClient,
+      connectionId,
+      context.session.id,
+    ),
+  );
 }
 
 export async function startClientGoogleConnect(

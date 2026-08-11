@@ -7,12 +7,19 @@ import {
   getBusyIntervals,
   type GoogleCalendarCredentials,
 } from "@/lib/integrations/providers/google-calendar";
+import { getGoogleWorkspaceBusyIntervals } from "@/lib/integrations/providers/google-workspace";
+import { getMicrosoftBusyIntervals } from "@/lib/integrations/providers/microsoft-365";
+import type { WorkspaceCredentials } from "@/lib/integrations/providers/workspace-oauth";
 import { getKnowledgeProfile } from "@/lib/knowledge/profile";
 import {
   describeConstraints,
   parseSchedulingConstraints,
 } from "@/lib/scheduling/constraints";
 import { computeOpenSlots, formatSlotLabel } from "@/lib/scheduling/slots";
+import {
+  EXTERNAL_CALENDAR_PROVIDER_KEYS,
+  type ExternalCalendarProvider,
+} from "@/lib/scheduling/provider";
 
 // Voice agent tools (docs/21). The OpenAI Realtime agent (and the
 // simulated harness) act ONLY through these executors, which hit the same
@@ -515,20 +522,20 @@ async function proposeSlots(
     .eq("client_id", context.clientId)
     .eq("partner_id", context.partnerId)
     .in("status", ["connected", "needs_attention"])
-    .eq("provider.provider_key", "google_calendar")
+    .in("provider.provider_key", [...EXTERNAL_CALENDAR_PROVIDER_KEYS])
     .limit(1)
     .maybeSingle();
 
   try {
     let busy: { start: string; end: string }[];
-    let source: "google_calendar" | "northstar_internal";
+    let source: ExternalCalendarProvider | "northstar_internal";
     let businessStartHour = knowledge?.booking_hours_start ?? 9;
     let businessEndHour = knowledge?.booking_hours_end ?? 17;
     let durationMinutes = knowledge?.appointment_duration_minutes ?? 60;
 
     if (connection) {
       const credentials =
-        await readProviderCredentials<GoogleCalendarCredentials>(
+        await readProviderCredentials<GoogleCalendarCredentials & WorkspaceCredentials>(
           admin,
           connection.id,
         );
@@ -537,12 +544,13 @@ async function proposeSlots(
         throw new Error("Calendar authorization is incomplete.");
       }
 
-      busy = await getBusyIntervals(
-        credentials,
-        now.toISOString(),
-        weekOut.toISOString(),
-      );
-      source = "google_calendar";
+      const providerKey = (connection.provider as unknown as { provider_key?: string } | null)?.provider_key as ExternalCalendarProvider | undefined;
+      source = providerKey ?? "google_calendar";
+      busy = source === "microsoft_365"
+        ? await getMicrosoftBusyIntervals(credentials, now.toISOString(), weekOut.toISOString())
+        : source === "google_workspace"
+          ? await getGoogleWorkspaceBusyIntervals(credentials, now.toISOString(), weekOut.toISOString())
+          : await getBusyIntervals(credentials, now.toISOString(), weekOut.toISOString());
     } else {
       const [{ data: appointments }, { data: windows }] = await Promise.all([
         admin

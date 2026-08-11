@@ -7,6 +7,7 @@ import {
   connectClientAccount,
   provisionClientPhoneNumber,
   startClientGoogleConnect,
+  startClientWorkspaceConnect,
 } from "@/app/connect/[token]/actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,6 +24,7 @@ type Props = {
   productName: string;
   supportName: string;
   googleReady: boolean;
+  microsoftReady: boolean;
   managedTwilioReady: boolean;
 };
 
@@ -47,6 +49,7 @@ export function ClientConnectionCard({
   productName,
   supportName,
   googleReady,
+  microsoftReady,
   managedTwilioReady,
 }: Props) {
   const [showExistingTwilio, setShowExistingTwilio] = useState(false);
@@ -61,6 +64,14 @@ export function ClientConnectionCard({
   );
   const [googleState, submitGoogle, googlePending] = useActionState(
     startClientGoogleConnect.bind(null, token),
+    initialFormState,
+  );
+  const workspaceProvider =
+    provider.key === "google_workspace" || provider.key === "microsoft_365"
+      ? provider.key
+      : "google_workspace";
+  const [workspaceState, submitWorkspace, workspacePending] = useActionState(
+    startClientWorkspaceConnect.bind(null, token, workspaceProvider),
     initialFormState,
   );
 
@@ -82,6 +93,22 @@ export function ClientConnectionCard({
         <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           Verified. No additional access is needed.
         </div>
+      ) : provider.key === "google_workspace" || provider.key === "microsoft_365" ? (
+        <form action={submitWorkspace} className="mt-5">
+          <Button
+            type="submit"
+            disabled={workspacePending || (provider.key === "google_workspace" ? !googleReady : !microsoftReady)}
+          >
+            <ExternalLink aria-hidden="true" />
+            {workspacePending ? "Opening sign-in..." : `Connect ${provider.title}`}
+          </Button>
+          {(provider.key === "google_workspace" ? !googleReady : !microsoftReady) ? (
+            <p className="mt-2 text-xs text-amber-800">
+              {supportName} is still preparing {provider.title} access. No action is required from you yet.
+            </p>
+          ) : null}
+          <ResultMessage state={workspaceState} />
+        </form>
       ) : provider.key === "google_calendar" ? (
         <form action={submitGoogle} className="mt-5">
           <Button type="submit" disabled={googlePending || !googleReady}>

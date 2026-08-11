@@ -6,12 +6,19 @@ import {
   getBusyIntervals,
   type GoogleCalendarCredentials,
 } from "@/lib/integrations/providers/google-calendar";
+import { getGoogleWorkspaceBusyIntervals } from "@/lib/integrations/providers/google-workspace";
+import { getMicrosoftBusyIntervals } from "@/lib/integrations/providers/microsoft-365";
+import type { WorkspaceCredentials } from "@/lib/integrations/providers/workspace-oauth";
 import { getKnowledgeProfile } from "@/lib/knowledge/profile";
 import {
   describeConstraints,
   parseSchedulingConstraints,
 } from "@/lib/scheduling/constraints";
-import { resolveSchedulingProvider } from "@/lib/scheduling/provider";
+import {
+  EXTERNAL_CALENDAR_PROVIDER_KEYS,
+  resolveSchedulingProvider,
+  type ExternalCalendarProvider,
+} from "@/lib/scheduling/provider";
 import {
   computeOpenSlots,
   formatSlotLabel,
@@ -235,7 +242,7 @@ export async function proposeBookingFromRun(
     .eq("client_id", input.clientId)
     .eq("partner_id", input.partnerId)
     .in("status", ["connected", "needs_attention"])
-    .eq("provider.provider_key", "google_calendar")
+    .in("provider.provider_key", [...EXTERNAL_CALENDAR_PROVIDER_KEYS])
     .limit(1)
     .maybeSingle();
 
@@ -245,8 +252,10 @@ export async function proposeBookingFromRun(
     .eq("id", input.clientId)
     .eq("partner_id", input.partnerId)
     .maybeSingle();
+  const externalProvider = (connection?.provider as unknown as { provider_key?: string } | null)?.provider_key as ExternalCalendarProvider | undefined;
   const schedulingProvider = resolveSchedulingProvider({
     hasGoogleCalendar: Boolean(connection),
+    externalProvider,
     crmOperatingMode: client?.crm_operating_mode,
   });
   const usesInternalCalendar = schedulingProvider === "northstar_internal";
@@ -336,7 +345,7 @@ export async function proposeBookingFromRun(
         end: appointment.end_at,
       }));
     } else {
-      const credentials = await readProviderCredentials<GoogleCalendarCredentials>(
+      const credentials = await readProviderCredentials<GoogleCalendarCredentials & WorkspaceCredentials>(
         admin,
         connection!.id,
       );
@@ -346,11 +355,11 @@ export async function proposeBookingFromRun(
           "Google Calendar authorization is incomplete. Reconnect it in Setup.",
         );
       }
-      busy = await getBusyIntervals(
-        credentials,
-        now.toISOString(),
-        weekOut.toISOString(),
-      );
+      busy = schedulingProvider === "microsoft_365"
+        ? await getMicrosoftBusyIntervals(credentials, now.toISOString(), weekOut.toISOString())
+        : schedulingProvider === "google_workspace"
+          ? await getGoogleWorkspaceBusyIntervals(credentials, now.toISOString(), weekOut.toISOString())
+          : await getBusyIntervals(credentials, now.toISOString(), weekOut.toISOString());
     }
 
     let slots = computeOpenSlots(busy, {
@@ -411,7 +420,7 @@ export async function proposeBookingFromRun(
       type: "appointment_booking",
       status: "pending",
       title: `Book appointment: ${contactName} — ${primary.label}`,
-      summary: `Approving books ${primary.label} (${timezone}) on ${usesInternalCalendar ? "the built-in calendar" : "the connected Google Calendar"}${
+      summary: `Approving books ${primary.label} (${timezone}) on ${usesInternalCalendar ? "the built-in calendar" : "the connected business calendar"}${
         usesInternalCalendar || connection!.runtime_mode === "live"
           ? ""
           : " — the connection is not live, so approval records a dry run"

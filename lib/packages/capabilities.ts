@@ -113,7 +113,7 @@ const REQUIREMENTS: Record<IntegrationRequirement["id"], IntegrationRequirement>
       purpose: "Send the emails a human approves.",
       category: "email",
       connectableToday: true,
-      recommended: "Resend (free tier works).",
+      recommended: "Google Workspace or Microsoft 365; Resend is available for transactional sending.",
     },
     calendar: {
       id: "calendar",
@@ -121,7 +121,7 @@ const REQUIREMENTS: Record<IntegrationRequirement["id"], IntegrationRequirement>
       purpose: "Read availability and create booked appointments.",
       category: "calendar",
       connectableToday: true,
-      recommended: "Google Calendar today; Outlook later.",
+      recommended: "Google Workspace or Microsoft 365. The built-in CRM calendar also works.",
     },
     phone: {
       id: "phone",
@@ -196,7 +196,7 @@ export const CAPABILITIES: Record<CapabilityKey, CapabilityMeta> = {
     key: "approval_gated_sending",
     label: "Approval-gated sending",
     description:
-      "Approved drafts actually send through the connected provider (SMS via Twilio, email via Resend), and every send (or dry run) is logged.",
+      "Approved drafts actually send through the connected provider (SMS via Twilio; email via Google Workspace, Microsoft 365, or Resend), and every send is logged.",
     status: "available",
     statusNote: null,
     requirements: [REQUIREMENTS.sms, REQUIREMENTS.email],

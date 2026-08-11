@@ -103,8 +103,8 @@ const CATEGORY_TO_PILOT_PROVIDERS: Partial<Record<string, PilotProviderKey[]>> =
     crm: ["hubspot", "gohighlevel"],
     sms: ["twilio"],
     phone: ["twilio"],
-    email: ["resend"],
-    calendar: ["google_calendar"],
+    email: ["google_workspace", "microsoft_365", "resend"],
+    calendar: ["google_workspace", "microsoft_365", "google_calendar"],
   };
 
 type PageProps = {

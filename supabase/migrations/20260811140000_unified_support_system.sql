@@ -218,15 +218,19 @@ begin
 end;
 $$;
 
+drop trigger if exists enforce_support_ticket_messages_scope on public.support_ticket_messages;
 create trigger enforce_support_ticket_messages_scope
 before insert or update on public.support_ticket_messages
 for each row execute function public.enforce_support_ticket_child_scope();
+drop trigger if exists enforce_support_ticket_events_scope on public.support_ticket_events;
 create trigger enforce_support_ticket_events_scope
 before insert or update on public.support_ticket_events
 for each row execute function public.enforce_support_ticket_child_scope();
+drop trigger if exists enforce_support_ticket_attachments_scope on public.support_ticket_attachments;
 create trigger enforce_support_ticket_attachments_scope
 before insert or update on public.support_ticket_attachments
 for each row execute function public.enforce_support_ticket_child_scope();
+drop trigger if exists enforce_support_ticket_releases_scope on public.support_ticket_releases;
 create trigger enforce_support_ticket_releases_scope
 before insert or update on public.support_ticket_releases
 for each row execute function public.enforce_support_ticket_child_scope();
@@ -248,6 +252,7 @@ alter table public.support_ticket_attachments enable row level security;
 alter table public.support_ticket_releases enable row level security;
 alter table public.support_notification_outbox enable row level security;
 
+drop policy if exists "support_tickets_select_scoped" on public.support_tickets;
 create policy "support_tickets_select_scoped"
 on public.support_tickets for select to authenticated
 using (
@@ -256,6 +261,7 @@ using (
   or (client_id is not null and public.current_user_has_client_role(client_id))
 );
 
+drop policy if exists "support_tickets_insert_scoped" on public.support_tickets;
 create policy "support_tickets_insert_scoped"
 on public.support_tickets for insert to authenticated
 with check (
@@ -276,6 +282,7 @@ with check (
 
 -- Status and route transitions happen through trusted server actions after
 -- role checks; message inserts remain available to the relevant tenant.
+drop policy if exists "support_tickets_update_scoped" on public.support_tickets;
 create policy "support_tickets_update_scoped"
 on public.support_tickets for update to authenticated
 using (
@@ -295,6 +302,7 @@ with check (
   ]::public.membership_role[])
 );
 
+drop policy if exists "support_ticket_messages_select_scoped" on public.support_ticket_messages;
 create policy "support_ticket_messages_select_scoped"
 on public.support_ticket_messages for select to authenticated
 using (
@@ -310,6 +318,7 @@ using (
   )
 );
 
+drop policy if exists "support_ticket_messages_insert_scoped" on public.support_ticket_messages;
 create policy "support_ticket_messages_insert_scoped"
 on public.support_ticket_messages for insert to authenticated
 with check (
@@ -334,6 +343,7 @@ with check (
   )
 );
 
+drop policy if exists "support_ticket_events_select_scoped" on public.support_ticket_events;
 create policy "support_ticket_events_select_scoped"
 on public.support_ticket_events for select to authenticated
 using (
@@ -349,6 +359,7 @@ using (
   )
 );
 
+drop policy if exists "support_ticket_events_insert_operators" on public.support_ticket_events;
 create policy "support_ticket_events_insert_operators"
 on public.support_ticket_events for insert to authenticated
 with check (
@@ -363,6 +374,7 @@ with check (
   )
 );
 
+drop policy if exists "support_ticket_attachments_select_scoped" on public.support_ticket_attachments;
 create policy "support_ticket_attachments_select_scoped"
 on public.support_ticket_attachments for select to authenticated
 using (
@@ -371,6 +383,7 @@ using (
   or (audience = 'client' and client_id is not null and public.current_user_has_client_role(client_id))
 );
 
+drop policy if exists "support_ticket_attachments_insert_scoped" on public.support_ticket_attachments;
 create policy "support_ticket_attachments_insert_scoped"
 on public.support_ticket_attachments for insert to authenticated
 with check (
@@ -382,6 +395,7 @@ with check (
   )
 );
 
+drop policy if exists "support_ticket_releases_select_scoped" on public.support_ticket_releases;
 create policy "support_ticket_releases_select_scoped"
 on public.support_ticket_releases for select to authenticated
 using (
@@ -394,11 +408,13 @@ using (
   )
 );
 
+drop policy if exists "support_ticket_releases_write_platform" on public.support_ticket_releases;
 create policy "support_ticket_releases_write_platform"
 on public.support_ticket_releases for all to authenticated
 using (public.current_user_has_platform_role(array['platform_owner', 'platform_admin']::public.membership_role[]))
 with check (public.current_user_has_platform_role(array['platform_owner', 'platform_admin']::public.membership_role[]));
 
+drop policy if exists "support_notification_outbox_select_scoped" on public.support_notification_outbox;
 create policy "support_notification_outbox_select_scoped"
 on public.support_notification_outbox for select to authenticated
 using (

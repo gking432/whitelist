@@ -6,6 +6,9 @@ import {
   sendEmail,
   type EmailCredentials,
 } from "@/lib/integrations/providers/email";
+import { sendGoogleWorkspaceEmail } from "@/lib/integrations/providers/google-workspace";
+import { sendMicrosoft365Email } from "@/lib/integrations/providers/microsoft-365";
+import type { WorkspaceCredentials } from "@/lib/integrations/providers/workspace-oauth";
 import {
   sendSms,
   type TwilioCredentials,
@@ -44,7 +47,7 @@ type ApprovedMessage = {
 };
 
 type ChannelConfig = {
-  providerKey: string;
+  providerKeys: string[];
   providerLabel: string;
   eventType: string;
   connectHint: string;
@@ -52,23 +55,23 @@ type ChannelConfig = {
 
 const CHANNELS: Record<"sms" | "email", ChannelConfig> = {
   sms: {
-    providerKey: "twilio",
+    providerKeys: ["twilio"],
     providerLabel: "Twilio",
     eventType: "sms.customer_message",
     connectHint: "connect Twilio in the client's Setup checklist",
   },
   email: {
-    providerKey: "resend",
-    providerLabel: "Resend",
+    providerKeys: ["google_workspace", "microsoft_365", "resend"],
+    providerLabel: "business email",
     eventType: "email.customer_message",
-    connectHint: "connect Resend Email in the client's Setup checklist",
+    connectHint: "connect Google Workspace, Microsoft 365, or Resend in the client's Setup checklist",
   },
 };
 
 async function findChannelConnection(
   admin: SupabaseClient,
   message: ApprovedMessage,
-  providerKey: string,
+  providerKeys: string[],
 ) {
   const { data } = await admin
     .from("integration_connections")
@@ -78,7 +81,7 @@ async function findChannelConnection(
     .eq("client_id", message.clientId)
     .eq("partner_id", message.partnerId)
     .in("status", ["connected", "needs_attention"])
-    .eq("provider.provider_key", providerKey)
+    .in("provider.provider_key", providerKeys)
     .limit(1)
     .maybeSingle();
 
@@ -87,6 +90,7 @@ async function findChannelConnection(
     runtime_mode: string;
     status: string;
     error_count: number | null;
+    provider: { provider_key: string } | null;
   } | null;
 }
 
@@ -130,7 +134,7 @@ export async function deliverApprovedCustomerMessage(
   const connection = await findChannelConnection(
     admin,
     message,
-    channel.providerKey,
+    channel.providerKeys,
   );
 
   const logEvent = async (
@@ -222,20 +226,26 @@ export async function deliverApprovedCustomerMessage(
       };
     }
 
-    const credentials = await readProviderCredentials<EmailCredentials>(
+    const providerKey = connection.provider?.provider_key ?? "resend";
+    const credentials = await readProviderCredentials<EmailCredentials & WorkspaceCredentials>(
       admin,
       connection.id,
     );
+    if (!credentials) throw new Error("Email authorization is incomplete. Reconnect the business email account.");
 
-    if (!credentials?.apiKey || !credentials.fromEmail) {
-      throw new Error("Resend credentials are incomplete. Reconnect Resend.");
-    }
-
-    const outcome = await sendEmail(credentials, {
+    const emailInput = {
       to: message.to,
       subject: message.subject?.trim() || "A message from your service team",
       body: message.body,
-    });
+      idempotencyKey: message.approvalId,
+    };
+    const outcome = providerKey === "google_workspace"
+      ? await sendGoogleWorkspaceEmail(credentials, emailInput)
+      : providerKey === "microsoft_365"
+        ? await sendMicrosoft365Email(credentials, emailInput)
+        : credentials.apiKey && credentials.fromEmail
+          ? await sendEmail(credentials, emailInput)
+          : (() => { throw new Error("Resend credentials are incomplete. Reconnect Resend."); })();
 
     await logEvent("sent", { message_id: outcome.messageId });
 
@@ -251,7 +261,7 @@ export async function deliverApprovedCustomerMessage(
       attempted: true,
       delivered: true,
       status: "succeeded",
-      detail: `Email sent to ${message.to} via Resend (${outcome.messageId}).`,
+      detail: `Email sent to ${message.to} through the connected business email account (${outcome.messageId}).`,
     };
   } catch (error) {
     const detail =

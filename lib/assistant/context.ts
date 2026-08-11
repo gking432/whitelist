@@ -601,8 +601,12 @@ export async function buildAssistantContext(
         ["connected", "needs_attention"].includes(candidate.status),
     )?.provider?.display_name ?? "Northstar CRM";
   const smsConn = connFor("twilio");
-  const calendarConn = connFor("google_calendar");
-  const emailConn = connFor("resend");
+  const calendarConn = ["google_workspace", "microsoft_365", "google_calendar"]
+    .map(connFor)
+    .find((connection) => connection.connected) ?? connFor("google_calendar");
+  const emailConn = ["google_workspace", "microsoft_365", "resend"]
+    .map(connFor)
+    .find((connection) => connection.connected) ?? connFor("resend");
 
   const runs = (runsData ?? []) as unknown as RunRow[];
 

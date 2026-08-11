@@ -35,6 +35,11 @@ type ConnectionScope = {
   createdBy: string;
 };
 
+type CredentialProviderKey = Exclude<
+  PilotProviderKey,
+  "google_calendar" | "google_workspace" | "microsoft_365"
+>;
+
 export async function ensureProviderConnection(
   supabase: SupabaseClient,
   scope: ConnectionScope,
@@ -82,7 +87,7 @@ export async function ensureProviderConnection(
 }
 
 async function verifyProviderCredentials(
-  providerKey: Exclude<PilotProviderKey, "google_calendar">,
+  providerKey: CredentialProviderKey,
   credentials: Record<string, string>,
 ) {
   if (providerKey === "hubspot") {
@@ -138,7 +143,7 @@ export function credentialsFromForm(
 export async function saveProviderCredentials(
   supabase: SupabaseClient,
   scope: ConnectionScope,
-  providerKey: Exclude<PilotProviderKey, "google_calendar">,
+  providerKey: CredentialProviderKey,
   credentials: Record<string, string>,
   options: { skipVerification?: boolean; healthDetail?: string } = {},
 ) {

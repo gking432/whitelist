@@ -105,6 +105,32 @@ test("Twilio satisfies both phone and SMS requirements", () => {
   );
 });
 
+test("workspace suites satisfy both email and calendar requirements", () => {
+  const workspace = connection({
+    category: "productivity",
+    provider: {
+      provider_key: "google_workspace",
+      category: "productivity",
+      supports_inbound: false,
+    },
+  });
+
+  assert.equal(
+    integrationRequirementIsMet(
+      requirement({ id: "email", category: "email" }),
+      [workspace],
+    ),
+    true,
+  );
+  assert.equal(
+    integrationRequirementIsMet(
+      requirement({ id: "calendar", category: "calendar" }),
+      [workspace],
+    ),
+    true,
+  );
+});
+
 test("readiness omits sold-ahead requirements that cannot connect yet", () => {
   const requirements = [
     requirement({ id: "crm", category: "crm" }),

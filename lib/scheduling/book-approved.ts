@@ -5,6 +5,9 @@ import {
   createCalendarEvent,
   type GoogleCalendarCredentials,
 } from "@/lib/integrations/providers/google-calendar";
+import { createMicrosoftCalendarEvent } from "@/lib/integrations/providers/microsoft-365";
+import type { WorkspaceCredentials } from "@/lib/integrations/providers/workspace-oauth";
+import { EXTERNAL_CALENDAR_PROVIDER_KEYS } from "@/lib/scheduling/provider";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 // Books the approved appointment. Hard rules (mirrors SMS delivery):
@@ -64,7 +67,7 @@ export async function bookApprovedAppointment(
     .eq("client_id", booking.clientId)
     .eq("partner_id", booking.partnerId)
     .in("status", ["connected", "needs_attention"])
-    .eq("provider.provider_key", "google_calendar")
+    .in("provider.provider_key", [...EXTERNAL_CALENDAR_PROVIDER_KEYS])
     .limit(1)
     .maybeSingle();
 
@@ -108,7 +111,7 @@ export async function bookApprovedAppointment(
 
   if (
     booking.payload.provider === "northstar_internal" ||
-    (!connection && booking.payload.provider !== "google_calendar")
+    (!connection && booking.payload.provider === "northstar_internal")
   ) {
     const internalRef = `northstar-${booking.approvalId}`;
 
@@ -128,7 +131,7 @@ export async function bookApprovedAppointment(
 
   if (!connection) {
     await logEvent("skipped", {
-      note: "No connected Google Calendar for this client.",
+      note: "No connected business calendar for this client.",
     });
 
     return {
@@ -136,7 +139,7 @@ export async function bookApprovedAppointment(
       delivered: false,
       status: "skipped",
       detail:
-        "Approved and recorded, but no Google Calendar is connected — book this manually and reconnect the calendar in Setup.",
+        "Approved and recorded, but no business calendar is connected — book this manually and reconnect the calendar in Setup.",
     };
   }
 
@@ -154,14 +157,14 @@ export async function bookApprovedAppointment(
   }
 
   try {
-    const credentials = await readProviderCredentials<GoogleCalendarCredentials>(
+    const credentials = await readProviderCredentials<GoogleCalendarCredentials & WorkspaceCredentials>(
       admin,
       connection.id,
     );
 
     if (!credentials?.refreshToken) {
       throw new Error(
-        "Google Calendar authorization is incomplete. Reconnect it in Setup.",
+        "Calendar authorization is incomplete. Reconnect it in Setup.",
       );
     }
 
@@ -174,12 +177,16 @@ export async function bookApprovedAppointment(
       contact.address ? `Address: ${contact.address}` : null,
     ].filter(Boolean);
 
-    const created = await createCalendarEvent(credentials, {
+    const providerKey = (connection.provider as unknown as { provider_key?: string } | null)?.provider_key;
+    const eventInput = {
       summary: `${contactName} — ${booking.clientName} appointment`,
       description: descriptionLines.join("\n"),
       startIso: slot.start_iso,
       endIso: slot.end_iso,
-    });
+    };
+    const created = providerKey === "microsoft_365"
+      ? await createMicrosoftCalendarEvent(credentials, eventInput)
+      : await createCalendarEvent(credentials, eventInput);
 
     await logEvent("sent", {
       event_id: created.eventId,
@@ -196,7 +203,7 @@ export async function bookApprovedAppointment(
       delivered: true,
       status: "succeeded",
       externalRef: created.eventId,
-      detail: `Appointment booked on Google Calendar for ${slot.label ?? slot.start_iso} (event ${created.eventId}).`,
+      detail: `Appointment booked on the connected calendar for ${slot.label ?? slot.start_iso} (event ${created.eventId}).`,
     };
   } catch (error) {
     const detail =

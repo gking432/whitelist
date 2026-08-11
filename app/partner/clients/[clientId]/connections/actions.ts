@@ -39,6 +39,12 @@ export async function createConnectionSetupLink(
     .filter(isConnectionSetupProviderKey);
   const crmProvider = String(formData.get("crm_provider") ?? "");
   if (isConnectionSetupProviderKey(crmProvider)) requested.push(crmProvider);
+  const productivityProvider = String(
+    formData.get("productivity_provider") ?? "",
+  );
+  if (isConnectionSetupProviderKey(productivityProvider)) {
+    requested.push(productivityProvider);
+  }
   const providers = Array.from(new Set(requested));
   if (providers.length === 0) {
     return {
