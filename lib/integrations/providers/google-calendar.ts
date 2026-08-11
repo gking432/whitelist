@@ -28,7 +28,15 @@ export function googleRedirectUri(): string {
 
 // State parameter: HMAC-signed connection id + expiry so the callback can
 // trust which connection initiated the flow.
-export function buildOAuthState(connectionId: string): string {
+export type GoogleOAuthState = {
+  connectionId: string;
+  setupSessionId: string | null;
+};
+
+export function buildOAuthState(
+  connectionId: string,
+  setupSessionId?: string,
+): string {
   const key = getSecretsEncryptionKey();
 
   if (!key) {
@@ -36,7 +44,7 @@ export function buildOAuthState(connectionId: string): string {
   }
 
   const expires = Date.now() + 15 * 60 * 1000;
-  const payload = `${connectionId}.${expires}`;
+  const payload = `${connectionId}.${expires}.${setupSessionId ?? ""}`;
   const signature = createHmac("sha256", Buffer.from(key, "base64"))
     .update(payload)
     .digest("base64url");
@@ -44,7 +52,7 @@ export function buildOAuthState(connectionId: string): string {
   return `${payload}.${signature}`;
 }
 
-export function verifyOAuthState(state: string): string | null {
+export function verifyOAuthState(state: string): GoogleOAuthState | null {
   const key = getSecretsEncryptionKey();
 
   if (!key) {
@@ -53,12 +61,12 @@ export function verifyOAuthState(state: string): string | null {
 
   const parts = state.split(".");
 
-  if (parts.length !== 3) {
+  if (parts.length !== 4) {
     return null;
   }
 
-  const [connectionId, expires, signature] = parts;
-  const payload = `${connectionId}.${expires}`;
+  const [connectionId, expires, setupSessionId, signature] = parts;
+  const payload = `${connectionId}.${expires}.${setupSessionId}`;
   const expected = createHmac("sha256", Buffer.from(key, "base64"))
     .update(payload)
     .digest("base64url");
@@ -77,12 +85,13 @@ export function verifyOAuthState(state: string): string | null {
     return null;
   }
 
-  return connectionId;
+  return { connectionId, setupSessionId: setupSessionId || null };
 }
 
 export function buildAuthorizationUrl(
   oauthClient: GoogleOAuthClient,
   connectionId: string,
+  setupSessionId?: string,
 ): string {
   const params = new URLSearchParams({
     client_id: oauthClient.clientId,
@@ -91,7 +100,7 @@ export function buildAuthorizationUrl(
     scope: SCOPE,
     access_type: "offline",
     prompt: "consent",
-    state: buildOAuthState(connectionId),
+    state: buildOAuthState(connectionId, setupSessionId),
   });
 
   return `${GOOGLE_AUTH_URL}?${params.toString()}`;
@@ -191,7 +200,7 @@ export async function testCalendarAccess(
 
     return {
       ok: true,
-      detail: `Connected. The primary calendar has ${busyCount} busy block${busyCount === 1 ? "" : "s"} in the next 7 days — Northstar can read availability and create events.`,
+      detail: `Connected. The primary calendar has ${busyCount} busy block${busyCount === 1 ? "" : "s"} in the next 7 days. Availability and event creation are ready.`,
     };
   } catch (error) {
     return {

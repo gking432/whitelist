@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { resolveAssistantAccess } from "@/lib/assistant/access";
 import { getAuthState } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/integrations/rate-limit";
 import { isAccessError } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveVoiceOperatorAccess } from "@/lib/voice/access";
 import {
   completeSimulatedCall,
   runSimulatedCallerTurn,
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await resolveAssistantAccess(authState.user.id, clientId, "write");
+    await resolveVoiceOperatorAccess(authState.user.id, clientId);
   } catch (error) {
     if (isAccessError(error)) {
       return json(error.code === "ACCESS_DENIED" ? 404 : 503, {

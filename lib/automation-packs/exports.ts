@@ -1,7 +1,7 @@
 import {
   northstarEventEnvelope,
   type AutomationPack,
-} from "@/lib/automation-packs/catalog";
+} from "./catalog.ts";
 
 export type AutomationExportFormat = "n8n" | "make" | "zapier";
 

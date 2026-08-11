@@ -21,6 +21,7 @@ export type PilotCredentialField = {
   help: string;
   secret: boolean;
   optional?: boolean;
+  options?: { value: string; label: string }[];
 };
 
 export type PilotProviderMeta = {
@@ -101,12 +102,13 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
     key: "twilio",
     title: "Twilio Messaging + Voice",
     tagline:
-      "Sends approved texts and connects the client's number to the Northstar phone assistant.",
+      "Sends approved texts and connects the client's number to the branded phone assistant.",
     allows: [
       "Send an SMS to a lead after a human approves the exact message.",
       "Answer inbound calls with the client's AI phone assistant.",
+      "Or ring a staff member while the assistant listens and opens the live desktop popup.",
       "Capture the transcript, contact details, scheduling request, CRM note, and follow-up work.",
-      "Check that the account and phone number are valid.",
+      "Configure the Twilio number automatically after the credentials are verified.",
     ],
     neverDoes: [
       "Never sends anything without an approval.",
@@ -135,6 +137,25 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
         placeholder: "+15551234567",
         help: "A voice-and-SMS-capable Twilio number you own, in +1… format. Trial accounts can only contact verified numbers.",
         secret: false,
+      },
+      {
+        name: "phoneHandlingMode",
+        label: "Who answers incoming calls?",
+        placeholder: "",
+        help: "AI answering handles the entire call. Staff assist rings a person and opens the branded live popup.",
+        secret: false,
+        options: [
+          { value: "ai_answered", label: "AI answers" },
+          { value: "staff_assisted", label: "A staff member answers" },
+        ],
+      },
+      {
+        name: "staffForwardNumber",
+        label: "Staff phone number (staff assist only)",
+        placeholder: "+15557654321",
+        help: "The phone assistant forwards incoming calls here while it transcribes and assists. Leave blank for AI answering.",
+        secret: false,
+        optional: true,
       },
     ],
     whereToGet:
@@ -183,7 +204,7 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
   google_calendar: {
     key: "google_calendar",
     title: "Google Calendar",
-    tagline: "Lets Northstar see availability and book jobs on the calendar.",
+    tagline: "Lets the scheduling assistant see availability and book jobs on the calendar.",
     allows: [
       "Read busy/free blocks on the connected Google account's primary calendar.",
       "Create calendar events for booked appointments (approval-gated, live mode only).",

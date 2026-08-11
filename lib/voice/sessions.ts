@@ -5,6 +5,7 @@ import { generateStructured, isAIConfigured } from "@/lib/ai/provider";
 import type { AIExecutionInfo } from "@/lib/ai/schemas";
 import { emitAssistantEvent } from "@/lib/assistant/events";
 import { redactAuditValue } from "@/lib/audit/redact";
+import { resolveCallerContact } from "@/lib/crm/caller-resolution";
 import {
   buildKnowledgeBlock,
   getKnowledgeProfile,
@@ -54,6 +55,7 @@ export type TranscriptTurnInput = {
   role: "caller" | "staff" | "ai_assistant";
   content: string;
   occurredAt?: string;
+  sourceEventId?: string;
 };
 
 export async function createCallSession(
@@ -67,26 +69,20 @@ export async function createCallSession(
     fromNumber?: string | null;
     toNumber?: string | null;
     externalRef?: string | null;
+    handlingMode?: "ai_answered" | "staff_assisted";
   },
 ): Promise<{ callSessionId: string } | null> {
   // Disclosure mode comes from the client's knowledge profile so the
   // adapter can honor it from the first ring.
   const knowledge = await getKnowledgeProfile(admin, input.clientId);
 
-  // Caller matching by phone number against the built-in CRM.
-  let matchedContactId: string | null = null;
-
-  if (input.fromNumber) {
-    const { data: match } = await admin
-      .from("crm_contacts")
-      .select("id")
-      .eq("client_id", input.clientId)
-      .eq("phone", input.fromNumber)
-      .limit(1)
-      .maybeSingle();
-
-    matchedContactId = match?.id ?? null;
-  }
+  const caller = await resolveCallerContact(admin, {
+    partnerId: input.partnerId,
+    clientId: input.clientId,
+    phone: input.fromNumber,
+  });
+  const matchedContactId = caller.contactId;
+  const handlingMode = input.handlingMode ?? "ai_answered";
 
   const { data: session, error } = await admin
     .from("call_sessions")
@@ -101,6 +97,15 @@ export async function createCallSession(
       disclosure_mode: knowledge?.voice_disclosure_mode ?? "explicit",
       matched_contact_id: matchedContactId,
       external_ref: input.externalRef ?? null,
+      extracted: redactAuditValue({
+        handling_mode: handlingMode,
+        caller_resolution: {
+          status: caller.status,
+          provider: caller.provider,
+          external_contact_id: caller.externalContactId,
+          contact: caller.contact,
+        },
+      }),
     })
     .select("id")
     .single();
@@ -117,6 +122,9 @@ export async function createCallSession(
       direction: input.direction ?? "inbound",
       from_number: input.fromNumber ?? null,
       matched_contact_id: matchedContactId,
+      handling_mode: handlingMode,
+      caller_resolution: caller.status,
+      contact: caller.contact,
     },
     callSessionId: session.id,
   });
@@ -124,11 +132,35 @@ export async function createCallSession(
   return { callSessionId: session.id };
 }
 
+export async function updateCallSessionExtracted(
+  admin: SupabaseClient,
+  callSessionId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const { data: session } = await admin
+    .from("call_sessions")
+    .select("extracted")
+    .eq("id", callSessionId)
+    .maybeSingle();
+
+  if (!session) return;
+
+  const current =
+    typeof session.extracted === "object" && session.extracted !== null
+      ? (session.extracted as Record<string, unknown>)
+      : {};
+
+  await admin
+    .from("call_sessions")
+    .update({ extracted: redactAuditValue({ ...current, ...patch }) })
+    .eq("id", callSessionId);
+}
+
 export async function addTranscriptTurn(
   admin: SupabaseClient,
   callSessionId: string,
   turn: TranscriptTurnInput,
-): Promise<void> {
+): Promise<boolean> {
   const { data: session } = await admin
     .from("call_sessions")
     .select("id, partner_id, client_id")
@@ -136,7 +168,18 @@ export async function addTranscriptTurn(
     .maybeSingle();
 
   if (!session) {
-    return;
+    return false;
+  }
+
+  if (turn.sourceEventId) {
+    const { data: duplicate } = await admin
+      .from("call_transcript_turns")
+      .select("id")
+      .eq("call_session_id", callSessionId)
+      .eq("source_event_id", turn.sourceEventId)
+      .maybeSingle();
+
+    if (duplicate) return false;
   }
 
   const { count } = await admin
@@ -144,7 +187,7 @@ export async function addTranscriptTurn(
     .select("id", { count: "exact", head: true })
     .eq("call_session_id", callSessionId);
 
-  await admin.from("call_transcript_turns").insert({
+  const { error } = await admin.from("call_transcript_turns").insert({
     call_session_id: callSessionId,
     partner_id: session.partner_id,
     client_id: session.client_id,
@@ -152,7 +195,10 @@ export async function addTranscriptTurn(
     role: turn.role,
     content: turn.content,
     occurred_at: turn.occurredAt ?? new Date().toISOString(),
+    source_event_id: turn.sourceEventId ?? null,
   });
+
+  if (error) return false;
 
   await emitAssistantEvent({
     partnerId: session.partner_id,
@@ -161,6 +207,8 @@ export async function addTranscriptTurn(
     payload: { role: turn.role, seq: (count ?? 0) + 1 },
     callSessionId,
   });
+
+  return true;
 }
 
 function fallbackCallSummary(
@@ -300,6 +348,55 @@ Summarize this call.`,
       collectedString("appointment_preference"),
   };
   summary = { ...summary, extracted: mergedExtracted };
+
+  if (session.matched_contact_id) {
+    const { data: existingContact } = await admin
+      .from("crm_contacts")
+      .select("first_name, last_name, phone, email, address, tags")
+      .eq("id", session.matched_contact_id)
+      .maybeSingle();
+
+    if (existingContact) {
+      const [firstName, ...lastNameParts] = (
+        summary.extracted.name ?? ""
+      ).split(/\s+/);
+      const patch: Record<string, unknown> = {};
+
+      if (!existingContact.first_name && firstName) {
+        patch.first_name = firstName;
+      }
+      if (!existingContact.last_name && lastNameParts.length > 0) {
+        patch.last_name = lastNameParts.join(" ");
+      }
+      if (!existingContact.phone && summary.extracted.phone) {
+        patch.phone = summary.extracted.phone;
+      }
+      if (!existingContact.email && summary.extracted.email) {
+        patch.email = summary.extracted.email;
+      }
+      if (!existingContact.address && summary.extracted.address) {
+        patch.address = summary.extracted.address;
+      }
+      if (
+        Array.isArray(existingContact.tags) &&
+        existingContact.tags.includes("provisional") &&
+        (summary.extracted.name ||
+          summary.extracted.email ||
+          summary.extracted.address)
+      ) {
+        patch.tags = existingContact.tags.filter(
+          (tag: string) => tag !== "provisional",
+        );
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await admin
+          .from("crm_contacts")
+          .update(patch)
+          .eq("id", session.matched_contact_id);
+      }
+    }
+  }
 
   await admin
     .from("call_sessions")

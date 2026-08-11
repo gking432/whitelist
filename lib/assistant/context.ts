@@ -117,8 +117,16 @@ export type AssistantContextData = {
   crm: {
     status: "synced" | "dry_run" | "failed" | "skipped" | "none";
     contactId: string | null;
+    providerLabel: string;
     detail: string;
   };
+  call: {
+    id: string;
+    status: "in_progress";
+    handlingMode: "ai_answered" | "staff_assisted";
+    matchedContactId: string | null;
+    matchStatus: "matched" | "created" | "unavailable";
+  } | null;
   // Real booking proposal (from calendar availability) when one exists.
   booking: {
     approvalId: string;
@@ -159,6 +167,23 @@ type CallRow = {
   from_number: string | null;
   started_at: string;
   extracted: Record<string, unknown> | null;
+  matched_contact_id: string | null;
+  matched_contact:
+    | {
+        first_name: string | null;
+        last_name: string | null;
+        phone: string | null;
+        email: string | null;
+        address: string | null;
+      }
+    | {
+        first_name: string | null;
+        last_name: string | null;
+        phone: string | null;
+        email: string | null;
+        address: string | null;
+      }[]
+    | null;
 };
 
 type TranscriptRow = {
@@ -483,7 +508,7 @@ export async function buildAssistantContext(
     supabase
       .from("integration_connections")
       .select(
-        "id, status, runtime_mode, provider:integration_providers(provider_key, category, supports_inbound)",
+        "id, status, runtime_mode, provider:integration_providers(provider_key, category, display_name, supports_inbound)",
       )
       .eq("client_id", client.id),
     supabase
@@ -514,7 +539,9 @@ export async function buildAssistantContext(
       .limit(8),
     supabase
       .from("call_sessions")
-      .select("id, status, from_number, started_at, extracted")
+      .select(
+        "id, status, from_number, started_at, extracted, matched_contact_id, matched_contact:crm_contacts(first_name, last_name, phone, email, address)",
+      )
       .eq("client_id", client.id)
       .order("started_at", { ascending: false })
       .limit(1),
@@ -533,7 +560,11 @@ export async function buildAssistantContext(
   const connections = (connectionsData ?? []) as unknown as {
     status: string;
     runtime_mode: string;
-    provider: { provider_key: string; category: string } | null;
+    provider: {
+      provider_key: string;
+      category: string;
+      display_name: string;
+    } | null;
   }[];
 
   const connFor = (providerKey: string): ConnectionInfo => {
@@ -563,6 +594,12 @@ export async function buildAssistantContext(
   };
 
   const crmConn = connForCategory("crm");
+  const crmProviderLabel =
+    connections.find(
+      (candidate) =>
+        candidate.provider?.category === "crm" &&
+        ["connected", "needs_attention"].includes(candidate.status),
+    )?.provider?.display_name ?? "Northstar CRM";
   const smsConn = connFor("twilio");
   const calendarConn = connFor("google_calendar");
   const emailConn = connFor("resend");
@@ -603,6 +640,19 @@ export async function buildAssistantContext(
       extracted.voice_collected !== null
         ? (extracted.voice_collected as Record<string, unknown>)
         : {};
+    const callerResolution =
+      typeof extracted.caller_resolution === "object" &&
+      extracted.caller_resolution !== null
+        ? (extracted.caller_resolution as Record<string, unknown>)
+        : {};
+    const resolvedContact =
+      typeof callerResolution.contact === "object" &&
+      callerResolution.contact !== null
+        ? (callerResolution.contact as Record<string, unknown>)
+        : {};
+    const matched = Array.isArray(activeCall.matched_contact)
+      ? (activeCall.matched_contact[0] ?? null)
+      : activeCall.matched_contact;
     const latestCallerTurn = [...activeCallTurns]
       .reverse()
       .find((turn) => turn.role === "caller");
@@ -612,10 +662,28 @@ export async function buildAssistantContext(
       channelLabel: "Live phone call",
       eventType: "call.in_progress",
       receivedAt: activeCall.started_at,
-      contactName: asString(collected.name),
-      contactPhone: asString(collected.phone) ?? activeCall.from_number,
-      contactEmail: asString(collected.email),
-      contactAddress: asString(collected.address),
+      contactName:
+        asString(collected.name) ??
+        asString(resolvedContact.name) ??
+        (matched
+          ? [matched.first_name, matched.last_name].filter(Boolean).join(" ") ||
+            null
+          : null),
+      contactPhone:
+        asString(collected.phone) ??
+        asString(resolvedContact.phone) ??
+        matched?.phone ??
+        activeCall.from_number,
+      contactEmail:
+        asString(collected.email) ??
+        asString(resolvedContact.email) ??
+        matched?.email ??
+        null,
+      contactAddress:
+        asString(collected.address) ??
+        asString(resolvedContact.address) ??
+        matched?.address ??
+        null,
       message: latestCallerTurn?.content ?? null,
     };
   } else if (latestRun) {
@@ -645,7 +713,41 @@ export async function buildAssistantContext(
       | undefined
   )?.routing;
 
-  if (routingOutput) {
+  if (activeCall) {
+    const extracted = activeCall.extracted ?? {};
+    const collected =
+      typeof extracted.voice_collected === "object" &&
+      extracted.voice_collected !== null
+        ? (extracted.voice_collected as Record<string, unknown>)
+        : {};
+    const staffAssist =
+      typeof extracted.staff_assist === "object" &&
+      extracted.staff_assist !== null
+        ? (extracted.staff_assist as Record<string, unknown>)
+        : {};
+    const latestCallerTurn = [...activeCallTurns]
+      .reverse()
+      .find((turn) => turn.role === "caller");
+    const scheduling =
+      Boolean(asString(collected.appointment_preference)) ||
+      Array.isArray(extracted.proposed_slots);
+
+    routing = {
+      category: scheduling ? "scheduling" : "service",
+      urgency: asString(collected.urgency) ?? "medium",
+      confidence: activeCallTurns.length > 0 ? "medium" : "low",
+      summary:
+        asString(staffAssist.live_summary) ??
+        latestCallerTurn?.content ??
+        "Listening for the customer's request.",
+      suggestedNextAction:
+        asString(staffAssist.recommended_next_question) ??
+        "Identify the customer's service need.",
+      recommendedOwner: "Front desk",
+      requiresHandoff: asString(collected.urgency) === "emergency",
+      source: asString(staffAssist.source) === "ai" ? "ai" : "fallback",
+    };
+  } else if (routingOutput) {
     const ai = routerRun?.output_snapshot?.ai as { status?: string } | null;
 
     routing = {
@@ -669,7 +771,44 @@ export async function buildAssistantContext(
       | undefined
   )?.analysis;
 
-  if (analysisOutput) {
+  if (activeCall) {
+    const extracted = activeCall.extracted ?? {};
+    const collected =
+      typeof extracted.voice_collected === "object" &&
+      extracted.voice_collected !== null
+        ? (extracted.voice_collected as Record<string, unknown>)
+        : {};
+    const staffAssist =
+      typeof extracted.staff_assist === "object" &&
+      extracted.staff_assist !== null
+        ? (extracted.staff_assist as Record<string, unknown>)
+        : {};
+    const fallbackMissingFields = [
+      ["customer name", collected.name ?? interaction?.contactName],
+      ["service need", collected.service_need],
+      ["address", collected.address ?? interaction?.contactAddress],
+    ]
+      .filter(([, value]) => !asString(value))
+      .map(([label]) => label as string);
+    const missingFields = Array.isArray(staffAssist.missing_fields)
+      ? (staffAssist.missing_fields as unknown[])
+          .map((field) => asString(field))
+          .filter((field): field is string => Boolean(field))
+      : fallbackMissingFields;
+
+    analysis = {
+      urgency: asString(collected.urgency) ?? "medium",
+      quality: "live call",
+      missingFields,
+      recommendedNextAction:
+        asString(staffAssist.recommended_next_question) ??
+        (missingFields.length > 0
+          ? `Ask for ${missingFields.slice(0, 2).join(" and ")}.`
+          : "Review the captured details and confirm the next step."),
+      suggestedTaskTitle: null,
+      source: asString(staffAssist.source) === "ai" ? "ai" : "fallback",
+    };
+  } else if (analysisOutput) {
     const ai = analysisRun?.output_snapshot?.ai as { status?: string } | null;
     const suggestedTask = analysisOutput.suggested_task as
       | { title?: string }
@@ -687,33 +826,6 @@ export async function buildAssistantContext(
         asString(analysisOutput.recommended_next_action) ?? "",
       suggestedTaskTitle: asString(suggestedTask?.title),
       source: ai?.status === "ai" ? "ai" : "fallback",
-    };
-  } else if (activeCall) {
-    const extracted = activeCall.extracted ?? {};
-    const collected =
-      typeof extracted.voice_collected === "object" &&
-      extracted.voice_collected !== null
-        ? (extracted.voice_collected as Record<string, unknown>)
-        : {};
-    const missingFields = [
-      ["customer name", collected.name],
-      ["service need", collected.service_need],
-      ["address", collected.address],
-      ["appointment preference", collected.appointment_preference],
-    ]
-      .filter(([, value]) => !asString(value))
-      .map(([label]) => label as string);
-
-    analysis = {
-      urgency: asString(collected.urgency) ?? "medium",
-      quality: "unreviewed",
-      missingFields,
-      recommendedNextAction:
-        missingFields.length > 0
-          ? `Ask for ${missingFields.slice(0, 2).join(" and ")}.`
-          : "Review the captured details and confirm the next step.",
-      suggestedTaskTitle: null,
-      source: "fallback",
     };
   }
 
@@ -765,16 +877,17 @@ export async function buildAssistantContext(
   const crm: AssistantContextData["crm"] = {
     status: crmSnapshot ? crmStatus : "none",
     contactId: asString(crmSnapshot?.contact_id),
+    providerLabel: crmProviderLabel,
     detail: !capabilities.has("crm_sync")
       ? "CRM sync is not part of this package."
       : !crmConn.connected
         ? "No external CRM connected — contacts stay in the built-in CRM."
         : crmStatus === "synced"
-          ? `Contact is in HubSpot${crmSnapshot?.contact_id ? ` (${crmSnapshot.contact_id})` : ""} with an AI Assistant note.`
+          ? `Contact is in ${crmProviderLabel}${crmSnapshot?.contact_id ? ` (${crmSnapshot.contact_id})` : ""} with an AI Assistant note.`
           : crmStatus === "dry_run"
-            ? "Dry run — the exact HubSpot payload was built but not sent. Switch HubSpot to live to sync for real."
+            ? `Dry run — the exact ${crmProviderLabel} payload was built but not sent. Switch the connection to live to sync for real.`
             : crmStatus === "failed"
-              ? "The last CRM sync failed — check the HubSpot connection in Setup."
+              ? `The last CRM sync failed — check the ${crmProviderLabel} connection in Setup.`
               : crmStatus === "skipped"
                 ? "Sync skipped — the lead had no email or phone to match on."
                 : "No lead has synced yet.",
@@ -933,6 +1046,35 @@ export async function buildAssistantContext(
     analysis,
     draft,
     crm,
+    call: activeCall
+      ? {
+          id: activeCall.id,
+          status: "in_progress",
+          handlingMode:
+            asString(activeCall.extracted?.handling_mode) === "staff_assisted"
+              ? "staff_assisted"
+              : "ai_answered",
+          matchedContactId: activeCall.matched_contact_id,
+          matchStatus:
+            asString(
+              (
+                activeCall.extracted?.caller_resolution as
+                  | Record<string, unknown>
+                  | undefined
+              )?.status,
+            ) === "matched"
+              ? "matched"
+              : asString(
+                    (
+                      activeCall.extracted?.caller_resolution as
+                        | Record<string, unknown>
+                        | undefined
+                    )?.status,
+                  ) === "created"
+                ? "created"
+                : "unavailable",
+        }
+      : null,
     booking,
     slots,
     slotsNote,

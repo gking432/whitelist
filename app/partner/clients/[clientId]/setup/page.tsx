@@ -383,10 +383,10 @@ export default async function ClientSetupPage({
         }
       : firstMissingRequirement
         ? {
-            href: "#connections",
+            href: `${base}/connections`,
             label: `Connect ${firstMissingRequirement.label}`,
             detail:
-              "Open the first missing account and verify its credentials.",
+              "Send the secure client setup link or connect the account here.",
           }
         : !workflowsReady
           ? {

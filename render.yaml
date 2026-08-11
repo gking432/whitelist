@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: northstar-app
+    runtime: docker
+    plan: starter
+    region: ohio
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /login
+    autoDeployTrigger: commit
+    envVars:
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SECRETS_ENCRYPTION_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: VOICE_PROVIDER
+        value: openai_realtime
+      - key: NORTHSTAR_VOICE_STREAM_URL
+        sync: false
+      - key: VOICE_STREAM_SHARED_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: ENABLE_SCENARIO_LAB
+        value: "false"
+
+  - type: web
+    name: northstar-voice-stream
+    runtime: docker
+    plan: starter
+    region: ohio
+    dockerfilePath: ./services/voice-stream/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: NORTHSTAR_APP_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: OPENAI_API_KEY
+      - key: VOICE_STREAM_SHARED_SECRET
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: VOICE_STREAM_SHARED_SECRET
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: gpt-live-transcribe

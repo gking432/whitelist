@@ -5,6 +5,7 @@ import {
   Bot,
   CalendarClock,
   CheckCircle2,
+  Headphones,
   LoaderCircle,
   PhoneCall,
   PhoneOff,
@@ -23,8 +24,17 @@ type ToolUse = {
 };
 
 type Turn = {
-  role: "assistant" | "caller";
+  role: "assistant" | "caller" | "staff";
   text: string;
+};
+
+type StaffAssistResult = {
+  live_summary: string;
+  recommended_next_question: string;
+  missing_fields: string[];
+  urgency: string;
+  source: "ai" | "fallback";
+  slots: { label: string; start_iso: string; end_iso: string }[];
 };
 
 type ApiResult = {
@@ -36,6 +46,13 @@ type ApiResult = {
   end_call?: boolean;
   runtime?: "openai" | "scripted";
   report?: Record<string, unknown>;
+  assist?: StaffAssistResult | null;
+  matched_contact_id?: string | null;
+  caller_resolution?: {
+    status?: string;
+    provider?: string;
+    contact?: { name?: string | null };
+  } | null;
 };
 
 export function VoiceCallLab({
@@ -50,15 +67,26 @@ export function VoiceCallLab({
   const [callerText, setCallerText] = useState("");
   const [callId, setCallId] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<"openai" | "scripted" | null>(null);
+  const [callMode, setCallMode] = useState<"ai_answered" | "staff_assisted">(
+    "ai_answered",
+  );
+  const [speaker, setSpeaker] = useState<"caller" | "staff">("caller");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [tools, setTools] = useState<ToolUse[]>([]);
+  const [staffAssist, setStaffAssist] = useState<StaffAssistResult | null>(null);
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const suggestedSlots = useMemo(
-    () =>
-      tools.flatMap((tool) => {
+  const suggestedSlots = useMemo(() => {
+    if (staffAssist?.slots.length) {
+      return staffAssist.slots.map((slot) => ({
+        label: slot.label,
+        startIso: slot.start_iso,
+      }));
+    }
+
+    return tools.flatMap((tool) => {
         if (tool.name !== "propose_slots" || !Array.isArray(tool.result.slots)) {
           return [];
         }
@@ -69,12 +97,14 @@ export function VoiceCallLab({
             label: slot.label as string,
             startIso: slot.start_iso as string,
           }));
-      }),
-    [tools],
-  );
+      });
+  }, [staffAssist, tools]);
 
-  async function post(body: Record<string, unknown>): Promise<ApiResult> {
-    const response = await fetch("/api/voice/simulate", {
+  async function post(
+    body: Record<string, unknown>,
+    endpoint = "/api/voice/simulate",
+  ): Promise<ApiResult> {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -89,13 +119,19 @@ export function VoiceCallLab({
     setReport(null);
     setTurns([]);
     setTools([]);
+    setStaffAssist(null);
 
     try {
-      const data = await post({
-        action: "start",
-        client_id: clientId,
-        from_number: fromNumber,
-      });
+      const data = await post(
+        {
+          action: "start",
+          client_id: clientId,
+          from_number: fromNumber,
+        },
+        callMode === "staff_assisted"
+          ? "/api/voice/staff"
+          : "/api/voice/simulate",
+      );
 
       if (data.error || !data.call_session_id) {
         setMessage(data.error ?? "The call could not be started.");
@@ -103,10 +139,19 @@ export function VoiceCallLab({
       }
 
       setCallId(data.call_session_id);
-      setRuntime(data.runtime ?? "scripted");
+      setRuntime(
+        callMode === "staff_assisted" ? null : (data.runtime ?? "scripted"),
+      );
       setTools(data.tools_used ?? []);
       if (data.greeting) {
         setTurns([{ role: "assistant", text: data.greeting }]);
+      } else if (callMode === "staff_assisted") {
+        const matchedName = data.caller_resolution?.contact?.name;
+        setMessage(
+          data.caller_resolution?.status === "matched"
+            ? `Existing customer matched${matchedName ? `: ${matchedName}` : ""}. The live assistant is listening.`
+            : "New caller record created. The live assistant is listening.",
+        );
       }
     } catch {
       setMessage("The call test could not reach the server.");
@@ -120,16 +165,29 @@ export function VoiceCallLab({
     if (!callId || !text || busy) return;
 
     setCallerText("");
-    setTurns((current) => [...current, { role: "caller", text }]);
+    const role = callMode === "staff_assisted" ? speaker : "caller";
+    setTurns((current) => [...current, { role, text }]);
     setBusy(true);
     setMessage(null);
 
     try {
-      const data = await post({
-        action: "caller_turn",
-        call_session_id: callId,
-        text,
-      });
+      const data = await post(
+        callMode === "staff_assisted"
+          ? {
+              action: "turn",
+              call_session_id: callId,
+              role,
+              text,
+            }
+          : {
+              action: "caller_turn",
+              call_session_id: callId,
+              text,
+            },
+        callMode === "staff_assisted"
+          ? "/api/voice/staff"
+          : "/api/voice/simulate",
+      );
 
       if (data.error) {
         setMessage(data.error);
@@ -138,6 +196,7 @@ export function VoiceCallLab({
 
       setRuntime(data.runtime ?? runtime);
       setTools((current) => [...current, ...(data.tools_used ?? [])]);
+      if (data.assist) setStaffAssist(data.assist);
       if (data.reply) {
         setTurns((current) => [
           ...current,
@@ -160,10 +219,15 @@ export function VoiceCallLab({
     setMessage(null);
 
     try {
-      const data = await post({
-        action: "complete",
-        call_session_id: callId,
-      });
+      const data = await post(
+        {
+          action: "complete",
+          call_session_id: callId,
+        },
+        callMode === "staff_assisted"
+          ? "/api/voice/staff"
+          : "/api/voice/simulate",
+      );
 
       if (data.error) {
         setMessage(data.error);
@@ -189,21 +253,27 @@ export function VoiceCallLab({
         <div className="flex items-center justify-between border-b bg-sidebar px-4 py-3 text-white">
           <div className="flex items-center gap-2">
             <PhoneCall className="size-4 text-brand-gold" aria-hidden="true" />
-            <span className="text-sm font-semibold">AI call assistant</span>
+            <span className="text-sm font-semibold">
+              {callMode === "staff_assisted"
+                ? "Live staff call assistant"
+                : "AI phone answering"}
+            </span>
           </div>
           <Badge
             variant="outline"
             className="border-white/20 bg-white/10 text-white"
           >
             {callId
-              ? runtime === "openai"
+              ? callMode === "staff_assisted"
+                ? "Staff-assisted call"
+                : runtime === "openai"
                 ? "Live AI sandbox"
                 : "Scripted sandbox"
               : "Ready"}
           </Badge>
         </div>
 
-        {!callId && turns.length === 0 ? (
+        {!callId ? (
           <div className="grid min-h-96 place-items-center px-6 py-10 text-center">
             <div>
               <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -211,10 +281,33 @@ export function VoiceCallLab({
               </span>
               <h3 className="mt-4 font-semibold">Start a customer call</h3>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                The assistant listens to each turn, captures customer details,
-                checks availability, proposes matching times, and sends
-                bookings or follow-ups to approval.
+                Test the caller matching, live intake, scheduling, CRM, and
+                post-call pipeline used by connected phone providers.
               </p>
+              <div className="mx-auto mt-4 grid max-w-sm grid-cols-2 rounded-md border bg-secondary/30 p-1">
+                <button
+                  type="button"
+                  onClick={() => setCallMode("ai_answered")}
+                  className={`rounded px-3 py-2 text-xs font-semibold ${
+                    callMode === "ai_answered"
+                      ? "bg-background shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  AI answers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCallMode("staff_assisted")}
+                  className={`rounded px-3 py-2 text-xs font-semibold ${
+                    callMode === "staff_assisted"
+                      ? "bg-background shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  Person answers
+                </button>
+              </div>
               <div className="mx-auto mt-5 flex max-w-sm gap-2">
                 <Input
                   value={fromNumber}
@@ -284,6 +377,32 @@ export function VoiceCallLab({
 
             {callId ? (
               <div className="border-t p-3">
+                {callMode === "staff_assisted" ? (
+                  <div className="mb-2 flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSpeaker("caller")}
+                      className={`rounded-md px-2.5 py-1 text-[11px] font-semibold ${
+                        speaker === "caller"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-muted-foreground"
+                      }`}
+                    >
+                      Customer speaking
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSpeaker("staff")}
+                      className={`rounded-md px-2.5 py-1 text-[11px] font-semibold ${
+                        speaker === "staff"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-muted-foreground"
+                      }`}
+                    >
+                      Staff speaking
+                    </button>
+                  </div>
+                ) : null}
                 <div className="flex gap-2">
                   <Input
                     value={callerText}
@@ -291,7 +410,11 @@ export function VoiceCallLab({
                     onKeyDown={(event) => {
                       if (event.key === "Enter") void sendTurn();
                     }}
-                    placeholder='Customer says: "Friday morning works best…"'
+                    placeholder={
+                      callMode === "staff_assisted"
+                        ? `${speaker === "caller" ? "Customer" : "Staff"} says…`
+                        : 'Customer says: "Friday morning works best…"'
+                    }
                     disabled={busy}
                   />
                   <Button
@@ -359,6 +482,23 @@ export function VoiceCallLab({
           )}
         </section>
 
+        {staffAssist ? (
+          <section className="rounded-lg border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Headphones className="size-4 text-primary" aria-hidden="true" />
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
+                Live coaching
+              </p>
+            </div>
+            <p className="mt-3 text-sm leading-5">
+              {staffAssist.live_summary}
+            </p>
+            <p className="mt-2 rounded-md bg-secondary/50 p-2.5 text-xs leading-5">
+              {staffAssist.recommended_next_question}
+            </p>
+          </section>
+        ) : null}
+
         <section className="rounded-lg border bg-card p-4">
           <p className="text-xs font-semibold uppercase text-muted-foreground">
             Tools used
@@ -401,4 +541,3 @@ export function VoiceCallLab({
     </div>
   );
 }
-

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PlugZap, Plus } from "lucide-react";
+import { Link2, PlugZap, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,12 +85,20 @@ export default async function ClientIntegrationsPage({ params }: PageProps) {
           </p>
         </div>
         {access.canManageIntegrations ? (
-          <Button asChild>
-            <Link href={`${base}/new`}>
-              <Plus aria-hidden="true" />
-              Add connection
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/partner/clients/${clientId}/connections`}>
+                <Link2 aria-hidden="true" />
+                Connection wizard
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href={`${base}/new`}>
+                <Plus aria-hidden="true" />
+                Add manually
+              </Link>
+            </Button>
+          </div>
         ) : null}
       </div>
 

@@ -58,7 +58,7 @@ export async function testEmailConnection(
     return {
       ok: true,
       detail: verified
-        ? `Key accepted and the ${fromDomain} domain is verified. Northstar can send email from ${credentials.fromEmail} after approval.`
+        ? `Key accepted and the ${fromDomain} domain is verified. Approved email can be sent from ${credentials.fromEmail}.`
         : `Key accepted. Note: ${fromDomain || "the sending domain"} is not verified in Resend yet — sends may be rejected until it is (or use Resend's onboarding sender).`,
     };
   } catch {

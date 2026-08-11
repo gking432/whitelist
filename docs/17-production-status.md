@@ -32,18 +32,26 @@ stack.
 | Scheduling constraints | Real — "after 5"/"mornings"/"not tomorrow"/weekday parsing (unit-tested) intersects the knowledge-base booking window in slot proposals; approval summaries say what was honored |
 | Booking confirmation drafts | Real — approved bookings queue a NEW approval-gated confirmation message; booking approval never implies message approval |
 | Background job runner | Real — POST /api/jobs/run (CRON_SECRET) retries failed jobs with exponential backoff; manual retry retained; needs an external scheduler |
-| OpenAI Realtime voice agent | Real — registered provider adapter, per-client instructions from approved knowledge, ephemeral session minting (key stays server-side), tool calls into real actions (contact lookup/save, notes, real slot proposals, approval-gated booking + message requests, escalation), simulated-call harness exercising the full pipeline (docs/21). No real telephony until a phone bridge ships |
+| OpenAI Realtime voice agent | Real — registered provider adapter, per-client instructions from approved knowledge, ephemeral session minting (key stays server-side), tool calls into real actions (contact lookup/save, notes, real slot proposals, approval-gated booking + message requests, escalation), and simulated-call harness exercising the full pipeline (docs/21) |
+| Twilio AI-answering calls | Real — signed inbound voice webhooks create a durable call session, Twilio Gather carries customer turns to the configured AI voice tools, responses return as TwiML, and call completion runs the normal CRM/post-call pipeline |
+| Staff-assisted Twilio calls | Real foundation — Twilio forwards the call to staff while an always-on WebSocket service streams call audio for transcription, signs transcript events back to the app, and feeds the desktop assistant |
+| Managed Twilio provisioning | Real — a partner-owned Twilio parent account can create a client subaccount, purchase a voice/SMS number, and configure messaging, voice, and status webhooks automatically |
+| Desktop phone assistant | Real foundation — Electron tray app, hosted authenticated assistant route, active-call always-on-top behavior, launch-at-login, server configuration, and macOS/Windows/Linux packaging are present |
+| Scoped client connection links | Real — partners can send expiring provider-specific links so the client can enter its own credentials without exposing them to the partner |
+| Automation-pack installation | Real foundation — researched catalog, readiness checks, native workflow installation, install records, and n8n/Zapier export/deployer contracts are present; no shared live Zapier/n8n account is configured |
 | Audit + redaction | All new actions audited; every logged payload passes redactAuditValue |
 
 ## Preview / not built (still honest)
 
 | Area | Status |
 | --- | --- |
-| Voice telephony (carrier calls) | Bridge missing — the AI agent side is real (OpenAI Realtime adapter, tools, simulated harness; docs/21), but no phone bridge connects carrier audio yet: no real calls until one ships (OpenAI SIP recommended) with credentials + live mode (docs/20, docs/21) |
-| Live call / live scheduling popups | Not built — need the voice adapter's live transcript; the assistant_events feed they will consume is real |
+| Fully streaming AI-to-customer voice | Twilio's AI-answering path is turn-based Gather/TwiML. The WebSocket audio stream currently supports staff-assisted transcription; a full-duplex AI audio bridge remains a later quality upgrade |
+| Staff-assist production proof | Code is present, but a real Twilio account, public app URL, always-on voice-stream URL, OpenAI key, and installed desktop build are still required for live verification |
 | SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
 | Appointment reschedule/cancel | Not built — book-only today |
-| Desktop tray app / browser extension / CRM overlay | Not built — context API + event feed are ready for them (docs/18) |
+| Browser extension / third-party CRM overlay | Not built. The Electron desktop assistant is the supported V1 overlay; direct CRM write-back is preferred whenever a connector supports it |
+| Home-service application catalog | Jobber, Housecall Pro, ServiceTitan, Workiz, QuickBooks, CallRail, Microsoft 365, Meta, Google Business Profile, and review-platform connectors are not built yet; see docs/25 |
+| Integration-request/Codex fulfillment center | Not built yet; see docs/25 for the guarded request, review, staging, and release design |
 | Per-client custom field mapping | Defaults only (docs/16) |
 | Billing/usage pricing on packages | Not built by request |
 

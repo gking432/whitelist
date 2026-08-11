@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { resolveAssistantAccess } from "@/lib/assistant/access";
 import { getAuthState } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/integrations/rate-limit";
 import { getKnowledgeProfile } from "@/lib/knowledge/profile";
 import { isAccessError } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveVoiceOperatorAccess } from "@/lib/voice/access";
 import {
   buildVoiceAgentInstructions,
   isOpenAIRealtimeConfigured,
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await resolveAssistantAccess(authState.user.id, clientId, "write");
+    await resolveVoiceOperatorAccess(authState.user.id, clientId);
   } catch (error) {
     if (isAccessError(error)) {
       return json(error.code === "ACCESS_DENIED" ? 404 : 503, {
@@ -102,18 +102,46 @@ export async function POST(request: NextRequest) {
     clientId,
     provider: "openai_realtime",
     direction: "inbound",
+    handlingMode: "ai_answered",
   });
 
   if (!created) {
     return json(500, { error: "The call session could not be created." });
   }
 
-  const knowledge = await getKnowledgeProfile(admin, clientId);
+  const [{ data: callSession }, knowledge] = await Promise.all([
+    admin
+      .from("call_sessions")
+      .select(
+        "matched_contact:crm_contacts(first_name, last_name, phone, email, address)",
+      )
+      .eq("id", created.callSessionId)
+      .maybeSingle(),
+    getKnowledgeProfile(admin, clientId),
+  ]);
+  const match = callSession?.matched_contact as unknown as
+    | {
+        first_name: string | null;
+        last_name: string | null;
+        phone: string | null;
+        email: string | null;
+        address: string | null;
+      }
+    | null;
   const instructions = buildVoiceAgentInstructions({
     clientName: client.name,
     knowledge,
     disclosureMode: knowledge?.voice_disclosure_mode ?? "explicit",
-    matchedContact: null,
+    matchedContact: match
+      ? {
+          name:
+            [match.first_name, match.last_name].filter(Boolean).join(" ") ||
+            null,
+          phone: match.phone,
+          email: match.email,
+          address: match.address,
+        }
+      : null,
     direction: "inbound",
   });
 

@@ -431,6 +431,7 @@ export async function startTextVoiceCall(
     fromNumber?: string | null;
     toNumber?: string | null;
     externalRef?: string | null;
+    handlingMode?: "ai_answered" | "staff_assisted";
   },
 ): Promise<
   | {
@@ -460,6 +461,7 @@ export async function startTextVoiceCall(
     fromNumber: input.fromNumber ?? null,
     toNumber: input.toNumber ?? null,
     externalRef: input.externalRef ?? null,
+    handlingMode: input.handlingMode ?? "ai_answered",
   });
 
   if (!created) {

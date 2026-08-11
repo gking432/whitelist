@@ -6,6 +6,8 @@ import {
   ScenarioLab,
   type ScenarioLabHistoryItem,
 } from "@/components/partner/scenario-lab";
+import { VoiceCallLab } from "@/components/crm/voice-call-lab";
+import { LiveCallOverlay } from "@/components/assistant/live-call-overlay";
 import { Badge } from "@/components/ui/badge";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import {
@@ -138,6 +140,19 @@ export default async function ScenarioLabPage() {
           labClient={labClient ? { id: labClient.id, name: labClient.name } : null}
           history={history}
         />
+        {labClient ? (
+          <section className="space-y-3 border-t pt-6">
+            <div>
+              <h2 className="text-lg font-semibold">Phone assistant lab</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Run the same caller matching, live coaching, scheduling, and
+                post-call pipeline used by connected phone numbers.
+              </p>
+            </div>
+            <VoiceCallLab clientId={labClient.id} canOperate />
+            <LiveCallOverlay clientId={labClient.id} />
+          </section>
+        ) : null}
       </div>
     </AppShell>
   );

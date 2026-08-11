@@ -56,6 +56,7 @@ export default async function PartnerOnboardingPage({
     brandingResult,
     onboardingResult,
     membershipResult,
+    twilioResult,
   ] = await Promise.all([
     supabase
       .from("partners")
@@ -78,6 +79,12 @@ export default async function PartnerOnboardingPage({
       .eq("partner_id", access.partnerId)
       .is("client_id", null)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("partner_provider_connections")
+      .select("status, health_summary, last_success_at, config")
+      .eq("partner_id", access.partnerId)
+      .eq("provider_key", "twilio")
+      .maybeSingle(),
   ]);
 
   const partner = partnerResult.data;
@@ -163,9 +170,25 @@ export default async function PartnerOnboardingPage({
         };
       })}
       agencyId={agency.id}
+      twilioConnection={
+        twilioResult.data
+          ? {
+              status: twilioResult.data.status,
+              healthSummary: twilioResult.data.health_summary,
+              accountSid:
+                typeof twilioResult.data.config?.account_sid === "string"
+                  ? twilioResult.data.config.account_sid
+                  : null,
+              lastSuccessAt: twilioResult.data.last_success_at,
+            }
+          : null
+      }
       integrations={PILOT_PROVIDER_KEYS.map((key) => ({
         key,
-        name: PILOT_PROVIDERS[key].title,
+        name:
+          key === "twilio"
+            ? "Phone assistant for your own agency"
+            : PILOT_PROVIDERS[key].title,
         status: connectionByProvider.get(key)?.status ?? "not_connected",
       }))}
     />

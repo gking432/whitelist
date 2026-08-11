@@ -4,6 +4,7 @@
 // the HubSpot adapter: additive contact upsert + AI Assistant note.
 
 import type { ContactFields } from "@/lib/crm/contact-fields";
+import { normalizePhone } from "@/lib/phone/normalize";
 
 const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
@@ -11,6 +12,10 @@ const GHL_VERSION = "2021-07-28";
 export type GoHighLevelCredentials = {
   privateToken: string;
   locationId: string;
+};
+
+export type GoHighLevelContactMatch = ContactFields & {
+  id: string;
 };
 
 export class GoHighLevelError extends Error {
@@ -68,7 +73,7 @@ export async function testGoHighLevelConnection(
 
     return {
       ok: true,
-      detail: `Connected to GoHighLevel location "${location?.name ?? credentials.locationId}". Northstar can create and update contacts.`,
+      detail: `Connected to GoHighLevel location "${location?.name ?? credentials.locationId}". Contact creation and updates are ready.`,
     };
   } catch (error) {
     if (error instanceof GoHighLevelError) {
@@ -83,6 +88,55 @@ export async function testGoHighLevelConnection(
 
     return { ok: false, detail: "Could not reach GoHighLevel." };
   }
+}
+
+export async function findGoHighLevelContact(
+  credentials: GoHighLevelCredentials,
+  input: { phone?: string | null; email?: string | null },
+): Promise<GoHighLevelContactMatch | null> {
+  const query = input.email?.trim() || input.phone?.trim();
+
+  if (!query) return null;
+
+  const result = await ghlFetch(
+    credentials,
+    `/contacts/?locationId=${encodeURIComponent(credentials.locationId)}` +
+      `&query=${encodeURIComponent(query)}&limit=20`,
+  );
+  const contacts = (result.contacts ?? []) as {
+    id?: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    address1?: string | null;
+  }[];
+  const normalizedPhone = normalizePhone(input.phone);
+  const normalizedEmail = input.email?.trim().toLowerCase() ?? null;
+  const match = contacts.find((contact) => {
+    if (
+      normalizedEmail &&
+      contact.email?.trim().toLowerCase() === normalizedEmail
+    ) {
+      return true;
+    }
+
+    return (
+      normalizedPhone &&
+      normalizePhone(contact.phone) === normalizedPhone
+    );
+  });
+
+  if (!match?.id) return null;
+
+  return {
+    id: match.id,
+    firstname: match.firstName ?? null,
+    lastname: match.lastName ?? null,
+    email: match.email ?? null,
+    phone: match.phone ?? null,
+    address: match.address1 ?? null,
+  };
 }
 
 export type GoHighLevelSyncOutcome = {

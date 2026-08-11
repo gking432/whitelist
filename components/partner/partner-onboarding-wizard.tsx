@@ -27,6 +27,7 @@ import {
   BrandingForm,
   type BrandingFormValue,
 } from "@/components/partner/branding-form";
+import { PartnerTwilioForm } from "@/components/partner/partner-twilio-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -69,6 +70,12 @@ type PartnerOnboardingWizardProps = {
   branding: BrandingFormValue;
   team: PartnerTeamMember[];
   agencyId: string;
+  twilioConnection: {
+    status: string;
+    healthSummary: string | null;
+    accountSid: string | null;
+    lastSuccessAt: string | null;
+  } | null;
   integrations: AgencyIntegration[];
 };
 
@@ -92,8 +99,8 @@ const stepMeta: Record<
     icon: UsersRound,
   },
   integrations: {
-    label: "Agency tools",
-    shortLabel: "Tools",
+    label: "Phone & agency tools",
+    shortLabel: "Phone",
     icon: PlugZap,
   },
   plan: {
@@ -330,9 +337,11 @@ function TeamStep({ team }: { team: PartnerTeamMember[] }) {
 function IntegrationsStep({
   agencyId,
   integrations,
+  twilioConnection,
 }: {
   agencyId: string;
   integrations: AgencyIntegration[];
+  twilioConnection: PartnerOnboardingWizardProps["twilioConnection"];
 }) {
   const [state, action, pending] = useActionState(
     finishPartnerIntegrationsStep,
@@ -341,6 +350,14 @@ function IntegrationsStep({
 
   return (
     <div className="space-y-6">
+      <PartnerTwilioForm connection={twilioConnection} compact />
+
+      <div className="border-t pt-5">
+        <p className="text-sm font-medium">Tools for your agency business</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          These are optional connections for running your own agency. The Twilio billing account above is separate and powers the phone products you sell to clients.
+        </p>
+      </div>
       <div className="overflow-hidden rounded-lg border">
         {integrations.map((integration) => {
           const connected = integration.status === "connected";
@@ -520,6 +537,7 @@ export function PartnerOnboardingWizard({
   branding,
   team,
   agencyId,
+  twilioConnection,
   integrations,
 }: PartnerOnboardingWizardProps) {
   const activeIndex = onboardingStepIndex(step);
@@ -650,6 +668,7 @@ export function PartnerOnboardingWizard({
               {step === "integrations" ? (
                 <IntegrationsStep
                   agencyId={agencyId}
+                  twilioConnection={twilioConnection}
                   integrations={integrations}
                 />
               ) : null}

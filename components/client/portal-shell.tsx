@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell } from "lucide-react";
 
+import { LiveCallOverlay } from "@/components/assistant/live-call-overlay";
 import type { PortalBranding } from "@/lib/clients/portal";
 import { brandStyleVariables } from "@/lib/branding";
 import type { ClientExperienceMode } from "@/lib/clients/constants";
@@ -77,6 +78,7 @@ export function PortalShell({
       <div className="min-h-screen bg-background" style={brandStyle}>
         {banner}
         {children}
+        {visibleSections.includes("assistant") ? <LiveCallOverlay /> : null}
       </div>
     );
   }
@@ -179,6 +181,7 @@ export function PortalShell({
           </p>
         </div>
       </footer>
+      {visibleSections.includes("assistant") ? <LiveCallOverlay /> : null}
     </div>
   );
 }

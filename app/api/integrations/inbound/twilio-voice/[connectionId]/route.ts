@@ -9,12 +9,17 @@ import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { verifyTwilioSignature } from "@/lib/integrations/twilio-signature";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  createCallSession,
+} from "@/lib/voice/sessions";
+import { signVoiceStreamSession } from "@/lib/voice/stream-signature";
+import {
   startTextVoiceCall,
 } from "@/lib/voice/simulate";
 import {
   gatherTwiml,
   hangupTwiml,
   rejectVoiceWebhook,
+  staffAssistTwiml,
   TWILIO_VOICE_PROVIDER,
 } from "@/lib/voice/twilio-gather";
 
@@ -139,6 +144,68 @@ export async function POST(
     return hangupTwiml("Thanks for calling. Goodbye.");
   }
 
+  if (credentials.phoneHandlingMode === "staff_assisted") {
+    if (!credentials.staffForwardNumber) {
+      return hangupTwiml(
+        "The team is unavailable right now. Please try again shortly.",
+      );
+    }
+
+    const created = await createCallSession(admin, {
+      partnerId: connection.partner_id,
+      clientId: connection.client_id,
+      connectionId,
+      provider: TWILIO_VOICE_PROVIDER,
+      direction: "inbound",
+      fromNumber: values.From ?? null,
+      toNumber: values.To ?? credentials.fromNumber ?? null,
+      externalRef: callSid,
+      handlingMode: "staff_assisted",
+    });
+
+    if (!created) {
+      return hangupTwiml(
+        "The phone assistant is unavailable. The team has been notified.",
+      );
+    }
+
+    await admin.from("integration_events").insert({
+      partner_id: connection.partner_id,
+      client_id: connection.client_id,
+      connection_id: connectionId,
+      direction: "inbound",
+      event_type: "call.started",
+      status: "processed",
+      idempotency_key: callSid,
+      external_object_type: "twilio_call",
+      external_object_id: callSid,
+      request_payload: redactAuditValue({
+        from: values.From ?? null,
+        to: values.To ?? null,
+        handling_mode: "staff_assisted",
+      }),
+      response_payload: {
+        call_session_id: created.callSessionId,
+        live_transcription: Boolean(process.env.NORTHSTAR_VOICE_STREAM_URL),
+      },
+      redacted: true,
+    });
+
+    const streamUrl = process.env.NORTHSTAR_VOICE_STREAM_URL?.trim() || null;
+    const streamSecret = process.env.VOICE_STREAM_SHARED_SECRET?.trim() || null;
+
+    return staffAssistTwiml({
+      connectionId,
+      callSessionId: created.callSessionId,
+      forwardNumber: credentials.staffForwardNumber,
+      streamUrl,
+      streamToken:
+        streamUrl && streamSecret
+          ? signVoiceStreamSession(streamSecret, created.callSessionId)
+          : null,
+    });
+  }
+
   const started = await startTextVoiceCall(admin, {
     clientId: connection.client_id,
     provider: TWILIO_VOICE_PROVIDER,
@@ -146,6 +213,7 @@ export async function POST(
     fromNumber: values.From ?? null,
     toNumber: values.To ?? credentials.fromNumber ?? null,
     externalRef: callSid,
+    handlingMode: "ai_answered",
   });
 
   if (!started.ok) {

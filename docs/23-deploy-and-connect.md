@@ -13,19 +13,19 @@ Don't make accounts for things that aren't wired yet.
 | Tool | How | Verify live |
 | --- | --- | --- |
 | HubSpot | Private-app token | Leads appear as HubSpot contacts + notes |
-| Twilio (SMS) | SID + auth token + number + inbound webhook | Inbound texts trigger AI; approved replies send |
+| Twilio (SMS + Voice) | Partner parent account provisions client subaccounts/numbers, or connect an existing client Twilio number | Inbound texts trigger AI; approved replies send; calls use AI answering or staff-assisted mode |
 | Google Calendar | Your own OAuth client (per-connection) | AI proposes real slots; approving books an event |
 | Resend (email) | API key + verified sender domain | Approved emails actually send |
 | Website | Chat widget embed, or forms → intake webhook | Visitors/forms become leads |
 | Anything else (GBP, Facebook, IG, Typeform…) | Zapier/Make → generic inbound webhook | Bridged leads flow through the AI |
 
-**NOT wired yet — don't expect these to plug in:**
+**Not yet available as native connections:**
 
-- **AI answering phone *calls*.** Twilio texts work; the AI picking up a call
-  needs a phone bridge that doesn't exist yet (docs/21). Voice is
-  simulation-only.
 - **Native Google Business Profile / social connectors.** Route them in via
   an automation bridge to the webhook instead.
+- **Home-service CRM catalog.** Jobber, Housecall Pro, ServiceTitan, and Workiz
+  are planned in docs/25; the currently verified CRM adapters are HubSpot and
+  GoHighLevel.
 
 ---
 
@@ -122,15 +122,18 @@ HubSpot → Settings → Integrations → **Private Apps** → create one with s
 the **Private app access token**. Test → send a lead → see the contact + AI
 note appear in HubSpot.
 
-### Twilio (SMS)
-1. Twilio console → Account SID, Auth token, and a **phone number** (a trial
-   number is fine).
-2. In the app, connect Twilio with those three fields.
-3. In Twilio, set the number's **inbound "A message comes in" webhook** to:
-   `https://<your-app>.vercel.app/api/integrations/inbound/twilio/<connection-id>`
-   (the connection page shows the exact URL).
-4. Text that number → watch it become a lead. Switch the connection to
-   **live**, approve an outbound draft → it really sends.
+### Twilio (SMS + Voice)
+1. The partner connects its parent Twilio Account SID and Auth Token during
+   partner onboarding or from partner settings.
+2. The client connection flow can create a Twilio subaccount, purchase a
+   voice/SMS-capable number by area code, and configure all inbound webhooks.
+3. Choose **AI answered** or **Staff assisted** phone handling. Staff assisted
+   also requires a forwarding number and the always-on voice-stream service.
+4. Text and call the number. Texts enter the normal AI intake flow. Calls
+   create a call session, resolve or create the CRM customer, preserve notes,
+   and run the configured post-call actions.
+5. Existing business numbers can forward to the provisioned Twilio number for
+   a pilot and can be ported later.
 
 ### Google Calendar (booking)
 1. Google Cloud Console → create an **OAuth client (Web application)**. Set
@@ -181,7 +184,11 @@ customer-facing goes out until both are true.
 
 ## Honest gaps to keep in mind
 
-- **AI phone answering** is the one marquee tool not connectable yet — needs
-  the phone bridge (docs/21). Everything above is real.
-- No self-serve signup or in-app billing yet — you bootstrapped your account
-  by hand above.
+- Twilio AI answering is turn-based rather than full-duplex streaming. The
+  staff-assisted path uses the WebSocket audio stream for live transcription.
+- The phone paths still need real deployed-account verification before they
+  can be called production-proven.
+- No self-serve signup or in-app billing yet — bootstrap or invite the initial
+  partner account before onboarding.
+- The broader connector catalog and integration-request center are scheduled
+  in docs/25.

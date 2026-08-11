@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   Package,
   Palette,
+  PhoneCall,
 } from "lucide-react";
 
 import { updatePartnerBranding } from "@/app/partner/settings/actions";
@@ -14,6 +15,7 @@ import {
   type BrandingFormValue,
 } from "@/components/partner/branding-form";
 import { Badge } from "@/components/ui/badge";
+import { PartnerTwilioForm } from "@/components/partner/partner-twilio-form";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { DEFAULT_BRAND_COLORS, normalizeBrandColor } from "@/lib/branding";
 import {
@@ -58,7 +60,7 @@ export default async function PartnerBrandingPage() {
 
   if (!supabase || !access.partnerId) return null;
 
-  const [partnerResult, brandingResult] = await Promise.all([
+  const [partnerResult, brandingResult, twilioResult] = await Promise.all([
     supabase
       .from("partners")
       .select("name")
@@ -69,9 +71,16 @@ export default async function PartnerBrandingPage() {
       .select("*")
       .eq("partner_id", access.partnerId)
       .maybeSingle(),
+    supabase
+      .from("partner_provider_connections")
+      .select("status, health_summary, last_success_at, config")
+      .eq("partner_id", access.partnerId)
+      .eq("provider_key", "twilio")
+      .maybeSingle(),
   ]);
   const partnerName = partnerResult.data?.name ?? "Partner workspace";
   const branding = brandingResult.data;
+  const twilio = twilioResult.data;
   const initial: BrandingFormValue = {
     productName: branding?.product_name ?? `${partnerName} CRM`,
     logoUrl: branding?.logo_url ?? null,
@@ -192,6 +201,35 @@ export default async function PartnerBrandingPage() {
             </p>
           </div>
           <BrandingForm action={updatePartnerBranding} initial={initial} />
+        </section>
+
+        <section aria-labelledby="phone-heading" className="space-y-5 border-t pt-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <PhoneCall className="size-4 text-primary" aria-hidden="true" />
+              <h2 id="phone-heading" className="text-lg font-semibold">
+                Phone infrastructure
+              </h2>
+            </div>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Connect the Twilio account owned and billed by your agency. Client phone systems are provisioned underneath it.
+            </p>
+          </div>
+          <PartnerTwilioForm
+            connection={
+              twilio
+                ? {
+                    status: twilio.status,
+                    healthSummary: twilio.health_summary,
+                    accountSid:
+                      typeof twilio.config?.account_sid === "string"
+                        ? twilio.config.account_sid
+                        : null,
+                    lastSuccessAt: twilio.last_success_at,
+                  }
+                : null
+            }
+          />
         </section>
       </div>
     </AppShell>

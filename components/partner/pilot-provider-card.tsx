@@ -307,14 +307,30 @@ export function PilotProviderCard({
           {meta.fields.map((field) => (
             <div key={field.name} className="space-y-1.5">
               <Label htmlFor={`${meta.key}-${field.name}`}>{field.label}</Label>
-              <Input
-                id={`${meta.key}-${field.name}`}
-                name={field.name}
-                type={field.secret ? "password" : "text"}
-                placeholder={field.placeholder}
-                autoComplete="off"
-                aria-invalid={Boolean(connectState.fieldErrors?.[field.name])}
-              />
+              {field.options ? (
+                <select
+                  id={`${meta.key}-${field.name}`}
+                  name={field.name}
+                  defaultValue={field.options[0]?.value}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  aria-invalid={Boolean(connectState.fieldErrors?.[field.name])}
+                >
+                  {field.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  id={`${meta.key}-${field.name}`}
+                  name={field.name}
+                  type={field.secret ? "password" : "text"}
+                  placeholder={field.placeholder}
+                  autoComplete="off"
+                  aria-invalid={Boolean(connectState.fieldErrors?.[field.name])}
+                />
+              )}
               {connectState.fieldErrors?.[field.name] ? (
                 <p className="text-xs text-destructive">
                   {connectState.fieldErrors[field.name]}

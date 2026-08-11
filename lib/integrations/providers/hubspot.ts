@@ -2,6 +2,8 @@
 // decrypted from integration_secrets and never leave the server. Uses plain
 // fetch against the public CRM v3 API; no SDK dependency.
 
+import { phoneSearchVariants } from "@/lib/phone/normalize";
+
 const HUBSPOT_BASE = "https://api.hubapi.com";
 
 export type HubSpotCredentials = {
@@ -14,6 +16,10 @@ export type HubSpotContactFields = {
   firstname: string | null;
   lastname: string | null;
   address: string | null;
+};
+
+export type HubSpotContactMatch = HubSpotContactFields & {
+  id: string;
 };
 
 export class HubSpotError extends Error {
@@ -69,7 +75,7 @@ export async function testHubSpotConnection(
 
     return {
       ok: true,
-      detail: "Token accepted. Northstar can read and create contacts.",
+      detail: "Token accepted. Contact reading and creation are ready.",
     };
   } catch (error) {
     if (error instanceof HubSpotError) {
@@ -86,16 +92,21 @@ export async function testHubSpotConnection(
   }
 }
 
-async function findContactId(
+export async function findHubSpotContact(
   token: string,
   fields: HubSpotContactFields,
-): Promise<string | null> {
+): Promise<HubSpotContactMatch | null> {
   const searchBy: { property: string; value: string }[] = [];
 
   if (fields.email) {
     searchBy.push({ property: "email", value: fields.email });
   } else if (fields.phone) {
-    searchBy.push({ property: "phone", value: fields.phone });
+    searchBy.push(
+      ...phoneSearchVariants(fields.phone).map((value) => ({
+        property: "phone",
+        value,
+      })),
+    );
   }
 
   if (searchBy.length === 0) {
@@ -110,13 +121,30 @@ async function findContactId(
           { propertyName: filter.property, operator: "EQ", value: filter.value },
         ],
       })),
+      properties: ["firstname", "lastname", "email", "phone", "address"],
       limit: 1,
     }),
   });
 
-  const first = (result.results as { id?: string }[] | undefined)?.[0];
+  const first = (
+    result.results as
+      | {
+          id?: string;
+          properties?: Record<string, string | null | undefined>;
+        }[]
+      | undefined
+  )?.[0];
 
-  return first?.id ?? null;
+  if (!first?.id) return null;
+
+  return {
+    id: first.id,
+    firstname: first.properties?.firstname ?? null,
+    lastname: first.properties?.lastname ?? null,
+    email: first.properties?.email ?? null,
+    phone: first.properties?.phone ?? null,
+    address: first.properties?.address ?? null,
+  };
 }
 
 export type HubSpotSyncOutcome = {
@@ -142,7 +170,8 @@ export async function syncContactWithNote(
   if (fields.lastname) properties.lastname = fields.lastname;
   if (fields.address) properties.address = fields.address;
 
-  const existingId = await findContactId(token, fields);
+  const existing = await findHubSpotContact(token, fields);
+  const existingId = existing?.id ?? null;
   let contactId: string;
   let contactAction: "created" | "updated";
 

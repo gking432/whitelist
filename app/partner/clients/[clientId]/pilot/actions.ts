@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
+import { getAppUrl } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
   encryptProviderCredentials,
@@ -30,6 +31,7 @@ import {
   type HubSpotCredentials,
 } from "@/lib/integrations/providers/hubspot";
 import {
+  configureTwilioNumber,
   testTwilioConnection,
   type TwilioCredentials,
 } from "@/lib/integrations/providers/twilio";
@@ -222,6 +224,20 @@ export async function connectPilotProvider(
     };
   }
 
+  if (
+    providerKey === "twilio" &&
+    credentials.phoneHandlingMode === "staff_assisted" &&
+    !credentials.staffForwardNumber
+  ) {
+    return {
+      status: "error",
+      message: "Add the staff phone number that Twilio should ring.",
+      fieldErrors: {
+        staffForwardNumber: "A staff phone number is required for staff assist.",
+      },
+    };
+  }
+
   try {
     const context = await loadPilotContext(authState.user.id, clientId);
 
@@ -285,12 +301,41 @@ export async function connectPilotProvider(
       };
     }
 
+    let healthDetail = test.detail;
+
+    if (providerKey === "twilio") {
+      const appUrl = getAppUrl().replace(/\/$/, "");
+
+      if (appUrl.startsWith("https://")) {
+        const configured = await configureTwilioNumber(
+          credentials as unknown as TwilioCredentials,
+          {
+            smsUrl: `${appUrl}/api/integrations/inbound/twilio/${ensured.connectionId}`,
+            voiceUrl: `${appUrl}/api/integrations/inbound/twilio-voice/${ensured.connectionId}`,
+            voiceStatusUrl: `${appUrl}/api/integrations/inbound/twilio-voice/${ensured.connectionId}/status`,
+          },
+        );
+
+        if (!configured.ok) {
+          return {
+            status: "error",
+            message: configured.detail,
+          };
+        }
+
+        healthDetail = configured.detail;
+      } else {
+        healthDetail =
+          `${test.detail} Deploy Northstar to an HTTPS URL, then reconnect once so the Twilio webhooks can be configured automatically.`;
+      }
+    }
+
     await supabase
       .from("integration_connections")
       .update({
         status: "connected",
         credential_status: "configured",
-        health_summary: test.detail,
+        health_summary: healthDetail,
         last_success_at: new Date().toISOString(),
       })
       .eq("id", ensured.connectionId);
@@ -316,7 +361,7 @@ export async function connectPilotProvider(
     revalidatePath(`/partner/clients/${clientId}/setup`);
     revalidatePath(`/partner/clients/${clientId}/integrations`);
 
-    return { status: "success", message: test.detail };
+    return { status: "success", message: healthDetail };
   } catch (error) {
     return deniedState(error);
   }

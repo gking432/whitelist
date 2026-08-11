@@ -1,27 +1,39 @@
 {
   "name": "partner-platform",
   "version": "0.1.0",
+  "description": "Northstar white-label automation platform and live phone assistant.",
+  "author": "Northstar",
   "private": true,
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "desktop": "electron desktop/main.cjs",
+    "desktop:dev": "NORTHSTAR_APP_URL=http://localhost:3000 NORTHSTAR_DEV_AUTO_LOGIN=true electron desktop/main.cjs",
+    "desktop:icon": "node desktop/generate-icon.mjs",
+    "desktop:pack": "npm run desktop:icon && electron-builder --dir",
+    "desktop:dist": "npm run desktop:icon && electron-builder",
+    "desktop:dist:mac": "npm run desktop:icon && electron-builder --mac dmg zip",
+    "voice-stream": "node services/voice-stream/server.cjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test \"tests/*.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
+    "@openai/codex-sdk": "^0.147.0",
     "@radix-ui/react-slot": "1.3.0",
     "@supabase/ssr": "0.12.0",
     "@supabase/supabase-js": "2.108.2",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "lucide-react": "1.21.0",
-    "next": "16.2.9",
+    "next": "16.2.12",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "tailwind-merge": "3.6.0",
+    "ws": "^8.21.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -29,13 +41,52 @@
     "@types/node": "26.0.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
-    "eslint": "9.39.4",
-    "eslint-config-next": "16.2.9",
+    "electron": "43.2.0",
+    "electron-builder": "^26.15.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.12",
+    "sharp": "0.35.3",
     "supabase": "^2.107.0",
     "tailwindcss": "4.3.1",
     "typescript": "6.0.3"
   },
   "overrides": {
-    "postcss": "8.5.15"
+    "js-yaml": "5.2.2",
+    "postcss": "8.5.18",
+    "sharp": "0.35.3"
+  },
+  "build": {
+    "appId": "com.northstar.phoneassistant",
+    "productName": "Northstar Phone Assistant",
+    "asar": true,
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "desktop/build/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "desktop/build/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "desktop/build/icon.png",
+      "category": "Office",
+      "target": [
+        "AppImage"
+      ]
+    }
   }
 }

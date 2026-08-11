@@ -3,6 +3,7 @@ import {
   BriefcaseBusiness,
   LayoutDashboard,
   Package,
+  PlugZap,
   Settings,
   UsersRound,
 } from "lucide-react";
@@ -35,6 +36,12 @@ const navigation = [
     label: "Packages",
     href: "/partner/packages",
     icon: Package,
+  },
+  {
+    key: "integrations",
+    label: "Integrations",
+    href: "/partner/integrations",
+    icon: PlugZap,
   },
   {
     key: "settings",

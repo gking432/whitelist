@@ -1,7 +1,6 @@
-// AI Voice provider abstraction — CONTRACT ONLY (Phase 4 of docs/11).
-// No implementation exists in this release and nothing implies real
-// telephony until a provider adapter is connected. These contracts are
-// shaped so the voice layer plugs into the existing workflow architecture:
+// AI Voice provider abstraction. Twilio Voice and the staff-assist media
+// bridge implement these lifecycle concepts; additional phone adapters use
+// the same contracts and workflow architecture:
 // a completed call becomes an integration_event (event_type "call.completed")
 // that the run engine matches like any other trigger, and voice outputs
 // (CRM note, follow-up draft) flow through workflow_runs + approval_items.
@@ -82,8 +81,7 @@ export const CallSummarySchema = z.object({
 
 export type CallSummary = z.infer<typeof CallSummarySchema>;
 
-// Provider adapter contract. Implementations (Twilio Voice + a realtime
-// speech model, etc.) live server-side; credentials go through
+// Provider adapter contract. Implementations live server-side; credentials go through
 // integration_secrets like every other connection.
 export interface VoiceProvider {
   providerKey: string;
@@ -109,9 +107,7 @@ export interface VoiceProvider {
   endSession(sessionId: string): Promise<void>;
 }
 
-// Completion pipeline contract: turn a finished session into workflow
-// inputs. Implementation lands with Phase 4; the engine already supports the
-// trigger event side.
+// Completion pipeline contract: turn a finished session into workflow inputs.
 export interface CallCompletionPipeline {
   // 1. Persist transcript (redacted) + summary (CallSummarySchema via AI
   //    with fallback). 2. Write an integration_event `call.completed` with

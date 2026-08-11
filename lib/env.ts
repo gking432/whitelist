@@ -47,6 +47,13 @@ export function getAppUrl() {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 }
 
+export function getGoogleOAuthClient() {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
 export function isLocalDevAutoLoginEnabled() {
   const usesLocalSupabase =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??

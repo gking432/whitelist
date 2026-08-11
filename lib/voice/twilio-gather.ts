@@ -54,6 +54,28 @@ export function gatherTwiml(input: {
   );
 }
 
+export function staffAssistTwiml(input: {
+  connectionId: string;
+  callSessionId: string;
+  forwardNumber: string;
+  streamUrl: string | null;
+  streamToken: string | null;
+}): NextResponse {
+  const stream = input.streamUrl
+    ? `<Start><Stream url="${escapeXml(input.streamUrl)}" track="both_tracks">` +
+      `<Parameter name="callSessionId" value="${escapeXml(input.callSessionId)}"/>` +
+      (input.streamToken
+        ? `<Parameter name="streamToken" value="${escapeXml(input.streamToken)}"/>`
+        : "") +
+      `</Stream></Start>`
+    : "";
+  const dial =
+    `<Dial answerOnBridge="true" timeout="25">` +
+    `<Number>${escapeXml(input.forwardNumber)}</Number></Dial>`;
+
+  return twilioVoiceTwiml(`${stream}${dial}<Hangup/>`);
+}
+
 export function hangupTwiml(speech?: string | null): NextResponse {
   const say = speech?.trim()
     ? `<Say>${escapeXml(speech.trim())}</Say>`

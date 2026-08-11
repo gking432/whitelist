@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Eye, ShieldCheck, UsersRound } from "lucide-react";
+import { Building2, Eye, PlugZap, ShieldCheck, UsersRound } from "lucide-react";
 
 import { startPlatformImpersonation } from "@/app/impersonation/actions";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
@@ -78,6 +78,15 @@ export default async function ControlRoomPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Support visibility across partners and managed clients. Every account view is audited and time-limited.
           </p>
+        </div>
+
+        <div className="flex justify-end">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/control/integrations">
+              <PlugZap aria-hidden="true" />
+              Integration requests
+            </Link>
+          </Button>
         </div>
 
         <section className="grid gap-3 sm:grid-cols-3">

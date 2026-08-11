@@ -338,7 +338,7 @@ export function AssistantConsole({
                 <p className="mt-2 text-[11px] text-muted-foreground">
                   <span className="font-medium">CRM match:</span>{" "}
                   {context.crm.contactId
-                    ? `HubSpot contact ${context.crm.contactId}`
+                    ? `${context.crm.providerLabel} contact ${context.crm.contactId}`
                     : "no CRM match yet"}
                 </p>
               </div>

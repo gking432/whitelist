@@ -15,6 +15,11 @@ import {
   type GoogleOAuthClient,
 } from "@/lib/integrations/providers/google-calendar";
 import {
+  connectionSetupPath,
+  decryptConnectionSetupToken,
+  loadActiveConnectionSetupSessionById,
+} from "@/lib/integrations/connection-setup";
+import {
   isAccessError,
   requireClientWorkspaceAccess,
 } from "@/lib/permissions/access";
@@ -34,7 +39,14 @@ function redirectToPilot(
   request: NextRequest,
   clientId: string | null,
   outcome: string,
+  setupToken?: string | null,
 ): NextResponse {
+  if (setupToken) {
+    const target = new URL(connectionSetupPath(setupToken), request.url);
+    target.searchParams.set("google", outcome);
+    return NextResponse.redirect(target);
+  }
+
   const target = clientId
     ? `/partner/clients/${clientId}/setup?google=${outcome}`
     : `/partner?google=${outcome}`;
@@ -48,11 +60,13 @@ export async function GET(request: NextRequest) {
   const code = params.get("code");
   const oauthError = params.get("error");
 
-  const connectionId = verifyOAuthState(state);
+  const oauthState = verifyOAuthState(state);
 
-  if (!connectionId) {
+  if (!oauthState) {
     return redirectToPilot(request, null, "invalid_state");
   }
+
+  const { connectionId, setupSessionId } = oauthState;
 
   const admin = createSupabaseAdminClient();
 
@@ -75,28 +89,44 @@ export async function GET(request: NextRequest) {
 
   const clientId: string = connection.client_id;
 
-  // The person completing the flow must themselves be allowed to manage
-  // this client's integrations — the signed state alone is not enough.
+  const setupSession = setupSessionId
+    ? await loadActiveConnectionSetupSessionById(admin, setupSessionId)
+    : null;
+  const validSetupSession =
+    setupSession &&
+    setupSession.client_id === clientId &&
+    setupSession.partner_id === connection.partner_id &&
+    setupSession.allowed_provider_keys.includes("google_calendar")
+      ? setupSession
+      : null;
+  const setupToken = validSetupSession
+    ? decryptConnectionSetupToken(validSetupSession.encrypted_token)
+    : null;
+
+  // A signed-in partner operator or a valid, expiring client setup session may
+  // finish OAuth. The setup session never exposes any stored credential.
   const authState = await getAuthState();
 
-  if (!authState.user) {
+  if (!authState.user && !validSetupSession) {
     return redirectToPilot(request, clientId, "sign_in_required");
   }
 
-  let access;
+  let access = null;
 
-  try {
-    access = await requireClientWorkspaceAccess(
-      authState.user.id,
-      clientId,
-      PARTNER_OPERATOR_ROLES,
-    );
-  } catch (error) {
-    if (isAccessError(error)) {
-      return redirectToPilot(request, clientId, "not_allowed");
+  if (authState.user) {
+    try {
+      access = await requireClientWorkspaceAccess(
+        authState.user.id,
+        clientId,
+        PARTNER_OPERATOR_ROLES,
+      );
+    } catch (error) {
+      if (isAccessError(error) && !validSetupSession) {
+        return redirectToPilot(request, clientId, "not_allowed");
+      }
+
+      if (!isAccessError(error)) throw error;
     }
-
-    throw error;
   }
 
   const failConnection = async (summary: string, outcome: string) => {
@@ -110,7 +140,7 @@ export async function GET(request: NextRequest) {
       })
       .eq("id", connectionId);
 
-    return redirectToPilot(request, clientId, outcome);
+    return redirectToPilot(request, clientId, outcome, setupToken);
   };
 
   if (oauthError || !code) {
@@ -195,19 +225,22 @@ export async function GET(request: NextRequest) {
     clientId,
   });
 
-  await recordAuditEvent({
-    actor: { ...access, partnerId: connection.partner_id, clientId },
-    action: "integration.pilot_oauth_completed",
-    targetType: "integration_connection",
-    targetId: connectionId,
-    summary: test.ok
-      ? "Google Calendar authorized and verified with a live availability check."
-      : `Google Calendar authorized, but the first availability check failed: ${test.detail}`,
-  });
+  if (access) {
+    await recordAuditEvent({
+      actor: { ...access, partnerId: connection.partner_id, clientId },
+      action: "integration.pilot_oauth_completed",
+      targetType: "integration_connection",
+      targetId: connectionId,
+      summary: test.ok
+        ? "Google Calendar authorized and verified with a live availability check."
+        : `Google Calendar authorized, but the first availability check failed: ${test.detail}`,
+    });
+  }
 
   return redirectToPilot(
     request,
     clientId,
     test.ok ? "connected" : "verify_failed",
+    setupToken,
   );
 }

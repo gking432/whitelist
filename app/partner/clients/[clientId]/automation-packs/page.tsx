@@ -1,5 +1,6 @@
 import { AutomationPackLibrary } from "@/components/automations/automation-pack-library";
 import { AUTOMATION_PACKS } from "@/lib/automation-packs/catalog";
+import type { AutomationPackInstallRecord } from "@/lib/automation-packs/install";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { getAppUrl } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -19,14 +20,7 @@ export default async function AutomationPacksPage({
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
 
-  const [{ data: instances }, { data: connections }] = await Promise.all([
-    supabase
-      .from("client_workflow_instances")
-      .select(
-        "status, template:workflow_templates!inner(template_key)",
-      )
-      .eq("client_id", clientId)
-      .eq("status", "active"),
+  const [{ data: connections }, { data: installs }] = await Promise.all([
     supabase
       .from("integration_connections")
       .select(
@@ -35,16 +29,13 @@ export default async function AutomationPacksPage({
       .eq("client_id", clientId)
       .in("status", ["connected", "needs_attention"])
       .eq("provider.provider_key", "generic_inbound_webhook"),
+    supabase
+      .from("client_automation_pack_installs")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("updated_at", { ascending: false }),
   ]);
 
-  const activeTemplateKeys = (instances ?? [])
-    .map((instance) => {
-      const template = instance.template as unknown as {
-        template_key?: string;
-      } | null;
-      return template?.template_key ?? null;
-    })
-    .filter((key): key is string => Boolean(key));
   const connection = connections?.[0] ?? null;
   const endpoint = connection
     ? `${getAppUrl()}/api/integrations/inbound/${connection.id}`
@@ -54,11 +45,11 @@ export default async function AutomationPacksPage({
   return (
     <AutomationPackLibrary
       packs={AUTOMATION_PACKS}
-      activeTemplateKeys={activeTemplateKeys}
+      installs={(installs ?? []) as AutomationPackInstallRecord[]}
+      clientId={clientId}
+      canManage={workspace.access.canManageIntegrations}
       inboundEndpoint={endpoint}
-      integrationsPath={`${base}/integrations`}
-      testCenterPath={`${base}/test-center`}
+      integrationsPath={`${base}/connections`}
     />
   );
 }
-

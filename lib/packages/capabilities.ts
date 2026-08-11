@@ -59,9 +59,9 @@ export const STAFF_RUNTIME_LABELS: Record<
       "A small widget or snippet goes on the client's website (or a hosted Northstar page is used instead). Nothing on staff computers.",
   },
   browser_extension_or_desktop: {
-    label: "Browser extension or desktop popup app",
+    label: "Northstar desktop popup",
     detail:
-      "Live on-call popups need a small runtime on the staff computers that take calls — a browser extension or tray app. Only needed for live call features, and not built yet.",
+      "The Northstar tray app opens an always-on-top assistant during live calls. It shows the matched customer, transcript, missing intake details, urgency, and real calendar suggestions.",
   },
 };
 
@@ -263,24 +263,22 @@ export const CAPABILITIES: Record<CapabilityKey, CapabilityMeta> = {
     label: "Live call assistant",
     description:
       "A popup that helps staff during an active call: caller match, extracted fields, missing questions, urgency flags.",
-    status: "preview",
-    statusNote:
-      "The browser call lab, transcript, extracted fields, urgency flags, and CRM notes work now. A carrier connection is still needed for live external calls.",
+    status: "available",
+    statusNote: null,
     requirements: [REQUIREMENTS.phone],
     workflowTemplateKeys: [],
-    staffRuntime: "northstar_web",
+    staffRuntime: "browser_extension_or_desktop",
   },
   live_scheduling_assistant: {
     key: "live_scheduling_assistant",
     label: "Live scheduling assistant",
     description:
       "Suggests appointment slots during a call that fit the customer, the calendar, and service rules.",
-    status: "preview",
-    statusNote:
-      "The scheduling popup works in the browser call lab with Northstar or Google availability. A carrier connection is still needed during real external calls.",
+    status: "available",
+    statusNote: null,
     requirements: [REQUIREMENTS.phone, REQUIREMENTS.calendar],
     workflowTemplateKeys: [],
-    staffRuntime: "northstar_web",
+    staffRuntime: "browser_extension_or_desktop",
   },
   ai_phone_answering: {
     key: "ai_phone_answering",
