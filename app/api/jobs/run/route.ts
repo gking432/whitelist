@@ -5,6 +5,7 @@ import { runOperationalRetention } from "@/lib/jobs/retention";
 import { processPendingNotificationDeliveries } from "@/lib/notifications/delivery";
 import { processPendingSupportNotifications } from "@/lib/support/notifications";
 import { processConnectorSyncJobs } from "@/lib/integrations/connectors/sync-runner";
+import { renewExpiringConnectionWebhooks } from "@/lib/integrations/connectors/webhook-runner";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -36,13 +37,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "The data service is unavailable." }, { status: 503 });
   }
 
-  const [result, notifications, supportNotifications, connectorSync, retention] = await Promise.all([
+  const [result, notifications, supportNotifications, connectorSync, webhookRenewal, retention] = await Promise.all([
     processPendingActionJobs(20),
     processPendingNotificationDeliveries(20),
     processPendingSupportNotifications(20),
     processConnectorSyncJobs(20),
+    renewExpiringConnectionWebhooks(admin, 20),
     runOperationalRetention(admin),
   ]);
 
-  return NextResponse.json({ ok: true, ...result, notifications, supportNotifications, connectorSync, retention });
+  return NextResponse.json({ ok: true, ...result, notifications, supportNotifications, connectorSync, webhookRenewal, retention });
 }

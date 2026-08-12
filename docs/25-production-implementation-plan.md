@@ -96,6 +96,11 @@ native customer journey, and desktop assistant write-back.
 - Support OAuth refresh, revocation, incremental sync, webhook renewal, native
   availability, booking, drafts, and approved sends.
 
+Implemented locally: Google Workspace change tokens, Gmail history checkpoints,
+Microsoft Graph delta links, and scheduled webhook renewal are wired into the
+durable connector runner. Live-account validation and revocation callbacks remain
+part of the provider pilot.
+
 Verification: provider contract tests plus live sandbox accounts when
 credentials are available.
 

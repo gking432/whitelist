@@ -10,6 +10,15 @@ import { mintWorkspaceAccessToken, type WorkspaceCredentials } from "./workspace
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
+class MicrosoftGraphError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`Microsoft Graph failed (${status}).`);
+    this.status = status;
+  }
+}
+
 async function graphFetch(credentials: WorkspaceCredentials, path: string, init: RequestInit = {}) {
   const token = await mintWorkspaceAccessToken("microsoft_365", credentials);
   const response = await fetch(path.startsWith("http") ? path : `${GRAPH}${path}`, {
@@ -17,7 +26,7 @@ async function graphFetch(credentials: WorkspaceCredentials, path: string, init:
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...init.headers },
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`Microsoft Graph failed (${response.status}).`);
+  if (!response.ok) throw new MicrosoftGraphError(response.status);
   return response;
 }
 
@@ -65,16 +74,38 @@ function text(data: Record<string, unknown>, key: string): string {
 
 async function pullMicrosoftPage(credentials: WorkspaceCredentials, objectType: CanonicalObjectType, cursor: Record<string, unknown> | null): Promise<ConnectorPage> {
   const nextLink = typeof cursor?.nextLink === "string" ? cursor.nextLink : null;
-  const path = nextLink ?? (objectType === "customer"
-    ? "/me/contacts?$top=100"
+  const deltaLink = typeof cursor?.deltaLink === "string" ? cursor.deltaLink : null;
+  let contactFolderId = typeof cursor?.contactFolderId === "string"
+    ? cursor.contactFolderId
+    : null;
+  if (objectType === "customer" && !nextLink && !deltaLink && !contactFolderId) {
+    const seed = await (await graphFetch(
+      credentials,
+      "/me/contacts?$top=1&$select=id,parentFolderId",
+    )).json() as { value?: { parentFolderId?: string }[] };
+    contactFolderId = seed.value?.[0]?.parentFolderId ?? null;
+    if (!contactFolderId) {
+      return { records: [], nextCursor: null, continueImmediately: false };
+    }
+  }
+  const path = nextLink ?? deltaLink ?? (objectType === "customer"
+    ? `/me/contactFolders/${encodeURIComponent(contactFolderId!)}/contacts/delta`
     : objectType === "appointment"
-      ? "/me/events?$top=100&$orderby=lastModifiedDateTime%20desc"
+      ? `/me/calendarView/delta?startDateTime=${encodeURIComponent(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString())}&endDateTime=${encodeURIComponent(new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000).toISOString())}`
       : objectType === "message"
-        ? "/me/messages?$top=100&$select=id,conversationId,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead"
+        ? "/me/mailFolders/inbox/messages/delta?$top=100&$select=id,conversationId,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead"
         : null);
   if (!path) throw new Error(`Microsoft 365 cannot pull ${objectType}.`);
-  const body = (await (await graphFetch(credentials, path)).json()) as { value?: Record<string, unknown>[]; "@odata.nextLink"?: string };
-  const records = (body.value ?? []).map((item) => {
+  let body: { value?: Record<string, unknown>[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
+  try {
+    body = await (await graphFetch(credentials, path)).json() as typeof body;
+  } catch (error) {
+    if (deltaLink && error instanceof MicrosoftGraphError && [404, 410].includes(error.status)) {
+      return pullMicrosoftPage(credentials, objectType, null);
+    }
+    throw error;
+  }
+  const records = (body.value ?? []).filter((item) => !("@removed" in item)).map((item) => {
     if (objectType === "customer") return mapMicrosoftContact(item);
     if (objectType === "appointment") return mapMicrosoftEvent(item);
     return {
@@ -90,7 +121,21 @@ async function pullMicrosoftPage(credentials: WorkspaceCredentials, objectType: 
       source: item,
     };
   });
-  return { records, nextCursor: body["@odata.nextLink"] ? { nextLink: body["@odata.nextLink"] } : null };
+  return {
+    records,
+    nextCursor: body["@odata.nextLink"]
+      ? {
+          ...(contactFolderId ? { contactFolderId } : {}),
+          nextLink: body["@odata.nextLink"],
+        }
+      : body["@odata.deltaLink"]
+        ? {
+            ...(contactFolderId ? { contactFolderId } : {}),
+            deltaLink: body["@odata.deltaLink"],
+          }
+        : null,
+    continueImmediately: Boolean(body["@odata.nextLink"]),
+  };
 }
 
 async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: ConnectorPushInput) {

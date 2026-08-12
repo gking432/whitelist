@@ -102,6 +102,12 @@ export type ConnectorFieldMapping = {
 export type ConnectorPage = {
   records: CanonicalRecord[];
   nextCursor: Record<string, unknown> | null;
+  /**
+   * True when nextCursor points to another page in the current sync round.
+   * False when it is a durable checkpoint for the next polling round.
+   * Omit for legacy adapters, where a non-null cursor means another page.
+   */
+  continueImmediately?: boolean;
 };
 
 export type ConnectorContext<TCredentials = unknown> = {

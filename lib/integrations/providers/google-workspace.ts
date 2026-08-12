@@ -15,6 +15,20 @@ const PEOPLE = "https://people.googleapis.com/v1";
 const CALENDAR = "https://www.googleapis.com/calendar/v3";
 const GMAIL = "https://gmail.googleapis.com/gmail/v1";
 
+class GoogleWorkspaceApiError extends Error {
+  readonly status: number;
+  readonly responseBody: string;
+
+  constructor(
+    status: number,
+    responseBody: string,
+  ) {
+    super(`Google Workspace API failed (${status}).`);
+    this.status = status;
+    this.responseBody = responseBody;
+  }
+}
+
 async function googleFetch(
   credentials: WorkspaceCredentials,
   url: string,
@@ -30,8 +44,16 @@ async function googleFetch(
     },
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`Google Workspace API failed (${response.status}).`);
+  if (!response.ok) {
+    throw new GoogleWorkspaceApiError(response.status, await response.text());
+  }
   return response;
+}
+
+function expiredGoogleCursor(error: unknown): boolean {
+  return error instanceof GoogleWorkspaceApiError &&
+    (error.status === 410 ||
+      (error.status === 400 && error.responseBody.includes("EXPIRED_SYNC_TOKEN")));
 }
 
 function firstValue(values: unknown, field: string): string | null {
@@ -84,6 +106,63 @@ function pageToken(cursor: Record<string, unknown> | null): string | null {
   return typeof cursor?.pageToken === "string" ? cursor.pageToken : null;
 }
 
+function cursorToken(
+  cursor: Record<string, unknown> | null,
+  key: "syncToken" | "historyId" | "fullSyncHistoryId",
+): string | null {
+  return typeof cursor?.[key] === "string" ? String(cursor[key]) : null;
+}
+
+async function readGmailMessages(
+  credentials: WorkspaceCredentials,
+  messages: { id: string; threadId?: string }[],
+): Promise<CanonicalRecord[]> {
+  const accessToken = await mintWorkspaceAccessToken("google_workspace", credentials);
+  const unique = [...new Map(messages.map((message) => [message.id, message])).values()];
+  const details = await Promise.all(unique.map(async (message) => {
+    const detailParams = new URLSearchParams({ format: "metadata" });
+    for (const header of ["From", "To", "Subject", "Date"]) {
+      detailParams.append("metadataHeaders", header);
+    }
+    const response = await fetch(
+      `${GMAIL}/users/me/messages/${encodeURIComponent(message.id)}?${detailParams}`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000) },
+    );
+    if (!response.ok) throw new Error(`Gmail message read failed (${response.status}).`);
+    return await response.json() as {
+      id: string;
+      threadId?: string;
+      internalDate?: string;
+      snippet?: string;
+      labelIds?: string[];
+      payload?: { headers?: { name: string; value: string }[] };
+    };
+  }));
+
+  return details.map((message) => {
+    const headers = Object.fromEntries(
+      (message.payload?.headers ?? []).map((header) => [header.name.toLowerCase(), header.value]),
+    );
+    return {
+      objectType: "message" as const,
+      externalId: message.id,
+      externalParentId: message.threadId ?? null,
+      updatedAt: message.internalDate
+        ? new Date(Number(message.internalDate)).toISOString()
+        : null,
+      data: {
+        provider: "gmail",
+        from: headers.from ?? null,
+        to: headers.to ?? null,
+        subject: headers.subject ?? null,
+        preview: message.snippet ?? null,
+        is_read: !(message.labelIds ?? []).includes("UNREAD"),
+      },
+      source: message,
+    };
+  });
+}
+
 async function pullGooglePage(
   credentials: WorkspaceCredentials,
   objectType: CanonicalObjectType,
@@ -91,85 +170,126 @@ async function pullGooglePage(
 ): Promise<ConnectorPage> {
   const token = pageToken(cursor);
   if (objectType === "customer") {
+    const syncToken = cursorToken(cursor, "syncToken");
     const params = new URLSearchParams({
       personFields: "names,emailAddresses,phoneNumbers,addresses,organizations,metadata",
       pageSize: "100",
+      requestSyncToken: "true",
       ...(token ? { pageToken: token } : {}),
+      ...(syncToken ? { syncToken } : {}),
     });
-    const body = (await (await googleFetch(credentials, `${PEOPLE}/people/me/connections?${params}`)).json()) as {
+    let body: {
       connections?: Record<string, unknown>[];
       nextPageToken?: string;
+      nextSyncToken?: string;
     };
+    try {
+      body = await (await googleFetch(credentials, `${PEOPLE}/people/me/connections?${params}`)).json() as typeof body;
+    } catch (error) {
+      if (syncToken && expiredGoogleCursor(error)) {
+        return pullGooglePage(credentials, objectType, null);
+      }
+      throw error;
+    }
+    const nextCursor = body.nextPageToken
+      ? { ...(syncToken ? { syncToken } : {}), pageToken: body.nextPageToken }
+      : body.nextSyncToken
+        ? { syncToken: body.nextSyncToken }
+        : null;
     return {
       records: (body.connections ?? []).map(mapGoogleContact),
-      nextCursor: body.nextPageToken ? { pageToken: body.nextPageToken } : null,
+      nextCursor,
+      continueImmediately: Boolean(body.nextPageToken),
     };
   }
   if (objectType === "appointment") {
+    const syncToken = cursorToken(cursor, "syncToken");
     const params = new URLSearchParams({
       singleEvents: "true",
-      showDeleted: "false",
+      showDeleted: "true",
       maxResults: "100",
       ...(token ? { pageToken: token } : {}),
+      ...(syncToken ? { syncToken } : {}),
     });
-    const body = (await (await googleFetch(credentials, `${CALENDAR}/calendars/primary/events?${params}`)).json()) as {
+    let body: {
       items?: Record<string, unknown>[];
       nextPageToken?: string;
+      nextSyncToken?: string;
     };
+    try {
+      body = await (await googleFetch(credentials, `${CALENDAR}/calendars/primary/events?${params}`)).json() as typeof body;
+    } catch (error) {
+      if (syncToken && expiredGoogleCursor(error)) {
+        return pullGooglePage(credentials, objectType, null);
+      }
+      throw error;
+    }
+    const nextCursor = body.nextPageToken
+      ? { ...(syncToken ? { syncToken } : {}), pageToken: body.nextPageToken }
+      : body.nextSyncToken
+        ? { syncToken: body.nextSyncToken }
+        : null;
     return {
       records: (body.items ?? []).map(mapGoogleEvent),
-      nextCursor: body.nextPageToken ? { pageToken: body.nextPageToken } : null,
+      nextCursor,
+      continueImmediately: Boolean(body.nextPageToken),
     };
   }
   if (objectType === "message") {
+    const historyId = cursorToken(cursor, "historyId");
+    if (historyId) {
+      const historyParams = new URLSearchParams({
+        startHistoryId: historyId,
+        maxResults: "100",
+        ...(token ? { pageToken: token } : {}),
+      });
+      let body: {
+        history?: { messages?: { id: string; threadId?: string }[] }[];
+        nextPageToken?: string;
+        historyId?: string;
+      };
+      try {
+        body = await (await googleFetch(
+          credentials,
+          `${GMAIL}/users/me/history?${historyParams}`,
+        )).json() as typeof body;
+      } catch (error) {
+        if (error instanceof GoogleWorkspaceApiError && error.status === 404) {
+          return pullGooglePage(credentials, objectType, null);
+        }
+        throw error;
+      }
+      const messages = (body.history ?? []).flatMap((entry) => entry.messages ?? []);
+      return {
+        records: await readGmailMessages(credentials, messages),
+        nextCursor: body.nextPageToken
+          ? { historyId, pageToken: body.nextPageToken }
+          : { historyId: body.historyId ?? historyId },
+        continueImmediately: Boolean(body.nextPageToken),
+      };
+    }
+    const fullSyncHistoryId = cursorToken(cursor, "fullSyncHistoryId") ??
+      await (async () => {
+        const profile = await (await googleFetch(credentials, `${GMAIL}/users/me/profile`)).json() as { historyId?: string };
+        return profile.historyId ?? null;
+      })();
     const params = new URLSearchParams({ maxResults: "25", ...(token ? { pageToken: token } : {}) });
     const body = (await (await googleFetch(credentials, `${GMAIL}/users/me/messages?${params}`)).json()) as {
       messages?: { id: string; threadId?: string }[];
       nextPageToken?: string;
     };
-    const accessToken = await mintWorkspaceAccessToken("google_workspace", credentials);
-    const details = await Promise.all((body.messages ?? []).map(async (message) => {
-      const detailParams = new URLSearchParams({ format: "metadata" });
-      for (const header of ["From", "To", "Subject", "Date"]) {
-        detailParams.append("metadataHeaders", header);
-      }
-      const response = await fetch(
-        `${GMAIL}/users/me/messages/${encodeURIComponent(message.id)}?${detailParams}`,
-        { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000) },
-      );
-      if (!response.ok) throw new Error(`Gmail message read failed (${response.status}).`);
-      return await response.json() as {
-        id: string;
-        threadId?: string;
-        internalDate?: string;
-        snippet?: string;
-        labelIds?: string[];
-        payload?: { headers?: { name: string; value: string }[] };
-      };
-    }));
+    const nextCursor = body.nextPageToken
+      ? {
+          ...(fullSyncHistoryId ? { fullSyncHistoryId } : {}),
+          pageToken: body.nextPageToken,
+        }
+      : fullSyncHistoryId
+        ? { historyId: fullSyncHistoryId }
+        : null;
     return {
-      records: details.map((message) => {
-        const headers = Object.fromEntries(
-          (message.payload?.headers ?? []).map((header) => [header.name.toLowerCase(), header.value]),
-        );
-        return {
-        objectType: "message" as const,
-        externalId: message.id,
-        externalParentId: message.threadId ?? null,
-        updatedAt: message.internalDate
-          ? new Date(Number(message.internalDate)).toISOString()
-          : null,
-        data: {
-          provider: "gmail",
-          from: headers.from ?? null,
-          to: headers.to ?? null,
-          subject: headers.subject ?? null,
-          preview: message.snippet ?? null,
-          is_read: !(message.labelIds ?? []).includes("UNREAD"),
-        },
-        source: message,
-      }}),
-      nextCursor: body.nextPageToken ? { pageToken: body.nextPageToken } : null,
+      records: await readGmailMessages(credentials, body.messages ?? []),
+      nextCursor,
+      continueImmediately: Boolean(body.nextPageToken),
     };
   }
   throw new Error(`Google Workspace cannot pull ${objectType}.`);

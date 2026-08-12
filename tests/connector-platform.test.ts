@@ -36,6 +36,10 @@ import {
   staleConnectorJobDisposition,
 } from "../lib/integrations/connectors/runtime-policy.ts";
 import {
+  webhookRenewalCutoff,
+  webhookRenewalRetryReady,
+} from "../lib/integrations/connectors/webhook-policy.ts";
+import {
   quickBooksOnlineAdapter,
   mapQuickBooksCustomer,
 } from "../lib/integrations/providers/quickbooks-online.ts";
@@ -62,6 +66,31 @@ test("connector catalog has unique valid manifests", () => {
   for (const manifest of CONNECTOR_CATALOG) {
     assert.deepEqual(validateConnectorManifest(manifest), [], manifest.key);
   }
+});
+
+test("webhook renewal policy renews ahead and backs off failed attempts", () => {
+  const now = Date.parse("2026-08-12T12:00:00.000Z");
+  assert.equal(webhookRenewalCutoff(now), "2026-08-13T12:00:00.000Z");
+  assert.equal(
+    webhookRenewalRetryReady("active", "2026-08-12T11:59:00.000Z", now),
+    true,
+  );
+  assert.equal(
+    webhookRenewalRetryReady("failed", "2026-08-12T11:50:00.000Z", now),
+    false,
+  );
+  assert.equal(
+    webhookRenewalRetryReady("failed", "2026-08-12T11:44:59.000Z", now),
+    true,
+  );
+  assert.equal(
+    webhookRenewalRetryReady("expiring", "2026-08-12T11:50:00.000Z", now),
+    false,
+  );
+  assert.equal(
+    webhookRenewalRetryReady("expiring", "2026-08-12T11:44:59.000Z", now),
+    true,
+  );
 });
 
 test("every verified catalog capability has an executable implementation", () => {
@@ -451,6 +480,67 @@ test("sync executor validates and stores pulled canonical records", async () => 
   assert.equal(outcome.ok, true);
   assert.deepEqual(saved, [{ name: "Jamie", customer_type: "commercial" }]);
   assert.deepEqual(cursor, { after: "external-1" });
+  assert.deepEqual(outcome.ok && outcome.result, {
+    nextCursor: { after: "external-1" },
+    continueImmediately: true,
+  });
+});
+
+test("sync executor preserves a durable cursor without immediately continuing", async () => {
+  let cursor: Record<string, unknown> | null = null;
+  const adapter = {
+    manifest: {
+      key: "checkpoint_fixture",
+      name: "Checkpoint fixture",
+      category: "productivity",
+      description: "Incremental checkpoint fixture.",
+      authStrategy: "oauth2",
+      capabilities: ["message.read"],
+      verificationStatus: "contract_verified",
+      requestable: false,
+    },
+    async testConnection() {
+      return { ok: true, detail: "ok" };
+    },
+    async pullPage() {
+      return {
+        records: [],
+        nextCursor: { deltaLink: "https://provider.test/delta?token=next" },
+        continueImmediately: false,
+      };
+    },
+  } satisfies ConnectorAdapter;
+
+  const outcome = await executeConnectorSyncJob({
+    adapter,
+    context: {
+      connectionId: "connection",
+      partnerId: "partner",
+      clientId: "client",
+      credentials: {},
+      config: {},
+    },
+    job: {
+      id: "job",
+      direction: "pull",
+      objectType: "message",
+      operation: "sync",
+      attempts: 0,
+      maxAttempts: 5,
+      payload: {},
+    },
+    repository: {
+      async saveCanonicalRecord() {},
+      async saveCursor(next) { cursor = next; },
+      async saveObjectLink() {},
+    },
+  });
+
+  assert.deepEqual(cursor, { deltaLink: "https://provider.test/delta?token=next" });
+  assert.deepEqual(outcome.ok && outcome.result, {
+    nextCursor: { deltaLink: "https://provider.test/delta?token=next" },
+    continueImmediately: false,
+  });
 });
 
 test("sync executor rejects malformed push jobs without calling provider", async () => {

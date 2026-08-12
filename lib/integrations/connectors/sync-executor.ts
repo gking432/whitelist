@@ -107,10 +107,12 @@ export async function executeConnectorSyncJob(input: {
       }
 
       await repository.saveCursor(page.nextCursor);
+      const continueImmediately =
+        page.continueImmediately ?? page.nextCursor !== null;
       return {
         ok: true,
         processed: page.records.length,
-        result: { nextCursor: page.nextCursor },
+        result: { nextCursor: page.nextCursor, continueImmediately },
       };
     }
 

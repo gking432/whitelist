@@ -9,6 +9,13 @@ stack.
 
 ## Real today (wired, gated, logged, retryable)
 
+- Google Workspace recurring sync uses People and Calendar sync tokens plus a
+  Gmail history checkpoint instead of repeatedly importing the full account.
+- Microsoft 365 recurring sync follows Microsoft Graph delta links for Outlook
+  contacts, calendar events, and inbox messages.
+- The guarded job runner automatically renews expiring provider webhooks and
+  records failed renewals for retry.
+
 | Area | Status |
 | --- | --- |
 | Inbound intake (webhook/forms/web chat endpoint) | Real — token auth, idempotency, rate limits, redacted logs |

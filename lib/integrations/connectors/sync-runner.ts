@@ -831,6 +831,8 @@ export async function processConnectorSyncJobs(limit = 20) {
           string,
           unknown
         > | null;
+        const continueImmediately =
+          outcome.result.continueImmediately === true;
         await admin.from("integration_sync_jobs").insert({
           partner_id: job.partner_id,
           client_id: job.client_id,
@@ -841,7 +843,7 @@ export async function processConnectorSyncJobs(limit = 20) {
           status: "queued",
           idempotency_key: `continue-${job.id}`,
           payload: nextCursor ? { cursor: nextCursor } : {},
-          scheduled_for: nextCursor
+          scheduled_for: continueImmediately
             ? new Date().toISOString()
             : new Date(Date.now() + 15 * 60 * 1000).toISOString(),
         });
