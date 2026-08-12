@@ -155,29 +155,34 @@ try {
       "Connector-worker image did not enforce its required data configuration.",
     );
   }
+  const hostUser =
+    typeof process.getuid === "function" && typeof process.getgid === "function"
+      ? `${process.getuid()}:${process.getgid()}`
+      : null;
+  const workerRunArgs = ["run", "--rm"];
+  if (hostUser) workerRunArgs.push("--user", hostUser);
+  workerRunArgs.push(
+    "--env",
+    "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:1",
+    "--env",
+    "SUPABASE_SERVICE_ROLE_KEY=release-check-service-key",
+    "--env",
+    "ENABLE_CODEX_CONNECTOR_WORKER=true",
+    "--env",
+    "CODEX_CONNECTOR_WORKSPACE_PATH=/workspace",
+    "--env",
+    "CODEX_CONNECTOR_WORKTREE_ROOT=/worktrees",
+    "--env",
+    "CONNECTOR_WORKER_ONCE=true",
+    "--volume",
+    `${process.cwd()}:/workspace`,
+    "--tmpfs",
+    `/worktrees:rw${hostUser ? `,uid=${process.getuid()},gid=${process.getgid()}` : ""}`,
+    connectorWorkerImage,
+  );
   const workerStartup = spawnSync(
     "docker",
-    [
-      "run",
-      "--rm",
-      "--env",
-      "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:1",
-      "--env",
-      "SUPABASE_SERVICE_ROLE_KEY=release-check-service-key",
-      "--env",
-      "ENABLE_CODEX_CONNECTOR_WORKER=true",
-      "--env",
-      "CODEX_CONNECTOR_WORKSPACE_PATH=/workspace",
-      "--env",
-      "CODEX_CONNECTOR_WORKTREE_ROOT=/worktrees",
-      "--env",
-      "CONNECTOR_WORKER_ONCE=true",
-      "--volume",
-      `${process.cwd()}:/workspace`,
-      "--tmpfs",
-      "/worktrees:rw,uid=1000,gid=1000",
-      connectorWorkerImage,
-    ],
+    workerRunArgs,
     { encoding: "utf8", stdio: "pipe" },
   );
   const workerStartupOutput = `${workerStartup.stdout ?? ""}${workerStartup.stderr ?? ""}`;
