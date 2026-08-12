@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { findCanonicalCallerMatch } from "../lib/crm/canonical-caller.ts";
+import { resolveAssistantOperatingSystem } from "../lib/assistant/operating-system.ts";
 import { normalizePhone, phoneSearchVariants } from "../lib/phone/normalize.ts";
 import {
   signVoiceStreamPayload,
@@ -30,6 +31,41 @@ test("matches formatted caller IDs against synced external customers", () => {
   assert.equal(result?.match.id, "customer-42");
   assert.equal(result?.match.firstname, "Jamie");
   assert.equal(result?.match.lastname, "Rivera");
+});
+
+test("assistant treats a connected field-service system as the CRM target", () => {
+  const result = resolveAssistantOperatingSystem({
+    crmOperatingMode: "external_crm_only",
+    connections: [
+      {
+        status: "connected",
+        runtime_mode: "live",
+        provider: {
+          provider_key: "jobber",
+          category: "field_service",
+          display_name: "Jobber",
+        },
+      },
+    ],
+  });
+
+  assert.equal(result.providerLabel, "Jobber");
+  assert.equal(result.connectionInfo.connected, true);
+  assert.equal(result.connectionInfo.live, true);
+  assert.equal(result.nativeCrmOnly, false);
+  assert.equal(result.supportsNotes, false);
+});
+
+test("assistant uses the built-in CRM when it is the only operating system", () => {
+  const result = resolveAssistantOperatingSystem({
+    crmOperatingMode: "primary_crm",
+    connections: [],
+  });
+
+  assert.equal(result.providerLabel, "Northstar CRM");
+  assert.equal(result.connectionInfo.connected, true);
+  assert.equal(result.nativeCrmOnly, true);
+  assert.equal(result.supportsNotes, true);
 });
 
 test("normalizes common US caller ID formats", () => {

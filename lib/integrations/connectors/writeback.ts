@@ -255,7 +255,9 @@ export async function enqueueLeadConnectorWriteback(
           request_payload: redactAuditValue(plan.data),
           redacted: true,
         });
-      if (previewEventError) throw previewEventError;
+      if (previewEventError && previewEventError.code !== "23505") {
+        throw previewEventError;
+      }
 
       return {
         step: {

@@ -8,6 +8,7 @@ import { syncRunToCrm } from "@/lib/crm/sync-from-run";
 import type { FormState } from "@/lib/forms/state";
 import { resolveAssistantAccess } from "@/lib/assistant/access";
 import { emitAssistantEvent } from "@/lib/assistant/events";
+import { enqueueLeadConnectorWriteback } from "@/lib/integrations/connectors/writeback";
 import { isAccessError } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -38,7 +39,11 @@ async function requireAssistantContext(clientId: string) {
   }
 
   // Partner operators AND the client's own owner/manager/staff may act.
-  const access = await resolveAssistantAccess(authState.user.id, clientId, "write");
+  const access = await resolveAssistantAccess(
+    authState.user.id,
+    clientId,
+    "write",
+  );
 
   const supabase = await createSupabaseServerClient();
 
@@ -274,9 +279,9 @@ export async function markLatestLeadLowValue(
   }
 }
 
-// Sync to CRM: re-runs the additive contact + AI-note sync for the latest
-// lead-bearing run. Same safe path the engine uses (dry run unless the CRM
-// connection is live; never destructive).
+// Re-runs the guarded operating-system push for the latest lead. CRM
+// connectors get additive contact/note sync; field-service connectors get
+// their capability-correct durable queue path.
 export async function resyncLatestLeadToCrm(
   clientId: string,
 ): Promise<FormState> {
@@ -292,24 +297,32 @@ export async function resyncLatestLeadToCrm(
     const { data: runs } = await supabase
       .from("workflow_runs")
       .select(
-        "id, summary, input_snapshot, template:workflow_templates!inner(template_key)",
+        "id, summary, input_snapshot, output_snapshot, template:workflow_templates!inner(template_key)",
       )
       .eq("client_id", clientId)
       .in("template.template_key", ["new_lead_intake", "ai_intake_router"])
       .order("started_at", { ascending: false })
-      .limit(1);
+      .limit(10);
 
-    const run = (runs ?? [])[0] as unknown as
-      | {
-          id: string;
-          summary: string | null;
-          input_snapshot: {
-            event_type?: string;
-            data?: Record<string, unknown>;
-          } | null;
-          template: { template_key: string } | null;
-        }
-      | undefined;
+    const candidateRuns = (runs ?? []) as unknown as {
+      id: string;
+      summary: string | null;
+      input_snapshot: {
+        event_type?: string;
+        data?: Record<string, unknown>;
+      } | null;
+      output_snapshot: {
+        internal_crm?: {
+          contact_id?: string;
+          lead_id?: string;
+        };
+      } | null;
+      template: { template_key: string } | null;
+    }[];
+    const run =
+      candidateRuns.find(
+        (candidate) => candidate.template?.template_key === "new_lead_intake",
+      ) ?? candidateRuns[0];
 
     if (!run) {
       return {
@@ -333,7 +346,7 @@ export async function resyncLatestLeadToCrm(
       .eq("id", clientId)
       .maybeSingle();
 
-    const outcome = await syncRunToCrm(admin, {
+    const syncInput = {
       partnerId,
       clientId,
       runId: run.id,
@@ -341,24 +354,38 @@ export async function resyncLatestLeadToCrm(
       clientName: client?.name ?? "the business",
       eventType: run.input_snapshot?.event_type ?? "assistant.manual_sync",
       eventData: run.input_snapshot?.data ?? {},
-      runSummary:
-        run.summary ?? "Manual CRM sync from the assistant console.",
-    });
+      runSummary: run.summary ?? "Manual CRM sync from the assistant console.",
+    };
+    const crmOutcome = await syncRunToCrm(admin, syncInput);
+    const connectorOutcome = crmOutcome
+      ? null
+      : await enqueueLeadConnectorWriteback(admin, {
+          partnerId,
+          clientId,
+          workflowRunId: run.id,
+          templateKey: run.template?.template_key ?? "new_lead_intake",
+          eventType: syncInput.eventType,
+          eventData: syncInput.eventData,
+          runSummary: syncInput.runSummary,
+          contactId: run.output_snapshot?.internal_crm?.contact_id ?? null,
+          leadId: run.output_snapshot?.internal_crm?.lead_id ?? null,
+        });
+    const outcome = crmOutcome ?? connectorOutcome;
 
     if (!outcome) {
       return {
         status: "error",
         message:
-          "No connected CRM was found. Connect HubSpot in the Setup checklist first.",
+          "No connected CRM or field-service system was found. Connect the client's operating system in Setup first.",
       };
     }
 
     await recordAuditEvent({
       actor: access,
-      action: "assistant.crm_sync_triggered",
+      action: "assistant.operating_system_push_triggered",
       targetType: "workflow_run",
       targetId: run.id,
-      summary: `Manually triggered CRM sync from the assistant console. Result: ${outcome.step.name}.`,
+      summary: `Manually pushed the latest lead from the assistant console. Result: ${outcome.step.name}.`,
       metadata: { source: "staff_assistant_console" },
     });
 
@@ -367,7 +394,10 @@ export async function resyncLatestLeadToCrm(
 
     return {
       status:
-        outcome.step.name === "CRM sync failed" ? "error" : "success",
+        ("writeback" in outcome && outcome.writeback.status === "failed") ||
+        outcome.step.name === "CRM sync failed"
+          ? "error"
+          : "success",
       message: outcome.step.detail,
     };
   } catch (error) {

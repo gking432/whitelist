@@ -7,6 +7,11 @@ import {
 } from "@/lib/packages/capabilities";
 import type { PartnerPackageRecord } from "@/lib/packages/requirements";
 
+import {
+  resolveAssistantOperatingSystem,
+  type AssistantOperatingConnection,
+} from "./operating-system.ts";
+
 // ---------------------------------------------------------------------------
 // Staff Assistant Console context (docs/15).
 //
@@ -115,7 +120,7 @@ export type AssistantContextData = {
     approvalStatus: string | null;
   } | null;
   crm: {
-    status: "synced" | "dry_run" | "failed" | "skipped" | "none";
+    status: "synced" | "queued" | "dry_run" | "failed" | "skipped" | "none";
     contactId: string | null;
     providerLabel: string;
     detail: string;
@@ -227,6 +232,9 @@ function buildActions(input: {
   canManageSetup: boolean;
   capabilities: Set<CapabilityKey>;
   crmConn: ConnectionInfo;
+  crmProviderLabel: string;
+  nativeCrm: boolean;
+  crmNotesSupported: boolean;
   smsConn: ConnectionInfo;
   calendarConn: ConnectionInfo;
   emailConn: ConnectionInfo;
@@ -241,6 +249,9 @@ function buildActions(input: {
     canManageSetup,
     capabilities,
     crmConn,
+    crmProviderLabel,
+    nativeCrm,
+    crmNotesSupported,
     smsConn,
     calendarConn,
     emailConn,
@@ -368,9 +379,14 @@ function buildActions(input: {
     });
   }
 
-  // Add CRM note — real, but automatic (attached with every sync).
+  const pushLabel = nativeCrm ? "Open CRM" : `Push to ${crmProviderLabel}`;
+
+  // Add CRM note — automatic for native CRM connectors that support notes.
   if (!capabilities.has("crm_sync")) {
     actions.push(notInPackage("add_crm_note", "Add CRM note"));
+  } else if (!crmNotesSupported) {
+    // Capability-aware field-service connectors still receive the customer
+    // or lead, but the popup must not promise a note operation they lack.
   } else if (!crmConn.connected) {
     actions.push({
       key: "add_crm_note",
@@ -389,20 +405,21 @@ function buildActions(input: {
       label: "Add CRM note",
       state: "works_now",
       stateLabel: "Works now",
-      detail:
-        'An "AI Assistant" note is attached automatically with every CRM sync — use Sync to CRM to push the latest.',
+      detail: nativeCrm
+        ? "AI notes and customer activity are saved automatically in the built-in CRM."
+        : `Customer details and AI context are sent through the ${crmProviderLabel} connection according to its supported capabilities.`,
       href: null,
       enabled: false,
     });
   }
 
-  // Sync to CRM — real manual action (re-runs the additive contact+note sync).
+  // Manual push uses the same guarded CRM/field-service path as automation.
   if (!capabilities.has("crm_sync")) {
-    actions.push(notInPackage("sync_to_crm", "Sync to CRM"));
+    actions.push(notInPackage("sync_to_crm", pushLabel));
   } else if (!crmConn.connected) {
     actions.push({
       key: "sync_to_crm",
-      label: "Sync to CRM",
+      label: pushLabel,
       state: "requires_connection",
       stateLabel: "Requires CRM",
       detail: canManageSetup
@@ -414,15 +431,17 @@ function buildActions(input: {
   } else {
     actions.push({
       key: "sync_to_crm",
-      label: "Sync to CRM",
+      label: pushLabel,
       state: crmConn.live ? "works_now" : "dry_run",
       stateLabel: crmConn.live ? "Works now" : "Dry run",
       detail: hasLeadBearingRun
-        ? crmConn.live
-          ? "Pushes the latest lead's contact + AI note to HubSpot again (additive only)."
-          : "Rebuilds the exact HubSpot payload as a dry run — switch HubSpot to live to sync for real."
+        ? nativeCrm
+          ? "Customer details and AI activity are already saved in the built-in CRM."
+          : crmConn.live
+            ? `Pushes the latest customer details and AI context to ${crmProviderLabel} using only the operations that connection supports.`
+            : `Builds the exact ${crmProviderLabel} payload without sending it. Switch the connection to live to push for real.`
         : "No lead has come through yet, so there is nothing to sync.",
-      href: null,
+      href: nativeCrm ? `${base}/crm` : null,
       enabled: hasLeadBearingRun,
     });
   }
@@ -494,6 +513,7 @@ export async function buildAssistantContext(
 
   const [
     { data: packageData },
+    { data: deploymentData },
     { data: connectionsData },
     { data: runsData },
     { data: approvalsData },
@@ -509,10 +529,20 @@ export async function buildAssistantContext(
           .eq("id", client.package_id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    client.package_id
+      ? supabase
+          .from("client_package_deployments")
+          .select("package_name, capabilities_snapshot")
+          .eq("client_id", client.id)
+          .eq("package_id", client.package_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
     supabase
       .from("integration_connections")
       .select(
-        "id, status, runtime_mode, provider:integration_providers(provider_key, category, display_name, supports_inbound)",
+        "id, status, runtime_mode, provider:integration_providers(provider_key, category, display_name, supports_inbound, native_capabilities)",
       )
       .eq("client_id", client.id),
     supabase
@@ -560,18 +590,17 @@ export async function buildAssistantContext(
   ]);
 
   const pkg = packageData as PartnerPackageRecord | null;
+  const deployment = deploymentData as {
+    package_name: string;
+    capabilities_snapshot: Record<string, unknown>;
+  } | null;
   const capabilities = new Set<CapabilityKey>(
-    pkg ? enabledCapabilityKeys(pkg.capabilities) : [],
+    enabledCapabilityKeys(
+      pkg?.capabilities ?? deployment?.capabilities_snapshot ?? {},
+    ),
   );
-  const connections = (connectionsData ?? []) as unknown as {
-    status: string;
-    runtime_mode: string;
-    provider: {
-      provider_key: string;
-      category: string;
-      display_name: string;
-    } | null;
-  }[];
+  const connections = (connectionsData ??
+    []) as unknown as AssistantOperatingConnection[];
 
   const connFor = (providerKey: string): ConnectionInfo => {
     const connection = connections.find(
@@ -599,13 +628,14 @@ export async function buildAssistantContext(
     };
   };
 
-  const crmConn = connForCategory("crm");
-  const crmProviderLabel =
-    connections.find(
-      (candidate) =>
-        candidate.provider?.category === "crm" &&
-        ["connected", "needs_attention"].includes(candidate.status),
-    )?.provider?.display_name ?? "Northstar CRM";
+  const operatingSystem = resolveAssistantOperatingSystem({
+    crmOperatingMode: client.crm_operating_mode,
+    connections,
+  });
+  const operatingConnection = operatingSystem.connection;
+  const crmConn = operatingSystem.connectionInfo;
+  const crmProviderLabel = operatingSystem.providerLabel;
+  const nativeCrmOnly = operatingSystem.nativeCrmOnly;
   const smsConn = connFor("twilio");
   const calendarConn =
     ["google_workspace", "microsoft_365", "google_calendar"]
@@ -871,29 +901,48 @@ export async function buildAssistantContext(
     };
   }
 
-  // CRM sync status from the latest lead-bearing run's crm snapshot.
+  // CRM and field-service connector outcomes share one operating-system
+  // status in the assistant.
   const crmSnapshot = leadBearingRun?.output_snapshot?.crm as
     { status?: string; contact_id?: string } | undefined;
-  const crmStatus = (crmSnapshot?.status ?? "none") as
-    "synced" | "dry_run" | "failed" | "skipped" | "none";
+  const connectorSnapshot = analysisRun?.output_snapshot
+    ?.connector_writeback as
+    | {
+        status?: string;
+        external_object_id?: string;
+      }
+    | undefined;
+  const activeSyncSnapshot = operatingConnection
+    ? operatingConnection.provider?.category === "field_service"
+      ? connectorSnapshot
+      : crmSnapshot
+    : (crmSnapshot ?? connectorSnapshot);
+  const crmStatus = (activeSyncSnapshot?.status ?? "none") as
+    "synced" | "queued" | "dry_run" | "failed" | "skipped" | "none";
 
   const crm: AssistantContextData["crm"] = {
-    status: crmSnapshot ? crmStatus : "none",
-    contactId: asString(crmSnapshot?.contact_id),
+    status: activeSyncSnapshot ? crmStatus : "none",
+    contactId:
+      asString(crmSnapshot?.contact_id) ??
+      asString(connectorSnapshot?.external_object_id),
     providerLabel: crmProviderLabel,
     detail: !capabilities.has("crm_sync")
       ? "CRM sync is not part of this package."
-      : !crmConn.connected
-        ? "No external CRM connected — contacts stay in the built-in CRM."
-        : crmStatus === "synced"
-          ? `Contact is in ${crmProviderLabel}${crmSnapshot?.contact_id ? ` (${crmSnapshot.contact_id})` : ""} with an AI Assistant note.`
-          : crmStatus === "dry_run"
-            ? `Dry run — the exact ${crmProviderLabel} payload was built but not sent. Switch the connection to live to sync for real.`
-            : crmStatus === "failed"
-              ? `The last CRM sync failed — check the ${crmProviderLabel} connection in Setup.`
-              : crmStatus === "skipped"
-                ? "Sync skipped — the lead had no email or phone to match on."
-                : "No lead has synced yet.",
+      : nativeCrmOnly
+        ? "Customer details and AI activity save automatically in the built-in CRM."
+        : !crmConn.connected
+          ? "No external CRM connected — contacts stay in the built-in CRM."
+          : crmStatus === "synced"
+            ? `Contact is in ${crmProviderLabel}${crmSnapshot?.contact_id ? ` (${crmSnapshot.contact_id})` : ""} with an AI Assistant note.`
+            : crmStatus === "queued"
+              ? `The latest record is queued for delivery to ${crmProviderLabel}. Connector delivery is retry protected and logged.`
+              : crmStatus === "dry_run"
+                ? `Dry run — the exact ${crmProviderLabel} payload was built but not sent. Switch the connection to live to sync for real.`
+                : crmStatus === "failed"
+                  ? `The last CRM sync failed — check the ${crmProviderLabel} connection in Setup.`
+                  : crmStatus === "skipped"
+                    ? "Sync skipped — the lead had no email or phone to match on."
+                    : "No lead has synced yet.",
   };
 
   const pendingSmsApprovalId =
@@ -962,6 +1011,9 @@ export async function buildAssistantContext(
     canManageSetup: audience === "partner",
     capabilities,
     crmConn,
+    crmProviderLabel,
+    nativeCrm: nativeCrmOnly,
+    crmNotesSupported: operatingSystem.supportsNotes,
     smsConn,
     calendarConn,
     emailConn,
@@ -1034,7 +1086,7 @@ export async function buildAssistantContext(
     clientId: client.id,
     clientName: client.name,
     basePath: base,
-    packageName: pkg?.name ?? null,
+    packageName: pkg?.name ?? deployment?.package_name ?? null,
     interaction,
     transcript: activeCallTurns
       .filter(
