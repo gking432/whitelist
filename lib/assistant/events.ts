@@ -2,9 +2,9 @@ import { redactAuditValue } from "@/lib/audit/redact";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 // Live assistant event contract (docs/18). One append-only feed per client
-// that assistant surfaces consume: the web console reads it in context +
-// via GET /api/assistant/events (polling); future desktop tray/browser
-// extension/CRM overlay runtimes subscribe the same way (SSE/WebSocket is
+// that assistant surfaces consume: the web console and desktop tray read it
+// via GET /api/assistant/events (polling); a future browser extension or
+// CRM-native overlay can subscribe to the same contract (SSE/WebSocket is
 // the documented next step). Emission is best-effort — an event-log
 // failure must never break the action that caused it.
 

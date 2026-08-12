@@ -13,7 +13,7 @@ import {
 // Turns the partner's plain-language answers into a ranked setup plan per
 // lead source. Pure function: UI previews it live and the server stores the
 // same result. The first path that is available today becomes "recommended";
-// coming-soon paths stay visible so partners see where the product is going.
+// provider-restricted and unfinished paths remain clearly labeled.
 
 export type PathRecommendation = {
   path: SetupPathKey;
@@ -64,10 +64,17 @@ const pathActions: Partial<
     hrefSuffix: "/integrations/new",
   },
   manual_entry: {
-    label: "Create webhook intake connection",
-    hrefSuffix: "/integrations/new",
+    label: "Add a lead",
+    hrefSuffix: "/crm?view=pipeline&new=1",
   },
 };
+
+const LIVE_NATIVE_SOURCES = new Set<LeadSourceKey>([
+  "phone_calls",
+  "paid_ads",
+  "email",
+  "sms",
+]);
 
 function pathsForSource(
   source: LeadSourceKey,
@@ -81,17 +88,24 @@ function pathsForSource(
     const isLiveWebsiteChatPath =
       source === "website_chat" &&
       (path === "hosted_page" || path === "website_snippet");
-    const isLiveSmsPath = source === "sms" && path === "native_connection";
+    const isLiveNativePath =
+      path === "native_connection" && LIVE_NATIVE_SOURCES.has(source);
     const status =
-      isLiveWebsiteChatPath || isLiveSmsPath
+      isLiveWebsiteChatPath || isLiveNativePath
         ? "available_now"
         : info.status;
     const howItWorksToday = isLiveWebsiteChatPath
       ? path === "hosted_page"
         ? "Create a Northstar Website Chat connection, enable its widget key, and share the generated hosted chat URL. Completed conversations enter the normal intake workflows."
         : "Create a Northstar Website Chat connection, enable its widget key, and paste the generated iframe snippet into the client's site."
-      : isLiveSmsPath
-        ? "Add a Twilio SMS connection and point the Twilio inbound-message webhook at Northstar. Replies remain approval-gated and respect dry-run/live mode."
+      : isLiveNativePath
+        ? source === "phone_calls"
+          ? "Provision a managed Twilio number for native AI answering, callbacks, SMS, and live staff assistance. A retained RingCentral, Dialpad, or Quo number can send the call events its API exposes."
+          : source === "paid_ads"
+            ? "Connect Meta or Google Ads. Northstar imports supported lead and campaign data; marketplace leads without approved API access use the private forwarded lead inbox."
+            : source === "email"
+              ? "Connect Google Workspace or Microsoft 365, or use the client's private forwarded lead inbox. New messages enter the normal intake workflows."
+              : "Add a Twilio SMS connection and point the Twilio inbound-message webhook at Northstar. Replies remain approval-gated and respect dry-run/live mode."
         : info.howItWorksToday;
 
     const blockedReason =
@@ -163,7 +177,7 @@ export function recommendSetupPlan(answers: IntakeAnswers): SetupPlan {
 
   if (answers.hasPhoneProvider === "yes") {
     stackNotes.push(
-      "Existing phone provider — forward missed-call events through a bridge now; AI answering connects to supported providers later.",
+      "Existing phone provider — keep it for supported call events and post-call workflows, or forward calls to a managed Twilio number when the package includes native AI answering and live scheduling assistance.",
     );
   }
 

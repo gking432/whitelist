@@ -12,7 +12,7 @@ export default async function PartnerClientCrmPage({
   searchParams,
 }: {
   params: Promise<{ clientId: string }>;
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; new?: string }>;
 }) {
   const { clientId } = await params;
   const workspace = await loadClientWorkspace(clientId);
@@ -37,6 +37,7 @@ export default async function PartnerClientCrmPage({
       approvalsPath={`/partner/clients/${clientId}/approvals`}
       assistantPath={`/partner/clients/${clientId}/assistant`}
       data={data}
+      showNewLead={query.new === "1"}
     />
   );
 }

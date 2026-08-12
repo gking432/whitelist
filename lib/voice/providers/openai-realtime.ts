@@ -108,8 +108,8 @@ ${buildKnowledgeBlock(context.clientName, context.knowledge)}`;
 
 // ---------------------------------------------------------------------------
 // Ephemeral session minting (GA API with beta fallback, adapted from the
-// demo). Used by future browser call windows and SIP bridges — the caller
-// gets a short-lived client secret, never the API key.
+// demo). Used by authenticated browser call surfaces and future direct SIP
+// adapters — the caller gets a short-lived client secret, never the API key.
 // ---------------------------------------------------------------------------
 
 export type RealtimeMint = {

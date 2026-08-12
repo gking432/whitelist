@@ -55,3 +55,53 @@ test("Twilio is an available native path for text-message intake", () => {
   assert.equal(native?.recommended, true);
   assert.match(native?.howItWorksToday ?? "", /Twilio SMS/);
 });
+
+test("managed Twilio is an available native path for phone calls", () => {
+  const plan = recommendSetupPlan(
+    answers({
+      leadSources: ["phone_calls"],
+      hasPhoneProvider: "yes",
+    }),
+  );
+  const native = plan.sources[0]?.paths.find(
+    (path) => path.path === "native_connection",
+  );
+
+  assert.equal(native?.status, "available_now");
+  assert.equal(native?.recommended, true);
+  assert.match(native?.howItWorksToday ?? "", /managed Twilio number/);
+  assert.ok(
+    plan.stackNotes.some((note) =>
+      note.includes("native AI answering and live scheduling assistance"),
+    ),
+  );
+});
+
+test("manual entry opens the real built-in CRM lead form", () => {
+  const plan = recommendSetupPlan(
+    answers({ leadSources: ["manual_entry"] }),
+  );
+  const manual = plan.sources[0]?.paths.find(
+    (path) => path.path === "manual_entry",
+  );
+
+  assert.equal(manual?.status, "available_now");
+  assert.equal(manual?.recommended, true);
+  assert.deepEqual(manual?.action, {
+    label: "Add a lead",
+    hrefSuffix: "/crm?view=pipeline&new=1",
+  });
+  assert.match(manual?.howItWorksToday ?? "", /built-in CRM pipeline/);
+});
+
+test("Google Business Profile lead intake stays honest without a direct lead API", () => {
+  const plan = recommendSetupPlan(
+    answers({ leadSources: ["google_business_profile"] }),
+  );
+  const native = plan.sources[0]?.paths.find(
+    (path) => path.path === "native_connection",
+  );
+
+  assert.equal(native?.status, "coming_soon");
+  assert.equal(native?.action, null);
+});

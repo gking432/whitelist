@@ -133,7 +133,7 @@ export const setupPathInfo: Record<
     status: "coming_soon",
     requiresWebsiteAccess: false,
     howItWorksToday:
-      "Northstar directly supports HubSpot and GoHighLevel sync, Twilio SMS, Resend email, and Google Calendar. Other providers use an automation bridge or webhook; real voice still requires a carrier bridge.",
+      "Northstar has direct setup for its supported phone, messaging, calendar, CRM, advertising, and lead-inbox providers. Restricted marketplaces and unlisted systems use forwarded email, a bridge, or a webhook.",
   },
   platform_plugin: {
     label: "Website app / plugin",
@@ -160,7 +160,7 @@ export const setupPathInfo: Record<
     status: "coming_soon",
     requiresWebsiteAccess: false,
     howItWorksToday:
-      "Hosted forms, chat, and booking pages are planned. They will use this client's intake connection automatically.",
+      "Hosted website chat is available now. Standalone hosted forms and booking pages are planned; existing forms can use the secure intake webhook today.",
   },
   website_snippet: {
     label: "Copy/paste website snippet",
@@ -169,7 +169,7 @@ export const setupPathInfo: Record<
     status: "coming_soon",
     requiresWebsiteAccess: true,
     howItWorksToday:
-      "The embed snippet (including the AI chat assistant) is planned and will attach to this client's web chat intake connection.",
+      "The AI chat iframe snippet is available now. Native platform-specific apps and plugins are planned.",
   },
   generic_webhook: {
     label: "Webhook / API",
@@ -187,7 +187,7 @@ export const setupPathInfo: Record<
     status: "available_now",
     requiresWebsiteAccess: false,
     howItWorksToday:
-      "Keep logging leads wherever the client does today and forward them via the webhook connection (an office admin or bridge tool can post them). A built-in entry form is planned.",
+      "Open the client's built-in CRM pipeline and use Add lead. The record immediately enters the same CRM and workflow system as connected leads.",
   },
 };
 
@@ -247,7 +247,7 @@ export const sourceSetupNotes: Partial<Record<LeadSourceKey, string>> = {
   website_chat:
     "The Northstar AI chat assistant answers visitors, collects lead details, qualifies the request, and routes it — every conversation lands here as an intake event.",
   phone_calls:
-    "Start with missed-call events (most phone systems can forward them through a bridge). AI answering and tracking numbers arrive with the voice rollout.",
+    "Managed Twilio numbers support native AI answering, outbound AI callbacks, SMS, and the live scheduling assistant. Retained phone systems use their supported call events or a bridge for caller matching and post-call workflows.",
   google_business_profile:
     "Google listings work best with tracking numbers and booking/contact links plus supported Google connections — not website code.",
   manual_entry:

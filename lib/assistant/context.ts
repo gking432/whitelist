@@ -17,10 +17,9 @@ import {
 // Staff Assistant Console context (docs/15).
 //
 // This module is the CONTRACT between Northstar's data and the assistant
-// surface. The current surface is a web page inside the partner app, but the
-// same AssistantContext is designed to be serialized to a future desktop
-// tray app, browser extension, or CRM-native overlay — those runtimes render
-// the same object; only the window chrome changes. Keep it JSON-serializable
+// surface. The web console and Electron desktop tray both consume the same
+// AssistantContext; a browser extension or CRM-native overlay can do the
+// same later. Only the window chrome changes. Keep it JSON-serializable
 // and free of framework types.
 // ---------------------------------------------------------------------------
 

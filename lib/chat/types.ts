@@ -1,6 +1,5 @@
-// Website AI chat assistant — CONTRACT ONLY (docs/12 "Website AI Chat
-// Assistant"). The widget/embed ships later; this file fixes the shape so
-// the chat layer plugs into what exists today:
+// Website AI chat assistant contract (docs/12 "Website AI Chat
+// Assistant"). The hosted widget and iframe embed both use this shape:
 //
 // - Every chat connection is an inbound-capable integration connection
 //   (provider "northstar_web_chat") with a generated endpoint + credential

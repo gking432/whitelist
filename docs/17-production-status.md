@@ -119,8 +119,10 @@ preview, runtime modes, provider status) are untouched. Verified with
 
 Remaining visual debt: run-detail and audit pages could use the same
 density treatment; dark mode does not exist; the client portal could
-surface partner logo/colors once branding assets are stored; small-screen
-layouts are explicitly not designed yet (desktop-first by decision).
+surface partner logo/colors once branding assets are stored. Responsive
+owner, client CRM, lightweight client portal, partner, onboarding, and
+desktop-assistant layouts have been viewport-checked; the CRM remains
+deliberately desktop-dense and uses horizontal scrolling for its pipeline.
 
 ## Verification commands
 
