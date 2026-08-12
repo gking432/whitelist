@@ -21,6 +21,10 @@ import {
 import type { FormState } from "@/lib/forms/state";
 import { isAccessError } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  startOutboundAiCallback,
+  type OutboundCallbackReason,
+} from "@/lib/voice/outbound";
 import { runWorkflowsForEvent } from "@/lib/workflows/engine";
 
 type ActionContext = {
@@ -188,6 +192,51 @@ async function audit(
     summary,
     metadata: { source: "northstar_crm" },
   });
+}
+
+export async function startCrmAiCallback(input: {
+  clientId: string;
+  contactId: string;
+  reason: OutboundCallbackReason;
+}): Promise<FormState> {
+  const context = await actionContext(input.clientId, "customer_action");
+  if ("status" in context) return context;
+
+  if (context.access.isImpersonating) {
+    return result(
+      "Real customer calls are disabled while viewing a spoofed account.",
+      "error",
+    );
+  }
+
+  if (!validUuid(input.contactId)) {
+    return result("Choose a customer with a valid phone number.", "error");
+  }
+  if (!["lead_callback", "reschedule", "reminder"].includes(input.reason)) {
+    return result("Choose a valid reason for the call.", "error");
+  }
+
+  const call = await startOutboundAiCallback(context.admin, {
+    partnerId: context.partnerId,
+    clientId: context.clientId,
+    contactId: input.contactId,
+    reason: input.reason,
+    authorizedByUserId: context.access.userId,
+  });
+
+  if (!call.ok) return result(call.error, "error");
+
+  await audit(
+    context,
+    "voice.outbound_callback_started",
+    "call_session",
+    call.callSessionId,
+    `Authorized an AI ${input.reason.replaceAll("_", " ")} call from the CRM.`,
+  );
+  revalidateCrm(context.clientId);
+  return result(
+    "AI callback started. Its live transcript and result will appear in Call history.",
+  );
 }
 
 async function findAppointmentConflict(

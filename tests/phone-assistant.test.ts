@@ -4,7 +4,11 @@ import test from "node:test";
 
 import { findCanonicalCallerMatch } from "../lib/crm/canonical-caller.ts";
 import { resolveAssistantOperatingSystem } from "../lib/assistant/operating-system.ts";
-import { normalizePhone, phoneSearchVariants } from "../lib/phone/normalize.ts";
+import {
+  normalizePhone,
+  phoneSearchVariants,
+  toE164Phone,
+} from "../lib/phone/normalize.ts";
 import {
   signVoiceStreamPayload,
   signVoiceStreamSession,
@@ -33,10 +37,7 @@ const voiceProtocol = require("../services/voice-stream/protocol.cjs") as {
     audioEndMs: number,
   ) => Record<string, unknown>;
   twilioClear: (streamSid: string) => Record<string, unknown>;
-  twilioMedia: (
-    streamSid: string,
-    payload: string,
-  ) => Record<string, unknown>;
+  twilioMedia: (streamSid: string, payload: string) => Record<string, unknown>;
 };
 
 test("matches formatted caller IDs against synced external customers", () => {
@@ -101,6 +102,12 @@ test("normalizes common US caller ID formats", () => {
   assert.equal(normalizePhone("+1 (312) 555-0199"), "3125550199");
   assert.equal(normalizePhone("312.555.0199"), "3125550199");
   assert.equal(normalizePhone("123"), null);
+});
+
+test("converts ordinary CRM phone formats to Twilio E.164 destinations", () => {
+  assert.equal(toE164Phone("(312) 555-0199"), "+13125550199");
+  assert.equal(toE164Phone("+44 20 7946 0958"), "+442079460958");
+  assert.equal(toE164Phone("555-0199"), null);
 });
 
 test("builds useful CRM phone search variants without duplicates", () => {
@@ -178,7 +185,10 @@ test("AI TwiML starts an authenticated bidirectional stream with speech fallback
     fallbackSpeech: "The live assistant was interrupted.",
   });
 
-  assert.match(xml, /<Connect><Stream url="wss:\/\/voice\.example\.test\/twilio">/);
+  assert.match(
+    xml,
+    /<Connect><Stream url="wss:\/\/voice\.example\.test\/twilio">/,
+  );
   assert.match(xml, /name="mode" value="ai_answered"/);
   assert.match(xml, /name="streamToken" value="signed-token"/);
   assert.match(xml, /<\/Connect><Gather input="speech"/);

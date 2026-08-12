@@ -70,6 +70,7 @@ export async function createCallSession(
     toNumber?: string | null;
     externalRef?: string | null;
     handlingMode?: "ai_answered" | "staff_assisted";
+    contactPhone?: string | null;
   },
 ): Promise<{ callSessionId: string } | null> {
   // Disclosure mode comes from the client's knowledge profile so the
@@ -79,7 +80,7 @@ export async function createCallSession(
   const caller = await resolveCallerContact(admin, {
     partnerId: input.partnerId,
     clientId: input.clientId,
-    phone: input.fromNumber,
+    phone: input.contactPhone ?? input.fromNumber,
   });
   const matchedContactId = caller.contactId;
   const handlingMode = input.handlingMode ?? "ai_answered";
@@ -121,7 +122,14 @@ export async function createCallSession(
     eventType: "active_call_started",
     payload: {
       direction: input.direction ?? "inbound",
-      from_number: input.fromNumber ?? null,
+      from_number:
+        input.direction === "outbound"
+          ? (input.toNumber ?? null)
+          : (input.fromNumber ?? null),
+      customer_number:
+        input.direction === "outbound"
+          ? (input.toNumber ?? null)
+          : (input.fromNumber ?? null),
       matched_contact_id: matchedContactId,
       handling_mode: handlingMode,
       caller_resolution: caller.status,
@@ -327,12 +335,11 @@ Summarize this call.`,
     return typeof value === "string" && value.trim() ? value.trim() : null;
   };
   const collectedUrgency = collectedString("urgency");
+  const customerPhone =
+    session.direction === "outbound" ? session.to_number : session.from_number;
   const mergedExtracted: CallSummary["extracted"] = {
     name: summary.extracted.name ?? collectedString("name"),
-    phone:
-      summary.extracted.phone ??
-      collectedString("phone") ??
-      session.from_number,
+    phone: summary.extracted.phone ?? collectedString("phone") ?? customerPhone,
     email: summary.extracted.email ?? collectedString("email"),
     address: summary.extracted.address ?? collectedString("address"),
     service_need:
@@ -425,7 +432,7 @@ Summarize this call.`,
   // CRM sync posts the clean note (never the raw transcript).
   const eventData: Record<string, unknown> = {
     name: summary.extracted.name,
-    phone: summary.extracted.phone ?? session.from_number,
+    phone: summary.extracted.phone ?? customerPhone,
     email: summary.extracted.email,
     address: summary.extracted.address,
     message: summary.crm_note,
@@ -459,7 +466,7 @@ Summarize this call.`,
       partner_id: session.partner_id,
       client_id: session.client_id,
       connection_id: session.connection_id,
-      direction: "inbound",
+      direction: session.direction === "outbound" ? "outbound" : "inbound",
       event_type: "call.completed",
       status: "received",
       idempotency_key: `call-session-${callSessionId}`,

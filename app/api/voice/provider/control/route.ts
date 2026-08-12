@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { redactAuditValue } from "@/lib/audit/redact";
+import { readProviderCredentials } from "@/lib/integrations/credentials";
+import {
+  completeTwilioCall,
+  type TwilioCredentials,
+} from "@/lib/integrations/providers/twilio";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { loadVoiceRuntimeBootstrap } from "@/lib/voice/runtime";
 import { verifyVoiceStreamPayload } from "@/lib/voice/stream-signature";
@@ -20,9 +25,14 @@ const ToolSchema = z.object({
   name: z.string().trim().min(1).max(100),
   arguments: z.record(z.string(), z.unknown()),
 });
+const EndSchema = z.object({
+  action: z.literal("end"),
+  call_session_id: z.string().uuid(),
+});
 const ControlSchema = z.discriminatedUnion("action", [
   BootstrapSchema,
   ToolSchema,
+  EndSchema,
 ]);
 
 function json(status: number, body: Record<string, unknown>) {
@@ -82,6 +92,28 @@ export async function POST(request: NextRequest) {
       transcription_model: runtime.transcriptionModel,
       tools: runtime.tools,
     });
+  }
+
+  if (parsed.data.action === "end") {
+    if (!runtime.providerCallRef?.startsWith("CA")) {
+      return json(503, { error: "The carrier call is not ready to end." });
+    }
+
+    const credentials = await readProviderCredentials<TwilioCredentials>(
+      admin,
+      runtime.connectionId,
+    );
+
+    if (!credentials?.accountSid || !credentials.authToken) {
+      return json(503, { error: "Twilio credentials are unavailable." });
+    }
+
+    try {
+      await completeTwilioCall(credentials, runtime.providerCallRef);
+      return json(200, { ended: true });
+    } catch {
+      return json(502, { error: "Twilio could not end the call." });
+    }
   }
 
   const { data: claimed, error: claimError } = await admin

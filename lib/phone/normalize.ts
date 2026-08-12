@@ -10,6 +10,20 @@ export function normalizePhone(value: string | null | undefined): string | null 
   return digits.length >= 7 ? digits : null;
 }
 
+export function toE164Phone(value: string | null | undefined): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, "");
+
+  if (trimmed.startsWith("+") && digits.length >= 8 && digits.length <= 15) {
+    return `+${digits}`;
+  }
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
+
 export function phoneSearchVariants(
   value: string | null | undefined,
 ): string[] {

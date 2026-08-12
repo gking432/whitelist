@@ -2,9 +2,82 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  completeTwilioCall,
+  createOutboundCall,
   provisionManagedTwilioNumber,
   testTwilioParentAccount,
 } from "../lib/integrations/providers/twilio.ts";
+
+test("Twilio outbound calls use the client number and signed app callbacks", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = "";
+  let capturedBody = "";
+  globalThis.fetch = (async (input, init) => {
+    capturedUrl = String(input);
+    capturedBody = String(init?.body ?? "");
+    return new Response(
+      JSON.stringify({ sid: "CAoutbound", status: "queued" }),
+      {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  try {
+    const result = await createOutboundCall(
+      {
+        accountSid: "ACclient",
+        authToken: "client-token",
+        fromNumber: "+13125550100",
+      },
+      {
+        to: "+13125550199",
+        twiml: "<Response><Say>Hello</Say></Response>",
+        statusCallbackUrl: "https://app.example.test/status",
+      },
+    );
+
+    assert.deepEqual(result, { callSid: "CAoutbound", status: "queued" });
+    assert.match(capturedUrl, /Accounts\/ACclient\/Calls\.json$/);
+    const body = new URLSearchParams(capturedBody);
+    assert.equal(body.get("From"), "+13125550100");
+    assert.equal(body.get("To"), "+13125550199");
+    assert.equal(body.get("StatusCallback"), "https://app.example.test/status");
+    assert.equal(body.has("StatusCallbackEvent"), false);
+    assert.match(body.get("Twiml") ?? "", /<Say>Hello<\/Say>/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Twilio hangup completes only the requested carrier call", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = "";
+  let capturedBody = "";
+  globalThis.fetch = (async (input, init) => {
+    capturedUrl = String(input);
+    capturedBody = String(init?.body ?? "");
+    return new Response(
+      JSON.stringify({ sid: "CAtarget", status: "completed" }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  try {
+    await completeTwilioCall(
+      { accountSid: "ACclient", authToken: "client-token" },
+      "CAtarget",
+    );
+    assert.match(capturedUrl, /Accounts\/ACclient\/Calls\/CAtarget\.json$/);
+    assert.equal(new URLSearchParams(capturedBody).get("Status"), "completed");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("partner Twilio validation accepts an active parent account", async () => {
   const originalFetch = globalThis.fetch;

@@ -43,7 +43,8 @@ Implemented since this pilot was first written:
 
 - Managed Twilio now supports signed voice webhooks, full-duplex OpenAI
   Realtime answering with barge-in and Gather failover, staff forwarding,
-  Media Streams transcription, and desktop assistant events.
+  Media Streams transcription, one-click outbound AI callbacks from CRM
+  contacts, playback-aware AI hangup, and desktop assistant events.
 - The website chat has a hosted page and iframe embed.
 - `render.yaml` provisions the five-minute durable-job worker.
 
@@ -147,8 +148,7 @@ you in as `partner.owner@example.test`).
 1. **Setup tab → step 1**: pick the package. If you have no packages yet,
    click **Create the three starter packages** (Basic Automation, AI Assist,
    Full AI Operations) — or create a custom package with toggles.
-2. For this test plan choose **AI Assist** (or **Full AI Operations** —
-   the extra voice items will honestly show as "coming soon").
+2. For this test plan choose **AI Assist** or **Full AI Operations**.
 3. The rest of the checklist appears: only the integrations and workflows
    that package needs, plus what (if anything) client staff must install.
 

@@ -30,3 +30,9 @@ export function buildAiStreamTwimlXml(input: {
 
   return `${stream}${fallback}`;
 }
+
+export function buildAiStreamTwimlDocument(
+  input: Parameters<typeof buildAiStreamTwimlXml>[0],
+): string {
+  return `<?xml version="1.0" encoding="UTF-8"?><Response>${buildAiStreamTwimlXml(input)}</Response>`;
+}

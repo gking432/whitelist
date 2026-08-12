@@ -37,6 +37,7 @@ import {
   createCrmQuote,
   createCrmTask,
   saveCrmAvailability,
+  startCrmAiCallback,
   setCrmAppointmentStatus,
   setCrmQuoteStatus,
   setCrmTaskStatus,
@@ -1754,6 +1755,57 @@ export function NorthstarCrmWorkspace({
 
       {view === "calls" ? (
         <div className="space-y-5">
+          {canOperate ? (
+            <form
+              className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-end"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                run(() =>
+                  startCrmAiCallback({
+                    clientId,
+                    contactId: String(form.get("contact_id") ?? ""),
+                    reason: String(form.get("reason") ?? "lead_callback") as
+                      | "lead_callback"
+                      | "reschedule"
+                      | "reminder",
+                  }),
+                );
+              }}
+            >
+              <div>
+                <label className="text-xs font-medium" htmlFor="ai-callback-contact">
+                  Customer
+                </label>
+                <Select id="ai-callback-contact" name="contact_id" required defaultValue="">
+                  <option value="" disabled>
+                    Choose a customer to call
+                  </option>
+                  {contacts
+                    .filter((contact) => Boolean(contact.phone))
+                    .map((contact) => (
+                      <option key={contact.id} value={contact.id}>
+                        {contactName(contact)} · {contact.phone}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium" htmlFor="ai-callback-reason">
+                  Reason
+                </label>
+                <Select id="ai-callback-reason" name="reason" defaultValue="lead_callback">
+                  <option value="lead_callback">New lead follow-up</option>
+                  <option value="reschedule">Reschedule</option>
+                  <option value="reminder">Appointment reminder</option>
+                </Select>
+              </div>
+              <Button type="submit" disabled={pending}>
+                <PhoneCall aria-hidden="true" />
+                Start AI callback
+              </Button>
+            </form>
+          ) : null}
           <section className="overflow-hidden rounded-lg border bg-card">
             <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
               <div>

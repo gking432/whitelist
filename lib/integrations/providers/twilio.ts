@@ -325,7 +325,8 @@ export async function configureTwilioNumber(
     if (!number?.sid) {
       return {
         ok: false,
-        detail: "The Twilio number could not be found for automatic configuration.",
+        detail:
+          "The Twilio number could not be found for automatic configuration.",
       };
     }
 
@@ -377,6 +378,78 @@ export type TwilioSendOutcome = {
   status: string;
 };
 
+export type TwilioCallOutcome = {
+  callSid: string;
+  status: string;
+};
+
+async function twilioError(
+  response: Response,
+  prefix: string,
+): Promise<TwilioError> {
+  let detail = `status ${response.status}`;
+
+  try {
+    const errorBody = (await response.json()) as {
+      message?: string;
+      code?: number;
+    };
+
+    if (errorBody.message) {
+      detail = `${errorBody.message}${errorBody.code ? ` (code ${errorBody.code})` : ""}`;
+    }
+  } catch {
+    // Keep the status-only detail when Twilio does not return JSON.
+  }
+
+  return new TwilioError(`${prefix}: ${detail}`, response.status);
+}
+
+export async function createOutboundCall(
+  credentials: TwilioCredentials,
+  input: {
+    to: string;
+    twiml: string;
+    statusCallbackUrl: string;
+  },
+): Promise<TwilioCallOutcome> {
+  const params = new URLSearchParams({
+    From: credentials.fromNumber,
+    To: input.to,
+    Twiml: input.twiml,
+    StatusCallback: input.statusCallbackUrl,
+    StatusCallbackMethod: "POST",
+  });
+  const response = await twilioFormRequest(
+    `${TWILIO_BASE}/Accounts/${encodeURIComponent(credentials.accountSid)}/Calls.json`,
+    credentials,
+    params,
+  );
+
+  if (!response.ok) {
+    throw await twilioError(response, "Twilio call failed");
+  }
+
+  const call = (await response.json()) as { sid: string; status: string };
+  return { callSid: call.sid, status: call.status };
+}
+
+export async function completeTwilioCall(
+  credentials: Pick<TwilioCredentials, "accountSid" | "authToken">,
+  callSid: string,
+): Promise<void> {
+  const response = await twilioFormRequest(
+    `${TWILIO_BASE}/Accounts/${encodeURIComponent(credentials.accountSid)}` +
+      `/Calls/${encodeURIComponent(callSid)}.json`,
+    credentials,
+    new URLSearchParams({ Status: "completed" }),
+  );
+
+  if (!response.ok) {
+    throw await twilioError(response, "Twilio hangup failed");
+  }
+}
+
 export async function sendSms(
   credentials: TwilioCredentials,
   to: string,
@@ -402,22 +475,7 @@ export async function sendSms(
   );
 
   if (!response.ok) {
-    let detail = `status ${response.status}`;
-
-    try {
-      const errorBody = (await response.json()) as {
-        message?: string;
-        code?: number;
-      };
-
-      if (errorBody.message) {
-        detail = `${errorBody.message}${errorBody.code ? ` (code ${errorBody.code})` : ""}`;
-      }
-    } catch {
-      // keep the status-only detail
-    }
-
-    throw new TwilioError(`Twilio send failed: ${detail}`, response.status);
+    throw await twilioError(response, "Twilio send failed");
   }
 
   const message = (await response.json()) as { sid: string; status: string };

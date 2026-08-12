@@ -12,7 +12,8 @@ function listen(server: http.Server): Promise<number> {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
-      if (!address || typeof address === "string") reject(new Error("No port."));
+      if (!address || typeof address === "string")
+        reject(new Error("No port."));
       else resolve(address.port);
     });
   });
@@ -24,7 +25,8 @@ async function freePort(): Promise<number> {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
-      if (!address || typeof address === "string") reject(new Error("No port."));
+      if (!address || typeof address === "string")
+        reject(new Error("No port."));
       else resolve(address.port);
     });
   });
@@ -92,12 +94,15 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
     } else if (input.action === "tool") {
       response.end(
         JSON.stringify({
-          result: {
-            slots: [{ start_iso: "2026-08-14T14:00:00.000Z" }],
-          },
-          end_call: false,
+          result:
+            input.name === "end_call"
+              ? { status: "ending" }
+              : { slots: [{ start_iso: "2026-08-14T14:00:00.000Z" }] },
+          end_call: input.name === "end_call",
         }),
       );
+    } else if (input.action === "end") {
+      response.end('{"ended":true}');
     }
   });
   const openAiServer = http.createServer();
@@ -109,7 +114,11 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
       const event = JSON.parse(message.toString());
       openAiEvents.push(event);
 
-      if (event.type === "response.create" && openAiEvents.filter((item) => item.type === "response.create").length === 1) {
+      if (
+        event.type === "response.create" &&
+        openAiEvents.filter((item) => item.type === "response.create")
+          .length === 1
+      ) {
         socket.send(JSON.stringify({ type: "response.created" }));
         socket.send(
           JSON.stringify({
@@ -132,7 +141,9 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
             transcript: "Friday morning works.",
           }),
         );
-        socket.send(JSON.stringify({ type: "input_audio_buffer.speech_started" }));
+        socket.send(
+          JSON.stringify({ type: "input_audio_buffer.speech_started" }),
+        );
         socket.send(
           JSON.stringify({
             type: "response.done",
@@ -146,6 +157,46 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
                 },
               ],
             },
+          }),
+        );
+      } else if (
+        event.type === "response.create" &&
+        openAiEvents.filter((item) => item.type === "response.create")
+          .length === 2
+      ) {
+        socket.send(JSON.stringify({ type: "response.created" }));
+        socket.send(
+          JSON.stringify({
+            type: "response.done",
+            response: {
+              output: [
+                {
+                  type: "function_call",
+                  call_id: "tool-call-2",
+                  name: "end_call",
+                  arguments: "{}",
+                },
+              ],
+            },
+          }),
+        );
+      } else if (
+        event.type === "response.create" &&
+        openAiEvents.filter((item) => item.type === "response.create")
+          .length === 3
+      ) {
+        socket.send(JSON.stringify({ type: "response.created" }));
+        socket.send(
+          JSON.stringify({
+            type: "response.output_audio.delta",
+            item_id: "assistant-item-goodbye",
+            delta: "Z29vZGJ5ZQ==",
+          }),
+        );
+        socket.send(
+          JSON.stringify({
+            type: "response.done",
+            response: { output: [] },
           }),
         );
       }
@@ -218,10 +269,26 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
       "barge-in clear",
     );
     await waitFor(
-      () => openAiEvents.some((event) => event.type === "conversation.item.create"),
+      () =>
+        openAiEvents.some((event) => event.type === "conversation.item.create"),
       "tool result",
     );
     await waitFor(() => receivedTranscripts.length === 2, "transcripts");
+    await waitFor(
+      () => twilioEvents.some((event) => event.mark?.name === "audio-2"),
+      "final assistant audio mark",
+    );
+    twilio.send(
+      JSON.stringify({
+        event: "mark",
+        streamSid: "MZ_TEST_STREAM",
+        mark: { name: "audio-2" },
+      }),
+    );
+    await waitFor(
+      () => receivedControl.some((item) => item.action === "end"),
+      "signed carrier hangup",
+    );
 
     assert.ok(
       openAiEvents.some(
@@ -233,7 +300,9 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
     );
     assert.ok(
       openAiEvents.some(
-        (event) => event.type === "input_audio_buffer.append" && event.audio === "Y2FsbGVy",
+        (event) =>
+          event.type === "input_audio_buffer.append" &&
+          event.audio === "Y2FsbGVy",
       ),
     );
     assert.ok(
@@ -243,19 +312,27 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
           event.item_id === "assistant-item-1",
       ),
     );
-    assert.deepEqual(
-      receivedTranscripts.map((item) => item.role).sort(),
-      ["ai_assistant", "caller"],
-    );
+    assert.deepEqual(receivedTranscripts.map((item) => item.role).sort(), [
+      "ai_assistant",
+      "caller",
+    ]);
     assert.ok(
       receivedControl.some(
         (item) => item.action === "tool" && item.call_id === "tool-call-1",
       ),
     );
+    assert.ok(
+      receivedControl.some(
+        (item) => item.action === "tool" && item.name === "end_call",
+      ),
+    );
 
     twilio.send(JSON.stringify({ event: "stop", streamSid: "MZ_TEST_STREAM" }));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.equal(receivedControl.some((item) => item.action === "complete"), false);
+    assert.equal(
+      receivedControl.some((item) => item.action === "complete"),
+      false,
+    );
     twilio.close();
   } finally {
     stopChild(gateway);

@@ -31,8 +31,13 @@ export async function POST(
   { params }: { params: Promise<{ connectionId: string }> },
 ) {
   const { connectionId } = await params;
+  const requestedSessionId = request.nextUrl.searchParams.get("session");
 
-  if (!/^[0-9a-f-]{36}$/i.test(connectionId)) {
+  if (
+    !/^[0-9a-f-]{36}$/i.test(connectionId) ||
+    (requestedSessionId !== null &&
+      !/^[0-9a-f-]{36}$/i.test(requestedSessionId))
+  ) {
     return rejectVoiceWebhook(404);
   }
 
@@ -66,7 +71,7 @@ export async function POST(
   }
 
   const values = formValues(form);
-  const canonicalUrl = `${getAppUrl()}/api/integrations/inbound/twilio-voice/${connectionId}/status`;
+  const canonicalUrl = `${getAppUrl()}/api/integrations/inbound/twilio-voice/${connectionId}/status${requestedSessionId ? `?session=${encodeURIComponent(requestedSessionId)}` : ""}`;
   const signature = request.headers.get("x-twilio-signature") ?? "";
 
   if (
@@ -82,21 +87,62 @@ export async function POST(
   }
 
   const callSid = values.CallSid?.trim() ?? "";
-  const { data: session } = await admin
+  const callStatus = values.CallStatus?.trim().toLowerCase() ?? "";
+  let sessionQuery = admin
     .from("call_sessions")
-    .select("id, status")
+    .select("id, status, extracted, external_ref")
     .eq("connection_id", connectionId)
-    .eq("provider", TWILIO_VOICE_PROVIDER)
-    .eq("external_ref", callSid)
-    .maybeSingle();
+    .eq("provider", TWILIO_VOICE_PROVIDER);
 
-  if (session?.status === "in_progress") {
+  sessionQuery = requestedSessionId
+    ? sessionQuery.eq("id", requestedSessionId)
+    : sessionQuery.eq("external_ref", callSid);
+
+  const { data: session } = await sessionQuery.maybeSingle();
+
+  if (
+    session &&
+    requestedSessionId &&
+    session.external_ref &&
+    session.external_ref !== callSid
+  ) {
+    return rejectVoiceWebhook(409);
+  }
+
+  if (session && requestedSessionId && !session.external_ref && callSid) {
+    await admin
+      .from("call_sessions")
+      .update({ external_ref: callSid })
+      .eq("id", session.id)
+      .is("external_ref", null);
+  }
+
+  if (session?.status === "in_progress" && callStatus === "completed") {
     after(async () => {
       // Twilio emits the status callback alongside the Media Stream stop.
       // Let the gateway's signed transcript deliveries drain first.
       await new Promise((resolve) => setTimeout(resolve, 2_000));
       await completeTextVoiceCall(admin, session.id, TWILIO_VOICE_PROVIDER);
     });
+  } else if (
+    session?.status === "in_progress" &&
+    ["busy", "failed", "no-answer", "canceled"].includes(callStatus)
+  ) {
+    await admin
+      .from("call_sessions")
+      .update({
+        status:
+          callStatus === "no-answer" || callStatus === "busy"
+            ? "abandoned"
+            : "failed",
+        ended_at: new Date().toISOString(),
+        extracted: {
+          ...((session.extracted as Record<string, unknown> | null) ?? {}),
+          terminal_status: callStatus,
+        },
+      })
+      .eq("id", session.id)
+      .eq("status", "in_progress");
   }
 
   return twilioVoiceTwiml("");

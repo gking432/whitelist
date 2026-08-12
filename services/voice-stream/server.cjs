@@ -39,9 +39,7 @@ if (!appUrl || !apiKey || !sharedSecret) {
 }
 
 function sessionToken(callSessionId) {
-  return createHmac("sha256", sharedSecret)
-    .update(callSessionId)
-    .digest("hex");
+  return createHmac("sha256", sharedSecret).update(callSessionId).digest("hex");
 }
 
 function validSessionToken(callSessionId, token) {
@@ -79,7 +77,9 @@ async function postSigned(path, input, maxAttempts = 4) {
       const data = text ? JSON.parse(text) : {};
 
       if (response.ok) return data;
-      lastError = new Error(data.error || `${path} failed (${response.status}).`);
+      lastError = new Error(
+        data.error || `${path} failed (${response.status}).`,
+      );
 
       if (response.status < 500 && response.status !== 409) break;
     } catch (error) {
@@ -129,7 +129,9 @@ function realtimeUrl(model) {
 function createTranscriber(callSessionId, track, deliveries) {
   const pendingAudio = [];
   const socket = new WebSocket(
-    realtimeUrl(process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-live-transcribe"),
+    realtimeUrl(
+      process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-live-transcribe",
+    ),
     {
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -148,7 +150,8 @@ function createTranscriber(callSessionId, track, deliveries) {
             input: {
               format: { type: "audio/pcmu" },
               transcription: {
-                model: process.env.OPENAI_TRANSCRIPTION_MODEL ||
+                model:
+                  process.env.OPENAI_TRANSCRIPTION_MODEL ||
                   "gpt-live-transcribe",
                 languages: ["en"],
                 delay: "low",
@@ -195,7 +198,10 @@ function createTranscriber(callSessionId, track, deliveries) {
     }
 
     if (event.type === "error") {
-      console.error("OpenAI transcription error:", event.error?.message || event);
+      console.error(
+        "OpenAI transcription error:",
+        event.error?.message || event,
+      );
     }
   });
 
@@ -206,7 +212,9 @@ function createTranscriber(callSessionId, track, deliveries) {
   return {
     append(audio) {
       if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio }));
+        socket.send(
+          JSON.stringify({ type: "input_audio_buffer.append", audio }),
+        );
       } else if (pendingAudio.length < 500) {
         pendingAudio.push(audio);
       }
@@ -230,6 +238,9 @@ async function createAiBridge(input) {
   let lastAssistantItemId = null;
   let markCounter = 0;
   let responseActive = false;
+  let hangupRequested = false;
+  let hangupSent = false;
+  let hangupTimer = null;
   let toolQueue = Promise.resolve();
   let closed = false;
   let failed = false;
@@ -283,6 +294,22 @@ async function createAiBridge(input) {
     responseActive = false;
   }
 
+  function requestCarrierHangup() {
+    if (
+      !hangupRequested ||
+      hangupSent ||
+      responseActive ||
+      pendingMarks.size > 0
+    )
+      return;
+    hangupSent = true;
+    if (hangupTimer) clearTimeout(hangupTimer);
+    void postSigned("/api/voice/provider/control", {
+      action: "end",
+      call_session_id: input.callSessionId,
+    }).catch((error) => failBridge(`Carrier hangup failed: ${error.message}`));
+  }
+
   async function executeFunctionCalls(calls) {
     for (const call of calls) {
       let args = {};
@@ -306,6 +333,14 @@ async function createAiBridge(input) {
       }
 
       sendOpenAI(functionCallOutput(call.callId, output.result || output));
+      if (output.end_call === true) {
+        hangupRequested = true;
+        hangupTimer ??= setTimeout(() => {
+          responseActive = false;
+          pendingMarks.clear();
+          requestCarrierHangup();
+        }, 15_000);
+      }
     }
 
     if (calls.length > 0) sendOpenAI({ type: "response.create" });
@@ -317,8 +352,7 @@ async function createAiBridge(input) {
         instructions: bootstrap.instructions,
         model: bootstrap.model,
         voice: bootstrap.voice,
-        transcriptionModel:
-          bootstrap.transcription_model || transcriptionModel,
+        transcriptionModel: bootstrap.transcription_model || transcriptionModel,
         tools: Array.isArray(bootstrap.tools) ? bootstrap.tools : [],
       }),
     );
@@ -345,7 +379,8 @@ async function createAiBridge(input) {
       input.streamSid
     ) {
       responseStartTimestamp ??= latestMediaTimestamp;
-      if (typeof event.item_id === "string") lastAssistantItemId = event.item_id;
+      if (typeof event.item_id === "string")
+        lastAssistantItemId = event.item_id;
       const markName = `audio-${++markCounter}`;
       pendingMarks.add(markName);
       sendTwilio(twilioMedia(input.streamSid, event.delta));
@@ -389,6 +424,8 @@ async function createAiBridge(input) {
       const calls = functionCallsFromResponse(event);
       if (calls.length > 0) {
         toolQueue = toolQueue.then(() => executeFunctionCalls(calls));
+      } else {
+        requestCarrierHangup();
       }
     }
 
@@ -411,7 +448,8 @@ async function createAiBridge(input) {
   return {
     append(audio, timestamp) {
       const parsedTimestamp = Number(timestamp);
-      if (Number.isFinite(parsedTimestamp)) latestMediaTimestamp = parsedTimestamp;
+      if (Number.isFinite(parsedTimestamp))
+        latestMediaTimestamp = parsedTimestamp;
 
       if (openai.readyState === WebSocket.OPEN) {
         sendOpenAI({ type: "input_audio_buffer.append", audio });
@@ -421,9 +459,11 @@ async function createAiBridge(input) {
     },
     mark(name) {
       if (typeof name === "string") pendingMarks.delete(name);
+      requestCarrierHangup();
     },
     async close() {
       closed = true;
+      if (hangupTimer) clearTimeout(hangupTimer);
       await toolQueue.catch(() => {});
       if (openai.readyState === WebSocket.OPEN) openai.close(1000);
       else if (openai.readyState === WebSocket.CONNECTING) openai.terminate();
@@ -435,7 +475,11 @@ const server = http.createServer((request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
-      JSON.stringify({ ok: true, release, modes: ["staff_assisted", "ai_answered"] }),
+      JSON.stringify({
+        ok: true,
+        release,
+        modes: ["staff_assisted", "ai_answered"],
+      }),
     );
     return;
   }
@@ -498,7 +542,6 @@ wss.on("connection", (twilio) => {
     for (const transcriber of transcribers.values()) transcriber.close();
     transcribers.clear();
     await deliveries.settle();
-
   }
 
   twilio.on("message", (message) => {
@@ -514,7 +557,8 @@ wss.on("connection", (twilio) => {
     if (event.event === "start") {
       const parameters = event.start?.customParameters || {};
       callSessionId = parameters.callSessionId || null;
-      mode = parameters.mode === "ai_answered" ? "ai_answered" : "staff_assisted";
+      mode =
+        parameters.mode === "ai_answered" ? "ai_answered" : "staff_assisted";
       streamSid = event.start?.streamSid || event.streamSid || null;
       authenticated = validSessionToken(callSessionId, parameters.streamToken);
 

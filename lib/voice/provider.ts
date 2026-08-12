@@ -1,7 +1,6 @@
-// Voice provider abstraction (docs/11 Phase 4, docs/20, docs/21). No real
-// telephony exists until a phone bridge (Twilio Voice / SIP) connects a
-// carrier call to an adapter — this module defines the contract and
-// honestly reports "not configured" until credentials exist.
+// Voice provider abstraction (docs/11 Phase 4, docs/20, docs/21). Twilio
+// supplies carrier transport while an adapter supplies the conversational
+// runtime; this module reports whether that AI runtime is configured.
 //
 // Env placeholders (see .env.example):
 //   VOICE_PROVIDER          "openai_realtime" (shipped), later "twilio_voice", "retell", "vapi"
@@ -25,8 +24,7 @@ export type VoiceProviderCapabilities = {
   toolCalling: boolean;
   postCallSummary: boolean;
   postCallRecording: boolean;
-  // Can drive an outbound callback conversation once a phone bridge dials
-  // (docs/21) — the adapter itself never places calls.
+  // Can drive a conversation after the carrier places an outbound call.
   outboundCalls: boolean;
 };
 
@@ -47,11 +45,8 @@ export function getConfiguredVoiceProviderKey(): string | null {
   return process.env.VOICE_PROVIDER?.trim() || null;
 }
 
-// Adapter registry. OpenAI Realtime is the first real adapter: session
-// minting, per-client instructions, tool calling, and the simulated
-// harness are live code (docs/21). Everything downstream — call sessions,
-// transcripts, summaries, workflows — already works; a phone bridge is
-// the remaining piece for real carrier calls.
+// Adapter registry. OpenAI Realtime supplies session instructions, tool
+// calling, and live audio; the Twilio bridge owns carrier media and dialing.
 const ADAPTERS: Record<string, VoiceProviderAdapter> = {
   openai_realtime: {
     key: "openai_realtime",

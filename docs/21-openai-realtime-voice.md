@@ -13,8 +13,8 @@ per-client Knowledge tab.
 - **Provider adapter** — `openai_realtime` is registered in
   `lib/voice/provider.ts` (the registry is no longer empty). Capabilities:
   AI answering, native speech-to-speech, live audio + transcript, mid-call
-  tool calling, post-call summary, and outbound-callback conversations
-  once a bridge dials. `testConnection()` validates the key and model
+  tool calling, post-call summary, and real outbound callbacks through the
+  client's live Twilio connection. `testConnection()` validates the key and model
   against OpenAI before anything is stored. Configure with
   `VOICE_PROVIDER=openai_realtime` + `OPENAI_API_KEY`.
 - **Twilio Voice bridge** —
@@ -31,6 +31,15 @@ per-client Knowledge tab.
   the active call's tenant-scoped instructions and tools. Every OpenAI tool
   `call_id` receives a durable unique claim in `voice_tool_executions`, so a
   retry cannot duplicate a note or appointment request.
+- **Outbound AI callbacks** — authorized client staff can select a CRM contact
+  and start a lead follow-up, reschedule, or reminder call from the Calls tab.
+  The app dials through that client's isolated live Twilio connection, creates
+  the matched call session before dialing, streams the same tenant-scoped
+  Realtime agent, and records the transcript, clean CRM note, terminal status,
+  audit event, and post-call workflow result. Spoof sessions cannot place real
+  calls. Busy/no-answer calls close honestly without manufacturing a transcript.
+  The `end_call` tool waits for the assistant's final audio mark and then uses a
+  signed server control action to end only that Twilio `CallSid`.
 - **Session contract** (`lib/voice/providers/openai-realtime.ts`):
   - `buildVoiceAgentInstructions` — per-client prompt built ONLY from the
     approved Knowledge profile (business description, services, areas,
@@ -134,6 +143,27 @@ nothing ever presents them as real telephony.
 The bridge and failover are covered by an end-to-end protocol test with mock
 Twilio, OpenAI, and signed application endpoints. Launch still requires one
 recorded real-account Twilio/OpenAI pilot call.
+
+## Real outbound AI callbacks
+
+1. Put the client Twilio connection in **Live** mode and add a real CRM contact
+   with a phone number.
+2. Sign in as that client's owner, manager, sales, or front-desk user with
+   customer-action permission. Do not use a partner support/spoof session.
+3. Open **CRM → AI Calls**, choose the customer and the callback reason, then
+   click **Start AI callback**.
+4. Answer the customer phone. Confirm the call comes from the client's Twilio
+   number, the assistant explains the reason for calling, and live scheduling,
+   notes, escalation, and approval-gated actions behave like inbound answering.
+5. Ask the assistant to finish. Confirm its final sentence plays before Twilio
+   ends the carrier call, then verify the transcript and clean note in Call
+   history and the audit/integration event.
+6. Repeat once without answering. Confirm the session becomes **abandoned** and
+   no lead, transcript, or successful-call claim is manufactured.
+
+The REST creation, signed control, playback-aware hangup, and terminal status
+contracts are covered by automated tests. Launch still requires a real-account
+answered call and no-answer pilot in the deployed environment.
 
 ## Env vars
 

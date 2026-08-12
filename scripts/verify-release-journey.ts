@@ -728,7 +728,10 @@ async function main() {
       JSON.stringify(voiceComplete),
     );
     assert.equal(voiceComplete.report?.status, "completed");
-    assert.ok((voiceComplete.report?.transcript_turns ?? 0) >= 5);
+    assert.ok(
+      (voiceComplete.report?.transcript_turns ?? 0) >= 5,
+      `Voice completion lost transcript turns: ${JSON.stringify(voiceComplete.report)}`,
+    );
     assert.equal(voiceComplete.report?.intake_event?.status, "processed");
     assert.ok(
       voiceComplete.report?.approvals_from_call?.some(

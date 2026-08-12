@@ -10,7 +10,8 @@ separation) into the multi-tenant platform.
 > session minting, mid-call tool calling into real Northstar actions, and
 > a simulated-call harness that exercises this whole pipeline. The Twilio
 > bridge now carries full-duplex AI audio and staff-assisted transcription;
-> production remains unverified until a real-account pilot is recorded.
+> inbound answering and one-click outbound CRM callbacks are implemented;
+> production remains unverified until real-account pilots are recorded.
 
 ## What exists (real code, ready for a provider)
 
@@ -51,8 +52,10 @@ credentials, and a recorded provider pilot, not another transport layer.
 
 ## Hard rules
 
-- No real calls, answering, or callbacks until a concrete adapter exists,
-  credentials are configured, and the connection runs in live mode.
+- Real calls require the Twilio/OpenAI adapters, deployed voice service,
+  configured credentials, and a live connection. Outbound calls additionally
+  require a direct action by an authorized client user; spoof/support sessions
+  cannot dial customers.
 - The raw transcript never syncs to external CRMs — only the clean note.
 - AI disclosure follows the per-client mode; legal review before using
   "minimal" (docs/12).

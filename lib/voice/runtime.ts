@@ -17,6 +17,8 @@ export type VoiceRuntimeBootstrap = {
   transcriptionModel: string;
   tools: Record<string, unknown>[];
   toolContext: VoiceToolContext;
+  connectionId: string;
+  providerCallRef: string | null;
 };
 
 export async function loadVoiceRuntimeBootstrap(
@@ -26,13 +28,14 @@ export async function loadVoiceRuntimeBootstrap(
   const { data: session } = await admin
     .from("call_sessions")
     .select(
-      "id, partner_id, client_id, provider, direction, status, disclosure_mode, matched_contact_id, extracted",
+      "id, partner_id, client_id, connection_id, provider, direction, status, disclosure_mode, matched_contact_id, external_ref, extracted",
     )
     .eq("id", callSessionId)
     .maybeSingle();
 
   if (
     !session ||
+    !session.connection_id ||
     session.status !== "in_progress" ||
     session.provider !== "twilio_voice" ||
     session.extracted?.handling_mode !== "ai_answered"
@@ -88,7 +91,9 @@ export async function loadVoiceRuntimeBootstrap(
   return {
     instructions,
     initialInstruction:
-      "The phone call just connected. Greet the caller now as the business's call answerer, following the disclosure instructions. Keep the greeting to one short sentence, then wait for the caller.",
+      session.direction === "outbound"
+        ? `The customer just answered an outbound call from the business. Introduce yourself briefly, follow the disclosure instructions, and explain that you are calling about ${typeof session.extracted?.callback_reason === "string" ? session.extracted.callback_reason.replaceAll("_", " ") : "their recent request"}. Ask whether now is a good time, then wait.`
+        : "The phone call just connected. Greet the caller now as the business's call answerer, following the disclosure instructions. Keep the greeting to one short sentence, then wait for the caller.",
     model: getRealtimeModel(),
     voice: getRealtimeVoice(),
     transcriptionModel:
@@ -101,5 +106,7 @@ export async function loadVoiceRuntimeBootstrap(
       clientId: session.client_id,
       clientName: client.name,
     },
+    connectionId: session.connection_id,
+    providerCallRef: session.external_ref,
   };
 }
