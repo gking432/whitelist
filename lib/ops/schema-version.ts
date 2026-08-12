@@ -1,5 +1,5 @@
 export const EXPECTED_SCHEMA_VERSION =
-  "20260812070000_classify_scenario_lab_accounts";
+  "20260812080000_guard_real_provider_pilot_evidence";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

@@ -182,6 +182,10 @@ query(`
     v_pilot_id uuid;
     v_result boolean;
     v_status text;
+    v_test_client_id uuid;
+    v_test_connection_id uuid;
+    v_pre_pilot_event_id uuid;
+    v_guarded boolean := false;
   begin
     insert into public.partners (name, slug)
     values ('Provider pilot verifier', 'provider-pilot-verifier-' || extensions.gen_random_uuid())
@@ -207,6 +211,14 @@ query(`
       'connected', 'live', 'configured'
     ) returning id into v_connection_id;
 
+    insert into public.integration_events (
+      partner_id, client_id, connection_id, direction, event_type, status,
+      created_at
+    ) values (
+      v_partner_id, v_client_id, v_connection_id,
+      'inbound', 'verification.before_pilot', 'processed', clock_timestamp()
+    ) returning id into v_pre_pilot_event_id;
+
     insert into public.provider_live_pilots (
       provider_id, connection_id, read_evidence, retry_evidence,
       revocation_evidence
@@ -215,6 +227,17 @@ query(`
       'Retry and idempotency passed.', 'Credential revocation passed.'
     ) returning id into v_pilot_id;
 
+    begin
+      update public.provider_live_pilots
+      set inbound_event_id = v_pre_pilot_event_id
+      where id = v_pilot_id;
+    exception when others then
+      v_guarded := true;
+    end;
+    if not v_guarded then
+      raise exception 'Provider pilot accepted pre-pilot event evidence.';
+    end if;
+
     select public.promote_provider_live_pilot(v_pilot_id, null)
     into v_result;
     if v_result then
@@ -222,17 +245,19 @@ query(`
     end if;
 
     insert into public.integration_events (
-      partner_id, client_id, connection_id, direction, event_type, status
+      partner_id, client_id, connection_id, direction, event_type, status,
+      created_at
     ) values (
       v_partner_id, v_client_id, v_connection_id,
-      'inbound', 'verification.inbound', 'processed'
+      'inbound', 'verification.inbound', 'processed', clock_timestamp()
     ) returning id into v_inbound_event_id;
 
     insert into public.integration_events (
-      partner_id, client_id, connection_id, direction, event_type, status
+      partner_id, client_id, connection_id, direction, event_type, status,
+      created_at
     ) values (
       v_partner_id, v_client_id, v_connection_id,
-      'outbound', 'verification.outbound', 'processed'
+      'outbound', 'verification.outbound', 'processed', clock_timestamp()
     ) returning id into v_outbound_event_id;
 
     update public.provider_live_pilots
@@ -255,6 +280,37 @@ query(`
     from public.integration_providers where id = v_provider_id;
     if not v_result or v_status <> 'contract_verified' then
       raise exception 'Revoked provider pilot did not restore contract verified status.';
+    end if;
+
+    insert into public.client_businesses (
+      partner_id, name, slug, is_test_account
+    ) values (
+      v_partner_id, 'Provider pilot test account',
+      'provider-pilot-test-account', true
+    ) returning id into v_test_client_id;
+
+    insert into public.integration_connections (
+      partner_id, client_id, provider_id, display_name, status,
+      runtime_mode, credential_status
+    ) values (
+      v_partner_id, v_test_client_id, v_provider_id, 'Test account',
+      'connected', 'live', 'configured'
+    ) returning id into v_test_connection_id;
+
+    v_guarded := false;
+    begin
+      insert into public.provider_live_pilots (
+        provider_id, connection_id, read_evidence, retry_evidence,
+        revocation_evidence
+      ) values (
+        v_provider_id, v_test_connection_id, 'Real account read passed.',
+        'Retry and idempotency passed.', 'Credential revocation passed.'
+      );
+    exception when others then
+      v_guarded := true;
+    end;
+    if not v_guarded then
+      raise exception 'Provider pilot accepted a test client connection.';
     end if;
   end $$;
   rollback;

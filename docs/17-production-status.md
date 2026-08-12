@@ -70,7 +70,7 @@ stack.
 | Staff-assist production proof | Code is present, but a real Twilio account, public app URL, always-on voice-stream URL, OpenAI key, and installed desktop build are still required for live verification |
 | SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
 | Browser extension / third-party CRM overlay | Not built. The Electron desktop assistant is the supported V1 overlay; direct CRM write-back is preferred whenever a connector supports it |
-| Provider live verification | Connector contracts are implemented and tested locally, but each vendor still needs production app approval and at least one real account pilot before being labeled live-verified |
+| Provider live verification | Owner-started pilot evidence is guarded against test accounts and pre-pilot events, but each vendor still needs production app approval and at least one real managed-client pilot before being labeled live-verified |
 | Marketplace native APIs | Angi, Thumbtack, Yelp, and similar broad lead APIs remain vendor-restricted; private forwarded email and signed webhook intake are the supported V1 paths |
 | Billing/usage pricing on packages | Not built by request |
 

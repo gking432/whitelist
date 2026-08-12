@@ -12,6 +12,7 @@ import {
   promoteProviderPilot,
   revokeProviderPilot,
   saveProviderPilot,
+  startProviderPilot,
 } from "@/app/control/provider-pilots/actions";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +41,11 @@ type ConnectionRow = {
     connector_status: string;
   } | null;
   partner: { name: string } | null;
-  client: { name: string } | null;
+  client: {
+    name: string;
+    account_kind: string;
+    is_test_account: boolean;
+  } | null;
 };
 
 type PilotRow = {
@@ -53,6 +58,7 @@ type PilotRow = {
   retry_evidence: string;
   revocation_evidence: string;
   notes: string;
+  started_at: string;
   passed_at: string | null;
   revoked_at: string | null;
   revocation_reason: string | null;
@@ -74,14 +80,19 @@ export default async function ProviderPilotsPage() {
     admin
       .from("integration_connections")
       .select(
-        "id, provider_id, status, credential_status, runtime_mode, external_account_name, last_success_at, provider:integration_providers(provider_key, display_name, supports_inbound, supports_outbound, connector_status), partner:partners(name), client:client_businesses(name)",
+        "id, provider_id, status, credential_status, runtime_mode, external_account_name, last_success_at, provider:integration_providers(provider_key, display_name, supports_inbound, supports_outbound, connector_status), partner:partners(name), client:client_businesses(name, account_kind, is_test_account)",
       )
       .order("updated_at", { ascending: false }),
     admin.from("provider_live_pilots").select("*").order("updated_at", {
       ascending: false,
     }),
   ]);
-  const connections = (connectionData ?? []) as unknown as ConnectionRow[];
+  const connections = ((connectionData ?? []) as unknown as ConnectionRow[])
+    .filter(
+      (connection) =>
+        connection.client?.account_kind === "managed_client" &&
+        connection.client.is_test_account === false,
+    );
   const pilots = (pilotData ?? []) as PilotRow[];
   const pilotByConnection = new Map<string, PilotRow>();
   for (const pilot of pilots) {
@@ -213,9 +224,12 @@ export default async function ProviderPilotsPage() {
                         </Button>
                       </form>
                     </div>
-                  ) : (
+                  ) : pilot?.status === "draft" ? (
                     <form action={saveProviderPilot} className="space-y-4 px-5 py-4">
                       <input type="hidden" name="connection_id" value={connection.id} />
+                      <p className="text-xs text-muted-foreground">
+                        Pilot started {new Date(pilot.started_at).toLocaleString()}. Event proof below is limited to activity after that time.
+                      </p>
                       <div className="grid gap-4 lg:grid-cols-3">
                         <label className="space-y-1.5 text-sm font-medium">
                           Account read proof
@@ -238,6 +252,19 @@ export default async function ProviderPilotsPage() {
                         <Button type="submit" variant="outline" size="sm">Save and capture latest events</Button>
                       </div>
                     </form>
+                  ) : (
+                    <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                        Start the pilot before generating any proof. Only processed live events created after this point can qualify this connector.
+                      </p>
+                      <form action={startProviderPilot}>
+                        <input type="hidden" name="connection_id" value={connection.id} />
+                        <Button type="submit" size="sm">
+                          <FlaskConical aria-hidden="true" />
+                          Start pilot
+                        </Button>
+                      </form>
+                    </div>
                   )}
                   {pilot?.status === "draft" && readiness.ready ? (
                     <form action={promoteProviderPilot} className="flex justify-end border-t px-5 py-4">

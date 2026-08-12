@@ -24,6 +24,70 @@ async function ownerContext() {
   return { userId: auth.user.id, access, admin };
 }
 
+export async function startProviderPilot(formData: FormData) {
+  const context = await ownerContext();
+  if (!context) return;
+  const connectionId = text(formData, "connection_id", 80);
+  if (!connectionId) return;
+
+  const { data: connection } = await context.admin
+    .from("integration_connections")
+    .select(
+      "id, provider_id, client:client_businesses!inner(account_kind, is_test_account), provider:integration_providers!inner(display_name)",
+    )
+    .eq("id", connectionId)
+    .maybeSingle();
+  const client = connection?.client as unknown as {
+    account_kind: string;
+    is_test_account: boolean;
+  } | null;
+  if (
+    !connection ||
+    client?.account_kind !== "managed_client" ||
+    client.is_test_account
+  ) {
+    throw new Error("Provider pilots require a real managed client account.");
+  }
+
+  const { data: existing } = await context.admin
+    .from("provider_live_pilots")
+    .select("id")
+    .eq("connection_id", connection.id)
+    .in("status", ["draft", "passed"])
+    .maybeSingle();
+  if (existing) return;
+
+  const { data: pilot, error } = await context.admin
+    .from("provider_live_pilots")
+    .insert({
+      provider_id: connection.provider_id,
+      connection_id: connection.id,
+      status: "draft",
+      created_by: context.userId,
+    })
+    .select("id")
+    .single();
+  if (error || !pilot) {
+    throw new Error(error?.message ?? "Provider pilot could not be started.");
+  }
+
+  const provider = connection.provider as unknown as {
+    display_name: string;
+  } | null;
+  await recordAuditEvent({
+    actor: context.access,
+    action: "provider_pilot.started",
+    targetType: "provider_live_pilot",
+    targetId: pilot.id,
+    summary: `Started real-account pilot for ${provider?.display_name ?? "provider"}.`,
+    metadata: {
+      provider_id: connection.provider_id,
+      connection_id: connection.id,
+    },
+  });
+  revalidatePath("/control/provider-pilots");
+}
+
 export async function saveProviderPilot(formData: FormData) {
   const context = await ownerContext();
   if (!context) return;
@@ -39,6 +103,16 @@ export async function saveProviderPilot(formData: FormData) {
     .maybeSingle();
   if (!connection) return;
 
+  const { data: activePilot } = await context.admin
+    .from("provider_live_pilots")
+    .select("id, started_at")
+    .eq("connection_id", connection.id)
+    .eq("status", "draft")
+    .maybeSingle();
+  if (!activePilot) {
+    throw new Error("Start this provider pilot before recording evidence.");
+  }
+
   const latestEvent = async (direction: "inbound" | "outbound") => {
     const { data } = await context.admin
       .from("integration_events")
@@ -46,6 +120,7 @@ export async function saveProviderPilot(formData: FormData) {
       .eq("connection_id", connection.id)
       .eq("direction", direction)
       .eq("status", "processed")
+      .gte("created_at", activePilot.started_at)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -70,11 +145,13 @@ export async function saveProviderPilot(formData: FormData) {
     .from("provider_live_pilots")
     .select("id, status")
     .eq("connection_id", connection.id)
-    .in("status", ["draft", "passed"])
+    .eq("status", "draft")
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (existing?.status === "passed") return;
+  if (!existing) {
+    throw new Error("Start this provider pilot before recording evidence.");
+  }
 
   const payload = {
     provider_id: connection.provider_id,
@@ -89,12 +166,10 @@ export async function saveProviderPilot(formData: FormData) {
     revoked_at: null,
     revocation_reason: null,
   };
-  const pilotQuery = existing
-    ? context.admin
-        .from("provider_live_pilots")
-        .update({ ...payload, created_by: undefined })
-        .eq("id", existing.id)
-    : context.admin.from("provider_live_pilots").insert(payload);
+  const pilotQuery = context.admin
+    .from("provider_live_pilots")
+    .update({ ...payload, created_by: undefined })
+    .eq("id", existing.id);
   const { data: pilot, error } = await pilotQuery.select("id").single();
   if (error || !pilot) {
     throw new Error(error?.message ?? "Provider pilot could not be saved.");

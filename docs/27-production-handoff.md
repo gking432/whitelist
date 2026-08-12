@@ -112,10 +112,13 @@ lead email, calendar availability/booking, CRM write-back, support escalation,
 and owner-controlled release approval.
 
 Record connector evidence in **Control Room → Provider pilots**. The platform
-automatically attaches the latest processed inbound and outbound events for the
-selected real connection. The owner records provider-read, retry/idempotency,
-and credential-revocation evidence; only then can the guarded promotion action
-mark that provider `live_verified`. Revocation returns the provider to
+only lists non-test managed-client connections. The owner must start a pilot
+before exercising the provider; the platform then attaches only processed live
+inbound and outbound events generated after that immutable start time. The
+owner records provider-read, retry/idempotency, and credential-revocation
+evidence; only then can the guarded promotion action mark that provider
+`live_verified`. Database guards reject Scenario Lab/test accounts and stale
+pre-pilot events even if the UI is bypassed. Revocation returns the provider to
 `contract_verified` when no other passed pilot remains and preserves the old
 pilot as immutable history.
 
