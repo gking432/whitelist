@@ -5,8 +5,6 @@ import { join } from "node:path";
 
 const sourceContainer = process.env.RESTORE_SOURCE_CONTAINER ?? "supabase_db_partner-platform";
 const targetContainer = process.env.RESTORE_TARGET_CONTAINER ?? "northstar-restore-drill-verify";
-const postgresImage =
-  process.env.RESTORE_POSTGRES_IMAGE ?? "public.ecr.aws/supabase/postgres:17.6.1.136";
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "northstar-restore-"));
 const dumpPath = join(temporaryDirectory, "public.dump");
 const authUsersPath = join(temporaryDirectory, "auth-users.sql");
@@ -26,6 +24,21 @@ function dockerExec(container, args, options = {}) {
 
 function query(container, sql) {
   return dockerExec(container, ["psql", "-U", "postgres", "-d", "postgres", "-Atc", sql]).trim();
+}
+
+function sourcePostgresImage() {
+  const configured = process.env.RESTORE_POSTGRES_IMAGE?.trim();
+  if (configured) return configured;
+  const image = run("docker", [
+    "inspect",
+    sourceContainer,
+    "--format",
+    "{{.Config.Image}}",
+  ]).trim();
+  if (!image) {
+    throw new Error(`Could not determine the image used by ${sourceContainer}.`);
+  }
+  return image;
 }
 
 function removeTarget() {
@@ -96,6 +109,7 @@ try {
 
   removeTarget();
   console.log(`Starting disposable restore target ${targetContainer}...`);
+  const postgresImage = sourcePostgresImage();
   run("docker", [
     "run",
     "--detach",
