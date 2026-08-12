@@ -65,9 +65,11 @@ function firstValue(values: unknown, field: string): string | null {
 export function mapGoogleContact(source: Record<string, unknown>): CanonicalRecord {
   const names = Array.isArray(source.names) ? source.names : [];
   const name = (names[0] ?? {}) as Record<string, unknown>;
+  const metadata = (source.metadata ?? {}) as Record<string, unknown>;
   return {
     objectType: "customer",
     externalId: String(source.resourceName ?? "").replace("people/", ""),
+    deleted: metadata.deleted === true,
     updatedAt:
       typeof (source.metadata as Record<string, unknown> | undefined)?.sources === "object"
         ? null
@@ -89,6 +91,7 @@ export function mapGoogleEvent(source: Record<string, unknown>): CanonicalRecord
   return {
     objectType: "appointment",
     externalId: String(source.id ?? ""),
+    deleted: source.status === "cancelled",
     updatedAt: typeof source.updated === "string" ? source.updated : null,
     data: {
       title: typeof source.summary === "string" ? source.summary : null,
@@ -161,6 +164,20 @@ async function readGmailMessages(
       source: message,
     };
   });
+}
+
+export function mapDeletedGmailMessage(message: {
+  id: string;
+  threadId?: string;
+}): CanonicalRecord {
+  return {
+    objectType: "message",
+    externalId: message.id,
+    externalParentId: message.threadId ?? null,
+    deleted: true,
+    data: {},
+    source: { id: message.id, threadId: message.threadId, deleted: true },
+  };
 }
 
 async function pullGooglePage(
@@ -244,7 +261,10 @@ async function pullGooglePage(
         ...(token ? { pageToken: token } : {}),
       });
       let body: {
-        history?: { messages?: { id: string; threadId?: string }[] }[];
+        history?: {
+          messages?: { id: string; threadId?: string }[];
+          messagesDeleted?: { message: { id: string; threadId?: string } }[];
+        }[];
         nextPageToken?: string;
         historyId?: string;
       };
@@ -259,9 +279,21 @@ async function pullGooglePage(
         }
         throw error;
       }
-      const messages = (body.history ?? []).flatMap((entry) => entry.messages ?? []);
+      const deletedIds = new Set(
+        (body.history ?? []).flatMap((entry) =>
+          (entry.messagesDeleted ?? []).map((item) => item.message.id),
+        ),
+      );
+      const messages = (body.history ?? [])
+        .flatMap((entry) => entry.messages ?? [])
+        .filter((message) => !deletedIds.has(message.id));
+      const deleted = (body.history ?? []).flatMap((entry) =>
+        (entry.messagesDeleted ?? []).map((item) =>
+          mapDeletedGmailMessage(item.message),
+        ),
+      );
       return {
-        records: await readGmailMessages(credentials, messages),
+        records: [...await readGmailMessages(credentials, messages), ...deleted],
         nextCursor: body.nextPageToken
           ? { historyId, pageToken: body.nextPageToken }
           : { historyId: body.historyId ?? historyId },

@@ -77,6 +77,17 @@ async function projectCanonicalRecord(
     .eq("external_object_id", record.externalId)
     .maybeSingle();
 
+  if (record.deleted) {
+    if (record.objectType === "appointment" && existingLink?.native_object_id) {
+      await admin
+        .from("crm_appointments")
+        .update({ status: "cancelled" })
+        .eq("id", existingLink.native_object_id)
+        .eq("client_id", job.client_id);
+    }
+    return existingLink?.native_object_id ?? null;
+  }
+
   if (record.objectType === "customer") {
     const contactValues = {
       partner_id: job.partner_id,
@@ -375,7 +386,9 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
           object_type: record.objectType,
           external_object_id: record.externalId,
           external_parent_id: record.externalParentId ?? null,
-          canonical_data: record.data,
+          canonical_data: record.deleted
+            ? { deleted: true }
+            : record.data,
           source_payload: record.source,
           external_updated_at: record.updatedAt ?? null,
           native_object_id: nativeObjectId,

@@ -65,6 +65,7 @@ export type ConnectorManifest = {
 export type CanonicalRecord = {
   objectType: CanonicalObjectType;
   externalId: string;
+  deleted?: boolean;
   externalParentId?: string | null;
   updatedAt?: string | null;
   data: Record<string, unknown>;

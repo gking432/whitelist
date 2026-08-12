@@ -92,7 +92,9 @@ export async function executeConnectorSyncJob(input: {
       const page = await adapter.pullPage(context, job.objectType, cursor);
 
       for (const rawRecord of page.records) {
-        const record = applyPullFieldMappings(rawRecord, fieldMappings);
+        const record = rawRecord.deleted
+          ? rawRecord
+          : applyPullFieldMappings(rawRecord, fieldMappings);
         const issues = validateCanonicalRecord(record);
         if (record.objectType !== job.objectType) {
           issues.push({

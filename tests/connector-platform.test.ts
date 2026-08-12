@@ -57,6 +57,12 @@ import { podiumAdapter } from "../lib/integrations/providers/podium.ts";
 import { birdeyeAdapter } from "../lib/integrations/providers/birdeye.ts";
 import { mapServiceTitanCustomer } from "../lib/integrations/providers/servicetitan.ts";
 import { workspaceTokenRefreshRequiresReconnect } from "../lib/integrations/providers/workspace-oauth.ts";
+import {
+  mapDeletedGmailMessage,
+  mapGoogleContact,
+  mapGoogleEvent,
+} from "../lib/integrations/providers/google-workspace.ts";
+import { mapMicrosoftDeltaRecord } from "../lib/integrations/providers/microsoft-365.ts";
 
 test("connector catalog has unique valid manifests", () => {
   assert.ok(CONNECTOR_CATALOG.length >= 20);
@@ -377,6 +383,34 @@ test("workspace refresh separates revoked grants from temporary outages", () => 
     false,
   );
   assert.equal(workspaceTokenRefreshRequiresReconnect(429, undefined), false);
+});
+
+test("workspace delta removals become canonical tombstones", () => {
+  assert.equal(
+    mapGoogleContact({
+      resourceName: "people/contact-1",
+      metadata: { deleted: true },
+    }).deleted,
+    true,
+  );
+  assert.equal(
+    mapGoogleEvent({ id: "event-1", status: "cancelled" }).deleted,
+    true,
+  );
+  assert.equal(mapDeletedGmailMessage({ id: "message-1" }).deleted, true);
+  assert.deepEqual(
+    mapMicrosoftDeltaRecord("appointment", {
+      id: "event-2",
+      "@removed": { reason: "deleted" },
+    }),
+    {
+      objectType: "appointment",
+      externalId: "event-2",
+      deleted: true,
+      data: {},
+      source: { id: "event-2", "@removed": { reason: "deleted" } },
+    },
+  );
 });
 
 const mappingFixture: ConnectorFieldMapping[] = [

@@ -68,6 +68,35 @@ export function mapMicrosoftEvent(source: Record<string, unknown>): CanonicalRec
   };
 }
 
+export function mapMicrosoftDeltaRecord(
+  objectType: CanonicalObjectType,
+  source: Record<string, unknown>,
+): CanonicalRecord {
+  if ("@removed" in source) {
+    return {
+      objectType,
+      externalId: String(source.id ?? ""),
+      deleted: true,
+      data: {},
+      source,
+    };
+  }
+  if (objectType === "customer") return mapMicrosoftContact(source);
+  if (objectType === "appointment") return mapMicrosoftEvent(source);
+  return {
+    objectType: "message",
+    externalId: String(source.id ?? ""),
+    externalParentId: typeof source.conversationId === "string" ? source.conversationId : null,
+    updatedAt: typeof source.receivedDateTime === "string" ? source.receivedDateTime : null,
+    data: {
+      subject: source.subject ?? null,
+      preview: source.bodyPreview ?? null,
+      is_read: source.isRead ?? null,
+    },
+    source,
+  };
+}
+
 function text(data: Record<string, unknown>, key: string): string {
   return typeof data[key] === "string" ? String(data[key]) : "";
 }
@@ -105,22 +134,9 @@ async function pullMicrosoftPage(credentials: WorkspaceCredentials, objectType: 
     }
     throw error;
   }
-  const records = (body.value ?? []).filter((item) => !("@removed" in item)).map((item) => {
-    if (objectType === "customer") return mapMicrosoftContact(item);
-    if (objectType === "appointment") return mapMicrosoftEvent(item);
-    return {
-      objectType: "message" as const,
-      externalId: String(item.id ?? ""),
-      externalParentId: typeof item.conversationId === "string" ? item.conversationId : null,
-      updatedAt: typeof item.receivedDateTime === "string" ? item.receivedDateTime : null,
-      data: {
-        subject: item.subject ?? null,
-        preview: item.bodyPreview ?? null,
-        is_read: item.isRead ?? null,
-      },
-      source: item,
-    };
-  });
+  const records = (body.value ?? []).map((item) =>
+    mapMicrosoftDeltaRecord(objectType, item),
+  );
   return {
     records,
     nextCursor: body["@odata.nextLink"]
