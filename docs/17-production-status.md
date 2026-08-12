@@ -71,6 +71,7 @@ stack.
 | SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
 | Browser extension / third-party CRM overlay | Not built. The Electron desktop assistant is the supported V1 overlay; direct CRM write-back is preferred whenever a connector supports it |
 | Provider live verification | Owner-started pilot evidence is guarded against test accounts and pre-pilot events, but each vendor still needs production app approval and at least one real managed-client pilot before being labeled live-verified |
+| Owner activation evidence | Control Room separates environment configuration from live runtime proof for database/schema, owner access, scheduler release/freshness, voice release, and provider-pilot rollout status |
 | Marketplace native APIs | Angi, Thumbtack, Yelp, and similar broad lead APIs remain vendor-restricted; private forwarded email and signed webhook intake are the supported V1 paths |
 | Billing/usage pricing on packages | Not built by request |
 

@@ -10,6 +10,7 @@ const jobsRunner = readFileSync("deploy/run-jobs.mjs", "utf8");
 const jobsLoop = readFileSync("deploy/run-jobs-loop.mjs", "utf8");
 const productionCompose = readFileSync("docker-compose.production.yml", "utf8");
 const healthRoute = readFileSync("app/api/health/route.ts", "utf8");
+const platformHealth = readFileSync("lib/ops/platform-health.ts", "utf8");
 const schemaVersionSource = readFileSync("lib/ops/schema-version.ts", "utf8");
 const voiceDockerfile = readFileSync(
   "services/voice-stream/Dockerfile",
@@ -114,10 +115,22 @@ if (
   fail("latest migration does not advance platform_schema_state");
 }
 if (
-  !healthRoute.includes("database_schema") ||
-  !healthRoute.includes("EXPECTED_SCHEMA_VERSION")
+  !healthRoute.includes("loadPlatformHealth") ||
+  !platformHealth.includes("database_schema") ||
+  !platformHealth.includes("EXPECTED_SCHEMA_VERSION") ||
+  !platformHealth.includes("schemaVersionIsCompatible")
 ) {
   fail("application health does not enforce the current database schema");
+}
+for (const fragment of [
+  "JOB_HEARTBEAT_MAX_AGE_MS",
+  '"release_mismatch"',
+  '"release_unavailable"',
+  "evaluateServiceHeartbeat",
+]) {
+  if (!platformHealth.includes(fragment)) {
+    fail(`application health lacks scheduler evidence contract ${fragment}`);
+  }
 }
 
 if (!voiceDockerfile.includes('CMD ["node", "server.cjs"]')) {
@@ -178,6 +191,7 @@ for (const fragment of [
   "Hosted voice release",
   "voice_release",
   "Hosted jobs release",
+  "Hosted jobs heartbeat",
   "jobs_release",
 ]) {
   if (!hostedVerifier.includes(fragment)) {

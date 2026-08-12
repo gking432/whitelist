@@ -9,6 +9,7 @@ type HealthPayload = {
   release?: string | null;
   services?: {
     jobs?: {
+      status?: string;
       release?: string | null;
       last_success_at?: string | null;
     };
@@ -105,6 +106,11 @@ async function verify() {
   ) {
     throw new Error(
       `Hosted jobs release ${health.services?.jobs?.release ?? "unknown"} does not match ${expectedRelease}.`,
+    );
+  }
+  if (expectedRelease && health.services?.jobs?.status !== "ready") {
+    throw new Error(
+      `Hosted jobs heartbeat is ${health.services?.jobs?.status ?? "unavailable"}.`,
     );
   }
 

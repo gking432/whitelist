@@ -25,7 +25,12 @@ setup, and live-account verification.
    production app domain.
 7. Configure `PLATFORM_ALERT_WEBHOOK_URL`, confirm `/api/health` reports both
    database and database schema as ready, run the job service once, and verify
-   one alert reaches the owner channel.
+   one alert reaches the owner channel. Then open **Control Room → Production
+   activation**. Configuration and runtime proof are reported separately: the
+   runtime panel must verify database access, the current schema, an active
+   platform owner, a scheduler heartbeat from the same deployed release, and
+   the matching voice-gateway release. Real-account provider pilots are shown
+   as rollout evidence and do not falsely satisfy these core runtime checks.
 8. Create a GitHub environment named `production`. Add these environment
    secrets:
 
@@ -58,11 +63,13 @@ setup, and live-account verification.
    npm run verify:hosted
    ```
 
-   This checks database/configuration readiness, the exact app and voice
-   commits, security headers, login rendering, job-endpoint authorization, and
-   voice health. It does not mutate production data. Confirm the first
-   `northstar-jobs` scheduled run in Render because cron jobs have no public
-   health endpoint.
+   This checks database/configuration readiness, the exact app, jobs, and voice
+   commits, a scheduler success within the last 15 minutes, security headers,
+   login rendering, job-endpoint authorization, and voice health. It does not
+   mutate production data. The scheduler records its release and success time
+   through the protected job endpoint, so cron health is visible from both the
+   verifier and the owner activation screen without exposing a public cron
+   endpoint.
 
 Twilio is not a platform-owner account. Each partner connects its own Twilio
 parent account during onboarding; the platform provisions isolated client
