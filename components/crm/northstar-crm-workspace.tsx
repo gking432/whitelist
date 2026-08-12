@@ -17,6 +17,7 @@ import {
   ListTodo,
   LoaderCircle,
   MessageSquareText,
+  Pencil,
   PhoneCall,
   Plus,
   Search,
@@ -25,6 +26,7 @@ import {
   Star,
   TrendingUp,
   Workflow,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -39,6 +41,7 @@ import {
   setCrmQuoteStatus,
   setCrmTaskStatus,
   updateCrmContact,
+  updateCrmAppointment,
   updateCrmLead,
   updateCrmLeadStage,
   updateCrmWorkspaceSettings,
@@ -56,6 +59,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { NorthstarCrmData } from "@/lib/crm/operating-suite";
+import { appointmentDurationMinutes } from "@/lib/crm/appointments";
 import type {
   AutomationConnection,
   AutomationRun,
@@ -282,6 +286,18 @@ function when(value: string | null | undefined): string {
       }).format(date);
 }
 
+function localDateTimeInput(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function localDateTimeToIso(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
 function statusClass(status: string): string {
   if (["won", "sent", "delivered", "booked", "done", "positive"].includes(status)) {
     return "border-emerald-200 bg-emerald-50 text-emerald-800";
@@ -383,6 +399,9 @@ export function NorthstarCrmWorkspace({
   const [actionMessage, setActionMessage] = useState<FormState | null>(null);
   const [search, setSearch] = useState(initialSearch);
   const [newLeadOpen, setNewLeadOpen] = useState(showNewLead);
+  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(
+    null,
+  );
   const [renderedAt] = useState(() => Date.now());
   const canSeeView = (candidate: CrmView) =>
     !visibleSections || visibleSections.includes(candidate);
@@ -437,12 +456,15 @@ export function NorthstarCrmWorkspace({
     return grouped;
   }, [transcriptTurns]);
 
-  function run(action: () => Promise<FormState>) {
+  function run(action: () => Promise<FormState>, onSuccess?: () => void) {
     setActionMessage(null);
     startTransition(async () => {
       const response = await action();
       setActionMessage(response);
-      if (response.status === "success") router.refresh();
+      if (response.status === "success") {
+        onSuccess?.();
+        router.refresh();
+      }
     });
   }
 
@@ -1457,53 +1479,136 @@ export function NorthstarCrmWorkspace({
               />
             ) : (
               <div className="divide-y">
-                {appointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{appointment.title}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {when(appointment.start_at)}
-                        {appointment.location
-                          ? ` · ${appointment.location}`
-                          : ""}
-                      </p>
+                {appointments.map((appointment) => {
+                  const editing = editingAppointmentId === appointment.id;
+                  const duration = appointmentDurationMinutes(
+                    appointment.start_at,
+                    appointment.end_at,
+                  );
+
+                  return (
+                    <div key={appointment.id} className="px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">{appointment.title}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {when(appointment.start_at)} · {duration} min
+                            {appointment.location
+                              ? ` · ${appointment.location}`
+                              : ""}
+                          </p>
+                        </div>
+                        {canEdit ? (
+                          <div className="flex items-center gap-1">
+                            <Select
+                              className="h-8 w-32 text-xs"
+                              value={appointment.status}
+                              onChange={(event) =>
+                                run(() =>
+                                  setCrmAppointmentStatus({
+                                    clientId,
+                                    appointmentId: appointment.id,
+                                    status: event.target.value as
+                                      | "proposed"
+                                      | "booked"
+                                      | "completed"
+                                      | "cancelled",
+                                  }),
+                                )
+                              }
+                              disabled={pending}
+                              aria-label={`Status for ${appointment.title}`}
+                            >
+                              <option value="proposed">Proposed</option>
+                              <option value="booked">Booked</option>
+                              <option value="completed">Completed</option>
+                              <option value="cancelled">Cancelled</option>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              onClick={() =>
+                                setEditingAppointmentId(editing ? null : appointment.id)
+                              }
+                              aria-label={editing ? "Close appointment editor" : `Edit ${appointment.title}`}
+                              title={editing ? "Close editor" : "Edit appointment"}
+                            >
+                              {editing ? <X aria-hidden="true" /> : <Pencil aria-hidden="true" />}
+                            </Button>
+                          </div>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className={statusClass(appointment.status)}
+                          >
+                            {appointment.status}
+                          </Badge>
+                        )}
+                      </div>
+                      {editing ? (
+                        <form
+                          className="mt-4 grid gap-3 border-t pt-4 sm:grid-cols-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            const form = new FormData(event.currentTarget);
+                            run(
+                              () =>
+                                updateCrmAppointment({
+                                  clientId,
+                                  appointmentId: appointment.id,
+                                  title: String(form.get("title") ?? ""),
+                                  startAt: localDateTimeToIso(
+                                    String(form.get("start_at") ?? ""),
+                                  ),
+                                  durationMinutes: Number(form.get("duration")),
+                                  location: String(form.get("location") ?? ""),
+                                  notes: String(form.get("notes") ?? ""),
+                                }),
+                              () => setEditingAppointmentId(null),
+                            );
+                          }}
+                        >
+                          <Input
+                            name="title"
+                            defaultValue={appointment.title}
+                            required
+                          />
+                          <Input
+                            name="start_at"
+                            type="datetime-local"
+                            defaultValue={localDateTimeInput(appointment.start_at)}
+                            required
+                          />
+                          <Select name="duration" defaultValue={String(duration)}>
+                            <option value="30">30 minutes</option>
+                            <option value="60">60 minutes</option>
+                            <option value="90">90 minutes</option>
+                            <option value="120">2 hours</option>
+                            <option value="180">3 hours</option>
+                            <option value="240">4 hours</option>
+                          </Select>
+                          <Input
+                            name="location"
+                            defaultValue={appointment.location ?? ""}
+                            placeholder="Location"
+                          />
+                          <Textarea
+                            name="notes"
+                            defaultValue={appointment.notes ?? ""}
+                            placeholder="Internal notes"
+                            className="sm:col-span-2"
+                          />
+                          <Button type="submit" disabled={pending} className="sm:col-span-2 sm:justify-self-end">
+                            <CalendarDays aria-hidden="true" />
+                            Save appointment
+                          </Button>
+                        </form>
+                      ) : null}
                     </div>
-                    {canEdit ? (
-                      <Select
-                        className="h-8 w-32 text-xs"
-                        value={appointment.status}
-                        onChange={(event) =>
-                          run(() =>
-                            setCrmAppointmentStatus({
-                              clientId,
-                              appointmentId: appointment.id,
-                              status: event.target.value as
-                                | "booked"
-                                | "completed"
-                                | "cancelled",
-                            }),
-                          )
-                        }
-                        disabled={pending}
-                        aria-label={`Status for ${appointment.title}`}
-                      >
-                        <option value="booked">Booked</option>
-                        <option value="completed">Completed</option>
-                        <option value="cancelled">Cancelled</option>
-                      </Select>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className={statusClass(appointment.status)}
-                      >
-                        {appointment.status}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
@@ -1592,7 +1697,9 @@ export function NorthstarCrmWorkspace({
                     createCrmAppointment({
                       clientId,
                       title: String(form.get("title") ?? ""),
-                      startAt: String(form.get("start_at") ?? ""),
+                      startAt: localDateTimeToIso(
+                        String(form.get("start_at") ?? ""),
+                      ),
                       durationMinutes: Number(form.get("duration")),
                       contactId: String(form.get("contact_id") ?? ""),
                       leadId: String(form.get("lead_id") ?? ""),

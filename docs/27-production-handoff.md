@@ -63,12 +63,16 @@ The public web service keeps `ENABLE_CODEX_CONNECTOR_WORKER=false`. Connector
 requests, sanitized prompts, owner approval, validation, and release tracking
 still work while execution is disabled.
 
-To enable code execution, use a dedicated trusted worker host with Codex auth,
-a persistent source checkout, and an absolute worktree directory outside that
-checkout. Set `CODEX_CONNECTOR_WORKSPACE_PATH`,
-`CODEX_CONNECTOR_WORKTREE_ROOT`, and then enable the worker. Each approved task
-runs in its assigned `codex/connector-*` branch and isolated Git worktree; it
-cannot write into the live application checkout or deploy automatically.
+To enable code execution, use a dedicated trusted worker host with Codex auth
+and a persistent source checkout. Copy `.env.example` to the host-only
+`.env.connector-worker`, set the Supabase service credentials and OpenAI/Codex
+credentials, then set `CONNECTOR_WORKSPACE_PATH` to the absolute host checkout.
+Start `docker compose -f docker-compose.connector-worker.yml up -d`. The worker
+mounts that checkout at `/workspace`, creates isolated worktrees in a separate
+volume, renews a durable lease while Codex runs, and safely retries abandoned
+work. Each approved task runs in its assigned `codex/connector-*` branch; it
+cannot deploy, merge, or push automatically. Never run this worker on the
+public application service.
 
 ## Credential-dependent evidence
 

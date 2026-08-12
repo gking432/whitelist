@@ -13,6 +13,11 @@ import {
   draftCrmMessage,
   type DraftObjective,
 } from "@/lib/crm/intelligence";
+import {
+  buildAppointmentTiming,
+  CRM_APPOINTMENT_STATUSES,
+  type CrmAppointmentStatus,
+} from "@/lib/crm/appointments";
 import type { FormState } from "@/lib/forms/state";
 import { isAccessError } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -183,6 +188,29 @@ async function audit(
     summary,
     metadata: { source: "northstar_crm" },
   });
+}
+
+async function findAppointmentConflict(
+  context: ActionContext,
+  timing: { start: Date; end: Date },
+  excludeAppointmentId?: string,
+) {
+  let query = context.admin
+    .from("crm_appointments")
+    .select("id, title, start_at, end_at")
+    .eq("client_id", context.clientId)
+    .in("status", ["proposed", "booked"])
+    .lt("start_at", timing.end.toISOString())
+    .gt("end_at", timing.start.toISOString())
+    .order("start_at", { ascending: true })
+    .limit(1);
+
+  if (excludeAppointmentId) {
+    query = query.neq("id", excludeAppointmentId);
+  }
+
+  const { data } = await query.maybeSingle();
+  return data ?? null;
 }
 
 export async function createCrmLead(input: {
@@ -605,7 +633,7 @@ export async function setCrmTaskStatus(input: {
 export async function setCrmAppointmentStatus(input: {
   clientId: string;
   appointmentId: string;
-  status: "booked" | "completed" | "cancelled";
+  status: CrmAppointmentStatus;
 }): Promise<FormState> {
   const context = await actionContext(input.clientId, "crm_edit");
   if ("status" in context) return context;
@@ -614,24 +642,44 @@ export async function setCrmAppointmentStatus(input: {
     return result("Appointment not found.", "error");
   }
 
-  const { data: appointment, error } = await context.admin
+  if (!CRM_APPOINTMENT_STATUSES.includes(input.status)) {
+    return result("Choose a valid appointment status.", "error");
+  }
+
+  const { data: existing } = await context.admin
+    .from("crm_appointments")
+    .select("id, contact_id, lead_id, title, status")
+    .eq("id", input.appointmentId)
+    .eq("client_id", context.clientId)
+    .maybeSingle();
+
+  if (!existing) {
+    return result("Appointment not found.", "error");
+  }
+
+  const { error } = await context.admin
     .from("crm_appointments")
     .update({ status: input.status })
     .eq("id", input.appointmentId)
-    .eq("client_id", context.clientId)
-    .select("id, contact_id, lead_id, title")
-    .maybeSingle();
+    .eq("client_id", context.clientId);
 
-  if (error || !appointment) {
+  if (error) {
     return result("The appointment could not be updated.", "error");
   }
 
   await addTimeline(context, {
-    contactId: appointment.contact_id,
-    leadId: appointment.lead_id,
+    contactId: existing.contact_id,
+    leadId: existing.lead_id,
     kind: "appointment",
-    title: `${appointment.title} marked ${input.status}`,
+    title: `${existing.title} marked ${input.status}`,
   });
+  await audit(
+    context,
+    "crm.appointment_status_changed",
+    "crm_appointment",
+    existing.id,
+    `Changed "${existing.title}" from ${existing.status} to ${input.status}.`,
+  );
   revalidateCrm(context.clientId);
   return result(`Appointment marked ${input.status}.`);
 }
@@ -865,12 +913,22 @@ export async function createCrmAppointment(input: {
   if ("status" in context) return context;
 
   const title = clean(input.title, 300);
-  const start = new Date(input.startAt);
-  const duration = Math.min(480, Math.max(15, input.durationMinutes ?? 60));
-  if (!title || Number.isNaN(start.getTime())) {
+  const timing = buildAppointmentTiming(
+    input.startAt,
+    input.durationMinutes,
+  );
+  if (!title || !timing) {
     return result("Add an appointment title and valid start time.", "error");
   }
-  const end = new Date(start.getTime() + duration * 60_000);
+
+  const conflict = await findAppointmentConflict(context, timing);
+  if (conflict) {
+    return result(
+      `That time overlaps "${conflict.title}". Choose another time or reschedule the existing appointment.`,
+      "error",
+    );
+  }
+
   const links = await resolveCrmLinks(context, input);
 
   const { data: appointment, error } = await context.admin
@@ -881,8 +939,8 @@ export async function createCrmAppointment(input: {
       contact_id: links.contactId,
       lead_id: links.leadId,
       title,
-      start_at: start.toISOString(),
-      end_at: end.toISOString(),
+      start_at: timing.start.toISOString(),
+      end_at: timing.end.toISOString(),
       status: "booked",
       location: clean(input.location, 300) || null,
       notes: clean(input.notes, 2000) || null,
@@ -908,10 +966,104 @@ export async function createCrmAppointment(input: {
     leadId: links.leadId,
     kind: "appointment",
     title: `Appointment booked: ${title}`,
-    body: start.toLocaleString(),
+    body: timing.start.toLocaleString(),
   });
+  await audit(
+    context,
+    "crm.appointment_created",
+    "crm_appointment",
+    appointment.id,
+    `Booked "${title}" for ${timing.start.toISOString()}.`,
+  );
   revalidateCrm(context.clientId);
   return result("Appointment added to the CRM.");
+}
+
+export async function updateCrmAppointment(input: {
+  clientId: string;
+  appointmentId: string;
+  title: string;
+  startAt: string;
+  durationMinutes?: number;
+  location?: string;
+  notes?: string;
+}): Promise<FormState> {
+  const context = await actionContext(input.clientId, "crm_edit");
+  if ("status" in context) return context;
+
+  if (!validUuid(input.appointmentId)) {
+    return result("Appointment not found.", "error");
+  }
+
+  const title = clean(input.title, 300);
+  const timing = buildAppointmentTiming(
+    input.startAt,
+    input.durationMinutes,
+  );
+  if (!title || !timing) {
+    return result("Add an appointment title and valid start time.", "error");
+  }
+
+  const { data: existing } = await context.admin
+    .from("crm_appointments")
+    .select("id, contact_id, lead_id, title, start_at, end_at, status")
+    .eq("id", input.appointmentId)
+    .eq("client_id", context.clientId)
+    .maybeSingle();
+  if (!existing) return result("Appointment not found.", "error");
+
+  const conflict = await findAppointmentConflict(
+    context,
+    timing,
+    input.appointmentId,
+  );
+  if (conflict) {
+    return result(
+      `That time overlaps "${conflict.title}". Choose another time.`,
+      "error",
+    );
+  }
+
+  const { error } = await context.admin
+    .from("crm_appointments")
+    .update({
+      title,
+      start_at: timing.start.toISOString(),
+      end_at: timing.end.toISOString(),
+      location: clean(input.location, 300) || null,
+      notes: clean(input.notes, 2000) || null,
+    })
+    .eq("id", input.appointmentId)
+    .eq("client_id", context.clientId);
+
+  if (error) {
+    return result("The appointment could not be rescheduled.", "error");
+  }
+
+  const timeChanged =
+    existing.start_at !== timing.start.toISOString() ||
+    existing.end_at !== timing.end.toISOString();
+  await addTimeline(context, {
+    contactId: existing.contact_id,
+    leadId: existing.lead_id,
+    kind: "appointment",
+    title: timeChanged
+      ? `Appointment rescheduled: ${title}`
+      : `Appointment updated: ${title}`,
+    body: timing.start.toLocaleString(),
+  });
+  await audit(
+    context,
+    timeChanged ? "crm.appointment_rescheduled" : "crm.appointment_updated",
+    "crm_appointment",
+    existing.id,
+    timeChanged
+      ? `Rescheduled "${existing.title}" to ${timing.start.toISOString()}.`
+      : `Updated appointment "${existing.title}".`,
+  );
+
+  revalidateCrm(context.clientId);
+  return result(timeChanged ? "Appointment rescheduled." : "Appointment updated.");
 }
 
 export async function saveCrmAvailability(input: {
