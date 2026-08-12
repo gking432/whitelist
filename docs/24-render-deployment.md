@@ -8,8 +8,8 @@ Northstar uses three Render services:
 
 ## Prerequisites
 
-1. Create a paid hosted Supabase project and apply every migration in
-   `supabase/migrations` in filename order.
+1. Create a paid hosted Supabase project. The guarded production workflow
+   applies migrations in filename order before each application release.
 2. Create an OpenAI project API key with billing enabled.
 3. Create a Render account and connect the GitHub repository.
 4. Have one real test account ready for each provider being launched. Code-level
@@ -17,7 +17,8 @@ Northstar uses three Render services:
 
 ## Deploy
 
-1. In Render, create a Blueprint from this repository's `render.yaml`.
+1. In Render, create a Blueprint from this repository's `render.yaml`. All
+   three services intentionally have automatic deploys disabled.
 2. Enter the requested Supabase and OpenAI values. Generate
    `SECRETS_ENCRYPTION_KEY` locally with `openssl rand -base64 32`.
 3. Render automatically wires the app, job runner, and voice-stream service
@@ -38,8 +39,11 @@ Northstar uses three Render services:
 9. In the owner Control Room, open **Provider pilots**, record the required
    real-account evidence, and promote only the provider whose complete pilot
    passed. Connected credentials alone do not make a connector live verified.
-10. Run `npm run verify:hosted` with `HOSTED_APP_URL`, `HOSTED_VOICE_URL`, and
-    `EXPECTED_RELEASE_SHA` set to prove the public release and voice gateway.
+10. Configure the GitHub `production` environment as described in
+    `docs/27-production-handoff.md`, then run **Production release** with the
+    full `main` commit SHA and confirmation text `DEPLOY PRODUCTION`. The
+    workflow previews and applies migrations, triggers that exact commit on
+    all three Render services, and verifies both public services report it.
 
 Use paid always-on instances for phone testing. Sleeping services can add enough
 cold-start delay for an inbound phone call to fail before the app answers.

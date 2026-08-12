@@ -8,6 +8,17 @@ const appUrl = (process.env.NORTHSTAR_APP_URL || "").replace(/\/$/, "");
 const apiKey = process.env.OPENAI_API_KEY || "";
 const sharedSecret = process.env.VOICE_STREAM_SHARED_SECRET || "";
 const model = process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-live-transcribe";
+const release = (() => {
+  const value = (
+    process.env.RENDER_GIT_COMMIT ||
+    process.env.GITHUB_SHA ||
+    process.env.RELEASE_SHA ||
+    ""
+  )
+    .trim()
+    .toLowerCase();
+  return /^[a-f0-9]{7,64}$/.test(value) ? value : null;
+})();
 
 if (!appUrl || !apiKey || !sharedSecret) {
   console.error(
@@ -161,7 +172,7 @@ function createTranscriber(callSessionId, track) {
 const server = http.createServer((request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ ok: true }));
+    response.end(JSON.stringify({ ok: true, release }));
     return;
   }
 

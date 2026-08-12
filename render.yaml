@@ -7,7 +7,8 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
-    autoDeployTrigger: commit
+    # Releases are migration-first and are triggered by the guarded workflow.
+    autoDeployTrigger: off
     envVars:
       - key: APP_URL
         fromService:
@@ -102,7 +103,7 @@ services:
     schedule: "*/5 * * * *"
     dockerfilePath: ./deploy/jobs.Dockerfile
     dockerContext: .
-    autoDeployTrigger: commit
+    autoDeployTrigger: off
     envVars:
       - key: NORTHSTAR_APP_URL
         fromService:
@@ -123,7 +124,7 @@ services:
     dockerfilePath: ./services/voice-stream/Dockerfile
     dockerContext: .
     healthCheckPath: /health
-    autoDeployTrigger: commit
+    autoDeployTrigger: off
     maxShutdownDelaySeconds: 60
     envVars:
       - key: NORTHSTAR_APP_URL

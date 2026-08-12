@@ -19,6 +19,18 @@ const desktopWorkflow = readFileSync(
   ".github/workflows/desktop-release.yml",
   "utf8",
 );
+const productionWorkflow = readFileSync(
+  ".github/workflows/production-release.yml",
+  "utf8",
+);
+const hostedVerifier = readFileSync(
+  "scripts/verify-hosted-production.ts",
+  "utf8",
+);
+const renderDeployTrigger = readFileSync(
+  "scripts/trigger-render-deploys.mjs",
+  "utf8",
+);
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 
 const requiredRenderFragments = [
@@ -40,6 +52,9 @@ const requiredRenderFragments = [
 
 for (const fragment of requiredRenderFragments) {
   if (!render.includes(fragment)) fail(`render.yaml lacks ${fragment}`);
+}
+if ((render.match(/autoDeployTrigger: off/g) ?? []).length !== 3) {
+  fail("every Render service must use the migration-first release workflow");
 }
 
 if (!jobsDockerfile.includes('CMD ["node", "run-jobs.mjs"]')) {
@@ -125,6 +140,45 @@ for (const fragment of [
   }
 }
 
+for (const fragment of [
+  "workflow_dispatch:",
+  "confirmation:",
+  'test "$CONFIRMATION" = "DEPLOY PRODUCTION"',
+  "git merge-base --is-ancestor",
+  "environment:",
+  "name: production",
+  "supabase db push --dry-run",
+  "supabase db push",
+  "node scripts/trigger-render-deploys.mjs",
+  "npm run verify:hosted",
+]) {
+  if (!productionWorkflow.includes(fragment)) {
+    fail(`production release workflow lacks ${fragment}`);
+  }
+}
+
+for (const fragment of [
+  'hook.searchParams.set("ref", release)',
+  'hook.hostname !== "api.render.com"',
+  "RENDER_APP_DEPLOY_HOOK_URL",
+  "RENDER_JOBS_DEPLOY_HOOK_URL",
+  "RENDER_VOICE_DEPLOY_HOOK_URL",
+]) {
+  if (!renderDeployTrigger.includes(fragment)) {
+    fail(`Render release trigger lacks ${fragment}`);
+  }
+}
+
+for (const fragment of [
+  "HOSTED_VERIFY_TIMEOUT_MS",
+  "Hosted voice release",
+  "voice_release",
+]) {
+  if (!hostedVerifier.includes(fragment)) {
+    fail(`hosted release verifier lacks ${fragment}`);
+  }
+}
+
 for (const script of [
   "verify:production-env",
   "verify:security",
@@ -142,5 +196,5 @@ for (const script of [
 }
 
 console.log(
-  "Release topology verified: schema-aware web health, Render and self-hosted five-minute jobs, voice stream, production readiness, and signed desktop workflows are wired.",
+  "Release topology verified: schema-aware web health, migration-first exact-commit Render deployment, self-hosted five-minute jobs, voice stream, production readiness, and signed desktop workflows are wired.",
 );

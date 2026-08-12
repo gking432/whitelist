@@ -5,6 +5,7 @@ import WebSocket from "ws";
 const jobsImage = "northstar-jobs-verify";
 const voiceImage = "northstar-voice-verify";
 const voiceContainer = `northstar-voice-smoke-${process.pid}`;
+const releaseSha = "1234567890abcdef1234567890abcdef12345678";
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -48,7 +49,14 @@ async function waitForVoiceHealth(url) {
       const response = await fetch(`${url}/health`, {
         signal: AbortSignal.timeout(1_000),
       });
-      if (response.ok && (await response.json()).ok === true) return;
+      const health = await response.json();
+      if (
+        response.ok &&
+        health.ok === true &&
+        health.release === releaseSha
+      ) {
+        return;
+      }
     } catch {
       // Container startup can take a moment on a cold Docker daemon.
     }
@@ -139,6 +147,8 @@ try {
     "OPENAI_API_KEY=release-check-only",
     "--env",
     "VOICE_STREAM_SHARED_SECRET=release-check-shared-secret",
+    "--env",
+    `RELEASE_SHA=${releaseSha}`,
     voiceImage,
   ]);
 
@@ -155,7 +165,7 @@ try {
   await verifyUnauthorizedStream(voiceUrl);
 
   console.log(
-    "Service images verified: scheduler configuration and voice health/authentication contracts pass.",
+    "Service images verified: scheduler configuration and voice release/health/authentication contracts pass.",
   );
 } finally {
   cleanup();
