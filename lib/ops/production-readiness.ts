@@ -80,6 +80,7 @@ export function productionReadiness(env: ReadinessEnvironment = process.env): {
   requireValue("CRON_SECRET", 24);
   requireValue("VOICE_STREAM_SHARED_SECRET", 24);
   requireValue("OPENAI_API_KEY", 20);
+  requireValue("ANTHROPIC_API_KEY", 20);
   requireValue("PLATFORM_ALERT_WEBHOOK_URL", 8);
   requireValue("PLATFORM_RESEND_API_KEY", 8);
   requireValue("PLATFORM_ALERT_FROM_EMAIL", 5);

@@ -18,6 +18,7 @@ function completeEnvironment(): ReadinessEnvironment {
     CRON_SECRET: "cron-secret-at-least-twenty-four",
     VOICE_STREAM_SHARED_SECRET: "voice-secret-at-least-twenty-four",
     OPENAI_API_KEY: "openai-key-at-least-twenty",
+    ANTHROPIC_API_KEY: "anthropic-key-at-least-twenty",
     VOICE_PROVIDER: "openai_realtime",
     NORTHSTAR_VOICE_STREAM_URL: "wss://voice.example.com",
     PLATFORM_ALERT_WEBHOOK_URL: "https://alerts.example.com/northstar",

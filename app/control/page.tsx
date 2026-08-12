@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Eye, FlaskConical, LifeBuoy, PlugZap, ShieldCheck, TriangleAlert, UsersRound } from "lucide-react";
+import { Building2, Eye, FlaskConical, LifeBuoy, PlugZap, Rocket, ShieldCheck, TriangleAlert, UsersRound } from "lucide-react";
 
 import { startPlatformImpersonation } from "@/app/impersonation/actions";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
@@ -91,6 +91,12 @@ export default async function ControlRoomPage() {
         </div>
 
         <div className="flex flex-wrap justify-end gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/control/activation">
+              <Rocket aria-hidden="true" />
+              Production activation
+            </Link>
+          </Button>
           <Button asChild variant="outline" size="sm" className="mr-2">
             <Link href="/control/support">
               <LifeBuoy aria-hidden="true" />
