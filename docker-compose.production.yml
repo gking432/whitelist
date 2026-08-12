@@ -7,7 +7,7 @@ services:
     env_file:
       - .env.production
     environment:
-      NEXT_PUBLIC_APP_URL: https://${APP_DOMAIN}
+      APP_URL: https://${APP_DOMAIN}
       NORTHSTAR_VOICE_STREAM_URL: wss://${VOICE_DOMAIN}/twilio
     expose:
       - "3000"

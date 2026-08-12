@@ -10,6 +10,7 @@ import { getAppUrl } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
   furthestOnboardingStep,
+  partnerTwilioConnectionIsReady,
   PARTNER_V1_PLAN,
   type PartnerOnboardingRecord,
   type PartnerOnboardingStep,
@@ -108,6 +109,22 @@ async function updateOnboardingProgress(
   );
 
   if (error) throw new Error(error.message);
+}
+
+async function partnerTwilioIsReady(
+  supabase: NonNullable<
+    Awaited<ReturnType<typeof createSupabaseServerClient>>
+  >,
+  partnerId: string,
+) {
+  const { data, error } = await supabase
+    .from("partner_provider_connections")
+    .select("status, credential_status, last_success_at")
+    .eq("partner_id", partnerId)
+    .eq("provider_key", "twilio")
+    .maybeSingle();
+
+  return !error && partnerTwilioConnectionIsReady(data);
 }
 
 export async function savePartnerAgencyDetails(
@@ -275,7 +292,7 @@ export async function invitePartnerTeamMember(
     if (!userId) {
       const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
         data: { full_name: fullName },
-        redirectTo: `${getAppUrl()}/auth/callback?next=/partner`,
+        redirectTo: `${getAppUrl()}/auth/confirm?next=/partner`,
       });
 
       if (error || !data.user) {
@@ -382,6 +399,19 @@ export async function finishPartnerIntegrationsStep(
       return { status: "error", message: "Sign in to continue onboarding." };
     }
 
+    if (
+      !(await partnerTwilioIsReady(
+        context.supabase,
+        context.access.partnerId!,
+      ))
+    ) {
+      return {
+        status: "error",
+        message:
+          "Connect and verify your Twilio billing account before continuing.",
+      };
+    }
+
     await updateOnboardingProgress(
       context.supabase,
       context.access.partnerId!,
@@ -415,6 +445,15 @@ export async function completePartnerOnboarding(
     }
 
     const { access, admin, supabase } = context;
+
+    if (!(await partnerTwilioIsReady(supabase, access.partnerId!))) {
+      return {
+        status: "error",
+        message:
+          "Your verified Twilio billing account is required to finish onboarding.",
+      };
+    }
+
     const now = new Date().toISOString();
     const { error } = await supabase.from("partner_onboarding").upsert(
       {

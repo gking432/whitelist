@@ -13,6 +13,8 @@ import {
   type ClientBusinessRecord,
 } from "@/lib/clients/constants";
 import type { FormState } from "@/lib/forms/state";
+import { getAppUrl } from "@/lib/env";
+import { permissionsForJobRole } from "@/lib/permissions/client-sections";
 import {
   isAccessError,
   requireClientWorkspaceAccess,
@@ -20,6 +22,7 @@ import {
 } from "@/lib/permissions/access";
 import { PARTNER_MANAGER_ROLES } from "@/lib/permissions/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type ClientFieldValues = {
   name: string;
@@ -81,7 +84,10 @@ function validateFields(
     errors.timezone = "Timezone is required.";
   }
 
-  if (!fields.primaryContactEmail && !fields.primaryContactPhone) {
+  if (fields.clientPortalEnabled && !fields.primaryContactEmail) {
+    errors.primary_contact_email =
+      "A client-owner email is required to send workspace access.";
+  } else if (!fields.primaryContactEmail && !fields.primaryContactPhone) {
     errors.primary_contact_email =
       "A primary contact email or phone is required.";
   }
@@ -180,8 +186,9 @@ export async function createClientBusiness(
     }
 
     const supabase = await createSupabaseServerClient();
+    const admin = createSupabaseAdminClient();
 
-    if (!supabase) {
+    if (!supabase || !admin) {
       return {
         status: "error",
         message: "The data service is not configured for this environment.",
@@ -257,6 +264,80 @@ export async function createClientBusiness(
 
     clientId = created.id;
 
+    let invitedUserId: string | null = null;
+    let createdInvitationUser = false;
+    let ownerMembershipId: string | null = null;
+
+    if (fields.primaryContactEmail) {
+      const email = fields.primaryContactEmail.toLowerCase();
+      const { data: existingProfile } = await admin
+        .from("profiles")
+        .select("id")
+        .ilike("email", email)
+        .maybeSingle();
+
+      invitedUserId = existingProfile?.id ?? null;
+
+      if (!invitedUserId) {
+        const { data: invitation, error: invitationError } =
+          await admin.auth.admin.inviteUserByEmail(email, {
+            data: {
+              full_name: fields.primaryContactName || fields.name,
+            },
+            redirectTo: `${getAppUrl()}/auth/confirm?next=/client`,
+          });
+
+        if (invitationError || !invitation.user) {
+          await supabase.from("client_businesses").delete().eq("id", clientId);
+          return {
+            status: "error",
+            message:
+              invitationError?.message ??
+              "The client workspace invitation could not be created.",
+          };
+        }
+
+        invitedUserId = invitation.user.id;
+        createdInvitationUser = true;
+      }
+
+      const ownerPermissions = permissionsForJobRole("owner");
+      const { data: membership, error: membershipError } = await admin
+        .from("memberships")
+        .insert({
+          user_id: invitedUserId,
+          partner_id: access.partnerId,
+          client_id: clientId,
+          role: "client_owner",
+          status: "active",
+          invited_by: access.userId,
+          client_job_role: "owner",
+          client_permissions: {
+            sections: ownerPermissions.visibleSections,
+            view_action_center: ownerPermissions.canViewActionCenter,
+            resolve_approvals: ownerPermissions.canResolveApprovals,
+            operate_customer_actions:
+              ownerPermissions.canOperateCustomerActions,
+            edit_crm_data: ownerPermissions.canEditCrmData,
+          },
+        })
+        .select("id")
+        .single();
+
+      if (membershipError || !membership) {
+        await supabase.from("client_businesses").delete().eq("id", clientId);
+        if (createdInvitationUser && invitedUserId) {
+          await admin.auth.admin.deleteUser(invitedUserId).catch(() => undefined);
+        }
+        return {
+          status: "error",
+          message: "The client owner could not be granted workspace access.",
+        };
+      }
+
+      ownerMembershipId = membership.id;
+    }
+
     await recordAuditEvent({
       actor: { ...access, clientId: created.id },
       action: "client.created",
@@ -275,6 +356,22 @@ export async function createClientBusiness(
         package_name: selectedPackage.name,
       },
     });
+
+    if (ownerMembershipId) {
+      await recordAuditEvent({
+        actor: { ...access, clientId: created.id },
+        action: "client.owner_invited",
+        targetType: "membership",
+        targetId: ownerMembershipId,
+        summary: createdInvitationUser
+          ? `Invited ${fields.primaryContactEmail} as the client owner.`
+          : `Granted ${fields.primaryContactEmail} client-owner access.`,
+        metadata: {
+          email: fields.primaryContactEmail.toLowerCase(),
+          invitation_sent: createdInvitationUser,
+        },
+      });
+    }
   } catch (error) {
     return accessErrorState(error);
   }

@@ -21,7 +21,7 @@ local environment values are configured.
 Copy `.env.example` to `.env.local` and set:
 
 ```bash
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=   # server-only: webhook intake + run engine

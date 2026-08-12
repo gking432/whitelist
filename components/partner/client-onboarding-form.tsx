@@ -111,9 +111,9 @@ export function ClientOnboardingForm({
       const email = String(formData?.get("primary_contact_email") ?? "").trim();
       const phone = String(formData?.get("primary_contact_phone") ?? "").trim();
 
-      if (!email && !phone) {
+      if (!email) {
         setValidationMessage(
-          "Add the primary contact's email or phone number.",
+          "Add the client owner's email so the workspace invitation can be sent.",
         );
         return;
       }
@@ -288,6 +288,7 @@ export function ClientOnboardingForm({
                 type="email"
                 className="mt-1.5"
                 placeholder="owner@business.com"
+                required
               />
               <FieldError message={errors.primary_contact_email} />
             </div>
@@ -303,7 +304,8 @@ export function ClientOnboardingForm({
             </div>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Email or phone is required. This does not send an invitation yet.
+            The client owner receives a secure workspace invitation after you
+            finish this form. Their phone number is optional.
           </p>
         </div>
       </fieldset>

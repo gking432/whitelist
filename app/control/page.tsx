@@ -3,6 +3,7 @@ import { Building2, Eye, LifeBuoy, PlugZap, ShieldCheck, TriangleAlert, UsersRou
 
 import { startPlatformImpersonation } from "@/app/impersonation/actions";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
+import { NewPartnerForm } from "@/components/control/new-partner-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
@@ -132,6 +133,20 @@ export default async function ControlRoomPage() {
             <p className="text-xs text-muted-foreground">Unresolved platform errors</p>
           </Link>
         </section>
+
+        {["platform_owner", "platform_admin"].includes(access.role) ? (
+          <section className="rounded-lg border bg-card">
+            <div className="border-b px-5 py-4">
+              <h2 className="font-semibold">Add a white-label partner</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Create the account and send its owner into the required brand, team, phone, and plan setup.
+              </p>
+            </div>
+            <div className="p-5">
+              <NewPartnerForm />
+            </div>
+          </section>
+        ) : null}
 
         <section className="overflow-hidden rounded-lg border bg-card">
           <div className="border-b px-5 py-4">

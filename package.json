@@ -22,6 +22,7 @@
     "voice-stream": "node services/voice-stream/server.cjs",
     "verify:restore": "node scripts/verify-database-restore.mjs",
     "verify:security": "node scripts/verify-database-security.mjs",
+    "verify:production-env": "node --experimental-strip-types scripts/verify-production-env.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test \"tests/*.test.ts\""

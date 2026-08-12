@@ -4,10 +4,6 @@ import { PartnerOnboardingWizard } from "@/components/partner/partner-onboarding
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { DEFAULT_BRAND_COLORS, normalizeBrandColor } from "@/lib/branding";
 import {
-  PILOT_PROVIDER_KEYS,
-  PILOT_PROVIDERS,
-} from "@/lib/integrations/pilot";
-import {
   partnerOnboardingIsComplete,
   requestedOnboardingStep,
   type PartnerOnboardingRecord,
@@ -30,11 +26,6 @@ type TeamMembership = {
   user_id: string;
   role: string;
   status: string;
-};
-
-type ConnectionRow = {
-  status: string;
-  provider: { provider_key: string } | null;
 };
 
 export default async function PartnerOnboardingPage({
@@ -81,7 +72,7 @@ export default async function PartnerOnboardingPage({
       .order("created_at", { ascending: true }),
     supabase
       .from("partner_provider_connections")
-      .select("status, health_summary, last_success_at, config")
+      .select("status, credential_status, health_summary, last_success_at, config")
       .eq("partner_id", access.partnerId)
       .eq("provider_key", "twilio")
       .maybeSingle(),
@@ -115,17 +106,6 @@ export default async function PartnerOnboardingPage({
       : { data: [] };
   const profileById = new Map(
     (profiles ?? []).map((profile) => [profile.id, profile]),
-  );
-  const { data: connectionData } = await admin
-    .from("integration_connections")
-    .select("status, provider:integration_providers(provider_key)")
-    .eq("partner_id", access.partnerId)
-    .eq("client_id", agency.id);
-  const connections = (connectionData ?? []) as unknown as ConnectionRow[];
-  const connectionByProvider = new Map(
-    connections
-      .filter((connection) => connection.provider?.provider_key)
-      .map((connection) => [connection.provider!.provider_key, connection]),
   );
   const branding = brandingResult.data;
   const partnerName = partner.name;
@@ -174,6 +154,7 @@ export default async function PartnerOnboardingPage({
         twilioResult.data
           ? {
               status: twilioResult.data.status,
+              credentialStatus: twilioResult.data.credential_status,
               healthSummary: twilioResult.data.health_summary,
               accountSid:
                 typeof twilioResult.data.config?.account_sid === "string"
@@ -183,14 +164,6 @@ export default async function PartnerOnboardingPage({
             }
           : null
       }
-      integrations={PILOT_PROVIDER_KEYS.map((key) => ({
-        key,
-        name:
-          key === "twilio"
-            ? "Phone assistant for your own agency"
-            : PILOT_PROVIDERS[key].title,
-        status: connectionByProvider.get(key)?.status ?? "not_connected",
-      }))}
     />
   );
 }

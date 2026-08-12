@@ -21,7 +21,7 @@ Northstar uses three Render services:
 2. Enter the requested Supabase and OpenAI values. Generate
    `SECRETS_ENCRYPTION_KEY` locally with `openssl rand -base64 32`.
 3. After Render reserves both service names, set these values:
-   - App `NEXT_PUBLIC_APP_URL`: the app's `https://...onrender.com` URL.
+   - App `APP_URL`: the app's canonical `https://...onrender.com` URL.
    - App `NORTHSTAR_VOICE_STREAM_URL`: the voice service URL using
      `wss://...onrender.com/twilio`.
    - Voice `NORTHSTAR_APP_URL`: the app's `https://...onrender.com` URL.

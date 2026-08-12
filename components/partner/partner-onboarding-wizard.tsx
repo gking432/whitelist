@@ -38,6 +38,7 @@ import { initialFormState, type FormState } from "@/lib/forms/state";
 import {
   formatPlanPrice,
   onboardingStepIndex,
+  partnerTwilioConnectionIsReady,
   PARTNER_ONBOARDING_STEPS,
   PARTNER_V1_PLAN,
   type PartnerOnboardingStep,
@@ -49,12 +50,6 @@ type PartnerTeamMember = {
   name: string;
   email: string;
   role: string;
-  status: string;
-};
-
-type AgencyIntegration = {
-  key: string;
-  name: string;
   status: string;
 };
 
@@ -72,11 +67,11 @@ type PartnerOnboardingWizardProps = {
   agencyId: string;
   twilioConnection: {
     status: string;
+    credentialStatus: string;
     healthSummary: string | null;
     accountSid: string | null;
     lastSuccessAt: string | null;
   } | null;
-  integrations: AgencyIntegration[];
 };
 
 const stepMeta: Record<
@@ -108,12 +103,6 @@ const stepMeta: Record<
     shortLabel: "Plan",
     icon: CreditCard,
   },
-};
-
-const integrationStatusStyles: Record<string, string> = {
-  connected: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  needs_attention: "border-amber-200 bg-amber-50 text-amber-900",
-  failing: "border-red-200 bg-red-50 text-red-900",
 };
 
 function fieldError(message?: string) {
@@ -336,79 +325,35 @@ function TeamStep({ team }: { team: PartnerTeamMember[] }) {
 
 function IntegrationsStep({
   agencyId,
-  integrations,
   twilioConnection,
 }: {
   agencyId: string;
-  integrations: AgencyIntegration[];
   twilioConnection: PartnerOnboardingWizardProps["twilioConnection"];
 }) {
   const [state, action, pending] = useActionState(
     finishPartnerIntegrationsStep,
     initialFormState,
   );
+  const twilioReady = partnerTwilioConnectionIsReady(
+    twilioConnection
+      ? {
+          status: twilioConnection.status,
+          credential_status: twilioConnection.credentialStatus,
+          last_success_at: twilioConnection.lastSuccessAt,
+        }
+      : null,
+  );
 
   return (
     <div className="space-y-6">
       <PartnerTwilioForm connection={twilioConnection} compact />
 
-      <div className="border-t pt-5">
-        <p className="text-sm font-medium">Tools for your agency business</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          These are optional connections for running your own agency. The Twilio billing account above is separate and powers the phone products you sell to clients.
-        </p>
-      </div>
-      <div className="overflow-hidden rounded-lg border">
-        {integrations.map((integration) => {
-          const connected = integration.status === "connected";
-          return (
-            <div
-              key={integration.key}
-              className="flex items-center justify-between gap-4 border-b px-4 py-3 last:border-b-0"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <span
-                  className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-md",
-                    connected
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-secondary text-muted-foreground",
-                  )}
-                >
-                  {connected ? (
-                    <Check className="size-4" aria-hidden="true" />
-                  ) : (
-                    <PlugZap className="size-4" aria-hidden="true" />
-                  )}
-                </span>
-                <p className="truncate text-sm font-medium">
-                  {integration.name}
-                </p>
-              </div>
-              <Badge
-                variant="outline"
-                className={
-                  integrationStatusStyles[integration.status] ??
-                  "border-slate-200 bg-slate-50 text-slate-700"
-                }
-              >
-                {connected
-                  ? "Connected"
-                  : integration.status === "not_connected"
-                    ? "Not connected"
-                    : integration.status.replaceAll("_", " ")}
-              </Badge>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-lg border bg-secondary/35 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-medium">Connect tools for your own agency</p>
+          <p className="text-sm font-medium">Optional agency tools</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            This is optional and does not affect the client accounts you add
-            later.
+            Your agency can use the same CRM and automations you sell. This is
+            separate from client setup and can wait until later.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -425,9 +370,11 @@ function IntegrationsStep({
         className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between"
       >
         <p className="text-xs text-muted-foreground">
-          You can connect these tools at any time.
+          {twilioReady
+            ? "Twilio is verified. Optional agency tools can be connected at any time."
+            : "Connect and verify the Twilio billing account above to continue."}
         </p>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || !twilioReady}>
           {pending ? "Saving..." : "Continue"}
           <ArrowRight aria-hidden="true" />
         </Button>
@@ -538,7 +485,6 @@ export function PartnerOnboardingWizard({
   team,
   agencyId,
   twilioConnection,
-  integrations,
 }: PartnerOnboardingWizardProps) {
   const activeIndex = onboardingStepIndex(step);
   const furthestIndex = onboardingStepIndex(furthestStep);
@@ -669,7 +615,6 @@ export function PartnerOnboardingWizard({
                 <IntegrationsStep
                   agencyId={agencyId}
                   twilioConnection={twilioConnection}
-                  integrations={integrations}
                 />
               ) : null}
               {step === "plan" ? <PlanStep /> : null}

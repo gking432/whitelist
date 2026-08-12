@@ -97,7 +97,7 @@ provider still requires its own deployed-account pilot before launch.
 4. Credentials → Create credentials → **OAuth client ID** → type
    **Web application**.
 5. Authorized redirect URI — must be exactly:
-   `<your NEXT_PUBLIC_APP_URL>/api/oauth/google/callback`
+   `<your APP_URL>/api/oauth/google/callback`
    e.g. `http://localhost:3000/api/oauth/google/callback` for local runs.
    The Google card on the Setup checklist shows this exact value so you
    can copy it.
@@ -109,7 +109,7 @@ provider still requires its own deployed-account pilot before launch.
 `.env.local` (see `.env.example`):
 
 ```bash
-NEXT_PUBLIC_APP_URL=http://localhost:3000        # or your deployed URL
+APP_URL=http://localhost:3000                    # or your deployed URL
 NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 SUPABASE_SERVICE_ROLE_KEY=<service role key>     # server-only

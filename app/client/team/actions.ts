@@ -132,7 +132,7 @@ export async function inviteClientTeamMember(input: {
   if (!userId) {
     const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
       data: { full_name: fullName },
-      redirectTo: `${getAppUrl()}/auth/callback?next=/client`,
+      redirectTo: `${getAppUrl()}/auth/confirm?next=/client`,
     });
 
     if (error || !data.user) {

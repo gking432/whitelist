@@ -68,7 +68,7 @@ voice stream, and five-minute job runner. Enter these values when prompted:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | required |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key | required (server) |
 | `SECRETS_ENCRYPTION_KEY` | `openssl rand -base64 32` | encrypts stored provider tokens |
-| `NEXT_PUBLIC_APP_URL` | `https://<your-app>` | OAuth + webhook URLs |
+| `APP_URL` | `https://<your-app>` | Runtime OAuth, invitation, and webhook URLs |
 | `ANTHROPIC_API_KEY` | your key | real AI (else labeled fallback) |
 | `OPENAI_API_KEY` | your key | voice assistant (docs/21) |
 | `VOICE_PROVIDER` | `openai_realtime` | enables the voice adapter |

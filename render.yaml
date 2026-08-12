@@ -9,7 +9,7 @@ services:
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     envVars:
-      - key: NEXT_PUBLIC_APP_URL
+      - key: APP_URL
         sync: false
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false
@@ -85,6 +85,8 @@ services:
         value: "false"
       - key: ENABLE_CODEX_CONNECTOR_WORKER
         value: "false"
+      - key: REQUIRE_PRODUCTION_READINESS
+        value: "true"
 
   - type: cron
     name: northstar-jobs

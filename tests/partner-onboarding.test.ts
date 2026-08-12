@@ -5,6 +5,7 @@ import {
   formatPlanPrice,
   furthestOnboardingStep,
   partnerOnboardingIsComplete,
+  partnerTwilioConnectionIsReady,
   PARTNER_V1_PLAN,
   requestedOnboardingStep,
 } from "../lib/onboarding/partner.ts";
@@ -44,4 +45,32 @@ test("onboarding requires both completed status and timestamp", () => {
     false,
   );
   assert.equal(partnerOnboardingIsComplete(null), false);
+});
+
+test("partner onboarding requires a recently verified Twilio parent account", () => {
+  assert.equal(
+    partnerTwilioConnectionIsReady({
+      status: "connected",
+      credential_status: "configured",
+      last_success_at: "2026-08-11T12:00:00.000Z",
+    }),
+    true,
+  );
+  assert.equal(
+    partnerTwilioConnectionIsReady({
+      status: "connected",
+      credential_status: "missing",
+      last_success_at: "2026-08-11T12:00:00.000Z",
+    }),
+    false,
+  );
+  assert.equal(
+    partnerTwilioConnectionIsReady({
+      status: "needs_attention",
+      credential_status: "configured",
+      last_success_at: "2026-08-11T12:00:00.000Z",
+    }),
+    false,
+  );
+  assert.equal(partnerTwilioConnectionIsReady(null), false);
 });

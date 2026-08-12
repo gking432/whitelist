@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { initialFormState } from "@/lib/forms/state";
+import { partnerTwilioConnectionIsReady } from "@/lib/onboarding/partner";
 
 type Props = {
   connection: {
     status: string;
+    credentialStatus: string;
     healthSummary: string | null;
     accountSid: string | null;
     lastSuccessAt: string | null;
@@ -26,7 +28,15 @@ export function PartnerTwilioForm({ connection, compact = false }: Props) {
     initialFormState,
   );
   const [showToken, setShowToken] = useState(false);
-  const connected = connection?.status === "connected";
+  const connected = partnerTwilioConnectionIsReady(
+    connection
+      ? {
+          status: connection.status,
+          credential_status: connection.credentialStatus,
+          last_success_at: connection.lastSuccessAt,
+        }
+      : null,
+  );
 
   return (
     <section className={compact ? "space-y-4" : "rounded-lg border bg-card p-5 sm:p-6"}>
@@ -50,7 +60,7 @@ export function PartnerTwilioForm({ connection, compact = false }: Props) {
         </Badge>
       </div>
 
-      {connected ? (
+      {connected && connection ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
           <p className="flex items-center gap-2 font-medium">
             <CheckCircle2 className="size-4" aria-hidden="true" /> Ready to provision client phone systems

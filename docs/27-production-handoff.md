@@ -8,7 +8,7 @@ setup, and live-account verification.
 
 1. Create the production Supabase project and apply every migration in
    `supabase/migrations` in timestamp order.
-2. Deploy `render.yaml`, set `NEXT_PUBLIC_APP_URL` to the public HTTPS app URL,
+2. Deploy `render.yaml`, set `APP_URL` to the public HTTPS app URL,
    and point the web, job, and voice services at that URL.
 3. Set the Supabase URL, anonymous key, and service-role key. Generate separate
    random values for `SECRETS_ENCRYPTION_KEY`, `CRON_SECRET`, and

@@ -77,6 +77,20 @@ export function partnerOnboardingIsComplete(
   return onboarding?.status === "completed" && Boolean(onboarding.completed_at);
 }
 
+export function partnerTwilioConnectionIsReady(
+  connection: {
+    status?: string | null;
+    credential_status?: string | null;
+    last_success_at?: string | null;
+  } | null,
+): boolean {
+  return (
+    connection?.status === "connected" &&
+    connection.credential_status === "configured" &&
+    Boolean(connection.last_success_at)
+  );
+}
+
 export function formatPlanPrice(cents: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

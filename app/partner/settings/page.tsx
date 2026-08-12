@@ -73,7 +73,7 @@ export default async function PartnerBrandingPage() {
       .maybeSingle(),
     supabase
       .from("partner_provider_connections")
-      .select("status, health_summary, last_success_at, config")
+      .select("status, credential_status, health_summary, last_success_at, config")
       .eq("partner_id", access.partnerId)
       .eq("provider_key", "twilio")
       .maybeSingle(),
@@ -220,6 +220,7 @@ export default async function PartnerBrandingPage() {
               twilio
                 ? {
                     status: twilio.status,
+                    credentialStatus: twilio.credential_status,
                     healthSummary: twilio.health_summary,
                     accountSid:
                       typeof twilio.config?.account_sid === "string"

@@ -30,7 +30,7 @@ export async function requestLoginLink(
     };
   }
 
-  const callbackUrl = new URL("/auth/callback", getAppUrl());
+  const callbackUrl = new URL("/auth/confirm", getAppUrl());
   callbackUrl.searchParams.set("next", nextPath);
 
   const { error } = await supabase.auth.signInWithOtp({

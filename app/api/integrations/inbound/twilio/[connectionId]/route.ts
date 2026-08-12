@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 // Twilio inbound SMS webhook. Point the Twilio phone number's "A message
 // comes in" webhook at:
-//   {NEXT_PUBLIC_APP_URL}/api/integrations/inbound/twilio/{connectionId}
+//   {APP_URL}/api/integrations/inbound/twilio/{connectionId}
 // (HTTP POST). Requests are authenticated with Twilio's own
 // X-Twilio-Signature (HMAC-SHA1 over URL + params with the account auth
 // token) — no extra header can be configured in Twilio's console, so the

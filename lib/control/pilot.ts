@@ -69,7 +69,7 @@ export function classifyPilotAppUrl(value: string): PilotUrlState {
       url: value,
       ready: false,
       label: "Invalid app URL",
-      detail: "Set NEXT_PUBLIC_APP_URL to the deployed HTTPS address.",
+      detail: "Set APP_URL to the deployed HTTPS address.",
     };
   }
 }
