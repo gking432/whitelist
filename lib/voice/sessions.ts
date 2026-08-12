@@ -103,6 +103,7 @@ export async function createCallSession(
           status: caller.status,
           provider: caller.provider,
           external_contact_id: caller.externalContactId,
+          external_object_type: caller.externalObjectType,
           contact: caller.contact,
         },
       }),
@@ -338,9 +339,7 @@ Summarize this call.`,
       summary.extracted.service_need ?? collectedString("service_need"),
     urgency:
       summary.extracted.urgency ??
-      (["emergency", "high", "medium", "low"].includes(
-        collectedUrgency ?? "",
-      )
+      (["emergency", "high", "medium", "low"].includes(collectedUrgency ?? "")
         ? (collectedUrgency as CallSummary["extracted"]["urgency"])
         : null),
     appointment_preference:
@@ -435,6 +434,23 @@ Summarize this call.`,
     appointment_preference: summary.extracted.appointment_preference,
     channel: "phone",
     call_session_id: callSessionId,
+    external_provider_key:
+      typeof session.extracted?.caller_resolution?.provider === "string"
+        ? session.extracted.caller_resolution.provider
+        : null,
+    external_customer_id:
+      session.extracted?.caller_resolution?.external_object_type ===
+        "customer" &&
+      typeof session.extracted?.caller_resolution?.external_contact_id ===
+        "string"
+        ? session.extracted.caller_resolution.external_contact_id
+        : null,
+    external_lead_id:
+      session.extracted?.caller_resolution?.external_object_type === "lead" &&
+      typeof session.extracted?.caller_resolution?.external_contact_id ===
+        "string"
+        ? session.extracted.caller_resolution.external_contact_id
+        : null,
   };
 
   const { data: insertedEvent } = await admin

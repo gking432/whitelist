@@ -5,10 +5,7 @@ import { extractContactFields } from "../../crm/contact-fields.ts";
 import type { RunStep } from "../../workflows/handlers.ts";
 
 import { getConnectorAdapter } from "./adapters.ts";
-import type {
-  CanonicalObjectType,
-  ConnectorCapability,
-} from "./types.ts";
+import type { CanonicalObjectType, ConnectorCapability } from "./types.ts";
 
 type WritebackConnection = {
   id: string;
@@ -23,8 +20,9 @@ type WritebackConnection = {
 
 export type LeadWritebackPlan = {
   objectType: "customer" | "lead";
-  operation: "create";
+  operation: "create" | "update";
   nativeObjectId: string;
+  externalObjectId?: string | null;
   idempotencyKey: string;
   data: Record<string, unknown>;
 };
@@ -39,6 +37,7 @@ export function planLeadConnectorWriteback(input: {
   eventData: Record<string, unknown>;
   runSummary: string;
   connectionConfig?: Record<string, unknown> | null;
+  externalObjectId?: string | null;
 }): LeadWritebackPlan | null {
   const fields = extractContactFields(input.eventData);
   if (!fields.email && !fields.phone) return null;
@@ -53,6 +52,7 @@ export function planLeadConnectorWriteback(input: {
     description: input.runSummary,
     summary: input.runSummary,
     source_event_type: input.eventType,
+    customer_id: input.externalObjectId ?? null,
   };
 
   if (input.capabilities.includes("lead.create")) {
@@ -66,11 +66,16 @@ export function planLeadConnectorWriteback(input: {
   }
 
   if (input.capabilities.includes("customer.create")) {
+    const operation =
+      input.externalObjectId && input.capabilities.includes("customer.update")
+        ? "update"
+        : "create";
     return {
       objectType: "customer",
-      operation: "create",
+      operation,
       nativeObjectId: input.contactId ?? input.workflowRunId,
-      idempotencyKey: `workflow-${input.workflowRunId}-customer-create`,
+      externalObjectId: input.externalObjectId,
+      idempotencyKey: `workflow-${input.workflowRunId}-customer-${operation}`,
       data: sharedData,
     };
   }
@@ -122,6 +127,52 @@ export async function enqueueLeadConnectorWriteback(
     const adapter = getConnectorAdapter(connection.provider.provider_key);
     if (!adapter) return null;
 
+    let externalIdentity: {
+      objectType: "customer" | "lead";
+      externalObjectId: string;
+    } | null = null;
+    if (input.contactId) {
+      const { data: link } = await admin
+        .from("integration_object_links")
+        .select("object_type, external_object_id")
+        .eq("connection_id", connection.id)
+        .in("object_type", ["customer", "lead"])
+        .eq("native_object_id", input.contactId)
+        .order("last_synced_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (
+        link?.external_object_id &&
+        (link.object_type === "customer" || link.object_type === "lead")
+      ) {
+        externalIdentity = {
+          objectType: link.object_type,
+          externalObjectId: link.external_object_id,
+        };
+      }
+    }
+    if (
+      !externalIdentity &&
+      input.eventData.external_provider_key === connection.provider.provider_key
+    ) {
+      if (typeof input.eventData.external_customer_id === "string") {
+        externalIdentity = {
+          objectType: "customer",
+          externalObjectId: input.eventData.external_customer_id,
+        };
+      } else if (typeof input.eventData.external_lead_id === "string") {
+        externalIdentity = {
+          objectType: "lead",
+          externalObjectId: input.eventData.external_lead_id,
+        };
+      }
+    }
+
+    const externalCustomerId =
+      externalIdentity?.objectType === "customer"
+        ? externalIdentity.externalObjectId
+        : null;
+
     const plan = planLeadConnectorWriteback({
       providerKey: connection.provider.provider_key,
       capabilities: adapter.manifest.capabilities,
@@ -132,6 +183,7 @@ export async function enqueueLeadConnectorWriteback(
       eventData: input.eventData,
       runSummary: input.runSummary,
       connectionConfig: connection.config,
+      externalObjectId: externalCustomerId,
     });
 
     if (!plan) {
@@ -145,20 +197,64 @@ export async function enqueueLeadConnectorWriteback(
       };
     }
 
+    if (
+      externalIdentity?.objectType === plan.objectType &&
+      !adapter.manifest.capabilities.includes(`${plan.objectType}.update`)
+    ) {
+      const idempotencyKey = `workflow-${input.workflowRunId}-${plan.objectType}-already-linked`;
+      const reason = `existing_external_${plan.objectType}`;
+      const { error: eventError } = await admin
+        .from("integration_events")
+        .insert({
+          partner_id: input.partnerId,
+          client_id: input.clientId,
+          connection_id: connection.id,
+          workflow_run_id: input.workflowRunId,
+          direction: "outbound",
+          event_type: `connector.${plan.objectType}_writeback_skipped`,
+          status: "skipped",
+          idempotency_key: idempotencyKey,
+          external_object_type: plan.objectType,
+          external_object_id: externalIdentity.externalObjectId,
+          request_payload: redactAuditValue({
+            reason,
+            provider: connection.provider.provider_key,
+          }),
+          redacted: true,
+        });
+      if (eventError && eventError.code !== "23505") throw eventError;
+
+      return {
+        step: {
+          name: `${connection.provider.display_name} ${plan.objectType} matched`,
+          detail: `The caller is already linked to this external ${plan.objectType}, so no duplicate record was created.`,
+        },
+        writeback: {
+          status: "skipped",
+          reason,
+          provider: connection.provider.provider_key,
+          object_type: plan.objectType,
+          external_object_id: externalIdentity.externalObjectId,
+        },
+      };
+    }
+
     if (connection.runtime_mode !== "live") {
-      const { error: previewEventError } = await admin.from("integration_events").insert({
-        partner_id: input.partnerId,
-        client_id: input.clientId,
-        connection_id: connection.id,
-        workflow_run_id: input.workflowRunId,
-        direction: "outbound",
-        event_type: `connector.${plan.objectType}_writeback_preview`,
-        status: "dry_run",
-        idempotency_key: plan.idempotencyKey,
-        external_object_type: plan.objectType,
-        request_payload: redactAuditValue(plan.data),
-        redacted: true,
-      });
+      const { error: previewEventError } = await admin
+        .from("integration_events")
+        .insert({
+          partner_id: input.partnerId,
+          client_id: input.clientId,
+          connection_id: connection.id,
+          workflow_run_id: input.workflowRunId,
+          direction: "outbound",
+          event_type: `connector.${plan.objectType}_writeback_preview`,
+          status: "dry_run",
+          idempotency_key: plan.idempotencyKey,
+          external_object_type: plan.objectType,
+          request_payload: redactAuditValue(plan.data),
+          redacted: true,
+        });
       if (previewEventError) throw previewEventError;
 
       return {
@@ -185,6 +281,7 @@ export async function enqueueLeadConnectorWriteback(
       idempotency_key: plan.idempotencyKey,
       payload: {
         nativeObjectId: plan.nativeObjectId,
+        externalObjectId: plan.externalObjectId ?? null,
         idempotencyKey: plan.idempotencyKey,
         data: plan.data,
       },
@@ -194,19 +291,21 @@ export async function enqueueLeadConnectorWriteback(
     if (error && error.code !== "23505") throw error;
 
     if (!error) {
-      const { error: eventError } = await admin.from("integration_events").insert({
-        partner_id: input.partnerId,
-        client_id: input.clientId,
-        connection_id: connection.id,
-        workflow_run_id: input.workflowRunId,
-        direction: "outbound",
-        event_type: `connector.${plan.objectType}_writeback_queued`,
-        status: "processed",
-        idempotency_key: plan.idempotencyKey,
-        external_object_type: plan.objectType,
-        request_payload: redactAuditValue(plan.data),
-        redacted: true,
-      });
+      const { error: eventError } = await admin
+        .from("integration_events")
+        .insert({
+          partner_id: input.partnerId,
+          client_id: input.clientId,
+          connection_id: connection.id,
+          workflow_run_id: input.workflowRunId,
+          direction: "outbound",
+          event_type: `connector.${plan.objectType}_writeback_queued`,
+          status: "processed",
+          idempotency_key: plan.idempotencyKey,
+          external_object_type: plan.objectType,
+          request_payload: redactAuditValue(plan.data),
+          redacted: true,
+        });
       if (eventError) throw eventError;
     }
 

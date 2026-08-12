@@ -22,7 +22,10 @@ import {
   executeConnectorSyncJob,
 } from "../lib/integrations/connectors/sync-executor.ts";
 import { planLeadConnectorWriteback } from "../lib/integrations/connectors/writeback.ts";
-import { quickBooksOnlineAdapter, mapQuickBooksCustomer } from "../lib/integrations/providers/quickbooks-online.ts";
+import {
+  quickBooksOnlineAdapter,
+  mapQuickBooksCustomer,
+} from "../lib/integrations/providers/quickbooks-online.ts";
 import { stripeAdapter } from "../lib/integrations/providers/stripe.ts";
 import { squareAdapter } from "../lib/integrations/providers/square.ts";
 import { callRailAdapter } from "../lib/integrations/providers/callrail.ts";
@@ -34,10 +37,14 @@ import { googleAdsAdapter } from "../lib/integrations/providers/google-ads.ts";
 import { googleBusinessProfileAdapter } from "../lib/integrations/providers/google-business-profile.ts";
 import { podiumAdapter } from "../lib/integrations/providers/podium.ts";
 import { birdeyeAdapter } from "../lib/integrations/providers/birdeye.ts";
+import { mapServiceTitanCustomer } from "../lib/integrations/providers/servicetitan.ts";
 
 test("connector catalog has unique valid manifests", () => {
   assert.ok(CONNECTOR_CATALOG.length >= 20);
-  assert.equal(new Set(CONNECTOR_CATALOG.map((item) => item.key)).size, CONNECTOR_CATALOG.length);
+  assert.equal(
+    new Set(CONNECTOR_CATALOG.map((item) => item.key)).size,
+    CONNECTOR_CATALOG.length,
+  );
 
   for (const manifest of CONNECTOR_CATALOG) {
     assert.deepEqual(validateConnectorManifest(manifest), [], manifest.key);
@@ -69,7 +76,10 @@ test("every verified catalog capability has an executable implementation", () =>
         manifest.key as keyof typeof NATIVE_CONNECTOR_CAPABILITIES
       ];
 
-    assert.ok(nativeCapabilities, `${manifest.key} has no executable implementation`);
+    assert.ok(
+      nativeCapabilities,
+      `${manifest.key} has no executable implementation`,
+    );
     assert.deepEqual(
       [...nativeCapabilities].sort(),
       [...manifest.capabilities].sort(),
@@ -95,7 +105,9 @@ test("field-service launch connectors have executable contracts", () => {
     const connector = CONNECTOR_CATALOG.find((item) => item.key === key);
     assert.ok(connector, `${key} is in the catalog`);
     assert.equal(connector.verificationStatus, "contract_verified");
-    assert.ok(connector.capabilities.some((capability) => capability.endsWith(".read")));
+    assert.ok(
+      connector.capabilities.some((capability) => capability.endsWith(".read")),
+    );
   }
 });
 
@@ -104,33 +116,74 @@ test("finance and attribution connectors have executable contracts", () => {
     const connector = CONNECTOR_CATALOG.find((item) => item.key === key);
     assert.ok(connector, `${key} is in the catalog`);
     assert.equal(connector.verificationStatus, "contract_verified");
-    assert.ok(connector.capabilities.some((capability) => capability.endsWith(".read")));
+    assert.ok(
+      connector.capabilities.some((capability) => capability.endsWith(".read")),
+    );
   }
-  for (const adapter of [quickBooksOnlineAdapter, stripeAdapter, squareAdapter, callRailAdapter]) {
-    assert.deepEqual(validateConnectorAdapter(adapter), [], adapter.manifest.key);
+  for (const adapter of [
+    quickBooksOnlineAdapter,
+    stripeAdapter,
+    squareAdapter,
+    callRailAdapter,
+  ]) {
+    assert.deepEqual(
+      validateConnectorAdapter(adapter),
+      [],
+      adapter.manifest.key,
+    );
   }
 });
 
 test("retained phone connectors expose real call and message contracts", () => {
-  for (const adapter of [ringCentralAdapter, dialpadAdapter, openPhoneAdapter]) {
-    const connector = CONNECTOR_CATALOG.find((item) => item.key === adapter.manifest.key);
+  for (const adapter of [
+    ringCentralAdapter,
+    dialpadAdapter,
+    openPhoneAdapter,
+  ]) {
+    const connector = CONNECTOR_CATALOG.find(
+      (item) => item.key === adapter.manifest.key,
+    );
     assert.ok(connector, `${adapter.manifest.key} is in the catalog`);
     assert.equal(connector.verificationStatus, "contract_verified");
     assert.ok(connector.capabilities.includes("lead.webhook"));
     assert.ok(connector.capabilities.includes("message.webhook"));
-    assert.deepEqual(validateConnectorAdapter(adapter), [], adapter.manifest.key);
+    assert.deepEqual(
+      validateConnectorAdapter(adapter),
+      [],
+      adapter.manifest.key,
+    );
   }
 });
 
 test("marketing and reputation connectors expose executable contracts", () => {
-  for (const adapter of [metaAdapter, googleAdsAdapter, googleBusinessProfileAdapter, podiumAdapter, birdeyeAdapter]) {
-    const connector = CONNECTOR_CATALOG.find((item) => item.key === adapter.manifest.key);
+  for (const adapter of [
+    metaAdapter,
+    googleAdsAdapter,
+    googleBusinessProfileAdapter,
+    podiumAdapter,
+    birdeyeAdapter,
+  ]) {
+    const connector = CONNECTOR_CATALOG.find(
+      (item) => item.key === adapter.manifest.key,
+    );
     assert.ok(connector, `${adapter.manifest.key} is in the catalog`);
     assert.equal(connector.verificationStatus, "contract_verified");
-    assert.deepEqual(validateConnectorAdapter(adapter), [], adapter.manifest.key);
+    assert.deepEqual(
+      validateConnectorAdapter(adapter),
+      [],
+      adapter.manifest.key,
+    );
   }
-  assert.equal(CONNECTOR_CATALOG.find((item) => item.key === "universal_lead_email")?.verificationStatus, "contract_verified");
-  for (const key of ["angi", "thumbtack", "yelp"]) assert.equal(CONNECTOR_CATALOG.find((item) => item.key === key)?.verificationStatus, "restricted");
+  assert.equal(
+    CONNECTOR_CATALOG.find((item) => item.key === "universal_lead_email")
+      ?.verificationStatus,
+    "contract_verified",
+  );
+  for (const key of ["angi", "thumbtack", "yelp"])
+    assert.equal(
+      CONNECTOR_CATALOG.find((item) => item.key === key)?.verificationStatus,
+      "restricted",
+    );
 });
 
 test("QuickBooks customers map into the shared CRM contact shape", () => {
@@ -145,6 +198,19 @@ test("QuickBooks customers map into the shared CRM contact shape", () => {
   assert.equal(mapped.externalId, "42");
   assert.equal(mapped.data.email, "office@acme.test");
   assert.equal(mapped.data.phone, "+13125550100");
+});
+
+test("ServiceTitan customers retain contacts needed for caller matching", () => {
+  const mapped = mapServiceTitanCustomer({
+    id: 42,
+    name: "Jamie Rivera",
+    contacts: [
+      { type: "Mobile", value: "+13125550199" },
+      { type: "Email", value: "jamie@example.test" },
+    ],
+  });
+  assert.equal(mapped.data.phone, "+13125550199");
+  assert.equal(mapped.data.email, "jamie@example.test");
 });
 
 test("available adapters must implement the operations they advertise", () => {
@@ -408,6 +474,33 @@ test("lead write-back chooses the operation supported by the connected system", 
   assert.equal(customer?.objectType, "customer");
   assert.equal(customer?.nativeObjectId, "contact-1");
   assert.equal(customer?.idempotencyKey, "workflow-run-2-customer-create");
+
+  const existingCustomer = planLeadConnectorWriteback({
+    providerKey: "jobber",
+    capabilities: ["customer.create", "job.read"],
+    workflowRunId: "run-4",
+    contactId: "contact-1",
+    eventType: "call.completed",
+    eventData: { phone: "+13125550100" },
+    runSummary: "Existing customer called again.",
+    externalObjectId: "jobber-customer-1",
+  });
+  assert.equal(existingCustomer?.externalObjectId, "jobber-customer-1");
+
+  const existingServiceTitanCustomer = planLeadConnectorWriteback({
+    providerKey: "servicetitan",
+    capabilities: ["customer.read", "lead.create"],
+    workflowRunId: "run-5",
+    leadId: "lead-5",
+    eventType: "call.completed",
+    eventData: { phone: "+13125550100" },
+    runSummary: "Existing customer requested service.",
+    externalObjectId: "servicetitan-customer-1",
+  });
+  assert.equal(
+    existingServiceTitanCustomer?.data.customer_id,
+    "servicetitan-customer-1",
+  );
 });
 
 test("lead write-back refuses records without a stable customer identifier", () => {

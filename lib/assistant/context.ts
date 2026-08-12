@@ -251,7 +251,10 @@ function buildActions(input: {
     hasLeadBearingRun,
   } = input;
 
-  const notInPackage = (key: AssistantActionKey, label: string): AssistantAction => ({
+  const notInPackage = (
+    key: AssistantActionKey,
+    label: string,
+  ): AssistantAction => ({
     key,
     label,
     state: "not_in_package",
@@ -325,7 +328,7 @@ function buildActions(input: {
     });
   }
 
-  // Book appointment — calendar contract is real, booking workflow is not.
+  // Book appointment — real availability and approval-gated booking.
   if (!capabilities.has("appointment_booking")) {
     actions.push(notInPackage("book_appointment", "Book appointment"));
   } else if (!calendarConn.connected) {
@@ -387,7 +390,7 @@ function buildActions(input: {
       state: "works_now",
       stateLabel: "Works now",
       detail:
-        "An \"AI Assistant\" note is attached automatically with every CRM sync — use Sync to CRM to push the latest.",
+        'An "AI Assistant" note is attached automatically with every CRM sync — use Sync to CRM to push the latest.',
       href: null,
       enabled: false,
     });
@@ -486,7 +489,8 @@ export async function buildAssistantContext(
   options?: { audience?: "partner" | "client" },
 ): Promise<AssistantContextData> {
   const audience = options?.audience ?? "partner";
-  const base = audience === "client" ? "/client" : `/partner/clients/${client.id}`;
+  const base =
+    audience === "client" ? "/client" : `/partner/clients/${client.id}`;
 
   const [
     { data: packageData },
@@ -521,7 +525,9 @@ export async function buildAssistantContext(
       .limit(10),
     supabase
       .from("approval_items")
-      .select("id, status, type, title, editable_content, proposed_payload, created_at")
+      .select(
+        "id, status, type, title, editable_content, proposed_payload, created_at",
+      )
       .eq("client_id", client.id)
       .order("created_at", { ascending: false })
       .limit(5),
@@ -601,12 +607,14 @@ export async function buildAssistantContext(
         ["connected", "needs_attention"].includes(candidate.status),
     )?.provider?.display_name ?? "Northstar CRM";
   const smsConn = connFor("twilio");
-  const calendarConn = ["google_workspace", "microsoft_365", "google_calendar"]
-    .map(connFor)
-    .find((connection) => connection.connected) ?? connFor("google_calendar");
-  const emailConn = ["google_workspace", "microsoft_365", "resend"]
-    .map(connFor)
-    .find((connection) => connection.connected) ?? connFor("resend");
+  const calendarConn =
+    ["google_workspace", "microsoft_365", "google_calendar"]
+      .map(connFor)
+      .find((connection) => connection.connected) ?? connFor("google_calendar");
+  const emailConn =
+    ["google_workspace", "microsoft_365", "resend"]
+      .map(connFor)
+      .find((connection) => connection.connected) ?? connFor("resend");
 
   const runs = (runsData ?? []) as unknown as RunRow[];
 
@@ -713,8 +721,7 @@ export async function buildAssistantContext(
   let routing: AssistantContextData["routing"] = null;
   const routingOutput = (
     routerRun?.output_snapshot?.output as
-      | { routing?: Record<string, unknown> }
-      | undefined
+      { routing?: Record<string, unknown> } | undefined
   )?.routing;
 
   if (activeCall) {
@@ -759,8 +766,7 @@ export async function buildAssistantContext(
       urgency: asString(routingOutput.urgency) ?? "medium",
       confidence: asString(routingOutput.confidence) ?? "low",
       summary: asString(routingOutput.summary) ?? "",
-      suggestedNextAction:
-        asString(routingOutput.suggested_next_action) ?? "",
+      suggestedNextAction: asString(routingOutput.suggested_next_action) ?? "",
       recommendedOwner: asString(routingOutput.recommended_owner) ?? "",
       requiresHandoff: routingOutput.requires_human_handoff === true,
       source: ai?.status === "ai" ? "ai" : "fallback",
@@ -771,8 +777,7 @@ export async function buildAssistantContext(
   let analysis: AssistantContextData["analysis"] = null;
   const analysisOutput = (
     analysisRun?.output_snapshot?.output as
-      | { analysis?: Record<string, unknown> }
-      | undefined
+      { analysis?: Record<string, unknown> } | undefined
   )?.analysis;
 
   if (activeCall) {
@@ -815,8 +820,7 @@ export async function buildAssistantContext(
   } else if (analysisOutput) {
     const ai = analysisRun?.output_snapshot?.ai as { status?: string } | null;
     const suggestedTask = analysisOutput.suggested_task as
-      | { title?: string }
-      | undefined;
+      { title?: string } | undefined;
 
     analysis = {
       urgency: asString(analysisOutput.urgency) ?? "medium",
@@ -869,14 +873,9 @@ export async function buildAssistantContext(
 
   // CRM sync status from the latest lead-bearing run's crm snapshot.
   const crmSnapshot = leadBearingRun?.output_snapshot?.crm as
-    | { status?: string; contact_id?: string }
-    | undefined;
+    { status?: string; contact_id?: string } | undefined;
   const crmStatus = (crmSnapshot?.status ?? "none") as
-    | "synced"
-    | "dry_run"
-    | "failed"
-    | "skipped"
-    | "none";
+    "synced" | "dry_run" | "failed" | "skipped" | "none";
 
   const crm: AssistantContextData["crm"] = {
     status: crmSnapshot ? crmStatus : "none",
@@ -932,9 +931,8 @@ export async function buildAssistantContext(
     };
 
     realSlots = [slot, ...alternatives]
-      .filter(
-        (candidate): candidate is { label: string; start_iso: string } =>
-          Boolean(candidate.label && candidate.start_iso),
+      .filter((candidate): candidate is { label: string; start_iso: string } =>
+        Boolean(candidate.label && candidate.start_iso),
       )
       .map((candidate) => ({
         label: candidate.label,
@@ -954,9 +952,8 @@ export async function buildAssistantContext(
             label: asString(slot.label),
             startIso: asString(slot.start_iso),
           }))
-          .filter(
-            (slot): slot is { label: string; startIso: string } =>
-              Boolean(slot.label && slot.startIso),
+          .filter((slot): slot is { label: string; startIso: string } =>
+            Boolean(slot.label && slot.startIso),
           )
       : [];
 
@@ -985,19 +982,25 @@ export async function buildAssistantContext(
       title: run.template?.name ?? "Workflow run",
       detail: run.summary,
     })),
-    ...((auditData ?? []) as { created_at: string; action: string; summary: string | null }[]).map(
-      (event) => ({
-        at: event.created_at,
-        kind: "audit" as const,
-        title: event.action.replaceAll(".", " ").replaceAll("_", " "),
-        detail: event.summary,
-      }),
-    ),
-    ...((assistantEventsData ?? []) as {
-      created_at: string;
-      event_type: string;
-      payload: Record<string, unknown> | null;
-    }[]).map((event) => ({
+    ...(
+      (auditData ?? []) as {
+        created_at: string;
+        action: string;
+        summary: string | null;
+      }[]
+    ).map((event) => ({
+      at: event.created_at,
+      kind: "audit" as const,
+      title: event.action.replaceAll(".", " ").replaceAll("_", " "),
+      detail: event.summary,
+    })),
+    ...(
+      (assistantEventsData ?? []) as {
+        created_at: string;
+        event_type: string;
+        payload: Record<string, unknown> | null;
+      }[]
+    ).map((event) => ({
       at: event.created_at,
       kind: "assistant_event" as const,
       title: event.event_type.replaceAll("_", " "),
@@ -1063,16 +1066,14 @@ export async function buildAssistantContext(
             asString(
               (
                 activeCall.extracted?.caller_resolution as
-                  | Record<string, unknown>
-                  | undefined
+                  Record<string, unknown> | undefined
               )?.status,
             ) === "matched"
               ? "matched"
               : asString(
                     (
                       activeCall.extracted?.caller_resolution as
-                        | Record<string, unknown>
-                        | undefined
+                        Record<string, unknown> | undefined
                     )?.status,
                   ) === "created"
                 ? "created"

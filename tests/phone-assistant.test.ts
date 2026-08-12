@@ -1,15 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  normalizePhone,
-  phoneSearchVariants,
-} from "../lib/phone/normalize.ts";
+import { findCanonicalCallerMatch } from "../lib/crm/canonical-caller.ts";
+import { normalizePhone, phoneSearchVariants } from "../lib/phone/normalize.ts";
 import {
   signVoiceStreamPayload,
   signVoiceStreamSession,
   verifyVoiceStreamPayload,
 } from "../lib/voice/stream-signature.ts";
+
+test("matches formatted caller IDs against synced external customers", () => {
+  const result = findCanonicalCallerMatch(
+    [
+      {
+        object_type: "customer",
+        external_object_id: "customer-42",
+        native_object_id: null,
+        canonical_data: {
+          name: "Jamie Rivera",
+          phone: "+1 (312) 555-0199",
+          email: "jamie@example.test",
+        },
+      },
+    ],
+    "312.555.0199",
+  );
+
+  assert.equal(result?.objectType, "customer");
+  assert.equal(result?.match.id, "customer-42");
+  assert.equal(result?.match.firstname, "Jamie");
+  assert.equal(result?.match.lastname, "Rivera");
+});
 
 test("normalizes common US caller ID formats", () => {
   assert.equal(normalizePhone("+1 (312) 555-0199"), "3125550199");
