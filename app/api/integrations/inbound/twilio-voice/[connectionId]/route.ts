@@ -8,13 +8,10 @@ import { checkRateLimit } from "@/lib/integrations/rate-limit";
 import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { verifyTwilioSignature } from "@/lib/integrations/twilio-signature";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import {
-  createCallSession,
-} from "@/lib/voice/sessions";
+import { createCallSession } from "@/lib/voice/sessions";
 import { signVoiceStreamSession } from "@/lib/voice/stream-signature";
-import {
-  startTextVoiceCall,
-} from "@/lib/voice/simulate";
+import { normalizeVoiceStreamUrl } from "@/lib/voice/stream-url";
+import { startTextVoiceCall } from "@/lib/voice/simulate";
 import {
   gatherTwiml,
   hangupTwiml,
@@ -108,12 +105,7 @@ export async function POST(
 
   if (
     !signature ||
-    !verifyTwilioSignature(
-      credentials.authToken,
-      webhookUrl,
-      values,
-      signature,
-    )
+    !verifyTwilioSignature(credentials.authToken, webhookUrl, values, signature)
   ) {
     return rejectVoiceWebhook(403);
   }
@@ -169,6 +161,11 @@ export async function POST(
       );
     }
 
+    const streamUrl = normalizeVoiceStreamUrl(
+      process.env.NORTHSTAR_VOICE_STREAM_URL,
+    );
+    const streamSecret = process.env.VOICE_STREAM_SHARED_SECRET?.trim() || null;
+
     await admin.from("integration_events").insert({
       partner_id: connection.partner_id,
       client_id: connection.client_id,
@@ -186,13 +183,10 @@ export async function POST(
       }),
       response_payload: {
         call_session_id: created.callSessionId,
-        live_transcription: Boolean(process.env.NORTHSTAR_VOICE_STREAM_URL),
+        live_transcription: Boolean(streamUrl && streamSecret),
       },
       redacted: true,
     });
-
-    const streamUrl = process.env.NORTHSTAR_VOICE_STREAM_URL?.trim() || null;
-    const streamSecret = process.env.VOICE_STREAM_SHARED_SECRET?.trim() || null;
 
     return staffAssistTwiml({
       connectionId,

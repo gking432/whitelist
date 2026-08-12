@@ -1,3 +1,5 @@
+import { normalizeVoiceStreamUrl } from "../voice/stream-url.ts";
+
 export type ProductionReadinessIssue = {
   key: string;
   message: string;
@@ -27,8 +29,14 @@ function isPublicHttps(input: string): boolean {
 
 function isPublicWebSocket(input: string): boolean {
   try {
-    const url = new URL(input);
-    return url.protocol === "wss:" && isPublicHttps(`https://${url.host}`);
+    const normalized = normalizeVoiceStreamUrl(input);
+    if (!normalized) return false;
+    const url = new URL(normalized);
+    return (
+      url.protocol === "wss:" &&
+      url.pathname === "/twilio" &&
+      isPublicHttps(`https://${url.host}`)
+    );
   } catch {
     return false;
   }
@@ -42,9 +50,7 @@ function isBase64Key32Bytes(input: string): boolean {
   }
 }
 
-export function productionReadiness(
-  env: ReadinessEnvironment = process.env,
-): {
+export function productionReadiness(env: ReadinessEnvironment = process.env): {
   enforced: boolean;
   ready: boolean;
   issues: ProductionReadinessIssue[];
@@ -95,7 +101,8 @@ export function productionReadiness(
   if (!isPublicWebSocket(value(env, "NORTHSTAR_VOICE_STREAM_URL"))) {
     issues.push({
       key: "NORTHSTAR_VOICE_STREAM_URL",
-      message: "NORTHSTAR_VOICE_STREAM_URL must be the public WSS endpoint.",
+      message:
+        "NORTHSTAR_VOICE_STREAM_URL must be a public HTTPS service URL or WSS /twilio endpoint.",
     });
   }
   if (!isPublicHttps(value(env, "PLATFORM_ALERT_WEBHOOK_URL"))) {
@@ -104,7 +111,9 @@ export function productionReadiness(
       message: "PLATFORM_ALERT_WEBHOOK_URL must be a public HTTPS endpoint.",
     });
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value(env, "PLATFORM_ALERT_FROM_EMAIL"))) {
+  if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value(env, "PLATFORM_ALERT_FROM_EMAIL"))
+  ) {
     issues.push({
       key: "PLATFORM_ALERT_FROM_EMAIL",
       message: "PLATFORM_ALERT_FROM_EMAIL must be a valid sender address.",

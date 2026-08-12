@@ -5,6 +5,7 @@ import {
   productionReadiness,
   type ReadinessEnvironment,
 } from "../lib/ops/production-readiness.ts";
+import { normalizeVoiceStreamUrl } from "../lib/voice/stream-url.ts";
 
 function completeEnvironment(): ReadinessEnvironment {
   return {
@@ -35,6 +36,21 @@ test("complete production infrastructure passes readiness", () => {
   assert.equal(result.enforced, true);
   assert.equal(result.ready, true);
   assert.deepEqual(result.issues, []);
+});
+
+test("Render HTTPS voice URL becomes Twilio's WebSocket endpoint", () => {
+  assert.equal(
+    normalizeVoiceStreamUrl("https://northstar-voice.onrender.com"),
+    "wss://northstar-voice.onrender.com/twilio",
+  );
+  assert.equal(
+    normalizeVoiceStreamUrl("wss://voice.example.com/twilio"),
+    "wss://voice.example.com/twilio",
+  );
+
+  const env = completeEnvironment();
+  env.NORTHSTAR_VOICE_STREAM_URL = "https://northstar-voice.onrender.com";
+  assert.equal(productionReadiness(env).ready, true);
 });
 
 test("local URLs, unsafe flags, and malformed encryption fail readiness", () => {

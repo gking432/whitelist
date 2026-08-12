@@ -8,8 +8,8 @@ setup, and live-account verification.
 
 1. Create the production Supabase project and apply every migration in
    `supabase/migrations` in timestamp order.
-2. Deploy `render.yaml`, set `APP_URL` to the public HTTPS app URL,
-   and point the web, job, and voice services at that URL.
+2. Deploy `render.yaml`. The Blueprint derives the app, job, and voice service
+   URLs from Render automatically.
 3. Set the Supabase URL, anonymous key, and service-role key. Generate separate
    random values for `SECRETS_ENCRYPTION_KEY`, `CRON_SECRET`, and
    `VOICE_STREAM_SHARED_SECRET`.

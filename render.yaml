@@ -10,7 +10,10 @@ services:
     autoDeployTrigger: commit
     envVars:
       - key: APP_URL
-        sync: false
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: RENDER_EXTERNAL_URL
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -26,7 +29,10 @@ services:
       - key: VOICE_PROVIDER
         value: openai_realtime
       - key: NORTHSTAR_VOICE_STREAM_URL
-        sync: false
+        fromService:
+          type: web
+          name: northstar-voice-stream
+          envVarKey: RENDER_EXTERNAL_URL
       - key: VOICE_STREAM_SHARED_SECRET
         generateValue: true
       - key: CRON_SECRET
@@ -99,7 +105,10 @@ services:
     autoDeployTrigger: commit
     envVars:
       - key: NORTHSTAR_APP_URL
-        sync: false
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: RENDER_EXTERNAL_URL
       - key: CRON_SECRET
         fromService:
           type: web
@@ -118,7 +127,10 @@ services:
     maxShutdownDelaySeconds: 60
     envVars:
       - key: NORTHSTAR_APP_URL
-        sync: false
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: RENDER_EXTERNAL_URL
       - key: OPENAI_API_KEY
         fromService:
           type: web

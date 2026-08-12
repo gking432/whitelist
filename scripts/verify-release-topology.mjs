@@ -29,6 +29,7 @@ const requiredRenderFragments = [
   "healthCheckPath: /health",
   "envVarKey: OPENAI_API_KEY",
   "envVarKey: VOICE_STREAM_SHARED_SECRET",
+  "envVarKey: RENDER_EXTERNAL_URL",
   "key: REQUIRE_PRODUCTION_READINESS",
   'value: "true"',
 ];
@@ -50,6 +51,10 @@ for (const fragment of [
 
 if (!voiceDockerfile.includes('CMD ["node", "server.cjs"]')) {
   fail("voice service does not execute its WebSocket server");
+}
+
+if ((render.match(/envVarKey: RENDER_EXTERNAL_URL/g) ?? []).length < 4) {
+  fail("Render service URLs are not fully self-wired");
 }
 
 for (const fragment of [
