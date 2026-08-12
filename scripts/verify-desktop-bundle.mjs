@@ -39,7 +39,9 @@ function verifyApplicationArchive(asarPath) {
     {
       encoding: "utf8",
     },
-  ).split("\n");
+  )
+    .split("\n")
+    .map((path) => path.trim().replaceAll("\\", "/"));
 
   for (const required of [
     "/main.cjs",
