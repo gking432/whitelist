@@ -5,7 +5,7 @@ import type {
   ConnectorPage,
   ConnectorPushInput,
 } from "../connectors/types";
-import { mintWorkspaceAccessToken, type WorkspaceCredentials } from "./workspace-oauth";
+import { mintWorkspaceAccessToken, type WorkspaceCredentials } from "./workspace-oauth.ts";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 

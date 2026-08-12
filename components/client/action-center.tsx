@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BellCheck, ClipboardList, PlugZap, Workflow } from "lucide-react";
+import { BellCheck, CircleAlert, PlugZap, Workflow } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +25,7 @@ export async function ClientActionCenter() {
 
   const clientId = access.clientId;
 
-  const [instances, approvals, connections, runs] = await Promise.all([
+  const [instances, approvals, connections, runs, actionJobs] = await Promise.all([
     supabase
       .from("client_workflow_instances")
       .select("id, name, status, runtime_mode, last_run_at")
@@ -46,6 +46,12 @@ export async function ClientActionCenter() {
       .eq("client_id", clientId)
       .order("created_at", { ascending: false })
       .limit(5),
+    supabase
+      .from("action_jobs")
+      .select("id, kind, status, outcome_detail, created_at")
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
 
   const workflowList = instances.data ?? [];
@@ -58,6 +64,10 @@ export async function ClientActionCenter() {
     ["failing", "needs_attention"].includes(connection.status),
   ).length;
   const recentRuns = runs.data ?? [];
+  const recentActionJobs = actionJobs.data ?? [];
+  const deliveryIssues = recentActionJobs.filter((job) =>
+    ["failed", "dry_run", "skipped"].includes(job.status),
+  );
 
   const cards = [
     {
@@ -85,10 +95,13 @@ export async function ClientActionCenter() {
       icon: PlugZap,
     },
     {
-      label: "Recent activity",
-      value: recentRuns.length,
-      detail: "Latest automation runs",
-      icon: ClipboardList,
+      label: "Delivery issues",
+      value: deliveryIssues.length,
+      detail:
+        deliveryIssues.length > 0
+          ? "Approved actions need connection attention"
+          : "No recent delivery issues",
+      icon: CircleAlert,
     },
   ];
 
@@ -143,6 +156,32 @@ export async function ClientActionCenter() {
               Review approvals
             </Link>
           ) : null}
+        </section>
+      ) : null}
+
+      {deliveryIssues.length > 0 ? (
+        <section className="overflow-hidden rounded-lg border bg-card">
+          <div className="border-b px-5 py-4">
+            <h2 className="text-sm font-semibold">Delivery attention</h2>
+          </div>
+          <div className="divide-y">
+            {deliveryIssues.slice(0, 5).map((job) => (
+              <div key={job.id} className="px-5 py-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm font-medium">
+                    {formatEnum(job.kind)}
+                  </p>
+                  <Badge variant="outline">{formatEnum(job.status)}</Badge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {job.outcome_detail ?? "The approved action was not delivered."}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatDateTime(job.created_at)}
+                </p>
+              </div>
+            ))}
+          </div>
         </section>
       ) : null}
 

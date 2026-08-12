@@ -19,14 +19,40 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
     description: "Native phone numbers, calls, text messages, and client subaccounts.",
     authStrategy: "managed",
     capabilities: [
-      "customer.search",
+      "lead.webhook",
       "message.create",
       "message.webhook",
-      "note.create",
     ],
     verificationStatus: "contract_verified",
     requestable: false,
     docsUrl: "https://www.twilio.com/docs/usage/api",
+  },
+  {
+    key: "resend", name: "Resend", category: "email",
+    description: "Approval-gated customer email delivery from the client's verified domain.", authStrategy: "api_key",
+    capabilities: ["message.create"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://resend.com/docs/api-reference/emails/send-email",
+  },
+  {
+    key: "google_calendar", name: "Google Calendar", category: "calendar",
+    description: "Free/busy availability and approval-gated appointment booking.", authStrategy: "oauth2",
+    capabilities: ["appointment.read", "appointment.create"], verificationStatus: "contract_verified", requestable: false,
+    docsUrl: "https://developers.google.com/calendar/api/guides/overview",
+  },
+  {
+    key: "northstar_web_chat", name: "Branded Web Chat", category: "lead_source",
+    description: "Native website conversations that create and enrich leads.", authStrategy: "managed",
+    capabilities: ["lead.webhook", "message.webhook"], verificationStatus: "contract_verified", requestable: false,
+  },
+  {
+    key: "generic_inbound_webhook", name: "Inbound Webhook", category: "lead_source",
+    description: "Signed intake endpoint for forms and systems without a native connector.", authStrategy: "webhook",
+    capabilities: ["lead.webhook"], verificationStatus: "contract_verified", requestable: false,
+  },
+  {
+    key: "generic_outbound_webhook", name: "Outbound Webhook", category: "crm",
+    description: "Signed contact and AI-note delivery to systems without a native connector.", authStrategy: "webhook",
+    capabilities: ["customer.create", "note.create"], verificationStatus: "contract_verified", requestable: false,
   },
   {
     key: "ringcentral", name: "RingCentral", category: "phone",
@@ -140,7 +166,6 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
     description: "Customer records and AI notes for businesses using HubSpot CRM.",
     authStrategy: "api_key",
     capabilities: [
-      "customer.read",
       "customer.search",
       "customer.create",
       "customer.update",
@@ -156,7 +181,6 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
     description: "Customer records and AI notes for GoHighLevel locations.",
     authStrategy: "api_key",
     capabilities: [
-      "customer.read",
       "customer.search",
       "customer.create",
       "customer.update",

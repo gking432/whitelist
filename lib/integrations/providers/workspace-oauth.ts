@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { getAppUrl, getSecretsEncryptionKey } from "@/lib/env";
+import { getAppUrl, getSecretsEncryptionKey } from "../../env.ts";
 
 export const WORKSPACE_PROVIDER_KEYS = [
   "google_workspace",

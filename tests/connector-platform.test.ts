@@ -14,6 +14,10 @@ import {
 } from "../lib/integrations/connectors/registry.ts";
 import type { ConnectorAdapter } from "../lib/integrations/connectors/types.ts";
 import {
+  listConnectorAdapters,
+  NATIVE_CONNECTOR_CAPABILITIES,
+} from "../lib/integrations/connectors/adapters.ts";
+import {
   connectorRetryDelayMinutes,
   executeConnectorSyncJob,
 } from "../lib/integrations/connectors/sync-executor.ts";
@@ -36,6 +40,40 @@ test("connector catalog has unique valid manifests", () => {
 
   for (const manifest of CONNECTOR_CATALOG) {
     assert.deepEqual(validateConnectorManifest(manifest), [], manifest.key);
+  }
+});
+
+test("every verified catalog capability has an executable implementation", () => {
+  const adapters = new Map(
+    listConnectorAdapters().map((adapter) => [adapter.manifest.key, adapter]),
+  );
+
+  for (const manifest of CONNECTOR_CATALOG) {
+    if (manifest.verificationStatus !== "contract_verified") continue;
+
+    const adapter = adapters.get(manifest.key);
+
+    if (adapter) {
+      assert.deepEqual(validateConnectorAdapter(adapter), [], manifest.key);
+      assert.deepEqual(
+        [...adapter.manifest.capabilities].sort(),
+        [...manifest.capabilities].sort(),
+        `${manifest.key} catalog and adapter capabilities differ`,
+      );
+      continue;
+    }
+
+    const nativeCapabilities =
+      NATIVE_CONNECTOR_CAPABILITIES[
+        manifest.key as keyof typeof NATIVE_CONNECTOR_CAPABILITIES
+      ];
+
+    assert.ok(nativeCapabilities, `${manifest.key} has no executable implementation`);
+    assert.deepEqual(
+      [...nativeCapabilities].sort(),
+      [...manifest.capabilities].sort(),
+      `${manifest.key} catalog and native capabilities differ`,
+    );
   }
 });
 

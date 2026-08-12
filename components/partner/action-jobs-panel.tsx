@@ -17,6 +17,7 @@ export type ActionJobView = {
   kind: string;
   status: string;
   attempt_count: number;
+  outcome_detail?: string | null;
   last_error: string | null;
   last_attempt_at: string | null;
   created_at: string;
@@ -111,6 +112,10 @@ export function ActionJobsPanel({
             {job.last_error ? (
               <p className="mt-1 text-xs leading-5 text-destructive">
                 {job.last_error}
+              </p>
+            ) : job.outcome_detail ? (
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {job.outcome_detail}
               </p>
             ) : null}
             {messages[job.id] ? (

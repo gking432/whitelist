@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { redactAuditValue } from "@/lib/audit/redact";
 import type { DeliveryOutcome } from "@/lib/delivery/customer-message";
+import { actionJobOutcomeFields } from "@/lib/jobs/outcome";
+export { isRetryableJobStatus } from "@/lib/jobs/outcome";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 // Durable action jobs: every provider-facing action records an attempt row
@@ -26,6 +28,7 @@ export type ActionJobRecord = {
   payload: Record<string, unknown>;
   status: string;
   attempt_count: number;
+  outcome_detail?: string | null;
   last_error: string | null;
   last_attempt_at: string | null;
   created_at: string;
@@ -55,9 +58,8 @@ export async function recordActionJob(input: {
     workflow_run_id: input.workflowRunId ?? null,
     kind: input.kind,
     payload: redactAuditValue(input.payload),
-    status: input.outcome.status,
+    ...actionJobOutcomeFields(input.outcome),
     attempt_count: 1,
-    last_error: input.outcome.status === "failed" ? input.outcome.detail : null,
     last_attempt_at: new Date().toISOString(),
   });
 }
@@ -70,17 +72,9 @@ export async function updateActionJobAfterRetry(
   await admin
     .from("action_jobs")
     .update({
-      status: outcome.status,
+      ...actionJobOutcomeFields(outcome),
       attempt_count: job.attempt_count + 1,
-      last_error: outcome.status === "failed" ? outcome.detail : null,
       last_attempt_at: new Date().toISOString(),
     })
     .eq("id", job.id);
-}
-
-// A job can be retried when it did not succeed and is not cancelled.
-// dry_run is retryable on purpose: flip the connection to live, retry, and
-// the already-approved action goes out for real.
-export function isRetryableJobStatus(status: string): boolean {
-  return ["failed", "dry_run", "skipped"].includes(status);
 }

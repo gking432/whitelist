@@ -8,7 +8,7 @@ import type {
 import {
   mintWorkspaceAccessToken,
   type WorkspaceCredentials,
-} from "./workspace-oauth";
+} from "./workspace-oauth.ts";
 
 const PEOPLE = "https://people.googleapis.com/v1";
 const CALENDAR = "https://www.googleapis.com/calendar/v3";

@@ -111,7 +111,7 @@ export default async function ClientRunsPage({
     supabase
       .from("action_jobs")
       .select(
-        "id, kind, status, attempt_count, last_error, last_attempt_at, created_at",
+        "id, kind, status, attempt_count, outcome_detail, last_error, last_attempt_at, created_at",
       )
       .eq("client_id", clientId)
       .order("created_at", { ascending: false })
@@ -155,6 +155,7 @@ export default async function ClientRunsPage({
       kind: string;
       status: string;
       attempt_count: number;
+      outcome_detail: string | null;
       last_error: string | null;
       last_attempt_at: string | null;
       created_at: string;

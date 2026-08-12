@@ -23,6 +23,11 @@ type ApprovalRow = {
   resolution_note: string | null;
   resolved_at: string | null;
   created_at: string;
+  action_jobs: Array<{
+    status: string;
+    outcome_detail: string | null;
+    created_at: string;
+  }>;
 };
 
 export default async function ClientPortalApprovalsPage() {
@@ -50,7 +55,7 @@ export default async function ClientPortalApprovalsPage() {
   const { data, error } = await supabase
     .from("approval_items")
     .select(
-      "id, type, status, title, summary, risk_level, editable_content, resolution_note, resolved_at, created_at",
+      "id, type, status, title, summary, risk_level, editable_content, resolution_note, resolved_at, created_at, action_jobs!action_jobs_approval_id_fkey(status, outcome_detail, created_at)",
     )
     .eq("client_id", access.clientId)
     .order("created_at", { ascending: false })
@@ -131,17 +136,33 @@ export default async function ClientPortalApprovalsPage() {
             <h2 className="text-sm font-semibold">Recently resolved</h2>
           </div>
           <div className="divide-y">
-            {resolved.slice(0, 10).map((item) => (
-              <div key={item.id} className="px-5 py-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm font-medium">{item.title}</p>
-                  <Badge variant="outline">{formatEnum(item.status)}</Badge>
+            {resolved.slice(0, 10).map((item) => {
+              const latestDelivery = [...(item.action_jobs ?? [])].sort(
+                (left, right) =>
+                  new Date(right.created_at).getTime() -
+                  new Date(left.created_at).getTime(),
+              )[0];
+
+              return (
+                <div key={item.id} className="px-5 py-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm font-medium">{item.title}</p>
+                    <Badge variant="outline">{formatEnum(item.status)}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Resolved {formatDateTime(item.resolved_at)}
+                  </p>
+                  {latestDelivery ? (
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      Delivery: {formatEnum(latestDelivery.status)}
+                      {latestDelivery.outcome_detail
+                        ? ` · ${latestDelivery.outcome_detail}`
+                        : ""}
+                    </p>
+                  ) : null}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Resolved {formatDateTime(item.resolved_at)}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : null}
