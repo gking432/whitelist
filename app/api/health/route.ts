@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { productionReadiness } from "@/lib/ops/production-readiness";
+import { releaseId } from "@/lib/ops/release-id";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export async function GET() {
   const admin = createSupabaseAdminClient();
   const readiness = productionReadiness();
   const configurationReady = !readiness.enforced || readiness.ready;
+  const release = releaseId();
 
   if (!admin) {
     return NextResponse.json(
@@ -21,6 +23,7 @@ export async function GET() {
         configuration_issue_count: readiness.enforced
           ? readiness.issues.length
           : 0,
+        release,
       },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
@@ -50,6 +53,7 @@ export async function GET() {
         : 0,
       latency_ms: Date.now() - startedAt,
       timestamp: new Date().toISOString(),
+      release,
     },
     {
       status: ok ? 200 : 503,

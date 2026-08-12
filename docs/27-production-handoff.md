@@ -27,6 +27,18 @@ setup, and live-account verification.
 8. Run `npm run bootstrap:owner -- --email <owner> --name <name> --app-url
    <production-url> --dry-run`, then repeat without `--dry-run` to send the
    initial platform-owner invite. Never run `supabase/seed.sql` in production.
+9. Verify the public services from outside the hosting network:
+
+   ```bash
+   HOSTED_APP_URL=https://app.example.com \
+   HOSTED_VOICE_URL=https://voice.example.com \
+   EXPECTED_RELEASE_SHA=$(git rev-parse HEAD) \
+   npm run verify:hosted
+   ```
+
+   This checks database/configuration readiness, the deployed commit, security
+   headers, login rendering, job-endpoint authorization, and voice health. It
+   does not mutate production data.
 
 Twilio is not a platform-owner account. Each partner connects its own Twilio
 parent account during onboarding; the platform provisions isolated client

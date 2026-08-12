@@ -79,6 +79,7 @@ for (const script of [
   "verify:web-image",
   "verify:service-images",
   "verify:release-images",
+  "verify:hosted",
   "bootstrap:owner",
 ]) {
   if (!packageJson.scripts?.[script])

@@ -34,6 +34,8 @@ Northstar uses three Render services:
 9. In the owner Control Room, open **Provider pilots**, record the required
    real-account evidence, and promote only the provider whose complete pilot
    passed. Connected credentials alone do not make a connector live verified.
+10. Run `npm run verify:hosted` with `HOSTED_APP_URL`, `HOSTED_VOICE_URL`, and
+    `EXPECTED_RELEASE_SHA` set to prove the public release and voice gateway.
 
 Use paid always-on instances for phone testing. Sleeping services can add enough
 cold-start delay for an inbound phone call to fail before the app answers.

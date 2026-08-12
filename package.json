@@ -27,6 +27,7 @@
     "verify:connector-writeback": "node --env-file=.env.local --experimental-strip-types scripts/verify-connector-writeback.ts",
     "verify:release-journey": "tsx --env-file-if-exists=.env.local scripts/verify-release-journey.ts",
     "verify:production-env": "node --experimental-strip-types scripts/verify-production-env.ts",
+    "verify:hosted": "node --experimental-strip-types scripts/verify-hosted-production.ts",
     "verify:release-topology": "node scripts/verify-release-topology.mjs",
     "verify:web-image": "node scripts/verify-web-image.mjs",
     "verify:service-images": "node scripts/verify-service-images.mjs",
