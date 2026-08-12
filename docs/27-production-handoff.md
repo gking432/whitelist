@@ -67,9 +67,13 @@ tested. The jobs image enforces its runtime configuration, while the voice
 image must pass its health endpoint and reject an unauthenticated stream. All
 temporary verification containers and images are removed after each run.
 `verify:release-journey` launches the built production server itself, creates
-isolated owner, partner, client, and customer fixtures, verifies the complete
-package/intake/approval/support path, removes those fixtures, and stops the
-server. GitHub CI runs that same journey against a fresh local Supabase stack.
+isolated owner, partner, client, and customer fixtures, and verifies package
+installation plus independent form, forwarded-email-envelope, signed Twilio
+SMS, website-chat, AI-phone, appointment-request, and authenticated desktop
+assistant paths. It also proves CRM creation, idempotency, approval ownership,
+external write previews, support routing, and owner read-only impersonation,
+then removes every fixture and stops the server. GitHub CI runs that same
+journey against a fresh local Supabase stack.
 The connector scheduler also
 recovers expired read leases within the configured retry limit. An expired
 external write is dead-lettered for vendor reconciliation instead of replayed,

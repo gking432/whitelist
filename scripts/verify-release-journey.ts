@@ -4,8 +4,16 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { access } from "node:fs/promises";
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createChunks, stringToBase64URL } from "@supabase/ssr";
+import {
+  createClient,
+  type Session,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
+import { generateWidgetKey } from "../lib/chat/widget.ts";
+import { encryptProviderCredentials } from "../lib/integrations/credentials.ts";
+import { computeTwilioSignature } from "../lib/integrations/twilio-signature.ts";
 import { deployPackageToClient } from "../lib/packages/deployment.ts";
 import { buildAccessContext } from "../lib/permissions/roles.ts";
 import { triageAndPersistSupportTicket } from "../lib/support/service.ts";
@@ -18,6 +26,11 @@ let appUrl = process.env.RELEASE_JOURNEY_APP_URL?.replace(/\/$/, "") ?? "";
 if (!url || !anonKey || !serviceKey) {
   throw new Error("Local Supabase configuration is required.");
 }
+
+// Keep the release gate deterministic. Real model/provider behavior is proven
+// separately by the audited production pilot.
+process.env.ANTHROPIC_API_KEY = "";
+process.env.OPENAI_API_KEY = "";
 
 const admin = createClient(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -37,7 +50,18 @@ type CreatedIdentity = {
   id: string;
   email: string;
   client: SupabaseClient;
+  cookie: string;
 };
+
+function sessionCookie(session: Session) {
+  const projectRef = new URL(url!).hostname.split(".")[0];
+  const name = `sb-${projectRef}-auth-token`;
+  const encoded = `base64-${stringToBase64URL(JSON.stringify(session))}`;
+
+  return createChunks(name, encoded)
+    .map((chunk) => `${chunk.name}=${encodeURIComponent(chunk.value)}`)
+    .join("; ");
+}
 
 async function createIdentity(label: string): Promise<CreatedIdentity> {
   const email = `release-${runKey}-${label}@example.test`;
@@ -55,7 +79,13 @@ async function createIdentity(label: string): Promise<CreatedIdentity> {
   });
   const signedIn = await client.auth.signInWithPassword({ email, password });
   assert.ifError(signedIn.error);
-  return { id: data.user.id, email, client };
+  assert.ok(signedIn.data.session);
+  return {
+    id: data.user.id,
+    email,
+    client,
+    cookie: sessionCookie(signedIn.data.session),
+  };
 }
 
 async function insertOrThrow(
@@ -73,6 +103,48 @@ async function fixtureCount(table: string, column: string, value: string) {
     .eq(column, value);
   assert.ifError(error);
   return count ?? 0;
+}
+
+async function providerId(providerKey: string) {
+  const { data, error } = await admin
+    .from("integration_providers")
+    .select("id")
+    .eq("provider_key", providerKey)
+    .single();
+  assert.ifError(error);
+  assert.ok(data);
+  return data.id;
+}
+
+async function postBridgeEvent(input: {
+  connectionId: string;
+  token: string;
+  eventType: string;
+  idempotencyKey: string;
+  data: Record<string, unknown>;
+}) {
+  const response = await fetch(
+    `${appUrl}/api/integrations/inbound/${input.connectionId}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-webhook-token": input.token,
+      },
+      body: JSON.stringify({
+        event_type: input.eventType,
+        idempotency_key: input.idempotencyKey,
+        source: "release_journey",
+        data: input.data,
+      }),
+    },
+  );
+  const raw = await response.text();
+  assert.equal(response.status, 202, raw);
+  return JSON.parse(raw) as {
+    runs_started: number;
+    runs: { run_id: string; template_key: string; status: string }[];
+  };
 }
 
 async function availablePort() {
@@ -104,7 +176,9 @@ async function startReleaseServer() {
     env: {
       ...process.env,
       APP_URL: appUrl,
+      ANTHROPIC_API_KEY: "",
       HOSTNAME: "127.0.0.1",
+      OPENAI_API_KEY: "",
       PORT: String(port),
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -239,9 +313,14 @@ async function main() {
       northstar_crm: true,
       lead_intake: true,
       message_drafting: true,
+      approval_gated_sending: true,
       ai_intake_routing: true,
+      website_ai_chat: true,
       live_call_assistant: true,
       live_scheduling_assistant: true,
+      ai_phone_answering: true,
+      appointment_booking: true,
+      reports_portal: true,
     };
     await insertOrThrow("partner_packages", {
       id: ids.package,
@@ -267,18 +346,13 @@ async function main() {
     assert.ok(deployment.automationPackKeys.includes("universal-lead-capture"));
     assert.ok(deployment.automationPackKeys.includes("live-call-assistant"));
 
-    const { data: workizProvider } = await admin
-      .from("integration_providers")
-      .select("id")
-      .eq("provider_key", "workiz")
-      .single();
-    assert.ok(workizProvider);
+    const workizProviderId = await providerId("workiz");
     const { data: fieldService, error: fieldServiceError } = await admin
       .from("integration_connections")
       .insert({
         partner_id: ids.partner,
         client_id: ids.client,
-        provider_id: workizProvider.id,
+        provider_id: workizProviderId,
         display_name: "Release Workiz preview",
         status: "connected",
         runtime_mode: "sandbox",
@@ -290,37 +364,87 @@ async function main() {
     assert.ifError(fieldServiceError);
     assert.ok(fieldService);
 
+    const widgetKey = generateWidgetKey();
+    const { data: chatConnection, error: chatConnectionError } = await admin
+      .from("integration_connections")
+      .insert({
+        partner_id: ids.partner,
+        client_id: ids.client,
+        provider_id: await providerId("northstar_web_chat"),
+        display_name: "Release website chat",
+        status: "connected",
+        runtime_mode: "sandbox",
+        credential_status: "configured",
+        config: { widget_public_key: widgetKey },
+        health_summary: "Release journey managed chat.",
+        created_by: partner.id,
+      })
+      .select("id")
+      .single();
+    assert.ifError(chatConnectionError);
+    assert.ok(chatConnection);
+
+    const twilioAuthToken = `release-${randomUUID()}`;
+    const { data: twilioConnection, error: twilioConnectionError } = await admin
+      .from("integration_connections")
+      .insert({
+        partner_id: ids.partner,
+        client_id: ids.client,
+        provider_id: await providerId("twilio"),
+        display_name: "Release Twilio contract",
+        status: "connected",
+        runtime_mode: "sandbox",
+        credential_status: "configured",
+        config: { release_fixture: runKey },
+        health_summary: "Release journey signed webhook contract.",
+        created_by: partner.id,
+      })
+      .select("id")
+      .single();
+    assert.ifError(twilioConnectionError);
+    assert.ok(twilioConnection);
+    const encryptedTwilio = encryptProviderCredentials({
+      accountSid: `AC${"1".repeat(32)}`,
+      authToken: twilioAuthToken,
+      fromNumber: "+13125550100",
+    });
+    await insertOrThrow("integration_secrets", {
+      partner_id: ids.partner,
+      client_id: ids.client,
+      connection_id: twilioConnection.id,
+      secret_kind: "provider_credentials",
+      ...encryptedTwilio,
+    });
+
+    await insertOrThrow(
+      "crm_availability_windows",
+      Array.from({ length: 7 }, (_, weekday) => ({
+        partner_id: ids.partner,
+        client_id: ids.client,
+        weekday,
+        start_time: "08:00",
+        end_time: "18:00",
+        appointment_minutes: 60,
+        label: "Release availability",
+      })),
+    );
+
     const customerEmail = `customer-${runKey}@example.test`;
     const eventKey = `release-customer-${runKey}`;
-    const intake = await fetch(
-      `${appUrl}/api/integrations/inbound/${deployment.bridge.connectionId}`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-webhook-token": deployment.bridge.oneTimeToken,
-        },
-        body: JSON.stringify({
-          event_type: "missed_call.created",
-          idempotency_key: eventKey,
-          source: "release_journey",
-          data: {
-            name: "Jordan Release",
-            email: customerEmail,
-            phone: "+13125550199",
-            address: "100 Release Way",
-            message:
-              "The water heater is leaking. Please call me and schedule the earliest available appointment.",
-          },
-        }),
+    const intakeResult = await postBridgeEvent({
+      connectionId: deployment.bridge.connectionId,
+      token: deployment.bridge.oneTimeToken,
+      eventType: "missed_call.created",
+      idempotencyKey: eventKey,
+      data: {
+        name: "Jordan Release",
+        email: customerEmail,
+        phone: "+13125550199",
+        address: "100 Release Way",
+        message:
+          "The water heater is leaking. Please call me as soon as possible.",
       },
-    );
-    const intakeBody = await intake.text();
-    assert.equal(intake.status, 202, intakeBody);
-    const intakeResult = JSON.parse(intakeBody) as {
-      runs_started: number;
-      runs: { run_id: string; template_key: string; status: string }[];
-    };
+    });
     assert.ok(intakeResult.runs_started >= 3);
     const runKeys = new Set(intakeResult.runs.map((run) => run.template_key));
     for (const key of [
@@ -355,8 +479,259 @@ async function main() {
       true,
     );
 
+    const formEmail = `form-${runKey}@example.test`;
+    const formResult = await postBridgeEvent({
+      connectionId: deployment.bridge.connectionId,
+      token: deployment.bridge.oneTimeToken,
+      eventType: "form.submitted",
+      idempotencyKey: `release-form-${runKey}`,
+      data: {
+        name: "Fran Form",
+        email: formEmail,
+        phone: "+13125550201",
+        message: "Requesting a drain cleaning estimate.",
+        channel: "website_form",
+      },
+    });
+    assert.ok(formResult.runs_started >= 2);
+
+    const emailLeadAddress = `forwarded-${runKey}@example.test`;
+    const emailResult = await postBridgeEvent({
+      connectionId: deployment.bridge.connectionId,
+      token: deployment.bridge.oneTimeToken,
+      eventType: "email.lead_received",
+      idempotencyKey: `release-email-${runKey}`,
+      data: {
+        name: "Emery Email",
+        email: emailLeadAddress,
+        phone: "+13125550202",
+        message: "Forwarded marketplace lead requesting HVAC repair.",
+        channel: "email",
+      },
+    });
+    assert.ok(emailResult.runs_started >= 2);
+
+    const smsParams = {
+      MessageSid: `SM${runKey.padEnd(32, "0")}`,
+      From: "+13125550203",
+      To: "+13125550100",
+      Body: "I need an estimate for electrical panel service.",
+    };
+    const twilioWebhookUrl = `${appUrl}/api/integrations/inbound/twilio/${twilioConnection.id}`;
+    const smsResponse = await fetch(twilioWebhookUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-twilio-signature": computeTwilioSignature(
+          twilioAuthToken,
+          twilioWebhookUrl,
+          smsParams,
+        ),
+      },
+      body: new URLSearchParams(smsParams),
+    });
+    assert.equal(smsResponse.status, 200, await smsResponse.text());
+
+    const chatStart = await fetch(`${appUrl}/api/widget/${widgetKey}/session`, {
+      method: "POST",
+    });
+    const chatStartBody = (await chatStart.json()) as {
+      session_id?: string;
+      greeting?: string;
+    };
+    assert.equal(chatStart.status, 200, JSON.stringify(chatStartBody));
+    assert.ok(chatStartBody.session_id);
+    assert.ok(chatStartBody.greeting?.includes("AI assistant"));
+    const chatEmail = `chat-${runKey}@example.test`;
+    const chatMessages = [
+      "My kitchen sink is leaking.",
+      "I am Casey Chat.",
+      `Email me at ${chatEmail}.`,
+      "Tomorrow morning works best.",
+    ];
+    let chatComplete = false;
+    for (const message of chatMessages) {
+      const replyResponse: Response = await fetch(
+        `${appUrl}/api/widget/${widgetKey}/message`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            session_id: chatStartBody.session_id,
+            message,
+          }),
+        },
+      );
+      const replyBody = (await replyResponse.json()) as {
+        complete?: boolean;
+        error?: string;
+      };
+      assert.equal(replyResponse.status, 200, JSON.stringify(replyBody));
+      chatComplete = Boolean(replyBody.complete);
+      if (chatComplete) break;
+    }
+    assert.equal(chatComplete, true, "Website chat did not complete intake.");
+
+    const voiceStartResponse = await fetch(`${appUrl}/api/voice/simulate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: client.cookie,
+      },
+      body: JSON.stringify({
+        action: "start",
+        client_id: ids.client,
+        from_number: "+13125550204",
+      }),
+    });
+    const voiceStart = (await voiceStartResponse.json()) as {
+      call_session_id?: string;
+      greeting?: string;
+      error?: string;
+    };
+    assert.equal(voiceStartResponse.status, 200, JSON.stringify(voiceStart));
+    assert.ok(voiceStart.call_session_id);
+    assert.ok(voiceStart.greeting);
+
+    const voiceTurnResponse = await fetch(`${appUrl}/api/voice/simulate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: client.cookie,
+      },
+      body: JSON.stringify({
+        action: "caller_turn",
+        call_session_id: voiceStart.call_session_id,
+        text: "I am Taylor Voice at 204 Release Road. My phone is 312-555-0204 and I need a furnace repair appointment tomorrow morning.",
+      }),
+    });
+    const voiceTurn = (await voiceTurnResponse.json()) as {
+      tools_used?: { name: string; result: Record<string, unknown> }[];
+      error?: string;
+    };
+    assert.equal(voiceTurnResponse.status, 200, JSON.stringify(voiceTurn));
+    const voiceTools = new Set(
+      (voiceTurn.tools_used ?? []).map((tool) => tool.name),
+    );
+    assert.ok(voiceTools.has("save_contact_details"));
+    assert.ok(voiceTools.has("propose_slots"));
+
+    const assistantContextResponse = await fetch(
+      `${appUrl}/api/assistant/context`,
+      { headers: { cookie: client.cookie } },
+    );
+    const assistantContextBody = (await assistantContextResponse.json()) as {
+      context?: {
+        call?: { id?: string } | null;
+        slots?: { label?: string; startIso?: string }[];
+        transcript?: unknown[];
+      };
+      error?: string;
+    };
+    assert.equal(
+      assistantContextResponse.status,
+      200,
+      JSON.stringify(assistantContextBody),
+    );
+    assert.equal(
+      assistantContextBody.context?.call?.id,
+      voiceStart.call_session_id,
+    );
+    assert.ok((assistantContextBody.context?.slots?.length ?? 0) >= 1);
+    assert.ok((assistantContextBody.context?.transcript?.length ?? 0) >= 3);
+
+    const assistantEventsResponse = await fetch(
+      `${appUrl}/api/assistant/events`,
+      { headers: { cookie: client.cookie } },
+    );
+    const assistantEventsBody = (await assistantEventsResponse.json()) as {
+      events?: { event_type?: string; call_session_id?: string }[];
+    };
+    assert.equal(assistantEventsResponse.status, 200);
+    assert.ok(
+      assistantEventsBody.events?.some(
+        (event) =>
+          event.call_session_id === voiceStart.call_session_id &&
+          event.event_type === "active_call_started",
+      ),
+    );
+
+    const desktopResponse = await fetch(`${appUrl}/desktop/assistant`, {
+      headers: { cookie: client.cookie },
+    });
+    const desktopHtml = await desktopResponse.text();
+    assert.equal(desktopResponse.status, 200);
+    assert.ok(!desktopHtml.includes("Sign in required"));
+
+    const bookingTurnResponse = await fetch(`${appUrl}/api/voice/simulate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: client.cookie,
+      },
+      body: JSON.stringify({
+        action: "caller_turn",
+        call_session_id: voiceStart.call_session_id,
+        text: "The first one works. Book it.",
+      }),
+    });
+    const bookingTurn = (await bookingTurnResponse.json()) as {
+      tools_used?: { name: string; result: Record<string, unknown> }[];
+      error?: string;
+    };
+    assert.equal(bookingTurnResponse.status, 200, JSON.stringify(bookingTurn));
+    assert.ok(
+      bookingTurn.tools_used?.some(
+        (tool) =>
+          tool.name === "request_booking" && tool.result.status === "requested",
+      ),
+      "The voice assistant did not create an approval-gated booking request.",
+    );
+
+    const voiceCompleteResponse = await fetch(`${appUrl}/api/voice/simulate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: client.cookie,
+      },
+      body: JSON.stringify({
+        action: "complete",
+        call_session_id: voiceStart.call_session_id,
+      }),
+    });
+    const voiceComplete = (await voiceCompleteResponse.json()) as {
+      report?: {
+        status?: string;
+        transcript_turns?: number;
+        intake_event?: { status?: string } | null;
+        approvals_from_call?: { type?: string; status?: string }[];
+      };
+      error?: string;
+    };
+    assert.equal(
+      voiceCompleteResponse.status,
+      200,
+      JSON.stringify(voiceComplete),
+    );
+    assert.equal(voiceComplete.report?.status, "completed");
+    assert.ok((voiceComplete.report?.transcript_turns ?? 0) >= 5);
+    assert.equal(voiceComplete.report?.intake_event?.status, "processed");
+    assert.ok(
+      voiceComplete.report?.approvals_from_call?.some(
+        (approval) =>
+          approval.type === "appointment_booking" &&
+          approval.status === "pending",
+      ),
+    );
+
     assert.equal(await fixtureCount("crm_contacts", "email", customerEmail), 1);
-    assert.equal(await fixtureCount("crm_leads", "client_id", ids.client), 1);
+    for (const channelEmail of [formEmail, emailLeadAddress, chatEmail]) {
+      assert.equal(
+        await fixtureCount("crm_contacts", "email", channelEmail),
+        1,
+      );
+    }
+    assert.ok((await fixtureCount("crm_leads", "client_id", ids.client)) >= 5);
     assert.ok((await fixtureCount("crm_tasks", "client_id", ids.client)) >= 1);
     assert.ok(
       (await fixtureCount("crm_timeline_entries", "client_id", ids.client)) >=
@@ -568,9 +943,27 @@ async function main() {
             workflows: [...runKeys].sort(),
             automation_packs: deployment.automationPackKeys,
           },
-          customer_event: {
+          customer_channels: {
+            form: "processed",
+            forwarded_email_envelope: "processed",
+            signed_twilio_sms: "processed",
+            website_chat: "processed",
+            ai_phone: "processed",
+            appointment_request: "pending_client_approval",
+            desktop_assistant: "authenticated_live_context",
+          },
+          customer_records: {
             duplicate_protected: true,
-            crm_contact_count: 1,
+            crm_contact_count: await fixtureCount(
+              "crm_contacts",
+              "client_id",
+              ids.client,
+            ),
+            crm_lead_count: await fixtureCount(
+              "crm_leads",
+              "client_id",
+              ids.client,
+            ),
             approval_count: approvals?.length ?? 0,
             external_write: "dry_run_preview",
             assistant_events: [...assistantEventTypes].sort(),
@@ -594,10 +987,22 @@ async function main() {
     );
   } finally {
     if (ids.partner) {
-      await admin.from("partners").delete().eq("id", ids.partner);
+      const { error } = await admin
+        .from("partners")
+        .delete()
+        .eq("id", ids.partner);
+      assert.ifError(error);
+      assert.equal(
+        await fixtureCount("client_businesses", "id", ids.client),
+        0,
+        "Release client fixtures were not removed.",
+      );
     }
     for (const userId of [ids.platformUser, ids.partnerUser, ids.clientUser]) {
-      if (userId) await admin.auth.admin.deleteUser(userId);
+      if (userId) {
+        const { error } = await admin.auth.admin.deleteUser(userId);
+        assert.ifError(error);
+      }
     }
   }
 }
