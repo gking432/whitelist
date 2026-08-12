@@ -75,6 +75,7 @@ for (const script of [
   "verify:security",
   "verify:restore",
   "verify:desktop-bundle",
+  "verify:release-journey",
   "verify:web-image",
   "verify:release-images",
 ]) {

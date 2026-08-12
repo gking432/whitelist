@@ -120,6 +120,23 @@ if (releaseFlagsSecurity !== "true|1") {
   throw new Error("connector_release_flags must retain RLS and its scoped select policy.");
 }
 
+const clientSupportPolicy = query(`
+  select (
+    coalesce(qual, '') like '%origin = ''client''%'
+    and coalesce(qual, '') like '%current_user_has_client_role(client_id)%'
+  )::text
+  from pg_policies
+  where schemaname = 'public'
+    and tablename = 'support_tickets'
+    and policyname = 'support_tickets_select_scoped'
+`);
+
+if (clientSupportPolicy !== "true") {
+  throw new Error(
+    "support_tickets_select_scoped must hide partner, platform, and system tickets from client users.",
+  );
+}
+
 console.log(
-  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, and guarded connector releases are scoped.`,
+  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, support tickets, and guarded connector releases are scoped.`,
 );

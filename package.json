@@ -24,6 +24,7 @@
     "verify:restore": "node scripts/verify-database-restore.mjs",
     "verify:security": "node scripts/verify-database-security.mjs",
     "verify:connector-writeback": "node --env-file=.env.local --experimental-strip-types scripts/verify-connector-writeback.ts",
+    "verify:release-journey": "tsx --env-file=.env.local scripts/verify-release-journey.ts",
     "verify:production-env": "node --experimental-strip-types scripts/verify-production-env.ts",
     "verify:release-topology": "node scripts/verify-release-topology.mjs",
     "verify:web-image": "node scripts/verify-web-image.mjs",
@@ -61,6 +62,7 @@
     "sharp": "0.35.3",
     "supabase": "^2.107.0",
     "tailwindcss": "4.3.3",
+    "tsx": "^4.23.12",
     "typescript": "6.0.3"
   },
   "overrides": {

@@ -39,6 +39,7 @@ npm run typecheck
 npm run lint
 npm test
 npm run build
+npm run verify:release-journey
 npm run verify:release
 npm run desktop:dist:mac
 npm run verify:desktop-bundle
