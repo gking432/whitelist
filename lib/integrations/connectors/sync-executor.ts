@@ -15,6 +15,7 @@ import type {
   ConnectorFieldMapping,
   ConnectorPushInput,
 } from "./types.ts";
+import { isConnectorAuthorizationError } from "./errors.ts";
 
 export type ConnectorSyncJob = {
   id: string;
@@ -40,7 +41,12 @@ export type ConnectorSyncRepository = {
 
 export type ConnectorSyncOutcome =
   | { ok: true; processed: number; result: Record<string, unknown> }
-  | { ok: false; retryable: boolean; error: string };
+  | {
+      ok: false;
+      retryable: boolean;
+      error: string;
+      reconnectRequired?: boolean;
+    };
 
 export function connectorRetryDelayMinutes(attempts: number): number {
   return Math.min(2 ** Math.max(0, attempts), 60);
@@ -189,12 +195,15 @@ export async function executeConnectorSyncJob(input: {
       result: { externalObjectId: result.externalObjectId },
     };
   } catch (error) {
+    const reconnectRequired = isConnectorAuthorizationError(error);
     return {
       ok: false,
       retryable:
+        !reconnectRequired &&
         !(error instanceof ConnectorFieldMappingError) &&
         job.attempts + 1 < job.maxAttempts,
       error: error instanceof Error ? error.message : "Connector sync failed.",
+      reconnectRequired,
     };
   }
 }

@@ -165,6 +165,13 @@ export async function completeWorkspaceOAuth(
     last_checked_at: new Date().toISOString(),
   }).eq("id", connection.id);
 
+  await admin.from("integration_sync_states").update({
+    status: "idle",
+    last_error: null,
+    lease_owner: null,
+    lease_expires_at: null,
+  }).eq("connection_id", connection.id);
+
   await refreshPackageDeploymentReadiness(admin, {
     partnerId: connection.partner_id,
     clientId: connection.client_id,

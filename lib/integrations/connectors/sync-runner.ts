@@ -488,14 +488,22 @@ export async function enqueueInitialConnectorSync(
     ),
   );
   for (const objectType of objectTypes) {
-    const idempotencyKey = `initial-${objectType}`;
     const { data: existing } = await admin
       .from("integration_sync_jobs")
       .select("id")
       .eq("connection_id", scope.connectionId)
-      .eq("idempotency_key", idempotencyKey)
+      .eq("object_type", objectType)
+      .in("status", ["queued", "running", "failed"])
+      .limit(1)
       .maybeSingle();
     if (existing) continue;
+    const { data: syncState } = await admin
+      .from("integration_sync_states")
+      .select("cursor_value")
+      .eq("connection_id", scope.connectionId)
+      .eq("stream_key", objectType)
+      .maybeSingle();
+    const idempotencyKey = `resume-${objectType}-${crypto.randomUUID()}`;
     await admin.from("integration_sync_jobs").insert({
       partner_id: scope.partnerId,
       client_id: scope.clientId,
@@ -505,7 +513,9 @@ export async function enqueueInitialConnectorSync(
       operation: "sync",
       status: "queued",
       idempotency_key: idempotencyKey,
-      payload: {},
+      payload: syncState?.cursor_value
+        ? { cursor: syncState.cursor_value }
+        : {},
       scheduled_for: new Date().toISOString(),
     });
   }
@@ -851,10 +861,47 @@ export async function processConnectorSyncJobs(limit = 20) {
       succeeded += 1;
     } else {
       const attempts = job.attempts + 1;
+      if (outcome.reconnectRequired) {
+        const now = new Date().toISOString();
+        await admin
+          .from("integration_connections")
+          .update({
+            status: "needs_attention",
+            credential_status: "invalid",
+            health_summary: outcome.error,
+            last_failure_at: now,
+            last_checked_at: now,
+          })
+          .eq("id", job.connection_id);
+        await admin
+          .from("integration_sync_states")
+          .update({
+            status: "paused",
+            last_error: outcome.error,
+            lease_owner: null,
+            lease_expires_at: null,
+          })
+          .eq("connection_id", job.connection_id);
+        await admin
+          .from("integration_sync_jobs")
+          .update({
+            status: "cancelled",
+            last_error: outcome.error,
+            completed_at: now,
+            locked_at: null,
+            locked_by: null,
+          })
+          .eq("connection_id", job.connection_id)
+          .in("status", ["queued", "failed"]);
+      }
       await admin
         .from("integration_sync_jobs")
         .update({
-          status: outcome.retryable ? "failed" : "dead_letter",
+          status: outcome.reconnectRequired
+            ? "cancelled"
+            : outcome.retryable
+              ? "failed"
+              : "dead_letter",
           attempts,
           last_error: outcome.error,
           scheduled_for: new Date(
@@ -862,6 +909,9 @@ export async function processConnectorSyncJobs(limit = 20) {
           ).toISOString(),
           locked_at: null,
           locked_by: null,
+          completed_at: outcome.reconnectRequired
+            ? new Date().toISOString()
+            : null,
         })
         .eq("id", job.id);
       if (job.direction === "push") {

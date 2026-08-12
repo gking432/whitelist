@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { getAppUrl, getSecretsEncryptionKey } from "../../env.ts";
+import { ConnectorAuthorizationError } from "../connectors/errors.ts";
 
 export const WORKSPACE_PROVIDER_KEYS = [
   "google_workspace",
@@ -55,6 +56,19 @@ export const MICROSOFT_365_SCOPES = [
   "Mail.Read",
   "Mail.Send",
 ] as const;
+
+export function workspaceTokenRefreshRequiresReconnect(
+  status: number,
+  error: string | undefined,
+): boolean {
+  return status === 401 || [
+    "invalid_grant",
+    "invalid_client",
+    "unauthorized_client",
+    "interaction_required",
+    "consent_required",
+  ].includes(error ?? "");
+}
 
 export function workspaceRedirectUri(providerKey: WorkspaceProviderKey): string {
   return `${getAppUrl()}/api/oauth/${providerKey === "google_workspace" ? "google-workspace" : "microsoft"}/callback`;
@@ -220,8 +234,16 @@ export async function mintWorkspaceAccessToken(
       signal: AbortSignal.timeout(15_000),
     },
   );
-  if (!response.ok) throw new Error(`Workspace token refresh failed (${response.status}).`);
-  const body = (await response.json()) as { access_token?: string };
+  const body = (await response.json().catch(() => ({}))) as {
+    access_token?: string;
+    error?: string;
+  };
+  if (!response.ok) {
+    if (workspaceTokenRefreshRequiresReconnect(response.status, body.error)) {
+      throw new ConnectorAuthorizationError();
+    }
+    throw new Error(`Workspace token refresh failed (${response.status}).`);
+  }
   if (!body.access_token) throw new Error("Workspace token refresh returned no access token.");
   return body.access_token;
 }

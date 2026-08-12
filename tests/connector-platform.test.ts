@@ -21,6 +21,7 @@ import {
   connectorRetryDelayMinutes,
   executeConnectorSyncJob,
 } from "../lib/integrations/connectors/sync-executor.ts";
+import { ConnectorAuthorizationError } from "../lib/integrations/connectors/errors.ts";
 import { planLeadConnectorWriteback } from "../lib/integrations/connectors/writeback.ts";
 import {
   applyPullFieldMappings,
@@ -55,6 +56,7 @@ import { googleBusinessProfileAdapter } from "../lib/integrations/providers/goog
 import { podiumAdapter } from "../lib/integrations/providers/podium.ts";
 import { birdeyeAdapter } from "../lib/integrations/providers/birdeye.ts";
 import { mapServiceTitanCustomer } from "../lib/integrations/providers/servicetitan.ts";
+import { workspaceTokenRefreshRequiresReconnect } from "../lib/integrations/providers/workspace-oauth.ts";
 
 test("connector catalog has unique valid manifests", () => {
   assert.ok(CONNECTOR_CATALOG.length >= 20);
@@ -307,6 +309,74 @@ test("canonical records reject missing ids and invalid timestamps", () => {
     issues.map((issue) => issue.field),
     ["externalId", "updatedAt"],
   );
+});
+
+test("sync executor stops retrying when provider authorization is revoked", async () => {
+  const adapter = {
+    manifest: {
+      key: "revoked_fixture",
+      name: "Revoked fixture",
+      category: "productivity",
+      description: "Authorization failure fixture.",
+      authStrategy: "oauth2",
+      capabilities: ["customer.read"],
+      verificationStatus: "contract_verified",
+      requestable: false,
+    },
+    async testConnection() {
+      return { ok: true, detail: "ok" };
+    },
+    async pullPage() {
+      throw new ConnectorAuthorizationError();
+    },
+  } satisfies ConnectorAdapter;
+
+  const outcome = await executeConnectorSyncJob({
+    adapter,
+    context: {
+      connectionId: "connection-1",
+      partnerId: "partner-1",
+      clientId: "client-1",
+      credentials: {},
+      config: {},
+    },
+    job: {
+      id: "job-1",
+      direction: "pull",
+      objectType: "customer",
+      operation: "sync",
+      attempts: 0,
+      maxAttempts: 5,
+      payload: {},
+    },
+    repository: {
+      async saveCanonicalRecord() {},
+      async saveCursor() {},
+      async saveObjectLink() {},
+    },
+  });
+
+  assert.equal(outcome.ok, false);
+  if (outcome.ok) return;
+  assert.equal(outcome.retryable, false);
+  assert.equal(outcome.reconnectRequired, true);
+  assert.match(outcome.error, /Reconnect the account/);
+});
+
+test("workspace refresh separates revoked grants from temporary outages", () => {
+  assert.equal(
+    workspaceTokenRefreshRequiresReconnect(400, "invalid_grant"),
+    true,
+  );
+  assert.equal(
+    workspaceTokenRefreshRequiresReconnect(401, undefined),
+    true,
+  );
+  assert.equal(
+    workspaceTokenRefreshRequiresReconnect(500, "temporarily_unavailable"),
+    false,
+  );
+  assert.equal(workspaceTokenRefreshRequiresReconnect(429, undefined), false);
 });
 
 const mappingFixture: ConnectorFieldMapping[] = [
