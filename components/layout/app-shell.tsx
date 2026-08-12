@@ -153,10 +153,7 @@ export function AppShell({
               </span>
             </div>
             <nav
-              className="grid border-t"
-              style={{
-                gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))`,
-              }}
+              className="flex overflow-x-auto border-t"
               aria-label="Partner navigation"
             >
               {navigation.map((item) => {
@@ -168,7 +165,7 @@ export function AppShell({
                     key={item.key}
                     href={item.href}
                     className={cn(
-                      "flex min-w-0 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-medium",
+                      "flex min-w-[4.75rem] flex-1 flex-col items-center justify-center gap-1 px-2 py-2 text-[11px] font-medium",
                       active
                         ? "bg-primary/8 text-primary"
                         : "text-muted-foreground",
