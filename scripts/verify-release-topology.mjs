@@ -34,6 +34,30 @@ const renderDeployTrigger = readFileSync(
 );
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
+const connectorWorker = readFileSync(
+  "services/connector-worker/worker.ts",
+  "utf8",
+);
+const connectorWorkerHeartbeat = readFileSync(
+  "lib/integrations/connector-worker-heartbeat.ts",
+  "utf8",
+);
+const integrationActions = readFileSync(
+  "app/control/integrations/actions.ts",
+  "utf8",
+);
+const integrationQueue = readFileSync(
+  "app/control/integrations/page.tsx",
+  "utf8",
+);
+const connectorWorkerCompose = readFileSync(
+  "docker-compose.connector-worker.yml",
+  "utf8",
+);
+const connectorWorkerRelease = readFileSync(
+  "deploy/release-connector-worker.sh",
+  "utf8",
+);
 
 const requiredRenderFragments = [
   "name: northstar-app",
@@ -69,6 +93,58 @@ for (const fragment of [
   "export async function runJobs",
 ]) {
   if (!jobsRunner.includes(fragment)) fail(`job runner lacks ${fragment}`);
+}
+for (const fragment of [
+  "CONNECTOR_WORKER_ENV_FILE",
+  "RELEASE_SHA: ${RELEASE_SHA:?RELEASE_SHA is required}",
+  "CODEX_CONNECTOR_WORKSPACE_PATH: /workspace",
+]) {
+  if (!connectorWorkerCompose.includes(fragment)) {
+    fail(`connector-worker compose lacks release contract ${fragment}`);
+  }
+}
+for (const fragment of [
+  'git -C "$workspace" fetch --no-tags origin "$release_sha"',
+  'git -C "$workspace" switch --detach "$release_sha"',
+  "Docker Engine with the Compose v2 plugin is required.",
+  "docker compose",
+  "refusing deployment",
+]) {
+  if (!connectorWorkerRelease.includes(fragment)) {
+    fail(`connector-worker release script lacks ${fragment}`);
+  }
+}
+
+for (const fragment of [
+  "recordConnectorWorkerHeartbeat",
+  "resolveConnectorWorkerRelease",
+  "await publishHeartbeat()",
+  "connector_worker.started",
+]) {
+  if (!connectorWorker.includes(fragment)) {
+    fail(`connector worker lacks runtime evidence contract ${fragment}`);
+  }
+}
+for (const fragment of [
+  'service_key: "connector_worker"',
+  "instance_id: workerId",
+  "releaseId(env)",
+]) {
+  if (!connectorWorkerHeartbeat.includes(fragment)) {
+    fail(`connector worker heartbeat lacks ${fragment}`);
+  }
+}
+if (integrationActions.includes("executeClaimedConnectorTask")) {
+  fail("public web actions must not execute trusted connector tasks");
+}
+for (const fragment of [
+  "health.services.connector_worker.status",
+  "Queued · worker online",
+  "Queued · worker offline",
+]) {
+  if (!integrationQueue.includes(fragment)) {
+    fail(`integration queue lacks trusted-worker status ${fragment}`);
+  }
 }
 
 for (const fragment of [
@@ -168,6 +244,10 @@ for (const fragment of [
   "supabase db push",
   "node scripts/trigger-render-deploys.mjs",
   "npm run verify:hosted",
+  "deploy-connector-worker:",
+  "runs-on: [self-hosted, linux, connector-worker]",
+  "bash deploy/release-connector-worker.sh",
+  "deploy-hosted-services, deploy-connector-worker",
 ]) {
   if (!productionWorkflow.includes(fragment)) {
     fail(`production release workflow lacks ${fragment}`);
@@ -193,6 +273,9 @@ for (const fragment of [
   "Hosted jobs release",
   "Hosted jobs heartbeat",
   "jobs_release",
+  "Hosted connector-worker release",
+  "Hosted connector-worker heartbeat",
+  "connector_worker_release",
 ]) {
   if (!hostedVerifier.includes(fragment)) {
     fail(`hosted release verifier lacks ${fragment}`);
@@ -217,6 +300,9 @@ for (const script of [
 
 for (const fragment of [
   "service-runtime:",
+  "Verify connector-worker deployment configuration",
+  "bash -n deploy/release-connector-worker.sh",
+  "docker compose -f docker-compose.connector-worker.yml config",
   "npm run verify:service-images",
 ]) {
   if (!ciWorkflow.includes(fragment)) {
@@ -225,5 +311,5 @@ for (const fragment of [
 }
 
 console.log(
-  "Release topology verified: schema-aware web health, migration-first exact-commit Render deployment for web, jobs, and voice, self-hosted five-minute jobs, connector-worker runtime smoke tests, production readiness, and signed desktop workflows are wired.",
+  "Release topology verified: schema-aware web health, migration-first exact-commit Render deployment for web, jobs, and voice, self-hosted five-minute jobs, isolated connector-worker liveness and queue execution, production readiness, and signed desktop workflows are wired.",
 );

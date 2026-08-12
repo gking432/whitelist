@@ -48,6 +48,7 @@ export function runtimeActivationFromEvidence(
 ): RuntimeActivation {
   const { health } = evidence;
   const jobsState = health.services.jobs.status;
+  const connectorWorkerState = health.services.connector_worker.status;
   const jobsDetail = {
     ready: `Scheduler is current on release ${displayRelease(health.services.jobs.release)}; last successful run ${health.services.jobs.last_success_at ? new Date(health.services.jobs.last_success_at).toLocaleString() : "unknown"}.`,
     missing: "No successful scheduler heartbeat has been recorded for this deployment.",
@@ -62,6 +63,13 @@ export function runtimeActivationFromEvidence(
         evidence.voice.release.startsWith(health.release)),
   );
   const voiceReady = evidence.voice.reachable && voiceReleaseMatches;
+  const connectorWorkerDetail = {
+    ready: `Trusted connector worker is current on release ${displayRelease(health.services.connector_worker.release)}; last heartbeat ${health.services.connector_worker.last_success_at ? new Date(health.services.connector_worker.last_success_at).toLocaleString() : "unknown"}.`,
+    missing: "No trusted connector-worker heartbeat has been recorded for this deployment.",
+    stale: `The trusted connector worker has not checked in during the last 3 minutes (${health.services.connector_worker.last_success_at ? new Date(health.services.connector_worker.last_success_at).toLocaleString() : "unknown"}).`,
+    release_mismatch: `Connector-worker release ${displayRelease(health.services.connector_worker.release)} does not match web release ${displayRelease(health.release)}.`,
+    release_unavailable: "The web release identifier is unavailable. This check becomes authoritative after deployment.",
+  }[connectorWorkerState];
   const pilotState: RuntimeActivationState = evidence.pilotLookupFailed
     ? "attention"
     : evidence.passedPilotCount === 0 && evidence.liveProviderCount === 0
@@ -136,6 +144,19 @@ export function runtimeActivationFromEvidence(
           (evidence.voice.reachable
             ? `Voice release ${displayRelease(evidence.voice.release)} does not match web release ${displayRelease(health.release)}.`
             : "The voice gateway did not return a healthy response."),
+    },
+    {
+      key: "connector_worker_runtime",
+      label: "Codex connector worker",
+      purpose: "Proves approved connector requests have an isolated trusted processor outside the public application.",
+      state:
+        connectorWorkerState === "ready"
+          ? "ready"
+          : connectorWorkerState === "release_unavailable"
+            ? "waiting"
+            : "attention",
+      required: true,
+      detail: connectorWorkerDetail,
     },
     {
       key: "provider_pilots_runtime",

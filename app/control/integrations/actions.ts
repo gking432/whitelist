@@ -8,13 +8,6 @@ import {
   buildConnectorDevelopmentPrompt,
   connectorRevisionBranchName,
 } from "@/lib/integrations/connector-development";
-import {
-  codexConnectorWorkerReady,
-} from "@/lib/integrations/codex-worker";
-import {
-  claimNextConnectorTask,
-  executeClaimedConnectorTask,
-} from "@/lib/integrations/connector-task-runner";
 import { requirePlatformRole } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -132,22 +125,5 @@ export async function approveConnectorTask(formData: FormData) {
   if (!supabase) return;
   const taskId = String(formData.get("task_id") ?? "");
   await supabase.from("connector_development_tasks").update({ status: "queued", approved_by: auth.user.id, approved_at: new Date().toISOString(), available_at: new Date().toISOString(), error_message: null }).eq("id", taskId).eq("status", "awaiting_approval");
-  revalidatePath("/control/integrations");
-}
-
-export async function runConnectorTask(formData: FormData) {
-  const auth = await getAuthState();
-  if (!auth.user) return;
-  await requirePlatformRole(auth.user.id, ["platform_owner", "platform_admin"]);
-  const supabase = await createSupabaseServerClient();
-  const admin = createSupabaseAdminClient();
-  if (!supabase) return;
-  if (!codexConnectorWorkerReady()) return;
-  const taskId = String(formData.get("task_id") ?? "");
-  if (!taskId || !admin) return;
-  const workerId = `web-manual-${auth.user.id.slice(0, 8)}`;
-  const task = await claimNextConnectorTask(admin, workerId, new Date(), taskId);
-  if (!task) return;
-  await executeClaimedConnectorTask(admin, task, workerId);
   revalidatePath("/control/integrations");
 }

@@ -334,5 +334,5 @@ if (clientSupportPolicy !== "true") {
 }
 
 console.log(
-  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, support tickets, guarded connector releases, provider live pilots, and the service-only scheduler heartbeat are scoped.`,
+  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, support tickets, guarded connector releases, provider live pilots, and service-only runtime heartbeats are scoped.`,
 );

@@ -5,6 +5,10 @@ import { createClient } from "@supabase/supabase-js";
 
 import { codexConnectorWorkerReady } from "../../lib/integrations/codex-worker.ts";
 import {
+  recordConnectorWorkerHeartbeat,
+  resolveConnectorWorkerRelease,
+} from "../../lib/integrations/connector-worker-heartbeat.ts";
+import {
   configuredConnectorWorkerPaths,
   verifyConnectorWorkerWorkspace,
 } from "../../lib/integrations/connector-worker-config.ts";
@@ -29,7 +33,11 @@ const workerPaths = configuredConnectorWorkerPaths();
 if (!workerPaths) {
   throw new Error("The connector worker paths are invalid.");
 }
-await verifyConnectorWorkerWorkspace(workerPaths);
+const { repository } = await verifyConnectorWorkerWorkspace(workerPaths);
+const workerRelease = await resolveConnectorWorkerRelease(repository);
+if (!workerRelease) {
+  throw new Error("The connector worker could not identify its source release.");
+}
 
 const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -41,6 +49,7 @@ const pollMs = Math.max(
 );
 const runOnce = process.env.CONNECTOR_WORKER_ONCE === "true";
 let stopping = false;
+let heartbeatInFlight: Promise<void> | null = null;
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
@@ -51,10 +60,42 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
 const sleep = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-console.log(JSON.stringify({ event: "connector_worker.started", workerId }));
+const publishHeartbeat = async () => {
+  if (heartbeatInFlight) return heartbeatInFlight;
+  heartbeatInFlight = recordConnectorWorkerHeartbeat(
+    admin,
+    workerRelease,
+    workerId,
+  ).finally(() => {
+    heartbeatInFlight = null;
+  });
+  return heartbeatInFlight;
+};
+
+const serviceHeartbeat = setInterval(() => {
+  void publishHeartbeat().catch((error) => {
+    console.error(
+      JSON.stringify({
+        event: "connector_worker.heartbeat_failed",
+        message:
+          error instanceof Error ? error.message : "Worker heartbeat failed.",
+      }),
+    );
+  });
+}, 60_000);
+serviceHeartbeat.unref();
+
+console.log(
+  JSON.stringify({
+    event: "connector_worker.started",
+    workerId,
+    release: workerRelease,
+  }),
+);
 
 while (!stopping) {
   try {
+    await publishHeartbeat();
     const recovery = await recoverStaleConnectorTasks(admin);
     if (recovery.requeued || recovery.failed) {
       console.log(
@@ -87,4 +128,5 @@ while (!stopping) {
   }
 }
 
+clearInterval(serviceHeartbeat);
 console.log(JSON.stringify({ event: "connector_worker.stopped", workerId }));

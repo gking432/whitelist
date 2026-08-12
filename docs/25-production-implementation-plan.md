@@ -171,6 +171,9 @@ connection-link security, rollback, and launch-gate tests.
   workers from reproducible configuration.
 - Add monitoring, alerting, backups/restore testing, retention controls,
   abuse protection, support escalation, and operational runbooks.
+- Require the isolated Codex connector worker to publish an exact-release,
+  short-lived heartbeat; the public web process may queue approved work but
+  never execute it.
 - Sign and publish macOS/Windows desktop installers with secure configuration,
   automatic updates, and partner branding supplied by the hosted workspace.
 
@@ -178,7 +181,9 @@ Verification: clean production deployment, restore drill, worker retry drill,
 security review, signed installer checks, and update/rollback check. The
 credential-independent connector-worker failure/backoff/retry/stale-lease
 drill runs in the release journey; signed update/rollback acceptance remains a
-real-machine release task.
+real-machine release task. Production deployment updates the trusted worker's
+clean persistent checkout to the exact approved commit before hosted release
+verification can succeed.
 
 ## Step 13: Full-system release verification
 

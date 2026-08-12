@@ -39,7 +39,7 @@ stack.
 | Scheduling constraints | Real — "after 5"/"mornings"/"not tomorrow"/weekday parsing (unit-tested) intersects the knowledge-base booking window in slot proposals; approval summaries say what was honored |
 | Booking confirmation drafts | Real — approved bookings queue a NEW approval-gated confirmation message; booking approval never implies message approval |
 | Background job runner | Real — POST /api/jobs/run (CRON_SECRET) retries failed jobs with exponential backoff; the Render Blueprint provisions its five-minute scheduler; manual retry retained |
-| Connector development worker | Real guarded foundation — approved tasks are claimed with durable leases, transient failures back off and retry, stale exhausted leases block and route to the owner, and the production container startup is smoke-tested without invoking Codex |
+| Connector development worker | Real guarded foundation — approved tasks are claimed only by the isolated trusted worker, which publishes an exact-release heartbeat; the owner queue reports online/offline state, transient failures back off and retry, and stale exhausted leases block and route to the owner |
 | OpenAI Realtime voice agent | Real — registered provider adapter, per-client instructions from approved knowledge, ephemeral session minting (key stays server-side), tool calls into real actions (contact lookup/save, notes, real slot proposals, approval-gated booking + message requests, escalation), and simulated-call harness exercising the full pipeline (docs/21) |
 | Twilio AI-answering calls | Real — signed inbound voice webhooks create a durable call session, Twilio Gather carries customer turns to the configured AI voice tools, responses return as TwiML, and call completion runs the normal CRM/post-call pipeline |
 | Staff-assisted Twilio calls | Real foundation — Twilio forwards the call to staff while an always-on WebSocket service streams call audio for transcription, signs transcript events back to the app, and feeds the desktop assistant |
@@ -71,7 +71,7 @@ stack.
 | SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
 | Browser extension / third-party CRM overlay | Not built. The Electron desktop assistant is the supported V1 overlay; direct CRM write-back is preferred whenever a connector supports it |
 | Provider live verification | Owner-started pilot evidence is guarded against test accounts and pre-pilot events, but each vendor still needs production app approval and at least one real managed-client pilot before being labeled live-verified |
-| Owner activation evidence | Control Room separates environment configuration from live runtime proof for database/schema, owner access, scheduler release/freshness, voice release, and provider-pilot rollout status |
+| Owner activation evidence | Control Room separates environment configuration from live runtime proof for database/schema, owner access, scheduler release/freshness, voice release, isolated Codex worker release/freshness, and provider-pilot rollout status |
 | Marketplace native APIs | Angi, Thumbtack, Yelp, and similar broad lead APIs remain vendor-restricted; private forwarded email and signed webhook intake are the supported V1 paths |
 | Billing/usage pricing on packages | Not built by request |
 

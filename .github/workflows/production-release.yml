@@ -52,7 +52,7 @@ jobs:
       - run: npm run lint
       - run: npm test
 
-  deploy:
+  deploy-hosted-services:
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -106,5 +106,44 @@ jobs:
           supabase migration list --linked
       - name: Deploy the exact release to Render
         run: node scripts/trigger-render-deploys.mjs
-      - name: Wait for and verify the public release
+  deploy-connector-worker:
+    needs: [validate, deploy-hosted-services]
+    runs-on: [self-hosted, linux, connector-worker]
+    timeout-minutes: 20
+    environment:
+      name: production
+    env:
+      RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+      CONNECTOR_WORKSPACE_PATH: ${{ vars.CONNECTOR_WORKSPACE_PATH }}
+      CONNECTOR_WORKER_ENV_FILE: ${{ vars.CONNECTOR_WORKER_ENV_FILE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
+      - name: Deploy the exact release to the isolated connector worker
+        run: bash deploy/release-connector-worker.sh
+
+  verify:
+    needs: [validate, deploy-hosted-services, deploy-connector-worker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+      url: ${{ vars.HOSTED_APP_URL }}
+    env:
+      HOSTED_APP_URL: ${{ vars.HOSTED_APP_URL }}
+      HOSTED_VOICE_URL: ${{ vars.HOSTED_VOICE_URL }}
+      EXPECTED_RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+      HOSTED_VERIFY_TIMEOUT_MS: "1200000"
+      HOSTED_VERIFY_INTERVAL_MS: "15000"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Wait for and verify the complete public release
         run: npm run verify:hosted

@@ -8,6 +8,7 @@ import {
 } from "./schema-version.ts";
 
 export const JOB_HEARTBEAT_MAX_AGE_MS = 15 * 60 * 1000;
+export const CONNECTOR_WORKER_HEARTBEAT_MAX_AGE_MS = 3 * 60 * 1000;
 
 export type ServiceHeartbeatStatus =
   | "ready"
@@ -37,6 +38,11 @@ export type PlatformHealthSnapshot = {
       release: string | null;
       last_success_at: string | null;
     };
+    connector_worker: {
+      status: ServiceHeartbeatStatus;
+      release: string | null;
+      last_success_at: string | null;
+    };
   };
 };
 
@@ -44,6 +50,7 @@ export function evaluateServiceHeartbeat(
   currentRelease: string | null,
   heartbeat: { release?: string | null; last_success_at?: string | null } | null,
   now = new Date(),
+  maxAgeMs = JOB_HEARTBEAT_MAX_AGE_MS,
 ): ServiceHeartbeatStatus {
   if (!currentRelease) return "release_unavailable";
   if (!heartbeat?.release || !heartbeat.last_success_at) return "missing";
@@ -54,7 +61,7 @@ export function evaluateServiceHeartbeat(
   if (
     !Number.isFinite(heartbeatTime) ||
     heartbeatTime > now.getTime() + 60_000 ||
-    now.getTime() - heartbeatTime > JOB_HEARTBEAT_MAX_AGE_MS
+    now.getTime() - heartbeatTime > maxAgeMs
   ) {
     return "stale";
   }
@@ -94,6 +101,11 @@ export async function loadPlatformHealth(
           release: null,
           last_success_at: null,
         },
+        connector_worker: {
+          status: evaluateServiceHeartbeat(release, null, now),
+          release: null,
+          last_success_at: null,
+        },
       },
     };
   }
@@ -110,20 +122,25 @@ export async function loadPlatformHealth(
       .maybeSingle(),
     admin
       .from("platform_service_heartbeats")
-      .select("release, last_success_at")
-      .eq("service_key", "jobs")
-      .maybeSingle(),
+      .select("service_key, release, last_success_at")
+      .in("service_key", ["jobs", "connector_worker"]),
   ]);
   const actualSchema = schemaResult.data?.current_migration ?? null;
   const schemaReady =
     !schemaResult.error &&
     schemaVersionIsCompatible(actualSchema, EXPECTED_SCHEMA_VERSION);
-  const jobsHeartbeat = jobsResult.data
-    ? {
-        release: jobsResult.data.release as string | null,
-        last_success_at: jobsResult.data.last_success_at as string | null,
-      }
-    : null;
+  const heartbeatRows = jobsResult.data ?? [];
+  const heartbeatFor = (serviceKey: string) => {
+    const row = heartbeatRows.find((item) => item.service_key === serviceKey);
+    return row
+      ? {
+          release: row.release as string | null,
+          last_success_at: row.last_success_at as string | null,
+        }
+      : null;
+  };
+  const jobsHeartbeat = heartbeatFor("jobs");
+  const connectorWorkerHeartbeat = heartbeatFor("connector_worker");
 
   return {
     ok: !databaseResult.error && schemaReady && configurationReady,
@@ -146,6 +163,16 @@ export async function loadPlatformHealth(
         status: evaluateServiceHeartbeat(release, jobsHeartbeat, now),
         release: jobsHeartbeat?.release ?? null,
         last_success_at: jobsHeartbeat?.last_success_at ?? null,
+      },
+      connector_worker: {
+        status: evaluateServiceHeartbeat(
+          release,
+          connectorWorkerHeartbeat,
+          now,
+          CONNECTOR_WORKER_HEARTBEAT_MAX_AGE_MS,
+        ),
+        release: connectorWorkerHeartbeat?.release ?? null,
+        last_success_at: connectorWorkerHeartbeat?.last_success_at ?? null,
       },
     },
   };

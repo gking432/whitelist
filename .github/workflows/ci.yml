@@ -98,6 +98,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify connector-worker deployment configuration
+        env:
+          CONNECTOR_WORKER_ENV_FILE: .env.example
+          CONNECTOR_WORKSPACE_PATH: ${{ github.workspace }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          bash -n deploy/release-connector-worker.sh
+          docker compose -f docker-compose.connector-worker.yml config >/dev/null
       - run: npm run verify:service-images
 
   desktop-bundles:

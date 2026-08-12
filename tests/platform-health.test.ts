@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CONNECTOR_WORKER_HEARTBEAT_MAX_AGE_MS,
   evaluateServiceHeartbeat,
   JOB_HEARTBEAT_MAX_AGE_MS,
 } from "../lib/ops/platform-health.ts";
@@ -25,6 +26,23 @@ test("service heartbeat requires the deployed release and a recent success", () 
       now,
     ),
     "release_mismatch",
+  );
+});
+
+test("connector worker uses a tighter liveness window", () => {
+  assert.equal(
+    evaluateServiceHeartbeat(
+      release,
+      {
+        release,
+        last_success_at: new Date(
+          now.getTime() - CONNECTOR_WORKER_HEARTBEAT_MAX_AGE_MS - 1,
+        ).toISOString(),
+      },
+      now,
+      CONNECTOR_WORKER_HEARTBEAT_MAX_AGE_MS,
+    ),
+    "stale",
   );
 });
 

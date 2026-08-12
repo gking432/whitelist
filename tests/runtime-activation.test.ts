@@ -28,6 +28,11 @@ function health(
         release: "abcdef1234567890",
         last_success_at: "2026-08-12T11:55:00.000Z",
       },
+      connector_worker: {
+        status: "ready",
+        release: "abcdef1234567890",
+        last_success_at: "2026-08-12T11:59:00.000Z",
+      },
     },
   };
 }
@@ -87,6 +92,25 @@ test("runtime activation flags inconsistent provider promotion evidence", () => 
   });
   assert.equal(
     result.items.find((item) => item.key === "provider_pilots_runtime")?.state,
+    "attention",
+  );
+});
+
+test("runtime activation requires a live connector worker", () => {
+  const workerOffline = health();
+  workerOffline.services.connector_worker.status = "stale";
+  const result = runtimeActivationFromEvidence({
+    health: workerOffline,
+    activeOwnerCount: 1,
+    ownerLookupFailed: false,
+    passedPilotCount: 0,
+    liveProviderCount: 0,
+    pilotLookupFailed: false,
+    voice: { reachable: true, release: "abcdef1234567890" },
+  });
+  assert.equal(result.ready, false);
+  assert.equal(
+    result.items.find((item) => item.key === "connector_worker_runtime")?.state,
     "attention",
   );
 });

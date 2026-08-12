@@ -1,5 +1,5 @@
 export const EXPECTED_SCHEMA_VERSION =
-  "20260812080000_guard_real_provider_pilot_evidence";
+  "20260812090000_connector_worker_runtime_heartbeat";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

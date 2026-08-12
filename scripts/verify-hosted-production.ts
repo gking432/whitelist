@@ -13,6 +13,11 @@ type HealthPayload = {
       release?: string | null;
       last_success_at?: string | null;
     };
+    connector_worker?: {
+      status?: string;
+      release?: string | null;
+      last_success_at?: string | null;
+    };
   };
 };
 
@@ -113,6 +118,22 @@ async function verify() {
       `Hosted jobs heartbeat is ${health.services?.jobs?.status ?? "unavailable"}.`,
     );
   }
+  if (
+    expectedRelease &&
+    !health.services?.connector_worker?.release?.startsWith(expectedRelease)
+  ) {
+    throw new Error(
+      `Hosted connector-worker release ${health.services?.connector_worker?.release ?? "unknown"} does not match ${expectedRelease}.`,
+    );
+  }
+  if (
+    expectedRelease &&
+    health.services?.connector_worker?.status !== "ready"
+  ) {
+    throw new Error(
+      `Hosted connector-worker heartbeat is ${health.services?.connector_worker?.status ?? "unavailable"}.`,
+    );
+  }
 
   for (const [header, expected] of [
     ["x-content-type-options", "nosniff"],
@@ -186,11 +207,16 @@ console.log(
       jobs_release: result.health.services?.jobs?.release ?? null,
       jobs_last_success_at:
         result.health.services?.jobs?.last_success_at ?? null,
+      connector_worker_release:
+        result.health.services?.connector_worker?.release ?? null,
+      connector_worker_last_success_at:
+        result.health.services?.connector_worker?.last_success_at ?? null,
       database: result.health.checks?.database,
       database_schema: result.health.checks?.database_schema,
       configuration: result.health.checks?.configuration,
       login: "ready",
       jobs_auth: "protected",
+      connector_worker: "ready",
       voice: "ready",
     },
     null,

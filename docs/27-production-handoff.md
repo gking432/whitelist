@@ -28,9 +28,11 @@ setup, and live-account verification.
    one alert reaches the owner channel. Then open **Control Room → Production
    activation**. Configuration and runtime proof are reported separately: the
    runtime panel must verify database access, the current schema, an active
-   platform owner, a scheduler heartbeat from the same deployed release, and
-   the matching voice-gateway release. Real-account provider pilots are shown
-   as rollout evidence and do not falsely satisfy these core runtime checks.
+   platform owner, a scheduler heartbeat from the same deployed release, the
+   matching voice-gateway release, and a recent heartbeat from the isolated
+   Codex connector worker on that same release. Real-account provider pilots
+   are shown as rollout evidence and do not falsely satisfy these core runtime
+   checks.
 8. Create a GitHub environment named `production`. Add these environment
    secrets:
 
@@ -42,15 +44,25 @@ setup, and live-account verification.
    - `RENDER_VOICE_DEPLOY_HOOK_URL`: deploy hook from voice service settings.
 
    Add `HOSTED_APP_URL` and `HOSTED_VOICE_URL` as environment variables. The
-   `production` environment and its `main`-only branch policy are already
-   configured; its credential secrets and hosted URL variables are still
-   empty. Enable a required reviewer when the repository's GitHub plan supports
+   connector worker also requires a dedicated Linux host registered as a
+   self-hosted GitHub Actions runner with the `connector-worker` label. On that
+   host, install Docker Engine with the Compose v2 plugin, create a persistent
+   clean checkout and a private env file outside the checkout, then add their
+   absolute paths as `CONNECTOR_WORKSPACE_PATH` and
+   `CONNECTOR_WORKER_ENV_FILE` production environment variables. The private
+   env file supplies Supabase service credentials plus the host's Codex/OpenAI
+   authentication; never add it to Git. The `production` environment and its
+   `main`-only branch policy are already configured; its credential secrets,
+   hosted URLs, worker paths, and signing identities must be supplied by the
+   owner. Enable a required reviewer when the repository's GitHub plan supports
    it.
 9. Merge the release commit to `main`, open **Actions → Production release →
     Run workflow**, enter the full commit SHA, and type `DEPLOY PRODUCTION`.
     The workflow rejects commits outside `main`, runs quality checks, previews
     and applies Supabase migrations, triggers that exact commit on all three
-    Render services, then waits up to 20 minutes for public verification.
+    Render services, updates the isolated connector-worker checkout to that
+    same immutable commit, restarts it, then waits up to 20 minutes for all four
+    runtimes to prove the release.
 10. Run `npm run bootstrap:owner -- --email <owner> --name <name> --app-url
     <production-url> --dry-run`, then repeat without `--dry-run` to send the
     initial platform-owner invite. Never run `supabase/seed.sql` in production.
@@ -63,13 +75,13 @@ setup, and live-account verification.
    npm run verify:hosted
    ```
 
-   This checks database/configuration readiness, the exact app, jobs, and voice
-   commits, a scheduler success within the last 15 minutes, security headers,
-   login rendering, job-endpoint authorization, and voice health. It does not
-   mutate production data. The scheduler records its release and success time
-   through the protected job endpoint, so cron health is visible from both the
-   verifier and the owner activation screen without exposing a public cron
-   endpoint.
+   This checks database/configuration readiness, the exact app, jobs, voice,
+   and trusted connector-worker commits, a scheduler success within the last
+   15 minutes, a connector-worker heartbeat within the last 3 minutes,
+   security headers, login rendering, job-endpoint authorization, and voice
+   health. It does not mutate production data. The scheduler and connector
+   worker record their own release evidence, so background runtime health is
+   visible without exposing public control endpoints.
 
 Twilio is not a platform-owner account. Each partner connects its own Twilio
 parent account during onboarding; the platform provisions isolated client
@@ -149,13 +161,20 @@ requests, sanitized prompts, owner approval, validation, and release tracking
 still work while execution is disabled.
 
 To enable code execution, use a dedicated trusted worker host with Codex auth
-and a persistent source checkout. Copy `.env.example` to the host-only
-`.env.connector-worker`, set the Supabase service credentials and OpenAI/Codex
-credentials, then set `CONNECTOR_WORKSPACE_PATH` to the absolute host checkout.
-Start `docker compose -f docker-compose.connector-worker.yml up -d`. The worker
+and a persistent source checkout. Create a host-only env file outside the
+checkout using `.env.example` as the reference, set the Supabase service credentials and
+OpenAI/Codex credentials, and register the host as a GitHub Actions runner with
+the `connector-worker` label. Set the production environment's worker-path
+variables as described above. The release workflow runs
+`deploy/release-connector-worker.sh`; do not update the checkout manually
+during a release. The worker
 mounts that writable Git checkout at `/workspace`, verifies it before polling,
 creates isolated worktrees in a separate volume, renews a durable lease while
-Codex runs, and safely retries abandoned work. Startup fails before claiming
+Codex runs, publishes its exact checked-out Git release and a once-per-minute
+service heartbeat, and safely retries abandoned work. The owner Integration
+Queue is queue-only: approving a build never executes Codex inside the public
+web process, and its online/offline label comes from this durable heartbeat.
+Startup fails before claiming
 tasks when the checkout or worktree root is missing, read-only, nested, or not
 a Git repository. Each approved task runs in its assigned
 `codex/connector-*` branch; it cannot deploy, merge, or push automatically.

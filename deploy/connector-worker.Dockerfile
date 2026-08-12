@@ -10,7 +10,9 @@ RUN npm ci --omit=dev
 
 COPY lib/integrations/codex-worker.ts ./lib/integrations/codex-worker.ts
 COPY lib/integrations/connector-worker-config.ts ./lib/integrations/connector-worker-config.ts
+COPY lib/integrations/connector-worker-heartbeat.ts ./lib/integrations/connector-worker-heartbeat.ts
 COPY lib/integrations/connector-task-runner.ts ./lib/integrations/connector-task-runner.ts
+COPY lib/ops/release-id.ts ./lib/ops/release-id.ts
 COPY services/connector-worker/worker.ts ./services/connector-worker/worker.ts
 
 RUN mkdir -p /worktrees && chown node:node /worktrees
