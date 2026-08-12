@@ -26,7 +26,8 @@
     "verify:connector-writeback": "node --env-file=.env.local --experimental-strip-types scripts/verify-connector-writeback.ts",
     "verify:production-env": "node --experimental-strip-types scripts/verify-production-env.ts",
     "verify:release-topology": "node scripts/verify-release-topology.mjs",
-    "verify:release-images": "docker build -f deploy/jobs.Dockerfile -t northstar-jobs-verify . && docker build -f services/voice-stream/Dockerfile -t northstar-voice-verify .",
+    "verify:web-image": "node scripts/verify-web-image.mjs",
+    "verify:release-images": "npm run verify:web-image && docker build -f deploy/jobs.Dockerfile -t northstar-jobs-verify . && docker build -f services/voice-stream/Dockerfile -t northstar-voice-verify .",
     "verify:release": "npm run verify:release-topology && npm run verify:security && npm run verify:restore && npm run verify:release-images",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -71,7 +72,9 @@
     "appId": "com.businessassistant.desktop",
     "productName": "Business Assistant",
     "asar": true,
-    "files": ["**/*"],
+    "files": [
+      "**/*"
+    ],
     "directories": {
       "app": "desktop",
       "output": "release"

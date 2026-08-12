@@ -45,7 +45,9 @@ npm run verify:desktop-bundle
 ```
 
 `verify:release` checks the Render topology, database security and restore
-drills, and both production Docker images. The connector scheduler also
+drills, and clean builds of all three production Docker images. The web image
+is launched on an ephemeral local port and its standalone server is smoke
+tested. The connector scheduler also
 recovers expired read leases within the configured retry limit. An expired
 external write is dead-lettered for vendor reconciliation instead of replayed,
 because its delivery outcome may be unknown.
