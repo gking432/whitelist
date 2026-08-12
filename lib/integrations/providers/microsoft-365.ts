@@ -6,7 +6,12 @@ import type {
   ConnectorPushInput,
 } from "../connectors/types";
 import { connectorPushPayload } from "../connectors/field-mappings.ts";
-import { mintWorkspaceAccessToken, type WorkspaceCredentials } from "./workspace-oauth.ts";
+import {
+  mintWorkspaceAccessToken,
+  type WorkspaceCredentials,
+  workspaceApiRequiresReconnect,
+} from "./workspace-oauth.ts";
+import { ConnectorAuthorizationError } from "../connectors/errors.ts";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
@@ -26,7 +31,12 @@ async function graphFetch(credentials: WorkspaceCredentials, path: string, init:
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...init.headers },
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new MicrosoftGraphError(response.status);
+  if (!response.ok) {
+    if (workspaceApiRequiresReconnect(response.status)) {
+      throw new ConnectorAuthorizationError();
+    }
+    throw new MicrosoftGraphError(response.status);
+  }
   return response;
 }
 

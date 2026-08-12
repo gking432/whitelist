@@ -70,6 +70,10 @@ export function workspaceTokenRefreshRequiresReconnect(
   ].includes(error ?? "");
 }
 
+export function workspaceApiRequiresReconnect(status: number): boolean {
+  return status === 401;
+}
+
 export function workspaceRedirectUri(providerKey: WorkspaceProviderKey): string {
   return `${getAppUrl()}/api/oauth/${providerKey === "google_workspace" ? "google-workspace" : "microsoft"}/callback`;
 }

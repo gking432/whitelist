@@ -9,7 +9,9 @@ import { connectorPushPayload } from "../connectors/field-mappings.ts";
 import {
   mintWorkspaceAccessToken,
   type WorkspaceCredentials,
+  workspaceApiRequiresReconnect,
 } from "./workspace-oauth.ts";
+import { ConnectorAuthorizationError } from "../connectors/errors.ts";
 
 const PEOPLE = "https://people.googleapis.com/v1";
 const CALENDAR = "https://www.googleapis.com/calendar/v3";
@@ -45,6 +47,9 @@ async function googleFetch(
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
+    if (workspaceApiRequiresReconnect(response.status)) {
+      throw new ConnectorAuthorizationError();
+    }
     throw new GoogleWorkspaceApiError(response.status, await response.text());
   }
   return response;
@@ -120,18 +125,17 @@ async function readGmailMessages(
   credentials: WorkspaceCredentials,
   messages: { id: string; threadId?: string }[],
 ): Promise<CanonicalRecord[]> {
-  const accessToken = await mintWorkspaceAccessToken("google_workspace", credentials);
   const unique = [...new Map(messages.map((message) => [message.id, message])).values()];
   const details = await Promise.all(unique.map(async (message) => {
     const detailParams = new URLSearchParams({ format: "metadata" });
     for (const header of ["From", "To", "Subject", "Date"]) {
       detailParams.append("metadataHeaders", header);
     }
-    const response = await fetch(
+    const response = await googleFetch(
+      credentials,
       `${GMAIL}/users/me/messages/${encodeURIComponent(message.id)}?${detailParams}`,
-      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000) },
+      { signal: AbortSignal.timeout(15_000) },
     );
-    if (!response.ok) throw new Error(`Gmail message read failed (${response.status}).`);
     return await response.json() as {
       id: string;
       threadId?: string;

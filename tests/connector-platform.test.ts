@@ -56,7 +56,10 @@ import { googleBusinessProfileAdapter } from "../lib/integrations/providers/goog
 import { podiumAdapter } from "../lib/integrations/providers/podium.ts";
 import { birdeyeAdapter } from "../lib/integrations/providers/birdeye.ts";
 import { mapServiceTitanCustomer } from "../lib/integrations/providers/servicetitan.ts";
-import { workspaceTokenRefreshRequiresReconnect } from "../lib/integrations/providers/workspace-oauth.ts";
+import {
+  workspaceApiRequiresReconnect,
+  workspaceTokenRefreshRequiresReconnect,
+} from "../lib/integrations/providers/workspace-oauth.ts";
 import {
   mapDeletedGmailMessage,
   mapGoogleContact,
@@ -383,6 +386,10 @@ test("workspace refresh separates revoked grants from temporary outages", () => 
     false,
   );
   assert.equal(workspaceTokenRefreshRequiresReconnect(429, undefined), false);
+  assert.equal(workspaceApiRequiresReconnect(401), true);
+  assert.equal(workspaceApiRequiresReconnect(403), false);
+  assert.equal(workspaceApiRequiresReconnect(429), false);
+  assert.equal(workspaceApiRequiresReconnect(500), false);
 });
 
 test("workspace delta removals become canonical tombstones", () => {
