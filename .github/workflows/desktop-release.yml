@@ -56,10 +56,13 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run desktop:icon && npx electron-builder --mac dmg zip --universal --publish always -c.forceCodeSigning=true
+          DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL }}
+          REQUIRE_DESKTOP_APP_URL: "true"
+        run: npm run desktop:icon && npm run desktop:runtime-config && npx electron-builder --mac dmg zip --universal --publish always -c.forceCodeSigning=true
       - name: Verify signed macOS bundle and updater metadata
         env:
           REQUIRE_SIGNED_DESKTOP: "true"
+          DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL }}
         run: npm run verify:desktop-bundle
 
   windows:
@@ -88,9 +91,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: npm run desktop:icon && npx electron-builder --win nsis --x64 --publish always -c.forceCodeSigning=true
+          DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL }}
+          REQUIRE_DESKTOP_APP_URL: "true"
+        run: npm run desktop:icon && npm run desktop:runtime-config && npx electron-builder --win nsis --x64 --publish always -c.forceCodeSigning=true
       - name: Verify signed Windows bundle and updater metadata
         shell: pwsh
         env:
           REQUIRE_SIGNED_DESKTOP: "true"
+          DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL }}
         run: npm run verify:desktop-bundle

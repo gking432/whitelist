@@ -66,6 +66,16 @@ function readRuntimeConfig() {
   }
 }
 
+function readBundledRuntimeConfig() {
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.join(__dirname, "build", "runtime-default.json"), "utf8"),
+    );
+  } catch {
+    return {};
+  }
+}
+
 function writeRuntimeConfig(nextConfig) {
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
   fs.writeFileSync(configPath(), JSON.stringify(nextConfig, null, 2), {
@@ -86,6 +96,12 @@ function resolveAppUrl() {
     !app.isPackaged,
   );
   if (storedUrl) return storedUrl;
+
+  const bundledUrl = normalizeAppUrl(
+    readBundledRuntimeConfig().appUrl,
+    !app.isPackaged,
+  );
+  if (bundledUrl) return bundledUrl;
 
   return app.isPackaged ? null : LOCAL_APP_URL;
 }

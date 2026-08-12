@@ -4,6 +4,12 @@ The installed shell is deliberately named **Business Assistant**. It does not
 show the platform owner's name. After sign-in, the hosted assistant uses the
 partner's configured product name and colors.
 
+Production installers embed the public platform origin from the GitHub
+`DESKTOP_APP_URL` environment variable, so staff can install and sign in
+without entering a server address. The tray's **Workspace server** control is
+retained only as a support override. Signed builds fail when the embedded
+origin is missing, local, private-network, or non-HTTPS.
+
 ## Local release proof
 
 1. Run `npm run desktop:dist:mac`.

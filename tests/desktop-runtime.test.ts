@@ -11,6 +11,12 @@ test("packaged desktop servers require HTTPS", () => {
   assert.equal(normalizeAppUrl("https://partner.example.com/setup?token=secret"), "https://partner.example.com");
   assert.equal(normalizeAppUrl("http://partner.example.com"), null);
   assert.equal(normalizeAppUrl("http://localhost:3010"), null);
+  assert.equal(normalizeAppUrl("https://192.168.1.10"), null);
+  assert.equal(normalizeAppUrl("https://metadata.local"), null);
+  assert.equal(normalizeAppUrl("https://127.0.0.2"), null);
+  assert.equal(normalizeAppUrl("https://[::1]"), null);
+  assert.equal(normalizeAppUrl("https://[fc00::1]"), null);
+  assert.equal(normalizeAppUrl("https://0.0.0.0"), null);
 });
 
 test("desktop development can use localhost without weakening remote URLs", () => {

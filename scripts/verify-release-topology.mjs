@@ -134,6 +134,9 @@ for (const fragment of [
   "npm run verify:desktop-bundle",
   "MAC_CSC_LINK",
   "WIN_CSC_LINK",
+  "DESKTOP_APP_URL",
+  "REQUIRE_DESKTOP_APP_URL",
+  "desktop:runtime-config",
 ]) {
   if (!desktopWorkflow.includes(fragment)) {
     fail(`desktop release workflow lacks ${fragment}`);

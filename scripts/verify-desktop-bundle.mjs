@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { extractFile } from "@electron/asar";
 
 const rootPackage = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
 const desktopPackage = JSON.parse(
@@ -10,6 +11,7 @@ const productName = rootPackage.build?.productName;
 const version = rootPackage.version;
 const releaseDirectory = resolve("release");
 const requireSignature = process.env.REQUIRE_SIGNED_DESKTOP === "true";
+const expectedAppUrl = process.env.DESKTOP_APP_URL?.trim() ?? "";
 
 function fail(message) {
   throw new Error(`Desktop bundle verification failed: ${message}`);
@@ -47,10 +49,21 @@ function verifyApplicationArchive(asarPath) {
     "/main.cjs",
     "/preload.cjs",
     "/runtime-config.cjs",
+    "/build/runtime-default.json",
     "/setup.html",
     "/node_modules/electron-updater/package.json",
   ]) {
     if (!bundledFiles.includes(required)) fail(`${required} is not packaged`);
+  }
+
+  const bundledConfig = JSON.parse(
+    extractFile(asarPath, "build/runtime-default.json").toString("utf8"),
+  );
+  if (expectedAppUrl && bundledConfig.appUrl !== new URL(expectedAppUrl).origin) {
+    fail("bundled workspace origin does not match DESKTOP_APP_URL");
+  }
+  if (requireSignature && !bundledConfig.appUrl) {
+    fail("signed release does not contain a default workspace origin");
   }
 }
 
