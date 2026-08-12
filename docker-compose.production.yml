@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
     restart: unless-stopped
     env_file:
       - .env.production
@@ -24,6 +27,20 @@ services:
       PORT: "8081"
     expose:
       - "8081"
+
+  jobs:
+    build:
+      context: .
+      dockerfile: deploy/jobs.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NORTHSTAR_APP_URL: https://${APP_DOMAIN}
+      JOB_RUN_INTERVAL_MS: "300000"
+    command: ["node", "run-jobs-loop.mjs"]
+    depends_on:
+      - app
 
   caddy:
     image: caddy:2.10-alpine

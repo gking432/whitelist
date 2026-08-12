@@ -25,7 +25,11 @@ Northstar uses three Render services:
    second deployment is required.
 4. Public Next.js variables are
    embedded during the app build, so the app must be rebuilt after they change.
-5. Confirm `GET /api/health` returns `200` and `database: "ready"`.
+5. Confirm `GET /api/health` returns `200`, `database: "ready"`, and
+   `database_schema: "ready"`. An outdated migration fails health instead of
+   routing traffic to an incompatible application/database pair.
+   Apply migrations before deploying the corresponding app release; older app
+   releases accept newer forward-compatible schema markers during the rollout.
 6. Confirm the `northstar-jobs` cron has a successful run in Render.
 7. Complete `/partner/onboarding`, create the pilot client, select its package,
    and connect the accounts listed in the client's Setup workspace.
@@ -73,8 +77,8 @@ encryption, webhook, and provider secrets must never use that prefix.
 ## Monitoring
 
 Enable Render deploy-failure, service-health, and cron-failure notifications for
-all three services. A failed database check makes `/api/health` return `503` so
-Render does not route traffic to an app that cannot safely serve tenants. The
+all three services. A failed database or latest-schema check makes `/api/health`
+return `503` so Render does not route traffic to an app that cannot safely serve tenants. The
 owner Control Center aggregates sanitized server, browser, desktop, voice, and
 worker failures under Platform errors. Set `PLATFORM_ALERT_WEBHOOK_URL` to a
 private public-HTTPS Slack/incident webhook for first-occurrence alerts. Action
@@ -98,3 +102,19 @@ The app checks GitHub Releases automatically and offers restart-to-install after
 an update downloads. The workflow fails instead of publishing unsigned builds.
 Run `npm run verify:desktop-bundle` against the distribution artifact and follow
 the update/forward-rollback procedure in `docs/26-desktop-release-and-rollback.md`.
+
+## Self-hosted alternative
+
+`docker-compose.production.yml` runs the same web, voice, and five-minute job
+services behind Caddy. Set `APP_DOMAIN` and `VOICE_DOMAIN`, point both DNS
+records at the host, place the server-only values from `.env.example` in a
+mode-0600 `.env.production`, and run:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+```
+
+The `jobs` container stays alive, runs immediately, and repeats every five
+minutes. A failed invocation is logged and retried on the next interval. Caddy
+manages public TLS; Supabase remains the managed database and authentication
+system in this topology.

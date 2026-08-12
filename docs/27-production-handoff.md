@@ -22,8 +22,9 @@ setup, and live-account verification.
 6. Create the platform OAuth applications needed for the launch catalog and
    add their IDs/secrets from `.env.example`. Register callback URLs using the
    production app domain.
-7. Configure `PLATFORM_ALERT_WEBHOOK_URL`, confirm `/api/health`, run the job
-   service once, and verify one alert reaches the owner channel.
+7. Configure `PLATFORM_ALERT_WEBHOOK_URL`, confirm `/api/health` reports both
+   database and database schema as ready, run the job service once, and verify
+   one alert reaches the owner channel.
 8. Run `npm run bootstrap:owner -- --email <owner> --name <name> --app-url
    <production-url> --dry-run`, then repeat without `--dry-run` to send the
    initial platform-owner invite. Never run `supabase/seed.sql` in production.

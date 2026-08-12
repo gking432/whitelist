@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { productionReadiness } from "@/lib/ops/production-readiness";
 import { releaseId } from "@/lib/ops/release-id";
+import {
+  EXPECTED_SCHEMA_VERSION,
+  schemaVersionIsCompatible,
+} from "@/lib/ops/schema-version";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +22,7 @@ export async function GET() {
         ok: false,
         checks: {
           database: "not_configured",
+          database_schema: "unavailable",
           configuration: configurationReady ? "ready" : "incomplete",
         },
         configuration_issue_count: readiness.enforced
@@ -30,18 +35,32 @@ export async function GET() {
   }
 
   const startedAt = Date.now();
-  const { error } = await admin
-    .from("integration_providers")
-    .select("id", { head: true, count: "exact" })
-    .limit(1);
+  const [{ error }, { data: schemaState, error: schemaError }] = await Promise.all([
+    admin
+      .from("integration_providers")
+      .select("id", { head: true, count: "exact" })
+      .limit(1),
+    admin
+      .from("platform_schema_state")
+      .select("current_migration")
+      .eq("singleton", true)
+      .maybeSingle(),
+  ]);
+  const schemaReady =
+    !schemaError &&
+    schemaVersionIsCompatible(
+      schemaState?.current_migration,
+      EXPECTED_SCHEMA_VERSION,
+    );
 
-  const ok = !error && configurationReady;
+  const ok = !error && schemaReady && configurationReady;
 
   return NextResponse.json(
     {
       ok,
       checks: {
         database: error ? "unavailable" : "ready",
+        database_schema: schemaReady ? "ready" : "outdated",
         configuration: readiness.enforced
           ? readiness.ready
             ? "ready"

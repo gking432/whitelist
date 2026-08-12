@@ -200,7 +200,12 @@ async function startReleaseServer() {
       const health = await fetch(`${appUrl}/api/health`, {
         signal: AbortSignal.timeout(1_000),
       });
-      if (health.ok) return child;
+      if (health.ok) {
+        const body = (await health.json()) as {
+          checks?: { database_schema?: string };
+        };
+        if (body.checks?.database_schema === "ready") return child;
+      }
     } catch {
       // Production startup can take a moment on a cold build.
     }

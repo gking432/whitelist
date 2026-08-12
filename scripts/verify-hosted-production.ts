@@ -1,6 +1,10 @@
 type HealthPayload = {
   ok?: boolean;
-  checks?: { database?: string; configuration?: string };
+  checks?: {
+    database?: string;
+    database_schema?: string;
+    configuration?: string;
+  };
   configuration_issue_count?: number;
   release?: string | null;
 };
@@ -57,6 +61,7 @@ if (!healthResponse.ok || !health.ok) {
 }
 if (
   health.checks?.database !== "ready" ||
+  health.checks?.database_schema !== "ready" ||
   health.checks?.configuration !== "ready" ||
   health.configuration_issue_count !== 0
 ) {
@@ -115,6 +120,7 @@ console.log(
       voice_url: voiceUrl,
       release: health.release ?? null,
       database: health.checks.database,
+      database_schema: health.checks.database_schema,
       configuration: health.checks.configuration,
       login: "ready",
       jobs_auth: "protected",
