@@ -175,7 +175,10 @@ connection-link security, rollback, and launch-gate tests.
   automatic updates, and partner branding supplied by the hosted workspace.
 
 Verification: clean production deployment, restore drill, worker retry drill,
-security review, signed installer checks, and update/rollback check.
+security review, signed installer checks, and update/rollback check. The
+credential-independent connector-worker failure/backoff/retry/stale-lease
+drill runs in the release journey; signed update/rollback acceptance remains a
+real-machine release task.
 
 ## Step 13: Full-system release verification
 

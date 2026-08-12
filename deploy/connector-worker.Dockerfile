@@ -9,6 +9,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY lib/integrations/codex-worker.ts ./lib/integrations/codex-worker.ts
+COPY lib/integrations/connector-worker-config.ts ./lib/integrations/connector-worker-config.ts
 COPY lib/integrations/connector-task-runner.ts ./lib/integrations/connector-task-runner.ts
 COPY services/connector-worker/worker.ts ./services/connector-worker/worker.ts
 

@@ -32,6 +32,7 @@ const renderDeployTrigger = readFileSync(
   "utf8",
 );
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
 
 const requiredRenderFragments = [
   "name: northstar-app",
@@ -200,6 +201,15 @@ for (const script of [
     fail(`package script ${script} is missing`);
 }
 
+for (const fragment of [
+  "service-runtime:",
+  "npm run verify:service-images",
+]) {
+  if (!ciWorkflow.includes(fragment)) {
+    fail(`production gates workflow lacks ${fragment}`);
+  }
+}
+
 console.log(
-  "Release topology verified: schema-aware web health, migration-first exact-commit Render deployment for web, jobs, and voice, self-hosted five-minute jobs, production readiness, and signed desktop workflows are wired.",
+  "Release topology verified: schema-aware web health, migration-first exact-commit Render deployment for web, jobs, and voice, self-hosted five-minute jobs, connector-worker runtime smoke tests, production readiness, and signed desktop workflows are wired.",
 );

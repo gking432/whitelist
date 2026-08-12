@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 
 const sourceContainer = process.env.RESTORE_SOURCE_CONTAINER ?? "supabase_db_partner-platform";
 const targetContainer = process.env.RESTORE_TARGET_CONTAINER ?? "northstar-restore-drill-verify";
@@ -24,6 +25,113 @@ function dockerExec(container, args, options = {}) {
 
 function query(container, sql) {
   return dockerExec(container, ["psql", "-U", "postgres", "-d", "postgres", "-Atc", sql]).trim();
+}
+
+async function openSourceSnapshot() {
+  const child = spawn(
+    "docker",
+    [
+      "exec",
+      "-i",
+      sourceContainer,
+      "psql",
+      "-X",
+      "-qAt",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  const lines = createInterface({ input: child.stdout });
+  const queuedLines = [];
+  const waitingLines = [];
+  let stderr = "";
+  let exited = false;
+  let exitError = null;
+
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+  lines.on("line", (line) => {
+    const waiter = waitingLines.shift();
+    if (waiter) waiter.resolve(line);
+    else queuedLines.push(line);
+  });
+  child.on("exit", (code, signal) => {
+    exited = true;
+    if (code !== 0) {
+      exitError = new Error(
+        `Source snapshot session exited with ${signal ?? `code ${code}`}: ${stderr.trim()}`,
+      );
+    }
+    while (waitingLines.length > 0) {
+      const waiter = waitingLines.shift();
+      waiter.reject(exitError ?? new Error("Source snapshot session ended unexpectedly."));
+    }
+  });
+
+  function nextLine() {
+    if (queuedLines.length > 0) return Promise.resolve(queuedLines.shift());
+    if (exited) {
+      return Promise.reject(exitError ?? new Error("Source snapshot session ended unexpectedly."));
+    }
+    return new Promise((resolve, reject) => waitingLines.push({ resolve, reject }));
+  }
+
+  let queryNumber = 0;
+  async function scalar(sql) {
+    queryNumber += 1;
+    const marker = `__RESTORE_SNAPSHOT_${queryNumber}__`;
+    child.stdin.write(
+      `select '${marker}' || encode(convert_to(coalesce((${sql})::text, ''), 'UTF8'), 'hex');\n`,
+    );
+    while (true) {
+      const line = await nextLine();
+      if (line.startsWith(marker)) {
+        return Buffer.from(line.slice(marker.length), "hex").toString("utf8");
+      }
+    }
+  }
+
+  child.stdin.write(
+    "begin transaction isolation level repeatable read read only;\n" +
+      "select '__RESTORE_SNAPSHOT_ID__' || pg_export_snapshot();\n",
+  );
+  let snapshotId = "";
+  while (!snapshotId) {
+    const line = await nextLine();
+    if (line.startsWith("__RESTORE_SNAPSHOT_ID__")) {
+      snapshotId = line.slice("__RESTORE_SNAPSHOT_ID__".length);
+    }
+  }
+
+  return {
+    snapshotId,
+    scalar,
+    async close() {
+      if (exited) {
+        if (exitError) throw exitError;
+        return;
+      }
+      child.stdin.end("commit;\n");
+      await new Promise((resolve, reject) => {
+        child.once("exit", (code, signal) => {
+          if (code === 0) resolve();
+          else {
+            reject(
+              new Error(
+                `Source snapshot session exited with ${signal ?? `code ${code}`}: ${stderr.trim()}`,
+              ),
+            );
+          }
+        });
+      });
+    },
+  };
 }
 
 function sourcePostgresImage() {
@@ -76,35 +184,64 @@ try {
   run("docker", ["info"]);
   query(sourceContainer, "select 1");
 
-  console.log(`Creating application-data backup from ${sourceContainer}...`);
-  const dump = dockerExec(sourceContainer, [
-    "pg_dump",
-    "-U",
-    "postgres",
-    "-d",
-    "postgres",
-    "--format=custom",
-    "--schema=public",
-    "--no-owner",
-    "--no-acl",
-  ], { encoding: null });
-  writeFileSync(dumpPath, dump);
+  const sourceSnapshot = await openSourceSnapshot();
+  let sourceTables;
+  const sourceRowCounts = new Map();
+  let sourcePolicyCount;
+  let sourceFunctionCount;
+  let authUsers;
+  try {
+    console.log(`Creating application-data backup from ${sourceContainer}...`);
+    const dump = dockerExec(sourceContainer, [
+      "pg_dump",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "--format=custom",
+      "--schema=public",
+      "--no-owner",
+      "--no-acl",
+      `--snapshot=${sourceSnapshot.snapshotId}`,
+    ], { encoding: null });
+    writeFileSync(dumpPath, dump);
 
-  // Public profile and membership rows reference auth.users. A disposable drill
-  // only needs stable identities; managed Supabase restores the complete auth
-  // schema and credentials as part of its own backup/PITR process.
-  const authUsers = query(
-    sourceContainer,
-    `select format(
-      'insert into auth.users (id, email, aud, role, created_at, updated_at) values (%L::uuid, %L, %L, %L, %L::timestamptz, %L::timestamptz) on conflict (id) do nothing;',
-      id::text,
-      email,
-      coalesce(aud, 'authenticated'),
-      coalesce(role, 'authenticated'),
-      created_at::text,
-      updated_at::text
-    ) from auth.users order by id`,
-  );
+    sourceTables = (
+      await sourceSnapshot.scalar(
+        "select string_agg(tablename, E'\\n' order by tablename) from pg_tables where schemaname = 'public'",
+      )
+    ).split("\n").filter(Boolean);
+    for (const table of sourceTables) {
+      const safeTable = `"${table.replaceAll('"', '""')}"`;
+      sourceRowCounts.set(
+        table,
+        await sourceSnapshot.scalar(`select count(*) from public.${safeTable}`),
+      );
+    }
+    sourcePolicyCount = await sourceSnapshot.scalar(
+      "select count(*) from pg_policies where schemaname = 'public'",
+    );
+    sourceFunctionCount = await sourceSnapshot.scalar(
+      "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'",
+    );
+
+    // Public profile and membership rows reference auth.users. A disposable
+    // drill only needs stable identities; managed Supabase restores the complete
+    // auth schema and credentials through its own backup/PITR process.
+    authUsers = await sourceSnapshot.scalar(
+      `select string_agg(format(
+        'insert into auth.users (id, email, aud, role, created_at, updated_at) values (%L::uuid, %L, %L, %L, %L::timestamptz, %L::timestamptz) on conflict (id) do nothing;',
+        id::text,
+        email,
+        coalesce(aud, 'authenticated'),
+        coalesce(role, 'authenticated'),
+        created_at::text,
+        updated_at::text
+      ), E'\\n' order by id) from auth.users`,
+    );
+  } finally {
+    await sourceSnapshot.close();
+  }
   writeFileSync(authUsersPath, `${authUsers}\n`, { mode: 0o600 });
 
   removeTarget();
@@ -175,10 +312,6 @@ try {
     ]);
   }
 
-  const sourceTables = query(
-    sourceContainer,
-    "select tablename from pg_tables where schemaname = 'public' order by tablename",
-  ).split("\n").filter(Boolean);
   const restoredTables = query(
     targetContainer,
     "select tablename from pg_tables where schemaname = 'public' order by tablename",
@@ -189,19 +322,19 @@ try {
     const safeTable = `"${table.replaceAll('"', '""')}"`;
     assertEqual(
       `${table} row count`,
-      query(sourceContainer, `select count(*) from public.${safeTable}`),
+      sourceRowCounts.get(table),
       query(targetContainer, `select count(*) from public.${safeTable}`),
     );
   }
 
   assertEqual(
     "public RLS policy count",
-    query(sourceContainer, "select count(*) from pg_policies where schemaname = 'public'"),
+    sourcePolicyCount,
     query(targetContainer, "select count(*) from pg_policies where schemaname = 'public'"),
   );
   assertEqual(
     "public function count",
-    query(sourceContainer, "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'"),
+    sourceFunctionCount,
     query(targetContainer, "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'"),
   );
 

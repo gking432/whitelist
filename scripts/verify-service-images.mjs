@@ -4,6 +4,7 @@ import WebSocket from "ws";
 
 const jobsImage = "northstar-jobs-verify";
 const voiceImage = "northstar-voice-verify";
+const connectorWorkerImage = "northstar-connector-worker-verify";
 const voiceContainer = `northstar-voice-smoke-${process.pid}`;
 const releaseSha = "1234567890abcdef1234567890abcdef12345678";
 
@@ -25,7 +26,7 @@ function run(command, args, options = {}) {
 
 function cleanup() {
   spawnSync("docker", ["rm", "--force", voiceContainer], { stdio: "ignore" });
-  for (const image of [jobsImage, voiceImage]) {
+  for (const image of [jobsImage, voiceImage, connectorWorkerImage]) {
     spawnSync("docker", ["image", "rm", "--force", image], {
       stdio: "ignore",
     });
@@ -128,6 +129,73 @@ try {
   run("docker", [
     "build",
     "--file",
+    "deploy/connector-worker.Dockerfile",
+    "--tag",
+    connectorWorkerImage,
+    ".",
+  ]);
+  verifyCommand(connectorWorkerImage, [
+    "node",
+    "--experimental-strip-types",
+    "services/connector-worker/worker.ts",
+  ]);
+  const missingWorkerConfig = spawnSync(
+    "docker",
+    ["run", "--rm", connectorWorkerImage],
+    { encoding: "utf8", stdio: "pipe" },
+  );
+  const workerConfigOutput = `${missingWorkerConfig.stdout ?? ""}${missingWorkerConfig.stderr ?? ""}`;
+  if (
+    missingWorkerConfig.status === 0 ||
+    !workerConfigOutput.includes(
+      "NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required",
+    )
+  ) {
+    throw new Error(
+      "Connector-worker image did not enforce its required data configuration.",
+    );
+  }
+  const workerStartup = spawnSync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--env",
+      "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:1",
+      "--env",
+      "SUPABASE_SERVICE_ROLE_KEY=release-check-service-key",
+      "--env",
+      "ENABLE_CODEX_CONNECTOR_WORKER=true",
+      "--env",
+      "CODEX_CONNECTOR_WORKSPACE_PATH=/workspace",
+      "--env",
+      "CODEX_CONNECTOR_WORKTREE_ROOT=/worktrees",
+      "--env",
+      "CONNECTOR_WORKER_ONCE=true",
+      "--volume",
+      `${process.cwd()}:/workspace`,
+      "--tmpfs",
+      "/worktrees:rw,uid=1000,gid=1000",
+      connectorWorkerImage,
+    ],
+    { encoding: "utf8", stdio: "pipe" },
+  );
+  const workerStartupOutput = `${workerStartup.stdout ?? ""}${workerStartup.stderr ?? ""}`;
+  if (
+    workerStartup.status === 0 ||
+    !workerStartupOutput.includes("connector_worker.started") ||
+    !workerStartupOutput.includes("connector_worker.error") ||
+    workerStartupOutput.includes("ERR_PACKAGE_PATH_NOT_EXPORTED") ||
+    workerStartupOutput.includes("ERR_MODULE_NOT_FOUND")
+  ) {
+    throw new Error(
+      `Connector-worker image did not reach its controlled runtime failure.\n${workerStartupOutput}`,
+    );
+  }
+
+  run("docker", [
+    "build",
+    "--file",
     "services/voice-stream/Dockerfile",
     "--tag",
     voiceImage,
@@ -165,7 +233,7 @@ try {
   await verifyUnauthorizedStream(voiceUrl);
 
   console.log(
-    "Service images verified: scheduler configuration and voice release/health/authentication contracts pass.",
+    "Service images verified: scheduler configuration, connector-worker startup, and voice release/health/authentication contracts pass.",
   );
 } finally {
   cleanup();

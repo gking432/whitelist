@@ -143,11 +143,13 @@ and a persistent source checkout. Copy `.env.example` to the host-only
 `.env.connector-worker`, set the Supabase service credentials and OpenAI/Codex
 credentials, then set `CONNECTOR_WORKSPACE_PATH` to the absolute host checkout.
 Start `docker compose -f docker-compose.connector-worker.yml up -d`. The worker
-mounts that checkout at `/workspace`, creates isolated worktrees in a separate
-volume, renews a durable lease while Codex runs, and safely retries abandoned
-work. Each approved task runs in its assigned `codex/connector-*` branch; it
-cannot deploy, merge, or push automatically. Never run this worker on the
-public application service.
+mounts that writable Git checkout at `/workspace`, verifies it before polling,
+creates isolated worktrees in a separate volume, renews a durable lease while
+Codex runs, and safely retries abandoned work. Startup fails before claiming
+tasks when the checkout or worktree root is missing, read-only, nested, or not
+a Git repository. Each approved task runs in its assigned
+`codex/connector-*` branch; it cannot deploy, merge, or push automatically.
+Never run this worker on the public application service.
 
 ## Credential-dependent evidence
 

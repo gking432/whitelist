@@ -12,6 +12,15 @@ import {
 } from "@supabase/supabase-js";
 
 import { generateWidgetKey } from "../lib/chat/widget.ts";
+import {
+  buildConnectorDevelopmentPrompt,
+  connectorBranchName,
+} from "../lib/integrations/connector-development.ts";
+import {
+  claimNextConnectorTask,
+  executeClaimedConnectorTask,
+  recoverStaleConnectorTasks,
+} from "../lib/integrations/connector-task-runner.ts";
 import { encryptProviderCredentials } from "../lib/integrations/credentials.ts";
 import { computeTwilioSignature } from "../lib/integrations/twilio-signature.ts";
 import { deployPackageToClient } from "../lib/packages/deployment.ts";
@@ -896,6 +905,174 @@ async function main() {
     assert.equal(routedPartnerTicket.ai_recommended_route, "codex");
     assert.equal(routedPartnerTicket.current_route, "platform");
 
+    const connectorRequestId = randomUUID();
+    const connectorSpec = {
+      id: connectorRequestId,
+      applicationName: "ReleaseField CRM",
+      applicationUrl: "https://releasefield.example.test",
+      category: "crm",
+      triggerDescription: "A customer submits a new service request.",
+      desiredResult: "Create or update the CRM customer and attach an AI note.",
+      currentSystems: ["Business Assistant"],
+    };
+    const connectorBranch = connectorBranchName(connectorSpec);
+    await insertOrThrow("integration_requests", {
+      id: connectorRequestId,
+      partner_id: ids.partner,
+      client_id: ids.client,
+      requested_by: partner.id,
+      application_name: connectorSpec.applicationName,
+      application_url: connectorSpec.applicationUrl,
+      category: connectorSpec.category,
+      trigger_description: connectorSpec.triggerDescription,
+      desired_result: connectorSpec.desiredResult,
+      current_systems: connectorSpec.currentSystems,
+      priority: "important",
+      status: "building",
+      support_ticket_id: partnerTicket.id,
+    });
+    const { data: connectorTask, error: connectorTaskError } = await admin
+      .from("connector_development_tasks")
+      .insert({
+        request_id: connectorRequestId,
+        created_by: platform.id,
+        approved_by: platform.id,
+        approved_at: new Date().toISOString(),
+        status: "queued",
+        prompt_snapshot: buildConnectorDevelopmentPrompt(
+          connectorSpec,
+          connectorBranch,
+        ),
+        branch_name: connectorBranch,
+        available_at: new Date(0).toISOString(),
+        max_attempts: 3,
+      })
+      .select("id")
+      .single();
+    assert.ifError(connectorTaskError);
+    assert.ok(connectorTask);
+
+    const releaseWorkerId = `release-worker-${runKey}`;
+    const firstClaim = await claimNextConnectorTask(
+      admin,
+      releaseWorkerId,
+      new Date(),
+      connectorTask.id,
+    );
+    assert.ok(firstClaim);
+    const firstConnectorAttempt = await executeClaimedConnectorTask(
+      admin,
+      firstClaim,
+      releaseWorkerId,
+      async () => {
+        throw new Error("Release drill transient Codex failure.");
+      },
+    );
+    assert.equal(firstConnectorAttempt.status, "requeued");
+    const waitingConnectorClaim = await claimNextConnectorTask(
+      admin,
+      releaseWorkerId,
+      new Date(),
+      connectorTask.id,
+    );
+    assert.equal(waitingConnectorClaim, null);
+    await admin
+      .from("connector_development_tasks")
+      .update({ available_at: new Date(0).toISOString() })
+      .eq("request_id", connectorRequestId);
+    const retryClaim = await claimNextConnectorTask(
+      admin,
+      releaseWorkerId,
+      new Date(),
+      connectorTask.id,
+    );
+    assert.ok(retryClaim);
+    const successfulConnectorAttempt = await executeClaimedConnectorTask(
+      admin,
+      retryClaim,
+      releaseWorkerId,
+      async (_prompt, branchName) => ({
+        threadId: `release-thread-${runKey}`,
+        finalResponse: "Release drill connector checks passed.",
+        worktreePath: `/tmp/release-connector-${runKey}`,
+      }),
+    );
+    assert.equal(successfulConnectorAttempt.status, "succeeded");
+    const { data: successfulConnectorTask } = await admin
+      .from("connector_development_tasks")
+      .select("status, attempt_count, worker_id, heartbeat_at, codex_thread_id")
+      .eq("request_id", connectorRequestId)
+      .single();
+    assert.equal(successfulConnectorTask?.status, "succeeded");
+    assert.equal(successfulConnectorTask?.attempt_count, 2);
+    assert.equal(successfulConnectorTask?.worker_id, null);
+    assert.equal(successfulConnectorTask?.heartbeat_at, null);
+    assert.equal(
+      successfulConnectorTask?.codex_thread_id,
+      `release-thread-${runKey}`,
+    );
+
+    const staleTicketId = randomUUID();
+    const staleRequestId = randomUUID();
+    await insertOrThrow("support_tickets", {
+      id: staleTicketId,
+      partner_id: ids.partner,
+      client_id: ids.client,
+      requested_by: partner.id,
+      origin: "partner",
+      category: "integration_request",
+      priority: "important",
+      status: "platform_working",
+      current_route: "codex",
+      title: "Release stale worker recovery",
+      description: "Verify terminal connector lease recovery.",
+    });
+    await insertOrThrow("integration_requests", {
+      id: staleRequestId,
+      partner_id: ids.partner,
+      client_id: ids.client,
+      requested_by: partner.id,
+      application_name: "Release Stale CRM",
+      category: "crm",
+      trigger_description: "A connector worker loses its lease.",
+      desired_result: "Block exhausted work and route it to the owner.",
+      priority: "important",
+      status: "building",
+      support_ticket_id: staleTicketId,
+    });
+    await insertOrThrow("connector_development_tasks", {
+      request_id: staleRequestId,
+      created_by: platform.id,
+      approved_by: platform.id,
+      approved_at: new Date().toISOString(),
+      status: "running",
+      prompt_snapshot: "Release stale-worker drill.",
+      branch_name: `codex/connector-release-stale-${staleRequestId.slice(0, 8)}`,
+      worker_id: `expired-worker-${runKey}`,
+      heartbeat_at: new Date(0).toISOString(),
+      available_at: new Date(0).toISOString(),
+      attempt_count: 2,
+      max_attempts: 2,
+    });
+    const staleRecovery = await recoverStaleConnectorTasks(admin);
+    assert.equal(staleRecovery.failed, 1);
+    const [{ data: blockedRequest }, { data: ownerRoutedTicket }] =
+      await Promise.all([
+        admin
+          .from("integration_requests")
+          .select("status")
+          .eq("id", staleRequestId)
+          .single(),
+        admin
+          .from("support_tickets")
+          .select("status, current_route")
+          .eq("id", staleTicketId)
+          .single(),
+      ]);
+    assert.equal(blockedRequest?.status, "blocked");
+    assert.equal(ownerRoutedTicket?.status, "platform_working");
+    assert.equal(ownerRoutedTicket?.current_route, "owner");
+
     const { data: impersonation, error: impersonationError } = await admin
       .from("support_impersonation_sessions")
       .insert({
@@ -983,6 +1160,13 @@ async function main() {
             integration_recommendation:
               routedPartnerTicket.ai_recommended_route,
             integration_control_route: routedPartnerTicket.current_route,
+            connector_worker: {
+              transient_failure: firstConnectorAttempt.status,
+              backoff: waitingConnectorClaim === null ? "respected" : "failed",
+              retry: successfulConnectorAttempt.status,
+              exhausted_lease: blockedRequest?.status,
+              escalation: ownerRoutedTicket?.current_route,
+            },
           },
           owner_support_context: impersonation.mode,
         },

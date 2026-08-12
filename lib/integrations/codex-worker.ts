@@ -1,9 +1,12 @@
-import { Codex } from "@openai/codex-sdk";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
+
+import {
+  configuredConnectorWorkerPaths,
+  verifyConnectorWorkerWorkspace,
+} from "./connector-worker-config.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,11 +17,7 @@ export type CodexConnectorRun = {
 };
 
 export function codexConnectorWorkerReady(): boolean {
-  return Boolean(
-    process.env.ENABLE_CODEX_CONNECTOR_WORKER === "true" &&
-      process.env.CODEX_CONNECTOR_WORKSPACE_PATH &&
-      process.env.CODEX_CONNECTOR_WORKTREE_ROOT,
-  );
+  return configuredConnectorWorkerPaths() !== null;
 }
 
 export function validConnectorBranchName(branchName: string) {
@@ -30,36 +29,22 @@ async function prepareWorktree(workspace: string, branchName: string) {
     throw new Error("The assigned connector branch is invalid.");
   }
 
-  const configuredRoot = process.env.CODEX_CONNECTOR_WORKTREE_ROOT;
-  if (!configuredRoot || !isAbsolute(configuredRoot)) {
-    throw new Error("CODEX_CONNECTOR_WORKTREE_ROOT must be an absolute path.");
+  const configured = configuredConnectorWorkerPaths();
+  if (!configured || configured.workspace !== workspace) {
+    throw new Error("The Codex connector worker is not configured.");
   }
-
-  const [{ stdout: repoOutput }] = await Promise.all([
-    execFileAsync("git", ["-C", workspace, "rev-parse", "--show-toplevel"]),
-    mkdir(configuredRoot, { recursive: true }),
-  ]);
-  const repository = await realpath(repoOutput.trim());
-  const worktreeRoot = await realpath(resolve(configuredRoot));
-  const rootRelativeToRepository = relative(repository, worktreeRoot);
-
-  if (
-    worktreeRoot === repository ||
-    (!rootRelativeToRepository.startsWith("..") &&
-      !isAbsolute(rootRelativeToRepository))
-  ) {
-    throw new Error("The Codex worktree root must be outside the source repository.");
-  }
+  const { repository, worktreeRoot } =
+    await verifyConnectorWorkerWorkspace(configured);
 
   const directory = `${branchName.replaceAll("/", "-")}-${randomUUID().slice(0, 8)}`;
   const worktreePath = resolve(worktreeRoot, directory);
   const branchExists = await execFileAsync(
     "git",
-    ["-C", repository, "show-ref", "--verify", "--quiet", `refs/heads/${branchName}`],
+    ["-c", `safe.directory=${repository}`, "-C", repository, "show-ref", "--verify", "--quiet", `refs/heads/${branchName}`],
   ).then(() => true, () => false);
   const args = branchExists
-    ? ["-C", repository, "worktree", "add", worktreePath, branchName]
-    : ["-C", repository, "worktree", "add", "-b", branchName, worktreePath, "HEAD"];
+    ? ["-c", `safe.directory=${repository}`, "-C", repository, "worktree", "add", worktreePath, branchName]
+    : ["-c", `safe.directory=${repository}`, "-C", repository, "worktree", "add", "-b", branchName, worktreePath, "HEAD"];
 
   await execFileAsync("git", args);
   return worktreePath;
@@ -75,6 +60,7 @@ export async function runCodexConnectorTask(
   }
 
   const worktreePath = await prepareWorktree(workspace, branchName);
+  const { Codex } = await import("@openai/codex-sdk");
   const codex = new Codex();
   const thread = codex.startThread({
     workingDirectory: worktreePath,

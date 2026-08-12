@@ -1,9 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import {
-  runCodexConnectorTask,
-  type CodexConnectorRun,
-} from "./codex-worker.ts";
+import type { CodexConnectorRun } from "./codex-worker.ts";
 
 export const CONNECTOR_TASK_LEASE_MINUTES = 30;
 export const CONNECTOR_TASK_HEARTBEAT_MS = 15_000;
@@ -24,6 +21,11 @@ type ConnectorTaskRun = (
   branchName: string,
 ) => Promise<CodexConnectorRun>;
 
+async function runDefaultConnectorTask(prompt: string, branchName: string) {
+  const { runCodexConnectorTask } = await import("./codex-worker.ts");
+  return runCodexConnectorTask(prompt, branchName);
+}
+
 export function connectorTaskRetryDelayMinutes(attemptCount: number): number {
   return Math.min(60, Math.max(1, 2 ** Math.max(0, attemptCount - 1)));
 }
@@ -40,17 +42,22 @@ export async function recoverStaleConnectorTasks(
   now = new Date(),
 ) {
   const staleBefore = connectorTaskStaleBefore(now);
-  const { data: stale } = await admin
+  const { data: stale, error: staleError } = await admin
     .from("connector_development_tasks")
     .select("id, request_id, attempt_count, max_attempts")
     .eq("status", "running")
     .or(`heartbeat_at.is.null,heartbeat_at.lt.${staleBefore}`);
+  if (staleError) {
+    throw new Error(
+      `Could not inspect stale connector tasks: ${staleError.message}`,
+    );
+  }
 
   let requeued = 0;
   let failed = 0;
   for (const task of stale ?? []) {
     const exhausted = task.attempt_count >= task.max_attempts;
-    const { data } = await admin
+    const { data, error } = await admin
       .from("connector_development_tasks")
       .update({
         status: exhausted ? "failed" : "queued",
@@ -70,6 +77,11 @@ export async function recoverStaleConnectorTasks(
       .or(`heartbeat_at.is.null,heartbeat_at.lt.${staleBefore}`)
       .select("id")
       .maybeSingle();
+    if (error) {
+      throw new Error(
+        `Could not recover connector task ${task.id}: ${error.message}`,
+      );
+    }
     if (!data) continue;
     if (exhausted) {
       failed += 1;
@@ -107,15 +119,20 @@ export async function claimNextConnectorTask(
     .lte("available_at", now.toISOString());
   if (taskId) candidateQuery = candidateQuery.eq("id", taskId);
 
-  const { data: candidate } = await candidateQuery
+  const { data: candidate, error: candidateError } = await candidateQuery
     .order("available_at", { ascending: true })
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
+  if (candidateError) {
+    throw new Error(
+      `Could not inspect the connector task queue: ${candidateError.message}`,
+    );
+  }
 
   if (!candidate || !candidate.branch_name) return null;
 
-  const { data: claimed } = await admin
+  const { data: claimed, error: claimError } = await admin
     .from("connector_development_tasks")
     .update({
       status: "running",
@@ -134,16 +151,22 @@ export async function claimNextConnectorTask(
       "id, request_id, prompt_snapshot, branch_name, status, attempt_count, max_attempts, available_at",
     )
     .maybeSingle();
+  if (claimError) {
+    throw new Error(`Could not claim connector task: ${claimError.message}`);
+  }
 
   return (claimed as ConnectorDevelopmentTask | null) ?? null;
 }
 
 async function linkedSupportTicket(admin: SupabaseClient, requestId: string) {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("integration_requests")
     .select("support_ticket_id")
     .eq("id", requestId)
     .maybeSingle();
+  if (error) {
+    throw new Error(`Could not load the linked support ticket: ${error.message}`);
+  }
   return data?.support_ticket_id ?? null;
 }
 
@@ -151,7 +174,7 @@ export async function executeClaimedConnectorTask(
   admin: SupabaseClient,
   task: ConnectorDevelopmentTask,
   workerId: string,
-  runTask: ConnectorTaskRun = runCodexConnectorTask,
+  runTask: ConnectorTaskRun = runDefaultConnectorTask,
 ) {
   await admin
     .from("integration_requests")
@@ -259,7 +282,7 @@ export async function executeClaimedConnectorTask(
 export async function processNextConnectorTask(
   admin: SupabaseClient,
   workerId: string,
-  runTask: ConnectorTaskRun = runCodexConnectorTask,
+  runTask: ConnectorTaskRun = runDefaultConnectorTask,
 ) {
   const task = await claimNextConnectorTask(admin, workerId);
   if (!task) return { status: "idle" as const };

@@ -5,6 +5,10 @@ import { createClient } from "@supabase/supabase-js";
 
 import { codexConnectorWorkerReady } from "../../lib/integrations/codex-worker.ts";
 import {
+  configuredConnectorWorkerPaths,
+  verifyConnectorWorkerWorkspace,
+} from "../../lib/integrations/connector-worker-config.ts";
+import {
   processNextConnectorTask,
   recoverStaleConnectorTasks,
 } from "../../lib/integrations/connector-task-runner.ts";
@@ -21,6 +25,11 @@ if (!codexConnectorWorkerReady()) {
     "Enable the connector worker and configure its source checkout and worktree root.",
   );
 }
+const workerPaths = configuredConnectorWorkerPaths();
+if (!workerPaths) {
+  throw new Error("The connector worker paths are invalid.");
+}
+await verifyConnectorWorkerWorkspace(workerPaths);
 
 const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
