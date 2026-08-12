@@ -23,6 +23,11 @@ import {
 } from "../lib/integrations/connectors/sync-executor.ts";
 import { planLeadConnectorWriteback } from "../lib/integrations/connectors/writeback.ts";
 import {
+  connectorLeaseCutoff,
+  shouldProjectConnectorRecord,
+  staleConnectorJobDisposition,
+} from "../lib/integrations/connectors/runtime-policy.ts";
+import {
   quickBooksOnlineAdapter,
   mapQuickBooksCustomer,
 } from "../lib/integrations/providers/quickbooks-online.ts";
@@ -109,6 +114,24 @@ test("field-service launch connectors have executable contracts", () => {
       connector.capabilities.some((capability) => capability.endsWith(".read")),
     );
   }
+});
+
+test("connector projection follows the client's selected CRM mode", () => {
+  for (const mode of ["primary_crm", "mirror", "assist"]) {
+    assert.equal(shouldProjectConnectorRecord(mode), true);
+  }
+  for (const mode of ["external_crm_only", "webhook_only", "none"]) {
+    assert.equal(shouldProjectConnectorRecord(mode), false);
+  }
+});
+
+test("stale connector writes require reconciliation instead of blind replay", () => {
+  assert.equal(staleConnectorJobDisposition("pull"), "failed");
+  assert.equal(staleConnectorJobDisposition("push"), "dead_letter");
+  assert.equal(
+    connectorLeaseCutoff(new Date("2026-08-11T12:05:00.000Z")),
+    "2026-08-11T12:00:00.000Z",
+  );
 });
 
 test("finance and attribution connectors have executable contracts", () => {

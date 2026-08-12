@@ -39,11 +39,16 @@ npm run typecheck
 npm run lint
 npm test
 npm run build
-npm run verify:security
-npm run verify:restore
+npm run verify:release
 npm run desktop:dist:mac
 npm run verify:desktop-bundle
 ```
+
+`verify:release` checks the Render topology, database security and restore
+drills, and both production Docker images. The connector scheduler also
+recovers expired read leases within the configured retry limit. An expired
+external write is dead-lettered for vendor reconciliation instead of replayed,
+because its delivery outcome may be unknown.
 
 Then complete one production pilot with real accounts: partner onboarding,
 client package installation, Twilio call/SMS, web lead, web chat, forwarded
