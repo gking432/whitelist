@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { operationalClients } from "../lib/dashboard/client-visibility.ts";
 import {
   deliveryStageHref,
   resolvePartnerDeliveryStage,
@@ -79,5 +80,41 @@ test("each delivery stage opens the workspace that owns the next action", () => 
   assert.equal(
     deliveryStageHref(clientId, "live"),
     `/partner/clients/${clientId}/runs`,
+  );
+});
+
+test("partner operations exclude isolated test accounts", () => {
+  const clients = [
+    {
+      id: "client-live",
+      partner_id: "partner-1",
+      name: "Real Client",
+      status: "active" as const,
+      industry: "Plumbing",
+      crm_operating_mode: "primary_crm",
+      default_runtime_mode: "live",
+      client_portal_enabled: true,
+      is_test_account: false,
+      package_id: "package-1",
+      updated_at: "2026-08-12T00:00:00.000Z",
+    },
+    {
+      id: "client-lab",
+      partner_id: "partner-1",
+      name: "Scenario Lab",
+      status: "onboarding" as const,
+      industry: "Testing",
+      crm_operating_mode: "primary_crm",
+      default_runtime_mode: "sandbox",
+      client_portal_enabled: false,
+      is_test_account: true,
+      package_id: null,
+      updated_at: "2026-08-12T00:00:00.000Z",
+    },
+  ];
+
+  assert.deepEqual(
+    operationalClients(clients).map((client) => client.id),
+    ["client-live"],
   );
 });

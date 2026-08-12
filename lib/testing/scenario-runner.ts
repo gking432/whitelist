@@ -201,6 +201,7 @@ export async function ensureScenarioLabClient(
         partner_id: input.partnerId,
         name: LAB_CLIENT_NAME,
         slug: SCENARIO_LAB_CLIENT_SLUG,
+        is_test_account: true,
         status: "onboarding",
         industry: "Home services testing",
         crm_operating_mode: "primary_crm",
@@ -219,6 +220,18 @@ export async function ensureScenarioLabClient(
     }
 
     client = data as ScenarioLabClient;
+  } else {
+    const { error: testAccountError } = await admin
+      .from("client_businesses")
+      .update({ is_test_account: true })
+      .eq("id", client.id)
+      .eq("partner_id", input.partnerId);
+
+    if (testAccountError) {
+      throw new Error(
+        `The isolated lab business could not be marked as a test account: ${testAccountError.message}`,
+      );
+    }
   }
 
   const { error: knowledgeError } = await admin

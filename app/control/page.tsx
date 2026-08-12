@@ -51,6 +51,7 @@ export default async function ControlRoomPage() {
           "id, partner_id, name, status, crm_operating_mode",
         )
         .eq("account_kind", "managed_client")
+        .eq("is_test_account", false)
         .order("name"),
       admin
         .from("support_impersonation_sessions")

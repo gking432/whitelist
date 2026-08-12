@@ -1,5 +1,5 @@
 export const EXPECTED_SCHEMA_VERSION =
-  "20260812060000_scheduler_release_heartbeat";
+  "20260812070000_classify_scenario_lab_accounts";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

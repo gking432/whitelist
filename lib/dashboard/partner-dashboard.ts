@@ -7,6 +7,7 @@ import {
   type ClientOpsCounts,
 } from "@/lib/health/client-health";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { operationalClients } from "./client-visibility";
 import {
   resolvePartnerDeliveryStage,
   type PartnerDeliveryStage,
@@ -32,6 +33,7 @@ type ClientRecord = {
   crm_operating_mode: string;
   default_runtime_mode: string;
   client_portal_enabled: boolean;
+  is_test_account: boolean;
   package_id: string | null;
   updated_at: string;
 };
@@ -120,7 +122,8 @@ export function buildPartnerDashboardData(
   launchStatuses: LaunchStatusMap = new Map(),
   deploymentStatuses: DeploymentStatusMap = new Map(),
 ): PartnerDashboardData {
-  const clients = records
+  const visibleRecords = operationalClients(records);
+  const clients = visibleRecords
     .filter((client) => client.status !== "archived")
     .map((client) => {
       const counts = opsCounts.get(client.id) ?? { ...emptyOpsCounts };
@@ -179,7 +182,7 @@ export function buildPartnerDashboardData(
   let failingConnections = 0;
   let activeWorkflows = 0;
 
-  for (const client of records) {
+  for (const client of visibleRecords) {
     const counts = opsCounts.get(client.id);
 
     if (!counts || client.status === "archived") {
@@ -240,10 +243,11 @@ export async function getPartnerDashboardData(
       supabase
         .from("client_businesses")
         .select(
-          "id, partner_id, name, status, industry, crm_operating_mode, default_runtime_mode, client_portal_enabled, package_id, updated_at",
+          "id, partner_id, name, status, industry, crm_operating_mode, default_runtime_mode, client_portal_enabled, is_test_account, package_id, updated_at",
         )
         .eq("partner_id", partnerId)
         .eq("account_kind", "managed_client")
+        .eq("is_test_account", false)
         .order("name", { ascending: true }),
       supabase
         .from("client_launches")

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { switchLocalDevUser } from "@/lib/auth/dev-login";
 import { toSafeNextPath } from "@/lib/auth/redirects";
 import {
   getLocalDevLoginEmail,
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL(`/login?next=${nextPath}`, requestUrl.origin));
   }
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { error } = await switchLocalDevUser(supabase, {
     email: getLocalDevLoginEmail(nextPath),
     password: getLocalDevLoginPassword(),
   });
