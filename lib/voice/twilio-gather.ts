@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAppUrl } from "@/lib/env";
+import { buildAiStreamTwimlXml } from "@/lib/voice/twiml-xml";
 
 export const TWILIO_VOICE_PROVIDER = "twilio_voice";
 
@@ -74,6 +75,28 @@ export function staffAssistTwiml(input: {
     `<Number>${escapeXml(input.forwardNumber)}</Number></Dial>`;
 
   return twilioVoiceTwiml(`${stream}${dial}<Hangup/>`);
+}
+
+export function aiStreamTwiml(input: {
+  connectionId: string;
+  callSessionId: string;
+  streamUrl: string;
+  streamToken: string;
+  fallbackSpeech: string | null;
+}): NextResponse {
+  const action = twilioVoiceUrl(
+    input.connectionId,
+    `/turn?session=${encodeURIComponent(input.callSessionId)}&attempt=0`,
+  );
+  return twilioVoiceTwiml(
+    buildAiStreamTwimlXml({
+      actionUrl: action,
+      callSessionId: input.callSessionId,
+      streamUrl: input.streamUrl,
+      streamToken: input.streamToken,
+      fallbackSpeech: input.fallbackSpeech,
+    }),
+  );
 }
 
 export function hangupTwiml(speech?: string | null): NextResponse {

@@ -3,7 +3,7 @@
 Northstar uses three Render services:
 
 - `northstar-app`: the web application, APIs, provider webhooks, and health endpoint.
-- `northstar-voice-stream`: the always-on WebSocket gateway for staff-assisted calls.
+- `northstar-voice-stream`: the always-on WebSocket gateway for full-duplex AI answering and staff-assisted transcription.
 - `northstar-jobs`: a five-minute cron worker for retries and operational retention.
 
 ## Prerequisites

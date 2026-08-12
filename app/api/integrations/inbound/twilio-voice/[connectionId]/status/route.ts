@@ -91,9 +91,12 @@ export async function POST(
     .maybeSingle();
 
   if (session?.status === "in_progress") {
-    after(() =>
-      completeTextVoiceCall(admin, session.id, TWILIO_VOICE_PROVIDER),
-    );
+    after(async () => {
+      // Twilio emits the status callback alongside the Media Stream stop.
+      // Let the gateway's signed transcript deliveries drain first.
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await completeTextVoiceCall(admin, session.id, TWILIO_VOICE_PROVIDER);
+    });
   }
 
   return twilioVoiceTwiml("");

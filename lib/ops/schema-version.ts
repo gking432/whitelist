@@ -1,5 +1,4 @@
-export const EXPECTED_SCHEMA_VERSION =
-  "20260812090000_connector_worker_runtime_heartbeat";
+export const EXPECTED_SCHEMA_VERSION = "20260812100000_realtime_voice_bridge";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

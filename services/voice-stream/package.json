@@ -2,7 +2,7 @@
   "name": "@northstar/voice-stream",
   "version": "0.1.0",
   "private": true,
-  "description": "Northstar Twilio-to-OpenAI live transcription gateway.",
+  "description": "Northstar Twilio-to-OpenAI realtime voice gateway.",
   "main": "server.cjs",
   "dependencies": {
     "ws": "^8.21.1"

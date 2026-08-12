@@ -432,6 +432,7 @@ export async function startTextVoiceCall(
     toNumber?: string | null;
     externalRef?: string | null;
     handlingMode?: "ai_answered" | "staff_assisted";
+    generateGreeting?: boolean;
   },
 ): Promise<
   | {
@@ -481,7 +482,14 @@ export async function startTextVoiceCall(
     clientName,
   );
 
-  const result = isOpenAIRealtimeConfigured()
+  const result = input.generateGreeting === false
+    ? {
+        ok: true as const,
+        reply: null,
+        toolsUsed: [],
+        endCall: false,
+      }
+    : isOpenAIRealtimeConfigured()
     ? await runAgentWithTools({
         admin,
         toolContext: {

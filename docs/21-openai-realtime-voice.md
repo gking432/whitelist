@@ -19,10 +19,18 @@ per-client Knowledge tab.
   `VOICE_PROVIDER=openai_realtime` + `OPENAI_API_KEY`.
 - **Twilio Voice bridge** —
   `/api/integrations/inbound/twilio-voice/[connectionId]` answers a real
-  Twilio number, verifies every webhook, uses speech `<Gather>` turns, runs
-  the same agent tools as the browser lab, and completes the normal
-  transcript/summary/workflow/CRM pipeline on hangup. Setup displays the
-  exact per-client voice and status callback URLs.
+  Twilio number, verifies every webhook, and opens an authenticated
+  bidirectional Media Stream to the always-on voice gateway. Caller PCMU
+  audio reaches OpenAI Realtime without transcoding and generated PCMU audio
+  streams back into the call. Server VAD supports barge-in by clearing
+  Twilio's queued audio and truncating the unheard model response. Live
+  transcripts, tools, and hangup completion feed the normal CRM pipeline.
+  If the gateway fails, Twilio continues into the existing speech `<Gather>`
+  path instead of abandoning the caller.
+- **Signed gateway control** — `/api/voice/provider/control` supplies only
+  the active call's tenant-scoped instructions and tools. Every OpenAI tool
+  `call_id` receives a durable unique claim in `voice_tool_executions`, so a
+  retry cannot duplicate a note or appointment request.
 - **Session contract** (`lib/voice/providers/openai-realtime.ts`):
   - `buildVoiceAgentInstructions` — per-client prompt built ONLY from the
     approved Knowledge profile (business description, services, areas,
@@ -112,17 +120,20 @@ nothing ever presents them as real telephony.
 ## Real inbound Twilio calls
 
 1. Connect a voice-and-SMS-capable Twilio number in client Setup.
-2. Add `OPENAI_API_KEY` to the deployed app.
+2. Add `OPENAI_API_KEY` and the same `VOICE_STREAM_SHARED_SECRET` to the app
+   and voice service. Point `NORTHSTAR_VOICE_STREAM_URL` at the public
+   `wss://` gateway.
 3. In Twilio's active-number settings, paste the displayed Northstar voice
    URL into **A call comes in** and choose HTTP POST.
 4. Paste the displayed status URL into **Call status callback**, also POST.
-5. Call the number. Twilio transcribes each caller turn and speaks the
-   assistant reply while Northstar executes the same tenant-scoped tools.
+5. Call the number. The assistant greets first, carries a continuous
+   speech-to-speech conversation, accepts interruptions, looks up contacts,
+   reads real availability, and creates approval-gated actions. End the call
+   and confirm its transcript, summary, CRM activity, approvals, and events.
 
-The V1 carrier bridge is turn-based Twilio speech recognition and TTS. A
-future direct OpenAI SIP or Twilio Media Streams transport can provide
-lower-latency speech-to-speech and barge-in without changing the tools,
-approvals, CRM, or post-call pipeline.
+The bridge and failover are covered by an end-to-end protocol test with mock
+Twilio, OpenAI, and signed application endpoints. Launch still requires one
+recorded real-account Twilio/OpenAI pilot call.
 
 ## Env vars
 
@@ -133,4 +144,7 @@ OPENAI_REALTIME_MODEL=     # default gpt-realtime (mini: gpt-realtime-mini)
 OPENAI_REALTIME_VOICE=     # default marin (GA voices: cedar, marin)
 OPENAI_SIM_MODEL=          # default gpt-4o-mini (simulated harness)
 OPENAI_REALTIME_WEBHOOK_SECRET=  # reserved for the SIP bridge webhook
+NORTHSTAR_VOICE_STREAM_URL=wss://voice.example.com/twilio
+VOICE_STREAM_SHARED_SECRET= # same high-entropy value on app + voice service
+OPENAI_TRANSCRIPTION_MODEL=gpt-live-transcribe
 ```

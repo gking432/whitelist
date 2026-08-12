@@ -41,7 +41,7 @@ stack.
 | Background job runner | Real — POST /api/jobs/run (CRON_SECRET) retries failed jobs with exponential backoff; the Render Blueprint provisions its five-minute scheduler; manual retry retained |
 | Connector development worker | Real guarded foundation — approved tasks are claimed only by the isolated trusted worker, which publishes an exact-release heartbeat; the owner queue reports online/offline state, transient failures back off and retry, and stale exhausted leases block and route to the owner |
 | OpenAI Realtime voice agent | Real — registered provider adapter, per-client instructions from approved knowledge, ephemeral session minting (key stays server-side), tool calls into real actions (contact lookup/save, notes, real slot proposals, approval-gated booking + message requests, escalation), and simulated-call harness exercising the full pipeline (docs/21) |
-| Twilio AI-answering calls | Real — signed inbound voice webhooks create a durable call session, Twilio Gather carries customer turns to the configured AI voice tools, responses return as TwiML, and call completion runs the normal CRM/post-call pipeline |
+| Twilio AI-answering calls | Real contract and locally proven runtime — signed inbound webhooks open an authenticated bidirectional Media Stream to OpenAI Realtime; PCMU audio streams both ways, barge-in clears unheard audio, live transcripts persist, idempotent tool calls use real scheduling/CRM actions, and call completion runs the normal CRM pipeline. Gather remains automatic gateway failover |
 | Staff-assisted Twilio calls | Real foundation — Twilio forwards the call to staff while an always-on WebSocket service streams call audio for transcription, signs transcript events back to the app, and feeds the desktop assistant |
 | Managed Twilio provisioning | Real — a partner-owned Twilio parent account can create a client subaccount, purchase a voice/SMS number, and configure messaging, voice, and status webhooks automatically |
 | Desktop phone assistant | Real foundation — Electron tray app, hosted authenticated assistant route, active-call always-on-top behavior, launch-at-login, server configuration, signed macOS/Windows release workflow, and automatic updates are present |
@@ -66,8 +66,7 @@ stack.
 
 | Area | Status |
 | --- | --- |
-| Fully streaming AI-to-customer voice | Twilio's AI-answering path is turn-based Gather/TwiML. The WebSocket audio stream currently supports staff-assisted transcription; a full-duplex AI audio bridge remains a later quality upgrade |
-| Staff-assist production proof | Code is present, but a real Twilio account, public app URL, always-on voice-stream URL, OpenAI key, and installed desktop build are still required for live verification |
+| Voice production proof | Full-duplex AI answering and staff-assist code are present and protocol-tested, but a real Twilio account, public app URL, always-on voice-stream URL, OpenAI key, and installed desktop build are still required for live verification |
 | SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
 | Browser extension / third-party CRM overlay | Not built. The Electron desktop assistant is the supported V1 overlay; direct CRM write-back is preferred whenever a connector supports it |
 | Provider live verification | Owner-started pilot evidence is guarded against test accounts and pre-pilot events, but each vendor still needs production app approval and at least one real managed-client pilot before being labeled live-verified |

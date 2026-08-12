@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import test from "node:test";
 
 import { findCanonicalCallerMatch } from "../lib/crm/canonical-caller.ts";
@@ -9,6 +10,34 @@ import {
   signVoiceStreamSession,
   verifyVoiceStreamPayload,
 } from "../lib/voice/stream-signature.ts";
+import { buildAiStreamTwimlXml } from "../lib/voice/twiml-xml.ts";
+
+const require = createRequire(import.meta.url);
+const voiceProtocol = require("../services/voice-stream/protocol.cjs") as {
+  functionCallOutput: (
+    callId: string,
+    output: Record<string, unknown>,
+  ) => Record<string, unknown>;
+  functionCallsFromResponse: (
+    event: Record<string, unknown>,
+  ) => { callId: string; name: string; arguments: string }[];
+  realtimeSessionUpdate: (input: {
+    instructions: string;
+    model: string;
+    voice: string;
+    transcriptionModel: string;
+    tools: Record<string, unknown>[];
+  }) => Record<string, any>;
+  truncateAssistantItem: (
+    itemId: string,
+    audioEndMs: number,
+  ) => Record<string, unknown>;
+  twilioClear: (streamSid: string) => Record<string, unknown>;
+  twilioMedia: (
+    streamSid: string,
+    payload: string,
+  ) => Record<string, unknown>;
+};
 
 test("matches formatted caller IDs against synced external customers", () => {
   const result = findCanonicalCallerMatch(
@@ -137,4 +166,82 @@ test("call stream session tokens are stable and scoped to one call", () => {
 
   assert.equal(first, signVoiceStreamSession("secret", "call-a"));
   assert.notEqual(first, signVoiceStreamSession("secret", "call-b"));
+});
+
+test("AI TwiML starts an authenticated bidirectional stream with speech fallback", () => {
+  const xml = buildAiStreamTwimlXml({
+    actionUrl:
+      "https://app.example.test/api/integrations/inbound/twilio-voice/11111111-1111-4111-8111-111111111111/turn",
+    callSessionId: "22222222-2222-4222-8222-222222222222",
+    streamUrl: "wss://voice.example.test/twilio",
+    streamToken: "signed-token",
+    fallbackSpeech: "The live assistant was interrupted.",
+  });
+
+  assert.match(xml, /<Connect><Stream url="wss:\/\/voice\.example\.test\/twilio">/);
+  assert.match(xml, /name="mode" value="ai_answered"/);
+  assert.match(xml, /name="streamToken" value="signed-token"/);
+  assert.match(xml, /<\/Connect><Gather input="speech"/);
+  assert.match(xml, /The live assistant was interrupted/);
+});
+
+test("realtime voice protocol preserves Twilio PCMU and function-call contracts", () => {
+  const update = voiceProtocol.realtimeSessionUpdate({
+    instructions: "Answer for Acme.",
+    model: "gpt-realtime",
+    voice: "marin",
+    transcriptionModel: "gpt-4o-mini-transcribe",
+    tools: [{ type: "function", name: "propose_slots" }],
+  });
+
+  assert.equal(update.session.audio.input.format.type, "audio/pcmu");
+  assert.equal(update.session.audio.output.format.type, "audio/pcmu");
+  assert.equal(update.session.audio.input.turn_detection.interrupt_response, true);
+  assert.deepEqual(voiceProtocol.twilioMedia("MZ123", "bXVsdWxhdw=="), {
+    event: "media",
+    streamSid: "MZ123",
+    media: { payload: "bXVsdWxhdw==" },
+  });
+  assert.deepEqual(voiceProtocol.twilioClear("MZ123"), {
+    event: "clear",
+    streamSid: "MZ123",
+  });
+
+  const calls = voiceProtocol.functionCallsFromResponse({
+    type: "response.done",
+    response: {
+      output: [
+        {
+          type: "function_call",
+          call_id: "call-1",
+          name: "propose_slots",
+          arguments: '{"preference_text":"Friday morning"}',
+        },
+      ],
+    },
+  });
+  assert.deepEqual(calls, [
+    {
+      callId: "call-1",
+      name: "propose_slots",
+      arguments: '{"preference_text":"Friday morning"}',
+    },
+  ]);
+  assert.deepEqual(
+    voiceProtocol.functionCallOutput("call-1", { slots: [] }),
+    {
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: "call-1",
+        output: '{"slots":[]}',
+      },
+    },
+  );
+  assert.deepEqual(voiceProtocol.truncateAssistantItem("item-1", 129.8), {
+    type: "conversation.item.truncate",
+    item_id: "item-1",
+    content_index: 0,
+    audio_end_ms: 129,
+  });
 });

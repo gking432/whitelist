@@ -1,16 +1,16 @@
 # 20 — Voice / Call Assistant Foundation
 
-Production-shaped call infrastructure with **no real telephony yet** —
-honest by construction. Reference behavior adapted from the Northstar CRM
+Production-shaped call infrastructure with a Twilio telephony adapter.
+Reference behavior adapted from the Northstar CRM
 demo's call intelligence (summaries, caller matching, note-vs-transcript
 separation) into the multi-tenant platform.
 
 > Update: the first real adapter now exists — **OpenAI Realtime**
 > (docs/21): per-client instructions from approved knowledge, ephemeral
 > session minting, mid-call tool calling into real Northstar actions, and
-> a simulated-call harness that exercises this whole pipeline. What still
-> does not exist is a phone bridge (carrier audio ↔ realtime session), so
-> the "no real telephony" rule below still holds.
+> a simulated-call harness that exercises this whole pipeline. The Twilio
+> bridge now carries full-duplex AI audio and staff-assisted transcription;
+> production remains unverified until a real-account pilot is recorded.
 
 ## What exists (real code, ready for a provider)
 
@@ -43,12 +43,11 @@ separation) into the multi-tenant platform.
 
 ## What a provider adapter must do
 
-Translate the provider's webhooks/streams into the three lifecycle calls
-(plus `executeVoiceTool` for mid-call actions). Nothing else — summaries,
-matching, workflows, approvals, CRM sync, and assistant events all
-already happen. The AI-agent side is done (OpenAI Realtime, docs/21);
-what remains is the phone bridge: OpenAI SIP connector (recommended),
-Twilio Voice + media streams, or Retell/Vapi — compared in docs/21.
+Provider webhooks/streams translate into the three lifecycle calls above.
+OpenAI Realtime is the first registered provider (docs/21), and the Twilio
+adapter supplies both a full-duplex AI carrier path and staff-assisted Media
+Streams transcription. The remaining voice launch work is deployment, real
+credentials, and a recorded provider pilot, not another transport layer.
 
 ## Hard rules
 

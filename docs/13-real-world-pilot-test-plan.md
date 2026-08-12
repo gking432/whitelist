@@ -41,8 +41,9 @@ Real and testable end-to-end today (see docs/17 for the full matrix):
 
 Implemented since this pilot was first written:
 
-- Managed Twilio now supports signed voice webhooks, turn-based AI answering,
-  staff forwarding, Media Streams transcription, and desktop assistant events.
+- Managed Twilio now supports signed voice webhooks, full-duplex OpenAI
+  Realtime answering with barge-in and Gather failover, staff forwarding,
+  Media Streams transcription, and desktop assistant events.
 - The website chat has a hosted page and iframe embed.
 - `render.yaml` provisions the five-minute durable-job worker.
 

@@ -13,6 +13,7 @@ import { signVoiceStreamSession } from "@/lib/voice/stream-signature";
 import { normalizeVoiceStreamUrl } from "@/lib/voice/stream-url";
 import { startTextVoiceCall } from "@/lib/voice/simulate";
 import {
+  aiStreamTwiml,
   gatherTwiml,
   hangupTwiml,
   rejectVoiceWebhook,
@@ -118,13 +119,54 @@ export async function POST(
 
   const { data: existing } = await admin
     .from("call_sessions")
-    .select("id, status")
+    .select("id, status, extracted")
     .eq("connection_id", connectionId)
     .eq("provider", TWILIO_VOICE_PROVIDER)
     .eq("external_ref", callSid)
     .maybeSingle();
 
   if (existing?.status === "in_progress") {
+    if (existing.extracted?.handling_mode === "staff_assisted") {
+      const streamUrl = normalizeVoiceStreamUrl(
+        process.env.NORTHSTAR_VOICE_STREAM_URL,
+      );
+      const streamSecret =
+        process.env.VOICE_STREAM_SHARED_SECRET?.trim() || null;
+
+      if (!credentials.staffForwardNumber) {
+        return hangupTwiml(
+          "The team is unavailable right now. Please try again shortly.",
+        );
+      }
+
+      return staffAssistTwiml({
+        connectionId,
+        callSessionId: existing.id,
+        forwardNumber: credentials.staffForwardNumber,
+        streamUrl,
+        streamToken:
+          streamUrl && streamSecret
+            ? signVoiceStreamSession(streamSecret, existing.id)
+            : null,
+      });
+    }
+
+    const streamUrl = normalizeVoiceStreamUrl(
+      process.env.NORTHSTAR_VOICE_STREAM_URL,
+    );
+    const streamSecret = process.env.VOICE_STREAM_SHARED_SECRET?.trim() || null;
+
+    if (streamUrl && streamSecret && process.env.OPENAI_API_KEY?.trim()) {
+      return aiStreamTwiml({
+        connectionId,
+        callSessionId: existing.id,
+        streamUrl,
+        streamToken: signVoiceStreamSession(streamSecret, existing.id),
+        fallbackSpeech:
+          "I'm sorry, the live assistant was interrupted. How can I help today?",
+      });
+    }
+
     return gatherTwiml({
       connectionId,
       callSessionId: existing.id,
@@ -200,6 +242,14 @@ export async function POST(
     });
   }
 
+  const aiStreamUrl = normalizeVoiceStreamUrl(
+    process.env.NORTHSTAR_VOICE_STREAM_URL,
+  );
+  const aiStreamSecret =
+    process.env.VOICE_STREAM_SHARED_SECRET?.trim() || null;
+  const useRealtimeStream = Boolean(
+    aiStreamUrl && aiStreamSecret && process.env.OPENAI_API_KEY?.trim(),
+  );
   const started = await startTextVoiceCall(admin, {
     clientId: connection.client_id,
     provider: TWILIO_VOICE_PROVIDER,
@@ -208,6 +258,7 @@ export async function POST(
     toNumber: values.To ?? credentials.fromNumber ?? null,
     externalRef: callSid,
     handlingMode: "ai_answered",
+    generateGreeting: !useRealtimeStream,
   });
 
   if (!started.ok) {
@@ -247,10 +298,29 @@ export async function POST(
     }),
     response_payload: {
       call_session_id: started.callSessionId,
-      voice_runtime: process.env.OPENAI_API_KEY ? "openai" : "scripted",
+      voice_runtime:
+        useRealtimeStream
+          ? "openai_realtime_stream"
+          : process.env.OPENAI_API_KEY
+            ? "openai_gather"
+            : "scripted_gather",
     },
     redacted: true,
   });
+
+  if (aiStreamUrl && aiStreamSecret && useRealtimeStream) {
+    return aiStreamTwiml({
+      connectionId,
+      callSessionId: started.callSessionId,
+      streamUrl: aiStreamUrl,
+      streamToken: signVoiceStreamSession(
+        aiStreamSecret,
+        started.callSessionId,
+      ),
+      fallbackSpeech:
+        "I'm sorry, the live assistant was interrupted. How can I help today?",
+    });
+  }
 
   return gatherTwiml({
     connectionId,

@@ -169,6 +169,29 @@ if (serviceHeartbeatSecurity !== "true|0|false|false|true") {
   );
 }
 
+const voiceToolSecurity = query(`
+  select concat_ws('|',
+    c.relrowsecurity::text,
+    count(p.policyname) filter (where p.cmd = 'SELECT')::text,
+    has_table_privilege('anon', 'public.voice_tool_executions', 'select')::text,
+    has_table_privilege('authenticated', 'public.voice_tool_executions', 'insert,update,delete')::text,
+    has_table_privilege('service_role', 'public.voice_tool_executions', 'select,insert,update,delete')::text
+  )
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  left join pg_policies p
+    on p.schemaname = n.nspname and p.tablename = c.relname
+  where n.nspname = 'public'
+    and c.relname = 'voice_tool_executions'
+  group by c.relrowsecurity
+`);
+
+if (voiceToolSecurity !== "true|1|false|false|true") {
+  throw new Error(
+    "voice_tool_executions must be tenant-readable and service-role writable only.",
+  );
+}
+
 query(`
   begin;
   do $$

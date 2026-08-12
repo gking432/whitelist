@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const TranscriptSchema = z.object({
   call_session_id: z.string().uuid(),
-  role: z.enum(["caller", "staff"]),
+  role: z.enum(["caller", "staff", "ai_assistant"]),
   text: z.string().trim().min(1).max(4_000),
   source_event_id: z.string().trim().min(1).max(200),
   occurred_at: z.string().datetime().optional(),
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
 
   const { data: session } = await admin
     .from("call_sessions")
-    .select("id, status")
+    .select("id, status, extracted")
     .eq("id", input.call_session_id)
     .eq("status", "in_progress")
     .maybeSingle();
@@ -71,7 +71,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ accepted: true, duplicate: true });
   }
 
-  const assist = await analyzeStaffCall(admin, input.call_session_id);
+  const assist =
+    session.extracted?.handling_mode === "staff_assisted"
+      ? await analyzeStaffCall(admin, input.call_session_id)
+      : null;
 
   return NextResponse.json({ accepted: true, assist });
 }
