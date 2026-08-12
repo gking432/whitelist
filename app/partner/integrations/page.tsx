@@ -20,7 +20,7 @@ export default async function PartnerIntegrationsPage() {
   const [partnerResult, clientsResult, requestsResult] = await Promise.all([
     supabase.from("partners").select("name").eq("id", access.partnerId).maybeSingle(),
     supabase.from("client_businesses").select("id, name").eq("partner_id", access.partnerId).eq("account_kind", "managed_client").neq("status", "archived").order("name"),
-    supabase.from("integration_requests").select("id, application_name, status, priority, updated_at, client:client_businesses!integration_requests_client_id_fkey(name)").eq("partner_id", access.partnerId).order("updated_at", { ascending: false }),
+    supabase.from("integration_requests").select("id, application_name, status, priority, release_version, updated_at, client:client_businesses!integration_requests_client_id_fkey(name)").eq("partner_id", access.partnerId).order("updated_at", { ascending: false }),
   ]);
   if (requestsResult.error) throw new Error(`Could not load integration requests: ${requestsResult.error.message}`);
   const partner = partnerResult.data;
@@ -52,7 +52,7 @@ export default async function PartnerIntegrationsPage() {
           <div className="border-b px-5 py-4"><h2 className="font-semibold">Your requests</h2></div>
           {(requests ?? []).length === 0 ? <p className="px-5 py-8 text-sm text-muted-foreground">No integration requests yet.</p> : <div className="divide-y">{(requests ?? []).map((request) => {
             const client = request.client as unknown as { name?: string } | null;
-            return <div key={request.id} className="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div><p className="text-sm font-semibold">{request.application_name}</p><p className="mt-1 text-xs text-muted-foreground">{client?.name ?? "Agency-wide"} · Updated {new Date(request.updated_at).toLocaleDateString()}</p></div><div className="flex items-center gap-2"><CircleDot className="size-3.5 text-primary" aria-hidden="true" /><Badge variant="outline">{request.status.replaceAll("_", " ")}</Badge></div></div>;
+            return <div key={request.id} className="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div><p className="text-sm font-semibold">{request.application_name}</p><p className="mt-1 text-xs text-muted-foreground">{client?.name ?? "Agency-wide"}{request.release_version ? ` · Version ${request.release_version}` : ""} · Updated {new Date(request.updated_at).toLocaleDateString()}</p></div><div className="flex items-center gap-2"><CircleDot className="size-3.5 text-primary" aria-hidden="true" /><Badge variant="outline">{request.status.replaceAll("_", " ")}</Badge></div></div>;
           })}</div>}
         </section>
       </div>

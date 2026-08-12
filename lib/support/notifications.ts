@@ -44,6 +44,7 @@ export async function queueSupportNotification(input: {
   title: string;
   summary: string;
   urgent?: boolean;
+  eventKey?: string;
 }) {
   const recipients = await recipientProfiles(input.admin, {
     partnerId: input.partnerId,
@@ -65,8 +66,12 @@ export async function queueSupportNotification(input: {
         destination: recipient.email,
         subject,
         body,
+        event_key: input.eventKey ?? "initial",
       })),
-      { onConflict: "ticket_id,recipient_kind,destination", ignoreDuplicates: true },
+      {
+        onConflict: "ticket_id,recipient_kind,destination,event_key",
+        ignoreDuplicates: true,
+      },
     );
   }
 }
@@ -144,4 +149,3 @@ export async function processPendingSupportNotifications(
 
   return result;
 }
-

@@ -22,7 +22,7 @@ stack.
 | CRM sync (HubSpot, GoHighLevel) | Real — additive contact + AI Assistant note, verified credentials, dry-run previews |
 | CRM sync fallback (signed outbound webhook) | Real — HMAC-SHA256 signed envelope, HTTPS only, private-network destinations blocked (unit-tested) |
 | Durable action jobs + retry | Real — every send/booking/sync records an attempt; failed/dry-run/skipped retryable from Runs / Logs with audit |
-| Built-in CRM foundation | Real — contacts/leads/timeline/tasks/appointments, tenant-scoped RLS, AI writes attributed as ai_assistant; fills for primary/mirror/assist modes only |
+| Built-in CRM foundation | Real — contacts/leads/timeline/tasks/appointments, tenant-scoped RLS, AI writes attributed as ai_assistant; appointments support rescheduling, duration changes, cancellation, and conflict prevention; fills for primary/mirror/assist modes only |
 | Packages → setup checklist | Real — capability toggles drive required integrations, workflows, staff-runtime honesty |
 | Staff Assistant Console (web) | Real data + real actions (approve-jumps, sync, create task, mark spam, escalate, copy); labeled Preview state before first lead |
 | Client-staff Assistant Console (/client/assistant) | Real — same contract and gates, scoped by the member's own client; portal must be enabled |
@@ -49,7 +49,7 @@ stack.
 | Retained phone connectors | Real contracts — RingCentral and Dialpad OAuth plus signed webhooks; Quo/OpenPhone credential setup; caller matching, screen-pop events, SMS intake, and post-call workflows |
 | Marketing and reputation connectors | Real contracts — Meta Lead Ads/webhooks and campaign metrics; Google Ads lead forms/campaign metrics; GBP, Podium, and Birdeye reviews; approval-gated replies where supported |
 | Forwarded lead inbox | Real — Resend Receiving signature validation, unique per-client address, message retrieval/parsing, idempotent intake, and normal AI workflow routing |
-| Integration request and escalation center | Real — client-to-partner support, partner-to-owner escalation, durable triage/routing, guarded Codex handoff, review and release states |
+| Integration request and escalation center | Real — client-to-partner support, partner-to-owner escalation, durable triage/routing, guarded Codex handoff, versioned requester validation, tenant-scoped release flags, repeatable lifecycle notifications, atomic release/rollback, and a corrected-revision path |
 | Audit + redaction | All new actions audited; every logged payload passes redactAuditValue |
 
 ## Preview / not built (still honest)
@@ -59,7 +59,6 @@ stack.
 | Fully streaming AI-to-customer voice | Twilio's AI-answering path is turn-based Gather/TwiML. The WebSocket audio stream currently supports staff-assisted transcription; a full-duplex AI audio bridge remains a later quality upgrade |
 | Staff-assist production proof | Code is present, but a real Twilio account, public app URL, always-on voice-stream URL, OpenAI key, and installed desktop build are still required for live verification |
 | SSE/WebSocket event push | Not built — polling endpoint is real; push is transport-only on the same contract |
-| Appointment reschedule/cancel | Not built — book-only today |
 | Browser extension / third-party CRM overlay | Not built. The Electron desktop assistant is the supported V1 overlay; direct CRM write-back is preferred whenever a connector supports it |
 | Provider live verification | Connector contracts are implemented and tested locally, but each vendor still needs production app approval and at least one real account pilot before being labeled live-verified |
 | Marketplace native APIs | Angi, Thumbtack, Yelp, and similar broad lead APIs remain vendor-restricted; private forwarded email and signed webhook intake are the supported V1 paths |

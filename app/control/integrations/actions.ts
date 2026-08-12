@@ -6,7 +6,7 @@ import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
 import {
   buildConnectorDevelopmentPrompt,
-  connectorBranchName,
+  connectorRevisionBranchName,
 } from "@/lib/integrations/connector-development";
 import {
   codexConnectorWorkerReady,
@@ -18,9 +18,8 @@ import {
 import { requirePlatformRole } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { supportReleaseCanComplete } from "@/lib/support/release-gates";
 
-const STATUSES = ["requested", "researching", "needs_information", "building", "testing", "ready", "released", "blocked", "declined"];
+const STATUSES = ["requested", "researching", "needs_information", "building", "testing", "ready", "blocked", "declined"];
 
 export async function updateIntegrationRequest(formData: FormData) {
   const auth = await getAuthState();
@@ -37,37 +36,25 @@ export async function updateIntegrationRequest(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: request } = await supabase.from("integration_requests").select("partner_id, client_id, status, application_name, support_ticket_id").eq("id", requestId).maybeSingle();
   if (!request) return;
-  if (status === "released" && request.support_ticket_id && admin) {
-    const { data: release } = await admin.from("support_ticket_releases").select("status").eq("ticket_id", request.support_ticket_id).maybeSingle();
-    if (!supportReleaseCanComplete({
-      releaseStatus: release?.status,
-      codeRequestStatus: request.status,
-    })) return;
-  }
-  await supabase.from("integration_requests").update({ status, released_at: status === "released" ? new Date().toISOString() : null }).eq("id", requestId);
+  if (["released", "rolled_back"].includes(request.status)) return;
+  await supabase.from("integration_requests").update({ status }).eq("id", requestId);
   if (message) {
     await supabase.from("integration_request_messages").insert({ request_id: requestId, partner_id: request.partner_id, author_id: auth.user.id, audience: internal ? "internal" : "partner", body: message });
   }
   if (request.support_ticket_id && admin) {
     const mappedStatus = status === "needs_information"
       ? "waiting_requester"
-      : status === "released" || status === "declined"
+      : status === "declined"
           ? "resolved"
           : "platform_working";
     const now = new Date().toISOString();
     await admin.from("support_tickets").update({
       status: mappedStatus,
-      current_route: status === "ready" || status === "released" ? "owner" : "platform",
+      current_route: status === "ready" ? "owner" : "platform",
       resolved_by: mappedStatus === "resolved" ? auth.user.id : null,
       resolved_at: mappedStatus === "resolved" ? now : null,
       resolution: status === "declined" ? message || "The connector request was declined." : undefined,
     }).eq("id", request.support_ticket_id);
-    if (status === "released") {
-      await Promise.all([
-        admin.from("support_ticket_releases").update({ status: "released", released_at: now }).eq("ticket_id", request.support_ticket_id),
-        admin.from("connector_development_tasks").update({ status: "released", completed_at: now }).eq("request_id", requestId),
-      ]);
-    }
     if (message) {
       await admin.from("support_ticket_messages").insert({ ticket_id: request.support_ticket_id, partner_id: request.partner_id, client_id: request.client_id, author_id: auth.user.id, author_kind: "platform", audience: internal ? "internal" : "partner", body: message });
     }
@@ -100,14 +87,36 @@ export async function prepareConnectorTask(formData: FormData) {
     desiredResult: request.desired_result,
     currentSystems: request.current_systems ?? [],
   };
+  const { data: existingTask } = await supabase
+    .from("connector_development_tasks")
+    .select("revision_number")
+    .eq("request_id", requestId)
+    .maybeSingle();
+  const revisionNumber = Math.min(
+    9999,
+    Math.max(1, (existingTask?.revision_number ?? 0) + 1),
+  );
+  const branchName = connectorRevisionBranchName(spec, revisionNumber);
   await supabase.from("connector_development_tasks").upsert({
     request_id: requestId,
     created_by: auth.user.id,
     status: "awaiting_approval",
-    prompt_snapshot: buildConnectorDevelopmentPrompt(spec),
-    branch_name: connectorBranchName(spec),
+    prompt_snapshot: buildConnectorDevelopmentPrompt(spec, branchName),
+    branch_name: branchName,
+    revision_number: revisionNumber,
     error_message: null,
+    worker_id: null,
+    heartbeat_at: null,
+    available_at: new Date().toISOString(),
+    attempt_count: 0,
+    started_at: null,
+    completed_at: null,
+    approved_by: null,
+    approved_at: null,
+    codex_thread_id: null,
+    final_response: null,
   }, { onConflict: "request_id" });
+  await supabase.from("integration_requests").update({ status: "building", released_at: null }).eq("id", requestId);
   if (admin) {
     const { data: linked } = await admin.from("integration_requests").select("support_ticket_id").eq("id", requestId).maybeSingle();
     if (linked?.support_ticket_id) await admin.from("support_tickets").update({ status: "platform_working", current_route: "codex" }).eq("id", linked.support_ticket_id);

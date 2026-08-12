@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import {
   createCodeWorkFromSupport,
   markSupportReleaseComplete,
+  rollbackSupportRelease,
   startRequesterValidation,
   updatePlatformSupportTicket,
 } from "@/app/control/support/actions";
@@ -218,13 +219,14 @@ export default async function PlatformSupportTicketPage({
               )}
             </section>
 
-            {!release ? (
+            {!release || release.status === "rolled_back" ? (
               validationReady ? (
                 <form action={startRequesterValidation} className="rounded-lg border bg-card p-4">
                   <input type="hidden" name="ticket_id" value={ticket.id} />
                   <h2 className="text-sm font-semibold">Start validation</h2>
                   <div className="mt-3 grid gap-3">
                     <Input name="branch_name" required placeholder="Tested branch" />
+                    <Input name="release_version" required placeholder="Release version, e.g. 1.2.0" />
                     <Input name="feature_flag_key" placeholder="Tenant feature flag" />
                     <Input name="staging_url" type="url" placeholder="Staging URL" />
                     <Textarea name="test_evidence" rows={3} placeholder="Checks completed" />
@@ -246,7 +248,7 @@ export default async function PlatformSupportTicketPage({
               <section className="rounded-lg border bg-card p-4">
                 <h2 className="text-sm font-semibold">Release</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {release.status.replaceAll("_", " ")} · {release.branch_name}
+                  {release.status.replaceAll("_", " ")} · {release.release_version || "Unversioned"} · {release.branch_name}
                 </p>
                 {release.status === "requester_approved" && validationReady ? (
                   <form action={markSupportReleaseComplete} className="mt-3">
@@ -258,6 +260,14 @@ export default async function PlatformSupportTicketPage({
                   <p className="mt-3 text-sm text-muted-foreground">
                     Release is locked until the linked development request is ready.
                   </p>
+                ) : release.status === "released" ? (
+                  <form action={rollbackSupportRelease} className="mt-4 border-t pt-4">
+                    <input type="hidden" name="ticket_id" value={ticket.id} />
+                    <Textarea name="reason" required rows={3} placeholder="Why this release must be rolled back" />
+                    <Button type="submit" variant="destructive" className="mt-3">Roll back release</Button>
+                  </form>
+                ) : release.status === "rolled_back" ? (
+                  <p className="mt-3 text-sm text-muted-foreground">{release.rollback_reason}</p>
                 ) : null}
               </section>
             )}

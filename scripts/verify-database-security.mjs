@@ -84,6 +84,42 @@ for (const [table, policy] of scopedPolicies) {
   }
 }
 
+const releaseFunctions = [
+  "complete_connector_support_release(uuid,uuid,text,text)",
+  "rollback_connector_support_release(uuid,uuid,text)",
+];
+
+for (const signature of releaseFunctions) {
+  const privileges = query(`
+    select concat_ws('|',
+      has_function_privilege('authenticated', 'public.${signature}', 'execute')::text,
+      has_function_privilege('anon', 'public.${signature}', 'execute')::text,
+      has_function_privilege('service_role', 'public.${signature}', 'execute')::text
+    )
+  `);
+  if (privileges !== "false|false|true") {
+    throw new Error(`${signature} must be executable only by service_role.`);
+  }
+}
+
+const releaseFlagsSecurity = query(`
+  select concat_ws('|',
+    c.relrowsecurity::text,
+    count(p.policyname)::text
+  )
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  left join pg_policies p
+    on p.schemaname = n.nspname and p.tablename = c.relname
+  where n.nspname = 'public'
+    and c.relname = 'connector_release_flags'
+  group by c.relrowsecurity
+`);
+
+if (releaseFlagsSecurity !== "true|1") {
+  throw new Error("connector_release_flags must retain RLS and its scoped select policy.");
+}
+
 console.log(
-  `Database security verified: workflow runs and ${scopedPolicies.length} CRM/approval policies are tenant scoped.`,
+  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, and guarded connector releases are scoped.`,
 );

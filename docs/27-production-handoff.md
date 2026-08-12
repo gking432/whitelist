@@ -50,6 +50,12 @@ client package installation, Twilio call/SMS, web lead, web chat, forwarded
 lead email, calendar availability/booking, CRM write-back, support escalation,
 and owner-controlled release approval.
 
+Connector release completion records the externally reviewed version and
+enables its optional tenant-scoped feature flag atomically. Rollback disables
+that flag, reopens the support request, preserves the reason and audit event,
+and exposes a guarded "Prepare revision" path. The platform records deployment
+evidence and state; it does not merge or deploy source code automatically.
+
 ## Desktop distribution
 
 Configure Apple signing/notarization, Windows code signing, and GitHub release

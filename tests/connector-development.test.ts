@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildConnectorDevelopmentPrompt,
   connectorBranchName,
+  connectorRevisionBranchName,
   redactConnectorRequestText,
 } from "../lib/integrations/connector-development.ts";
 import { validConnectorBranchName } from "../lib/integrations/codex-worker.ts";
@@ -35,6 +36,21 @@ test("connector branch names are stable and bounded", () => {
   assert.equal(validConnectorBranchName(branchName), true);
   assert.equal(validConnectorBranchName("main"), false);
   assert.equal(validConnectorBranchName("codex/connector-../../production"), false);
+});
+
+test("connector revisions receive distinct valid branches and prompts", () => {
+  const spec = {
+    id: "12345678-0000-4000-8000-000000000001",
+    applicationName: "Legacy CRM",
+    applicationUrl: null,
+    category: "crm",
+    triggerDescription: "A lead arrives",
+    desiredResult: "Create a contact",
+    currentSystems: [],
+  };
+  const revision = connectorRevisionBranchName(spec, 2);
+  assert.equal(revision, "codex/connector-legacy-crm-12345678-r2");
+  assert.match(buildConnectorDevelopmentPrompt(spec, revision), /Assigned branch: codex\/connector-legacy-crm-12345678-r2/);
 });
 
 test("request sanitizer removes private keys", () => {

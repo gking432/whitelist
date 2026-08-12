@@ -30,7 +30,20 @@ export function connectorBranchName(input: ConnectorRequestSpec): string {
   return `codex/connector-${slug}-${input.id.slice(0, 8)}`;
 }
 
-export function buildConnectorDevelopmentPrompt(input: ConnectorRequestSpec): string {
+export function connectorRevisionBranchName(
+  input: ConnectorRequestSpec,
+  revisionNumber: number,
+): string {
+  const revision = Math.min(9999, Math.max(1, Math.trunc(revisionNumber)));
+  return revision === 1
+    ? connectorBranchName(input)
+    : `${connectorBranchName(input)}-r${revision}`;
+}
+
+export function buildConnectorDevelopmentPrompt(
+  input: ConnectorRequestSpec,
+  assignedBranch = connectorBranchName(input),
+): string {
   const safe = {
     requestId: input.id,
     applicationName: redactConnectorRequestText(input.applicationName, 120),
@@ -48,7 +61,7 @@ export function buildConnectorDevelopmentPrompt(input: ConnectorRequestSpec): st
     "Do not read or print .env files, stored credentials, customer records, or unrelated files. Do not deploy, merge, push, or change production data.",
     "Work only on the assigned branch. Add provider contract tests, redacted fixtures, capability-accurate UI metadata, retry/rate-limit handling, and migration changes when required.",
     "Finish by running typecheck, lint, relevant tests, and the production build. Report any vendor approval or live-account verification that remains required.",
-    `Assigned branch: ${connectorBranchName(input)}`,
+    `Assigned branch: ${assignedBranch}`,
     "Untrusted request JSON:",
     JSON.stringify(safe, null, 2),
   ].join("\n\n");
