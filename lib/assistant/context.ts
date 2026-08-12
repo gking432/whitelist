@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { resolveAssistantCallMatchStatus } from "@/lib/assistant/call-match";
 import type { ClientBusinessRecord } from "@/lib/clients/constants";
 import {
   enabledCapabilityKeys,
@@ -1114,22 +1115,14 @@ export async function buildAssistantContext(
               ? "staff_assisted"
               : "ai_answered",
           matchedContactId: activeCall.matched_contact_id,
-          matchStatus:
-            asString(
-              (
-                activeCall.extracted?.caller_resolution as
-                  Record<string, unknown> | undefined
-              )?.status,
-            ) === "matched"
-              ? "matched"
-              : asString(
-                    (
-                      activeCall.extracted?.caller_resolution as
-                        Record<string, unknown> | undefined
-                    )?.status,
-                  ) === "created"
-                ? "created"
-                : "unavailable",
+          matchStatus: resolveAssistantCallMatchStatus({
+            resolverStatus: (
+              activeCall.extracted?.caller_resolution as
+                | Record<string, unknown>
+                | undefined
+            )?.status,
+            matchedContactId: activeCall.matched_contact_id,
+          }),
         }
       : null,
     booking,

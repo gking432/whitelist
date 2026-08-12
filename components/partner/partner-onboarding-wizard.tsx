@@ -514,7 +514,7 @@ export function PartnerOnboardingWizard({
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 sm:px-6 md:grid-cols-[13rem_minmax(0,1fr)] md:py-10">
+      <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 sm:px-6 md:grid-cols-[15rem_minmax(0,1fr)] md:py-10">
         <nav aria-label="Onboarding progress">
           <ol className="grid grid-cols-5 overflow-hidden rounded-lg border bg-card md:block">
             {PARTNER_ONBOARDING_STEPS.map((item, index) => {

@@ -50,6 +50,18 @@ export async function ensurePartnerAgencyBusiness(
     .single();
 
   if (error || !created) {
+    // Onboarding actions and the redirected page can reach this helper at the
+    // same time. Let the unique tenant constraint choose the winner, then
+    // return that workspace instead of failing the second request.
+    const { data: raced } = await admin
+      .from("client_businesses")
+      .select("id, name, slug")
+      .eq("partner_id", input.partnerId)
+      .eq("account_kind", "partner_agency")
+      .maybeSingle();
+
+    if (raced) return raced as PartnerAgencyBusiness;
+
     throw new Error("The partner agency workspace could not be created.");
   }
 
