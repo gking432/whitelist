@@ -35,7 +35,11 @@ export async function GET() {
   }
 
   const startedAt = Date.now();
-  const [{ error }, { data: schemaState, error: schemaError }] = await Promise.all([
+  const [
+    { error },
+    { data: schemaState, error: schemaError },
+    { data: jobsHeartbeat },
+  ] = await Promise.all([
     admin
       .from("integration_providers")
       .select("id", { head: true, count: "exact" })
@@ -44,6 +48,11 @@ export async function GET() {
       .from("platform_schema_state")
       .select("current_migration")
       .eq("singleton", true)
+      .maybeSingle(),
+    admin
+      .from("platform_service_heartbeats")
+      .select("release, last_success_at")
+      .eq("service_key", "jobs")
       .maybeSingle(),
   ]);
   const schemaReady =
@@ -73,6 +82,12 @@ export async function GET() {
       latency_ms: Date.now() - startedAt,
       timestamp: new Date().toISOString(),
       release,
+      services: {
+        jobs: {
+          release: jobsHeartbeat?.release ?? null,
+          last_success_at: jobsHeartbeat?.last_success_at ?? null,
+        },
+      },
     },
     {
       status: ok ? 200 : 503,

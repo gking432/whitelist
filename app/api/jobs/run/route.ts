@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { processPendingActionJobs } from "@/lib/jobs/runner";
+import {
+  normalizeSchedulerRelease,
+  recordSchedulerHeartbeat,
+} from "@/lib/jobs/scheduler-heartbeat";
 import { runOperationalRetention } from "@/lib/jobs/retention";
 import { processPendingNotificationDeliveries } from "@/lib/notifications/delivery";
 import { processPendingSupportNotifications } from "@/lib/support/notifications";
@@ -46,5 +50,10 @@ export async function POST(request: NextRequest) {
     runOperationalRetention(admin),
   ]);
 
-  return NextResponse.json({ ok: true, ...result, notifications, supportNotifications, connectorSync, webhookRenewal, retention });
+  const schedulerRelease = normalizeSchedulerRelease(
+    request.headers.get("x-northstar-scheduler-release"),
+  );
+  await recordSchedulerHeartbeat(admin, schedulerRelease);
+
+  return NextResponse.json({ ok: true, schedulerRelease, ...result, notifications, supportNotifications, connectorSync, webhookRenewal, retention });
 }

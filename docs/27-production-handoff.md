@@ -98,6 +98,9 @@ assistant paths. It also proves CRM creation, idempotency, approval ownership,
 external write previews, support routing, and owner read-only impersonation,
 then removes every fixture and stops the server. GitHub CI runs that same
 journey against a fresh local Supabase stack.
+The connector scheduler identifies its own deployed commit on every successful
+run. Production verification waits for that durable heartbeat, so web, voice,
+and jobs must all execute the exact requested release before deployment passes.
 The connector scheduler also
 recovers expired read leases within the configured retry limit. An expired
 external write is dead-lettered for vendor reconciliation instead of replayed,

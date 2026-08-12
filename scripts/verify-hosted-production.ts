@@ -7,6 +7,12 @@ type HealthPayload = {
   };
   configuration_issue_count?: number;
   release?: string | null;
+  services?: {
+    jobs?: {
+      release?: string | null;
+      last_success_at?: string | null;
+    };
+  };
 };
 
 type VoiceHealthPayload = {
@@ -93,6 +99,14 @@ async function verify() {
       `Hosted app release ${health.release ?? "unknown"} does not match ${expectedRelease}.`,
     );
   }
+  if (
+    expectedRelease &&
+    !health.services?.jobs?.release?.startsWith(expectedRelease)
+  ) {
+    throw new Error(
+      `Hosted jobs release ${health.services?.jobs?.release ?? "unknown"} does not match ${expectedRelease}.`,
+    );
+  }
 
   for (const [header, expected] of [
     ["x-content-type-options", "nosniff"],
@@ -163,6 +177,9 @@ console.log(
       voice_url: voiceUrl,
       release: result.health.release ?? null,
       voice_release: result.voiceHealth.release ?? null,
+      jobs_release: result.health.services?.jobs?.release ?? null,
+      jobs_last_success_at:
+        result.health.services?.jobs?.last_success_at ?? null,
       database: result.health.checks?.database,
       database_schema: result.health.checks?.database_schema,
       configuration: result.health.checks?.configuration,

@@ -31,7 +31,9 @@ Northstar uses three Render services:
    routing traffic to an incompatible application/database pair.
    Apply migrations before deploying the corresponding app release; older app
    releases accept newer forward-compatible schema markers during the rollout.
-6. Confirm the `northstar-jobs` cron has a successful run in Render.
+6. Confirm the `northstar-jobs` cron has a successful run in Render. The
+   guarded release waits until `/api/health` reports that the jobs service has
+   executed the exact release SHA; an accepted deploy hook alone is not enough.
 7. Complete `/partner/onboarding`, create the pilot client, select its package,
    and connect the accounts listed in the client's Setup workspace.
 8. Keep every client in sandbox until its Test Center passes. Switch an

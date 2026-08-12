@@ -146,6 +146,29 @@ if (providerPilotSecurity !== "true|2") {
   );
 }
 
+const serviceHeartbeatSecurity = query(`
+  select concat_ws('|',
+    c.relrowsecurity::text,
+    count(p.policyname)::text,
+    has_table_privilege('anon', 'public.platform_service_heartbeats', 'select')::text,
+    has_table_privilege('authenticated', 'public.platform_service_heartbeats', 'select')::text,
+    has_table_privilege('service_role', 'public.platform_service_heartbeats', 'select,insert,update,delete')::text
+  )
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  left join pg_policies p
+    on p.schemaname = n.nspname and p.tablename = c.relname
+  where n.nspname = 'public'
+    and c.relname = 'platform_service_heartbeats'
+  group by c.relrowsecurity
+`);
+
+if (serviceHeartbeatSecurity !== "true|0|false|false|true") {
+  throw new Error(
+    "platform_service_heartbeats must be readable and writable only by service_role.",
+  );
+}
+
 query(`
   begin;
   do $$
@@ -255,5 +278,5 @@ if (clientSupportPolicy !== "true") {
 }
 
 console.log(
-  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, support tickets, guarded connector releases, and provider live pilots are scoped.`,
+  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, support tickets, guarded connector releases, provider live pilots, and the service-only scheduler heartbeat are scoped.`,
 );

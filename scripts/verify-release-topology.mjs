@@ -173,6 +173,8 @@ for (const fragment of [
   "HOSTED_VERIFY_TIMEOUT_MS",
   "Hosted voice release",
   "voice_release",
+  "Hosted jobs release",
+  "jobs_release",
 ]) {
   if (!hostedVerifier.includes(fragment)) {
     fail(`hosted release verifier lacks ${fragment}`);
@@ -196,5 +198,5 @@ for (const script of [
 }
 
 console.log(
-  "Release topology verified: schema-aware web health, migration-first exact-commit Render deployment, self-hosted five-minute jobs, voice stream, production readiness, and signed desktop workflows are wired.",
+  "Release topology verified: schema-aware web health, migration-first exact-commit Render deployment for web, jobs, and voice, self-hosted five-minute jobs, production readiness, and signed desktop workflows are wired.",
 );

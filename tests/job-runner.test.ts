@@ -2,14 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { runJobs } from "../deploy/run-jobs.mjs";
+import { normalizeSchedulerRelease } from "../lib/jobs/scheduler-heartbeat.ts";
 
-test("job runner authenticates one production scheduler request", async (t) => {
+test("scheduler release headers accept only bounded git identifiers", () => {
+  assert.equal(normalizeSchedulerRelease("A".repeat(40)), "a".repeat(40));
+  assert.equal(normalizeSchedulerRelease("not-a-sha"), null);
+  assert.equal(normalizeSchedulerRelease(null), null);
+});
+
+test("job runner authenticates and identifies one production scheduler request", async (t) => {
   const originalFetch = globalThis.fetch;
-  let request: { url: string; authorization: string | null } | null = null;
+  let request: {
+    url: string;
+    authorization: string | null;
+    release: string | null;
+  } | null = null;
   globalThis.fetch = (async (input, init) => {
     request = {
       url: String(input),
       authorization: new Headers(init?.headers).get("authorization"),
+      release: new Headers(init?.headers).get("x-northstar-scheduler-release"),
     };
     return new Response(JSON.stringify({ retried: 2 }), {
       status: 200,
@@ -23,12 +35,14 @@ test("job runner authenticates one production scheduler request", async (t) => {
   const result = await runJobs({
     NORTHSTAR_APP_URL: "https://app.example.com/",
     CRON_SECRET: "scheduler-secret",
+    RENDER_GIT_COMMIT: "a".repeat(40),
   });
 
   assert.deepEqual(result, { retried: 2 });
   assert.deepEqual(request, {
     url: "https://app.example.com/api/jobs/run",
     authorization: "Bearer scheduler-secret",
+    release: "a".repeat(40),
   });
 });
 

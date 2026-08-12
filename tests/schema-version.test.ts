@@ -21,7 +21,7 @@ test("schema compatibility rejects missing, malformed, or stale markers", () => 
   assert.equal(schemaVersionIsCompatible(null), false);
   assert.equal(schemaVersionIsCompatible("not-a-migration"), false);
   assert.equal(
-    schemaVersionIsCompatible("20260812040000_provider_live_pilots"),
+    schemaVersionIsCompatible("20260812053000_connector_field_mapping_runtime"),
     false,
   );
 });

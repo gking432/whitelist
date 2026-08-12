@@ -1,5 +1,5 @@
 export const EXPECTED_SCHEMA_VERSION =
-  "20260812053000_connector_field_mapping_runtime";
+  "20260812060000_scheduler_release_heartbeat";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,
