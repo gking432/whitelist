@@ -5,6 +5,7 @@ import type {
   ConnectorPage,
   ConnectorPushInput,
 } from "../connectors/types";
+import { connectorPushPayload } from "../connectors/field-mappings.ts";
 import { mintWorkspaceAccessToken, type WorkspaceCredentials } from "./workspace-oauth.ts";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
@@ -101,13 +102,13 @@ async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: Con
     }
     const response = await graphFetch(credentials, `/me/contacts${id ? `/${encodeURIComponent(id)}` : ""}`, {
       method: id ? "PATCH" : "POST",
-      body: JSON.stringify({
+      body: JSON.stringify(connectorPushPayload(input.externalData, {
         givenName: text(input.data, "first_name"),
         surname: text(input.data, "last_name"),
         displayName: text(input.data, "name"),
         emailAddresses: text(input.data, "email") ? [{ address: text(input.data, "email"), name: text(input.data, "name") }] : [],
         businessPhones: text(input.data, "phone") ? [text(input.data, "phone")] : [],
-      }),
+      })),
     });
     const created = response.status === 204 ? { id } : (await response.json()) as { id?: string };
     return { externalObjectId: created.id ?? id ?? "", source: created };
@@ -121,12 +122,12 @@ async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: Con
     const timeZone = text(input.data, "timezone") || "UTC";
     const response = await graphFetch(credentials, `/me/events${id ? `/${encodeURIComponent(id)}` : ""}`, {
       method: id ? "PATCH" : "POST",
-      body: JSON.stringify({
+      body: JSON.stringify(connectorPushPayload(input.externalData, {
         subject: text(input.data, "title") || "Appointment",
         body: { contentType: "text", content: text(input.data, "description") },
         start: { dateTime: text(input.data, "start_at"), timeZone },
         end: { dateTime: text(input.data, "end_at"), timeZone },
-      }),
+      })),
     });
     const created: { id?: string | null; lastModifiedDateTime?: string } =
       response.status === 204
@@ -137,11 +138,11 @@ async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: Con
   if (input.objectType === "message" && input.operation === "create") {
     await graphFetch(credentials, "/me/sendMail", {
       method: "POST",
-      body: JSON.stringify({ message: {
+      body: JSON.stringify(connectorPushPayload(input.externalData, { message: {
         subject: text(input.data, "subject"),
         body: { contentType: "Text", content: text(input.data, "body") },
         toRecipients: [{ emailAddress: { address: text(input.data, "to") } }],
-      }, saveToSentItems: true }),
+      }, saveToSentItems: true })),
     });
     return { externalObjectId: `sent-${input.idempotencyKey}` };
   }

@@ -1,4 +1,5 @@
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
+import { connectorPushPayload } from "../connectors/field-mappings.ts";
 
 export type WorkizCredentials = { apiToken: string };
 
@@ -33,7 +34,8 @@ async function pull(credentials: WorkizCredentials, objectType: CanonicalObjectT
 
 async function push(credentials: WorkizCredentials, input: ConnectorPushInput) {
   if (input.objectType !== "lead" || input.operation !== "create") throw new Error(`Workiz cannot ${input.operation} ${input.objectType}.`);
-  const response = await workizFetch(credentials, "/lead/create/", { method: "POST", body: JSON.stringify({ FirstName: input.data.first_name ?? input.data.name, LastName: input.data.last_name ?? "", Phone: input.data.phone ?? "", Email: input.data.email ?? "", JobNotes: input.data.description ?? "" }) });
+  const body = connectorPushPayload(input.externalData, { FirstName: input.data.first_name ?? input.data.name, LastName: input.data.last_name ?? "", Phone: input.data.phone ?? "", Email: input.data.email ?? "", JobNotes: input.data.description ?? "" });
+  const response = await workizFetch(credentials, "/lead/create/", { method: "POST", body: JSON.stringify(body) });
   const created = await response.json() as Record<string, unknown>;
   const data = (created.data ?? created) as Record<string, unknown>;
   return { externalObjectId: String(data.UUID ?? data.uuid ?? data.id ?? ""), source: created };

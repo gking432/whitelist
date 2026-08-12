@@ -2,11 +2,17 @@ import {
   validateCanonicalRecord,
   validateConnectorAdapter,
 } from "./contract.ts";
+import {
+  applyPullFieldMappings,
+  applyPushFieldMappings,
+  ConnectorFieldMappingError,
+} from "./field-mappings.ts";
 import type {
   CanonicalObjectType,
   CanonicalRecord,
   ConnectorAdapter,
   ConnectorContext,
+  ConnectorFieldMapping,
   ConnectorPushInput,
 } from "./types.ts";
 
@@ -49,8 +55,10 @@ export async function executeConnectorSyncJob(input: {
   context: ConnectorContext;
   job: ConnectorSyncJob;
   repository: ConnectorSyncRepository;
+  fieldMappings?: readonly ConnectorFieldMapping[];
 }): Promise<ConnectorSyncOutcome> {
   const { adapter, context, job, repository } = input;
+  const fieldMappings = input.fieldMappings ?? [];
   const adapterIssues = validateConnectorAdapter(adapter);
 
   if (adapterIssues.length > 0) {
@@ -77,7 +85,8 @@ export async function executeConnectorSyncJob(input: {
           : null;
       const page = await adapter.pullPage(context, job.objectType, cursor);
 
-      for (const record of page.records) {
+      for (const rawRecord of page.records) {
+        const record = applyPullFieldMappings(rawRecord, fieldMappings);
         const issues = validateCanonicalRecord(record);
         if (record.objectType !== job.objectType) {
           issues.push({
@@ -148,6 +157,11 @@ export async function executeConnectorSyncJob(input: {
       nativeObjectId,
       externalObjectId: text(job.payload.externalObjectId),
       data,
+      externalData: applyPushFieldMappings(
+        job.objectType,
+        data,
+        fieldMappings,
+      ),
       idempotencyKey,
     });
 
@@ -175,7 +189,9 @@ export async function executeConnectorSyncJob(input: {
   } catch (error) {
     return {
       ok: false,
-      retryable: job.attempts + 1 < job.maxAttempts,
+      retryable:
+        !(error instanceof ConnectorFieldMappingError) &&
+        job.attempts + 1 < job.maxAttempts,
       error: error instanceof Error ? error.message : "Connector sync failed.",
     };
   }

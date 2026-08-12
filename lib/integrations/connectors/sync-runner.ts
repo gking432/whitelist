@@ -39,6 +39,7 @@ import {
   type ConnectorSyncJob,
 } from "./sync-executor";
 import type { CanonicalRecord } from "./types";
+import type { ConnectorFieldMapping } from "./types";
 
 type JobRow = ConnectorSyncJob & {
   partner_id: string;
@@ -441,6 +442,33 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
   };
 }
 
+async function fieldMappingsFor(
+  admin: SupabaseClient,
+  job: JobRow,
+): Promise<ConnectorFieldMapping[]> {
+  const { data, error } = await admin
+    .from("integration_field_mappings")
+    .select(
+      "id, object_type, direction, native_field, external_field, transform_key, default_value, is_required, is_active",
+    )
+    .eq("connection_id", job.connection_id)
+    .eq("object_type", job.objectType)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`Could not load connector field mappings: ${error.message}`);
+  return (data ?? []).map((mapping) => ({
+    id: mapping.id,
+    objectType: mapping.object_type,
+    direction: mapping.direction,
+    nativeField: mapping.native_field,
+    externalField: mapping.external_field,
+    transformKey: mapping.transform_key,
+    defaultValue: mapping.default_value,
+    isRequired: mapping.is_required,
+    isActive: mapping.is_active,
+  })) as ConnectorFieldMapping[];
+}
+
 export async function enqueueInitialConnectorSync(
   admin: SupabaseClient,
   scope: {
@@ -737,6 +765,28 @@ export async function processConnectorSyncJobs(limit = 20) {
         continue;
       }
     }
+    let fieldMappings: ConnectorFieldMapping[];
+    try {
+      fieldMappings = await fieldMappingsFor(admin, job);
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : "Could not load field mappings.";
+      await admin
+        .from("integration_sync_jobs")
+        .update({
+          status: "failed",
+          attempts: job.attempts + 1,
+          last_error: detail,
+          scheduled_for: new Date(
+            Date.now() + connectorRetryDelayMinutes(job.attempts + 1) * 60_000,
+          ).toISOString(),
+          locked_at: null,
+          locked_by: null,
+        })
+        .eq("id", job.id);
+      failed += 1;
+      continue;
+    }
     const outcome = await executeConnectorSyncJob({
       adapter,
       context: {
@@ -748,6 +798,7 @@ export async function processConnectorSyncJobs(limit = 20) {
       },
       job,
       repository: repositoryFor(admin, job),
+      fieldMappings,
     });
     if (outcome.ok) {
       await admin

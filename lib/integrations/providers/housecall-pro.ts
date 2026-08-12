@@ -1,4 +1,5 @@
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
+import { connectorPushPayload } from "../connectors/field-mappings.ts";
 
 export type HousecallProCredentials = { apiKey: string };
 const BASE = "https://api.housecallpro.com";
@@ -63,7 +64,8 @@ async function pull(credentials: HousecallProCredentials, objectType: CanonicalO
 
 async function push(credentials: HousecallProCredentials, input: ConnectorPushInput) {
   if (input.objectType !== "customer" || input.operation !== "create") throw new Error(`Housecall Pro cannot ${input.operation} ${input.objectType}.`);
-  const response = await hcpFetch(credentials, "/customers", { method: "POST", body: JSON.stringify({ first_name: input.data.first_name ?? input.data.name, last_name: input.data.last_name ?? "", email: input.data.email ?? null, mobile_number: input.data.phone ?? null }) });
+  const body = connectorPushPayload(input.externalData, { first_name: input.data.first_name ?? input.data.name, last_name: input.data.last_name ?? "", email: input.data.email ?? null, mobile_number: input.data.phone ?? null });
+  const response = await hcpFetch(credentials, "/customers", { method: "POST", body: JSON.stringify(body) });
   const created = await response.json() as Record<string, unknown>;
   return { externalObjectId: String(created.id ?? ""), source: created };
 }

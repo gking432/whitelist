@@ -5,6 +5,13 @@ import { revalidatePath } from "next/cache";
 import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
 import { RUNTIME_MODES } from "@/lib/clients/constants";
+import { validateConnectorFieldMapping } from "@/lib/integrations/connectors/field-mappings";
+import {
+  CANONICAL_OBJECT_TYPES,
+  CONNECTOR_MAPPING_DIRECTIONS,
+  CONNECTOR_MAPPING_TRANSFORMS,
+  type ConnectorFieldMapping,
+} from "@/lib/integrations/connectors/types";
 import type { FormState } from "@/lib/forms/state";
 import {
   encryptSecret,
@@ -364,6 +371,102 @@ export async function setConnectionPaused(
       status: "success",
       message: paused ? "Connection paused." : "Connection resumed.",
     };
+  } catch (error) {
+    return deniedState(error);
+  }
+}
+
+function parseMappingDefault(value: string): unknown {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+export async function createConnectionFieldMapping(
+  clientId: string,
+  connectionId: string,
+  _previousState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const authState = await getAuthState();
+  if (!authState.user) return { status: "error", message: "Sign in to manage integrations." };
+
+  const transform = String(formData.get("transform_key") ?? "");
+  const mapping: ConnectorFieldMapping = {
+    objectType: String(formData.get("object_type") ?? "") as ConnectorFieldMapping["objectType"],
+    direction: String(formData.get("direction") ?? "") as ConnectorFieldMapping["direction"],
+    nativeField: String(formData.get("native_field") ?? "").trim(),
+    externalField: String(formData.get("external_field") ?? "").trim(),
+    transformKey: transform ? transform as ConnectorFieldMapping["transformKey"] : null,
+    defaultValue: parseMappingDefault(String(formData.get("default_value") ?? "").trim()),
+    isRequired: formData.get("is_required") === "on",
+    isActive: true,
+  };
+  const issues = validateConnectorFieldMapping(mapping);
+  if (issues.length) return { status: "error", message: issues[0] };
+  if (!CANONICAL_OBJECT_TYPES.includes(mapping.objectType) ||
+      !CONNECTOR_MAPPING_DIRECTIONS.includes(mapping.direction) ||
+      (mapping.transformKey && !CONNECTOR_MAPPING_TRANSFORMS.includes(mapping.transformKey))) {
+    return { status: "error", message: "Choose valid mapping options." };
+  }
+
+  try {
+    const loaded = await loadConnectionForUpdate(authState.user.id, clientId, connectionId);
+    if (!loaded) return { status: "error", message: "Connection not found." };
+    const { access, supabase, connection } = loaded;
+    const { error } = await supabase.from("integration_field_mappings").insert({
+      partner_id: access.partnerId,
+      client_id: clientId,
+      connection_id: connectionId,
+      object_type: mapping.objectType,
+      direction: mapping.direction,
+      native_field: mapping.nativeField,
+      external_field: mapping.externalField,
+      transform_key: mapping.transformKey,
+      default_value: mapping.defaultValue,
+      is_required: mapping.isRequired,
+      is_active: true,
+    });
+    if (error) {
+      return { status: "error", message: error.code === "23505" ? "That mapping already exists." : "The mapping could not be saved." };
+    }
+    await recordAuditEvent({
+      actor: access,
+      action: "integration.field_mapping_created",
+      targetType: "integration_connection",
+      targetId: connectionId,
+      summary: `Added ${mapping.objectType} mapping to "${connection.display_name}".`,
+      afterSnapshot: { object_type: mapping.objectType, direction: mapping.direction, native_field: mapping.nativeField, external_field: mapping.externalField, transform_key: mapping.transformKey, is_required: mapping.isRequired },
+    });
+    revalidatePath(`/partner/clients/${clientId}/integrations/${connectionId}`);
+    return { status: "success", message: "Field mapping added." };
+  } catch (error) {
+    return deniedState(error);
+  }
+}
+
+export async function deleteConnectionFieldMapping(
+  clientId: string,
+  connectionId: string,
+  mappingId: string,
+): Promise<FormState> {
+  const authState = await getAuthState();
+  if (!authState.user) return { status: "error", message: "Sign in to manage integrations." };
+  try {
+    const loaded = await loadConnectionForUpdate(authState.user.id, clientId, connectionId);
+    if (!loaded) return { status: "error", message: "Connection not found." };
+    const { access, supabase, connection } = loaded;
+    const { data, error } = await supabase.from("integration_field_mappings")
+      .delete().eq("id", mappingId).eq("connection_id", connectionId)
+      .eq("client_id", clientId).eq("partner_id", access.partnerId)
+      .select("id, object_type, direction, native_field, external_field").maybeSingle();
+    if (error || !data) return { status: "error", message: "The mapping could not be removed." };
+    await recordAuditEvent({ actor: access, action: "integration.field_mapping_deleted", targetType: "integration_connection", targetId: connectionId, summary: `Removed a field mapping from "${connection.display_name}".`, beforeSnapshot: data });
+    revalidatePath(`/partner/clients/${clientId}/integrations/${connectionId}`);
+    return { status: "success", message: "Field mapping removed." };
   } catch (error) {
     return deniedState(error);
   }

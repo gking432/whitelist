@@ -1,5 +1,6 @@
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
 import type { JobberCredentials } from "./jobber-oauth";
+import { connectorPushPayload } from "../connectors/field-mappings.ts";
 
 const ENDPOINT = "https://api.getjobber.com/api/graphql";
 const API_VERSION = "2025-04-16";
@@ -40,7 +41,8 @@ async function pull(credentials: JobberCredentials, objectType: CanonicalObjectT
 
 async function push(credentials: JobberCredentials, input: ConnectorPushInput) {
   if (input.objectType !== "customer" || input.operation !== "create") throw new Error(`Jobber cannot ${input.operation} ${input.objectType}.`);
-  const data = await graph(credentials, `mutation CreateClient($input: ClientCreateInput!) { clientCreate(input: $input) { client { id } userErrors { message path } } }`, { input: { clientProperties: { firstName: input.data.first_name ?? input.data.name, lastName: input.data.last_name ?? "", emails: input.data.email ? [{ address: input.data.email, primary: true }] : [], phones: input.data.phone ? [{ number: input.data.phone, primary: true }] : [] } } });
+  const variables = connectorPushPayload(input.externalData, { clientProperties: { firstName: input.data.first_name ?? input.data.name, lastName: input.data.last_name ?? "", emails: input.data.email ? [{ address: input.data.email, primary: true }] : [], phones: input.data.phone ? [{ number: input.data.phone, primary: true }] : [] } });
+  const data = await graph(credentials, `mutation CreateClient($input: ClientCreateInput!) { clientCreate(input: $input) { client { id } userErrors { message path } } }`, { input: variables });
   const result = (data.clientCreate ?? {}) as { client?: { id?: string }; userErrors?: { message?: string }[] };
   if (result.userErrors?.length) throw new Error(result.userErrors[0]?.message ?? "Jobber client creation failed.");
   return { externalObjectId: result.client?.id ?? "", source: result as unknown as Record<string, unknown> };

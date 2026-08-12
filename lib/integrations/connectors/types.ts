@@ -71,6 +71,34 @@ export type CanonicalRecord = {
   source: Record<string, unknown>;
 };
 
+export const CONNECTOR_MAPPING_DIRECTIONS = ["pull", "push", "both"] as const;
+export type ConnectorMappingDirection =
+  (typeof CONNECTOR_MAPPING_DIRECTIONS)[number];
+
+export const CONNECTOR_MAPPING_TRANSFORMS = [
+  "trim",
+  "lowercase",
+  "uppercase",
+  "phone_digits",
+  "number",
+  "boolean",
+  "iso_datetime",
+] as const;
+export type ConnectorMappingTransform =
+  (typeof CONNECTOR_MAPPING_TRANSFORMS)[number];
+
+export type ConnectorFieldMapping = {
+  id?: string;
+  objectType: CanonicalObjectType;
+  direction: ConnectorMappingDirection;
+  nativeField: string;
+  externalField: string;
+  transformKey?: ConnectorMappingTransform | null;
+  defaultValue?: unknown;
+  isRequired: boolean;
+  isActive: boolean;
+};
+
 export type ConnectorPage = {
   records: CanonicalRecord[];
   nextCursor: Record<string, unknown> | null;
@@ -98,6 +126,7 @@ export type ConnectorPushInput = {
   nativeObjectId: string;
   externalObjectId?: string | null;
   data: Record<string, unknown>;
+  externalData?: Record<string, unknown>;
   idempotencyKey: string;
 };
 

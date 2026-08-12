@@ -51,6 +51,7 @@ stack.
 | Marketing and reputation connectors | Real contracts — Meta Lead Ads/webhooks and campaign metrics; Google Ads lead forms/campaign metrics; GBP, Podium, and Birdeye reviews; approval-gated replies where supported |
 | Forwarded lead inbox | Real — Resend Receiving signature validation, unique per-client address, message retrieval/parsing, idempotent intake, and normal AI workflow routing |
 | Integration request and escalation center | Real — client-to-partner support, partner-to-owner escalation, durable triage/routing, guarded Codex handoff, versioned requester validation, tenant-scoped release flags, repeatable lifecycle notifications, atomic release/rollback, and a corrected-revision path |
+| Per-client connector field mapping | Real — partner-scoped editor, pull/push/bidirectional mappings, nested provider paths, required/default values, bounded transforms, sync-worker enforcement, and protected connector invariants |
 | Audit + redaction | All new actions audited; every logged payload passes redactAuditValue |
 
 ## Preview / not built (still honest)
@@ -63,7 +64,6 @@ stack.
 | Browser extension / third-party CRM overlay | Not built. The Electron desktop assistant is the supported V1 overlay; direct CRM write-back is preferred whenever a connector supports it |
 | Provider live verification | Connector contracts are implemented and tested locally, but each vendor still needs production app approval and at least one real account pilot before being labeled live-verified |
 | Marketplace native APIs | Angi, Thumbtack, Yelp, and similar broad lead APIs remain vendor-restricted; private forwarded email and signed webhook intake are the supported V1 paths |
-| Per-client custom field mapping | Defaults only (docs/16) |
 | Billing/usage pricing on packages | Not built by request |
 
 ## Hardening notes (docs/08 checklist)

@@ -81,4 +81,8 @@ Lead intake normalizes `name`, `email`, `phone`, `address`, and `message`.
 HubSpot maps names to `firstname`/`lastname`; GoHighLevel maps them to
 `firstName`/`lastName`; the signed webhook uses
 `data.contact.first_name`/`last_name`. Empty fields are omitted and never clear
-existing provider data. Per-client custom field mapping is not part of V1.
+existing provider data. Partner owners, admins, and implementers can add
+per-client pull, push, or bidirectional mappings from each connection page.
+Mappings support nested API paths, required/default values, and bounded
+normalization transforms. Connector-owned identifiers and idempotency fields
+cannot be overridden by a custom mapping.

@@ -23,6 +23,14 @@ import {
 } from "../lib/integrations/connectors/sync-executor.ts";
 import { planLeadConnectorWriteback } from "../lib/integrations/connectors/writeback.ts";
 import {
+  applyPullFieldMappings,
+  applyPushFieldMappings,
+  connectorPushParams,
+  connectorPushPayload,
+  validConnectorFieldPath,
+} from "../lib/integrations/connectors/field-mappings.ts";
+import type { ConnectorFieldMapping } from "../lib/integrations/connectors/types.ts";
+import {
   connectorLeaseCutoff,
   shouldProjectConnectorRecord,
   staleConnectorJobDisposition,
@@ -272,6 +280,84 @@ test("canonical records reject missing ids and invalid timestamps", () => {
   );
 });
 
+const mappingFixture: ConnectorFieldMapping[] = [
+  {
+    objectType: "customer",
+    direction: "both",
+    nativeField: "customer_type",
+    externalField: "customFields.customerType",
+    transformKey: "lowercase",
+    isRequired: true,
+    isActive: true,
+  },
+  {
+    objectType: "customer",
+    direction: "push",
+    nativeField: "phone",
+    externalField: "customFields.phoneDigits",
+    transformKey: "phone_digits",
+    isRequired: false,
+    isActive: true,
+  },
+];
+
+test("connector field mappings normalize pull and push data", () => {
+  const pulled = applyPullFieldMappings(
+    {
+      objectType: "customer",
+      externalId: "external-1",
+      data: { name: "Jamie" },
+      source: { customFields: { customerType: "  Commercial " } },
+    },
+    mappingFixture,
+  );
+  assert.deepEqual(pulled.data, {
+    name: "Jamie",
+    customer_type: "commercial",
+  });
+
+  const pushed = applyPushFieldMappings(
+    "customer",
+    { customer_type: " Residential ", phone: "+1 (312) 555-0100" },
+    mappingFixture,
+  );
+  assert.deepEqual(pushed, {
+    customFields: {
+      customerType: "residential",
+      phoneDigits: "13125550100",
+    },
+  });
+});
+
+test("field mapping paths and required values fail closed", () => {
+  assert.equal(validConnectorFieldPath("customFields.customerType"), true);
+  assert.equal(validConnectorFieldPath("__proto__.polluted"), false);
+  assert.equal(validConnectorFieldPath("customer[0]"), false);
+  assert.throws(
+    () => applyPushFieldMappings("customer", {}, mappingFixture),
+    /Required mapping customer_type -> customFields.customerType has no value/,
+  );
+});
+
+test("standard connector fields override mapped provider payload fields", () => {
+  assert.deepEqual(
+    connectorPushPayload(
+      { metadata: { customer_type: "commercial", northstar_id: "unsafe" } },
+      { metadata: { northstar_id: "native-1" }, name: "Jamie" },
+    ),
+    {
+      metadata: { customer_type: "commercial", northstar_id: "native-1" },
+      name: "Jamie",
+    },
+  );
+  const params = connectorPushParams(
+    { metadata: { customer_type: "commercial" } },
+    { line_items: [{ quantity: 1 }] },
+  );
+  assert.equal(params.get("metadata[customer_type]"), "commercial");
+  assert.equal(params.get("line_items[0][quantity]"), "1");
+});
+
 test("registry rejects invalid adapters and duplicate keys", () => {
   clearConnectorRegistryForTests();
   const adapter = {
@@ -297,7 +383,7 @@ test("registry rejects invalid adapters and duplicate keys", () => {
 });
 
 test("sync executor validates and stores pulled canonical records", async () => {
-  const saved: string[] = [];
+  const saved: Record<string, unknown>[] = [];
   let cursor: Record<string, unknown> | null = null;
   const adapter = {
     manifest: {
@@ -320,7 +406,11 @@ test("sync executor validates and stores pulled canonical records", async () => 
             objectType: "customer",
             externalId: "external-1",
             data: { name: "Jamie" },
-            source: { id: "external-1", name: "Jamie" },
+            source: {
+              id: "external-1",
+              name: "Jamie",
+              customFields: { customerType: "Commercial" },
+            },
           },
         ],
         nextCursor: { after: "external-1" },
@@ -348,17 +438,18 @@ test("sync executor validates and stores pulled canonical records", async () => 
     },
     repository: {
       async saveCanonicalRecord(record) {
-        saved.push(record.externalId);
+        saved.push(record.data);
       },
       async saveCursor(next) {
         cursor = next;
       },
       async saveObjectLink() {},
     },
+    fieldMappings: mappingFixture,
   });
 
   assert.equal(outcome.ok, true);
-  assert.deepEqual(saved, ["external-1"]);
+  assert.deepEqual(saved, [{ name: "Jamie", customer_type: "commercial" }]);
   assert.deepEqual(cursor, { after: "external-1" });
 });
 
@@ -413,6 +504,57 @@ test("sync executor rejects malformed push jobs without calling provider", async
   assert.equal(pushed, false);
   assert.equal(connectorRetryDelayMinutes(0), 1);
   assert.equal(connectorRetryDelayMinutes(20), 60);
+});
+
+test("sync executor passes mapped provider data to outbound adapters", async () => {
+  let externalData: Record<string, unknown> | undefined;
+  const adapter = {
+    manifest: {
+      key: "mapped_push_fixture",
+      name: "Mapped push fixture",
+      category: "crm",
+      description: "Mapped push contract fixture.",
+      authStrategy: "api_key",
+      capabilities: ["customer.create"],
+      verificationStatus: "contract_verified",
+      requestable: false,
+    },
+    async testConnection() { return { ok: true, detail: "ok" }; },
+    async pushRecord(_context, input) {
+      externalData = input.externalData;
+      return { externalObjectId: "external-created" };
+    },
+  } satisfies ConnectorAdapter;
+  const outcome = await executeConnectorSyncJob({
+    adapter,
+    context: { connectionId: "connection", partnerId: "partner", clientId: "client", credentials: {}, config: {} },
+    job: {
+      id: "mapped-job",
+      direction: "push",
+      objectType: "customer",
+      operation: "create",
+      attempts: 0,
+      maxAttempts: 5,
+      payload: {
+        nativeObjectId: "customer-1",
+        idempotencyKey: "customer-1-create",
+        data: { customer_type: "Commercial", phone: "+1 (312) 555-0100" },
+      },
+    },
+    repository: {
+      async saveCanonicalRecord() {},
+      async saveCursor() {},
+      async saveObjectLink() {},
+    },
+    fieldMappings: mappingFixture,
+  });
+  assert.equal(outcome.ok, true);
+  assert.deepEqual(externalData, {
+    customFields: {
+      customerType: "commercial",
+      phoneDigits: "13125550100",
+    },
+  });
 });
 
 test("sync executor refuses push operations outside the provider contract", async () => {

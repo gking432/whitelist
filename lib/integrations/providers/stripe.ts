@@ -1,4 +1,5 @@
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
+import { connectorPushParams } from "../connectors/field-mappings.ts";
 
 export type StripeCredentials = { apiKey: string };
 const BASE = "https://api.stripe.com/v1";
@@ -25,16 +26,14 @@ async function pull(credentials: StripeCredentials, objectType: CanonicalObjectT
 
 async function push(credentials: StripeCredentials, input: ConnectorPushInput) {
   if (input.objectType === "customer" && input.operation === "create") {
-    const params = new URLSearchParams();
-    for (const key of ["name", "email", "phone"] as const) if (input.data[key]) params.set(key, String(input.data[key]));
-    params.set("metadata[northstar_id]", input.nativeObjectId);
+    const params = connectorPushParams(input.externalData, { name: input.data.name, email: input.data.email, phone: input.data.phone, metadata: { northstar_id: input.nativeObjectId } });
     const created = await (await stripeFetch(credentials, "/customers", { method: "POST", headers: { "Idempotency-Key": input.idempotencyKey }, body: params })).json() as Record<string, unknown>;
     return { externalObjectId: String(created.id ?? ""), source: created };
   }
   if (input.objectType === "payment" && input.operation === "create") {
     const amount = Number(input.data.amount ?? 0);
     if (!Number.isInteger(amount) || amount < 50) throw new Error("Stripe payment link amount must be an integer in cents.");
-    const params = new URLSearchParams({ "line_items[0][price_data][currency]": String(input.data.currency ?? "usd"), "line_items[0][price_data][unit_amount]": String(amount), "line_items[0][price_data][product_data][name]": String(input.data.description ?? "Service payment"), "line_items[0][quantity]": "1", "metadata[northstar_id]": input.nativeObjectId });
+    const params = connectorPushParams(input.externalData, { line_items: [{ price_data: { currency: String(input.data.currency ?? "usd"), unit_amount: amount, product_data: { name: String(input.data.description ?? "Service payment") } }, quantity: 1 }], metadata: { northstar_id: input.nativeObjectId } });
     const created = await (await stripeFetch(credentials, "/payment_links", { method: "POST", headers: { "Idempotency-Key": input.idempotencyKey }, body: params })).json() as Record<string, unknown>;
     return { externalObjectId: String(created.id ?? ""), source: created };
   }

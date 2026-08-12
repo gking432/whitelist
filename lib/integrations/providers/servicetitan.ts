@@ -5,6 +5,7 @@ import type {
   ConnectorPage,
   ConnectorPushInput,
 } from "../connectors/types";
+import { connectorPushPayload } from "../connectors/field-mappings.ts";
 
 export type ServiceTitanCredentials = {
   clientId: string;
@@ -163,7 +164,7 @@ async function push(
       `/crm/v2/tenant/${tenant}/leads`,
       {
         method: "POST",
-        body: JSON.stringify({
+        body: JSON.stringify(connectorPushPayload(input.externalData, {
           customerId: input.data.customer_id ?? null,
           locationId: input.data.location_id ?? null,
           businessUnitId:
@@ -171,7 +172,7 @@ async function push(
           jobTypeId: input.data.job_type_id ?? credentials.jobTypeId,
           priority: input.data.priority ?? "Normal",
           summary: input.data.description ?? input.data.summary ?? "New lead",
-        }),
+        })),
       },
     );
     const created = (await response.json()) as Record<string, unknown>;

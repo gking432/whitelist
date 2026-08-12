@@ -1,4 +1,5 @@
-export const EXPECTED_SCHEMA_VERSION = "20260812050000_production_schema_marker";
+export const EXPECTED_SCHEMA_VERSION =
+  "20260812053000_connector_field_mapping_runtime";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

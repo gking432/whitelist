@@ -5,6 +5,7 @@ import type {
   ConnectorPage,
   ConnectorPushInput,
 } from "../connectors/types";
+import { connectorPushPayload } from "../connectors/field-mappings.ts";
 import {
   mintWorkspaceAccessToken,
   type WorkspaceCredentials,
@@ -189,11 +190,11 @@ async function pushGoogleRecord(
   if (input.objectType === "customer" && input.operation === "create") {
     const response = await googleFetch(credentials, `${PEOPLE}/people:createContact`, {
       method: "POST",
-      body: JSON.stringify({
+      body: JSON.stringify(connectorPushPayload(input.externalData, {
         names: [{ givenName: text(input.data, "first_name"), familyName: text(input.data, "last_name"), displayName: text(input.data, "name") }],
         emailAddresses: text(input.data, "email") ? [{ value: text(input.data, "email") }] : [],
         phoneNumbers: text(input.data, "phone") ? [{ value: text(input.data, "phone") }] : [],
-      }),
+      })),
     });
     const created = (await response.json()) as { resourceName?: string };
     return { externalObjectId: String(created.resourceName ?? "").replace("people/", ""), source: created };
@@ -210,12 +211,12 @@ async function pushGoogleRecord(
       `${CALENDAR}/calendars/primary/events${eventId ? `/${encodeURIComponent(eventId)}` : ""}`,
       {
         method: eventId ? "PATCH" : "POST",
-        body: JSON.stringify({
+        body: JSON.stringify(connectorPushPayload(input.externalData, {
           summary: text(input.data, "title") || "Appointment",
           description: text(input.data, "description"),
           start: { dateTime: text(input.data, "start_at") },
           end: { dateTime: text(input.data, "end_at") },
-        }),
+        })),
       },
     );
     const created = (await response.json()) as { id?: string; updated?: string };
@@ -229,7 +230,7 @@ async function pushGoogleRecord(
     const raw = [`To: ${to}`, `Subject: ${subject}`, "Content-Type: text/plain; charset=utf-8", "", body].join("\r\n");
     const response = await googleFetch(credentials, `${GMAIL}/users/me/messages/send`, {
       method: "POST",
-      body: JSON.stringify({ raw: base64url(raw) }),
+      body: JSON.stringify(connectorPushPayload(input.externalData, { raw: base64url(raw) })),
     });
     const sent = (await response.json()) as { id?: string; threadId?: string };
     return { externalObjectId: sent.id ?? "", externalParentId: sent.threadId ?? null, source: sent };

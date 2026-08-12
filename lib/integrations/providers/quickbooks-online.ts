@@ -1,5 +1,6 @@
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
 import type { QuickBooksCredentials } from "./commerce-oauth";
+import { connectorPushPayload } from "../connectors/field-mappings.ts";
 
 const BASE = "https://quickbooks.api.intuit.com/v3/company";
 
@@ -48,7 +49,7 @@ async function pull(credentials: QuickBooksCredentials, objectType: CanonicalObj
 
 async function push(credentials: QuickBooksCredentials, input: ConnectorPushInput) {
   if (input.objectType !== "customer" || input.operation !== "create") throw new Error(`QuickBooks cannot ${input.operation} ${input.objectType}.`);
-  const body = { DisplayName: input.data.name ?? [input.data.first_name, input.data.last_name].filter(Boolean).join(" "), GivenName: input.data.first_name ?? undefined, FamilyName: input.data.last_name ?? undefined, PrimaryEmailAddr: input.data.email ? { Address: input.data.email } : undefined, PrimaryPhone: input.data.phone ? { FreeFormNumber: input.data.phone } : undefined };
+  const body = connectorPushPayload(input.externalData, { DisplayName: input.data.name ?? [input.data.first_name, input.data.last_name].filter(Boolean).join(" "), GivenName: input.data.first_name ?? undefined, FamilyName: input.data.last_name ?? undefined, PrimaryEmailAddr: input.data.email ? { Address: input.data.email } : undefined, PrimaryPhone: input.data.phone ? { FreeFormNumber: input.data.phone } : undefined });
   const created = await (await qboFetch(credentials, `/customer?minorversion=75&requestid=${encodeURIComponent(input.idempotencyKey)}`, { method: "POST", body: JSON.stringify(body) })).json() as { Customer?: Record<string, unknown> };
   return { externalObjectId: String(created.Customer?.Id ?? ""), source: created.Customer };
 }

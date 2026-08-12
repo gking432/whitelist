@@ -3,6 +3,10 @@ import { ArrowLeft } from "lucide-react";
 
 import { ChatWidgetSetup } from "@/components/partner/chat-widget-setup";
 import { ConnectionControls } from "@/components/partner/connection-controls";
+import {
+  FieldMappingEditor,
+  type FieldMappingRow,
+} from "@/components/partner/field-mapping-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
@@ -49,7 +53,7 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
     return null;
   }
 
-  const [connectionResult, secretResult, eventsResult] = await Promise.all([
+  const [connectionResult, secretResult, eventsResult, mappingsResult] = await Promise.all([
     supabase
       .from("integration_connections")
       .select(
@@ -72,6 +76,13 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
       .eq("connection_id", connectionId)
       .order("created_at", { ascending: false })
       .limit(25),
+    supabase
+      .from("integration_field_mappings")
+      .select("id, object_type, direction, native_field, external_field, transform_key, default_value, is_required, is_active")
+      .eq("connection_id", connectionId)
+      .eq("client_id", clientId)
+      .order("object_type")
+      .order("native_field"),
   ]);
 
   const connection = connectionResult.data as ConnectionRow | null;
@@ -95,6 +106,7 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
 
   const secret = secretResult.data;
   const events = (eventsResult.data ?? []) as IntegrationEventRecord[];
+  const mappings = (mappingsResult.data ?? []) as FieldMappingRow[];
   const isInbound =
     Boolean(connection.provider?.supports_inbound);
   const endpointUrl = isInbound
@@ -241,6 +253,13 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
               </div>
             )}
           </section>
+
+          <FieldMappingEditor
+            clientId={clientId}
+            connectionId={connection.id}
+            mappings={mappings}
+            canManage={access.canManageIntegrations}
+          />
         </div>
 
         <aside className="rounded-lg border bg-card p-5">
