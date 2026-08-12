@@ -48,7 +48,14 @@ npm run verify:desktop-bundle
 `verify:release` checks the Render topology, database security and restore
 drills, and clean builds of all three production Docker images. The web image
 is launched on an ephemeral local port and its standalone server is smoke
-tested. The connector scheduler also
+tested. The jobs image enforces its runtime configuration, while the voice
+image must pass its health endpoint and reject an unauthenticated stream. All
+temporary verification containers and images are removed after each run.
+`verify:release-journey` launches the built production server itself, creates
+isolated owner, partner, client, and customer fixtures, verifies the complete
+package/intake/approval/support path, removes those fixtures, and stops the
+server. GitHub CI runs that same journey against a fresh local Supabase stack.
+The connector scheduler also
 recovers expired read leases within the configured retry limit. An expired
 external write is dead-lettered for vendor reconciliation instead of replayed,
 because its delivery outcome may be unknown.

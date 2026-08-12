@@ -77,6 +77,7 @@ for (const script of [
   "verify:desktop-bundle",
   "verify:release-journey",
   "verify:web-image",
+  "verify:service-images",
   "verify:release-images",
 ]) {
   if (!packageJson.scripts?.[script])

@@ -21,6 +21,9 @@ function run(command, args, options = {}) {
 
 function cleanup() {
   spawnSync("docker", ["rm", "--force", container], { stdio: "ignore" });
+  spawnSync("docker", ["image", "rm", "--force", image], {
+    stdio: "ignore",
+  });
 }
 
 try {

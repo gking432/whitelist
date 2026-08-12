@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:net";
+import { access } from "node:fs/promises";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -10,9 +13,7 @@ import { triageAndPersistSupportTicket } from "../lib/support/service.ts";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const appUrl = (
-  process.env.RELEASE_JOURNEY_APP_URL ?? "http://127.0.0.1:3010"
-).replace(/\/$/, "");
+let appUrl = process.env.RELEASE_JOURNEY_APP_URL?.replace(/\/$/, "") ?? "";
 
 if (!url || !anonKey || !serviceKey) {
   throw new Error("Local Supabase configuration is required.");
@@ -72,6 +73,84 @@ async function fixtureCount(table: string, column: string, value: string) {
     .eq(column, value);
   assert.ifError(error);
   return count ?? 0;
+}
+
+async function availablePort() {
+  return new Promise<number>((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close((error) => (error ? reject(error) : resolve(port)));
+    });
+  });
+}
+
+async function startReleaseServer() {
+  const serverPath = ".next/standalone/server.js";
+  try {
+    await access(serverPath);
+  } catch {
+    throw new Error(
+      "The production application is not built. Run `npm run build` before the release journey.",
+    );
+  }
+
+  const port = await availablePort();
+  appUrl = `http://127.0.0.1:${port}`;
+  const output: string[] = [];
+  const child = spawn(process.execPath, [serverPath], {
+    env: {
+      ...process.env,
+      APP_URL: appUrl,
+      HOSTNAME: "127.0.0.1",
+      PORT: String(port),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  for (const stream of [child.stdout, child.stderr]) {
+    stream?.on("data", (chunk) => {
+      output.push(String(chunk));
+      if (output.length > 40) output.shift();
+    });
+  }
+
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (child.exitCode !== null) {
+      throw new Error(
+        `Release server exited before becoming healthy.\n${output.join("")}`,
+      );
+    }
+    try {
+      const health = await fetch(`${appUrl}/api/health`, {
+        signal: AbortSignal.timeout(1_000),
+      });
+      if (health.ok) return child;
+    } catch {
+      // Production startup can take a moment on a cold build.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  child.kill("SIGTERM");
+  throw new Error(
+    `Release server did not become healthy at ${appUrl}.\n${output.join("")}`,
+  );
+}
+
+async function stopReleaseServer(child: ChildProcess | null) {
+  if (!child || child.exitCode !== null) return;
+  child.kill("SIGTERM");
+  await Promise.race([
+    new Promise<void>((resolve) => child.once("exit", () => resolve())),
+    new Promise<void>((resolve) =>
+      setTimeout(() => {
+        if (child.exitCode === null) child.kill("SIGKILL");
+        resolve();
+      }, 5_000),
+    ),
+  ]);
 }
 
 async function main() {
@@ -523,7 +602,16 @@ async function main() {
   }
 }
 
-void main().catch((error) => {
+async function run() {
+  const releaseServer = appUrl ? null : await startReleaseServer();
+  try {
+    await main();
+  } finally {
+    await stopReleaseServer(releaseServer);
+  }
+}
+
+void run().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

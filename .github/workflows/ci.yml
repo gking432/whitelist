@@ -45,8 +45,21 @@ jobs:
           version: latest
       - run: npm ci
       - run: supabase start
+      - name: Export local Supabase environment
+        shell: bash
+        run: |
+          eval "$(supabase status -o env)"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
       - run: npm run verify:security
       - run: npm run verify:restore
+      - name: Build and verify the complete release journey
+        run: |
+          npm run build
+          npm run verify:release-journey
       - if: always()
         run: supabase stop --no-backup
 
