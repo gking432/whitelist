@@ -31,6 +31,9 @@ Northstar uses three Render services:
    and connect the accounts listed in the client's Setup workspace.
 8. Keep every client in sandbox until its Test Center passes. Switch an
    integration to live only after a real inbound and outbound pilot succeeds.
+9. In the owner Control Room, open **Provider pilots**, record the required
+   real-account evidence, and promote only the provider whose complete pilot
+   passed. Connected credentials alone do not make a connector live verified.
 
 Use paid always-on instances for phone testing. Sleeping services can add enough
 cold-start delay for an inbound phone call to fail before the app answers.

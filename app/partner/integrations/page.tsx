@@ -17,16 +17,24 @@ export default async function PartnerIntegrationsPage() {
   const supabase = await createSupabaseServerClient();
   if (!supabase || !access.partnerId) return null;
 
-  const [partnerResult, clientsResult, requestsResult] = await Promise.all([
+  const [partnerResult, clientsResult, requestsResult, providersResult] = await Promise.all([
     supabase.from("partners").select("name").eq("id", access.partnerId).maybeSingle(),
     supabase.from("client_businesses").select("id, name").eq("partner_id", access.partnerId).eq("account_kind", "managed_client").neq("status", "archived").order("name"),
     supabase.from("integration_requests").select("id, application_name, status, priority, release_version, updated_at, client:client_businesses!integration_requests_client_id_fkey(name)").eq("partner_id", access.partnerId).order("updated_at", { ascending: false }),
+    supabase.from("integration_providers").select("provider_key, connector_status"),
   ]);
   if (requestsResult.error) throw new Error(`Could not load integration requests: ${requestsResult.error.message}`);
+  if (providersResult.error) throw new Error(`Could not load provider status: ${providersResult.error.message}`);
   const partner = partnerResult.data;
   const clients = clientsResult.data;
   const requests = requestsResult.data;
   const ready = CONNECTOR_CATALOG.filter((item) => item.verificationStatus === "contract_verified" || item.verificationStatus === "live_verified");
+  const providerStatus = new Map(
+    (providersResult.data ?? []).map((provider) => [
+      provider.provider_key,
+      provider.connector_status,
+    ]),
+  );
 
   return (
     <AppShell organizationName={partner?.name ?? "Partner workspace"} userEmail={user.email ?? ""} activeNav="integrations">
@@ -39,7 +47,10 @@ export default async function PartnerIntegrationsPage() {
         <section className="overflow-hidden rounded-lg border bg-card">
           <div className="border-b px-5 py-4"><h2 className="font-semibold">Supported foundation</h2><p className="mt-1 text-xs text-muted-foreground">These connectors already have working application code. Real use still requires the client or partner account credentials.</p></div>
           <div className="grid sm:grid-cols-2">
-            {ready.map((item) => <div key={item.key} className="border-b px-5 py-4 sm:border-r"><div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold">{item.name}</p><Badge variant="outline">Available</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</p></div>)}
+            {ready.map((item) => {
+              const status = providerStatus.get(item.key) ?? item.verificationStatus;
+              return <div key={item.key} className="border-b px-5 py-4 sm:border-r"><div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold">{item.name}</p><Badge variant="outline">{status === "live_verified" ? "Live verified" : "Available"}</Badge></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</p></div>;
+            })}
           </div>
         </section>
 

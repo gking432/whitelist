@@ -87,6 +87,8 @@ for (const [table, policy] of scopedPolicies) {
 const releaseFunctions = [
   "complete_connector_support_release(uuid,uuid,text,text)",
   "rollback_connector_support_release(uuid,uuid,text)",
+  "promote_provider_live_pilot(uuid,uuid)",
+  "revoke_provider_live_pilot(uuid,uuid,text)",
 ];
 
 for (const signature of releaseFunctions) {
@@ -120,6 +122,121 @@ if (releaseFlagsSecurity !== "true|1") {
   throw new Error("connector_release_flags must retain RLS and its scoped select policy.");
 }
 
+const providerPilotSecurity = query(`
+  select concat_ws('|',
+    c.relrowsecurity::text,
+    count(p.policyname) filter (
+      where p.cmd in ('INSERT', 'UPDATE')
+        and coalesce(p.with_check, '') like '%platform_owner%'
+        and coalesce(p.with_check, '') like '%platform_admin%'
+    )::text
+  )
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  left join pg_policies p
+    on p.schemaname = n.nspname and p.tablename = c.relname
+  where n.nspname = 'public'
+    and c.relname = 'provider_live_pilots'
+  group by c.relrowsecurity
+`);
+
+if (providerPilotSecurity !== "true|2") {
+  throw new Error(
+    "provider_live_pilots must retain RLS and platform-owner/admin write policies.",
+  );
+}
+
+query(`
+  begin;
+  do $$
+  declare
+    v_partner_id uuid;
+    v_client_id uuid;
+    v_provider_id uuid;
+    v_connection_id uuid;
+    v_inbound_event_id uuid;
+    v_outbound_event_id uuid;
+    v_pilot_id uuid;
+    v_result boolean;
+    v_status text;
+  begin
+    insert into public.partners (name, slug)
+    values ('Provider pilot verifier', 'provider-pilot-verifier-' || extensions.gen_random_uuid())
+    returning id into v_partner_id;
+
+    insert into public.client_businesses (partner_id, name, slug)
+    values (v_partner_id, 'Provider pilot client', 'provider-pilot-client')
+    returning id into v_client_id;
+
+    insert into public.integration_providers (
+      provider_key, display_name, category, supports_inbound,
+      supports_outbound, connector_status
+    ) values (
+      'provider_pilot_verifier_' || replace(extensions.gen_random_uuid()::text, '-', ''),
+      'Provider pilot verifier', 'test', true, true, 'contract_verified'
+    ) returning id into v_provider_id;
+
+    insert into public.integration_connections (
+      partner_id, client_id, provider_id, display_name, status,
+      runtime_mode, credential_status
+    ) values (
+      v_partner_id, v_client_id, v_provider_id, 'Verifier account',
+      'connected', 'live', 'configured'
+    ) returning id into v_connection_id;
+
+    insert into public.provider_live_pilots (
+      provider_id, connection_id, read_evidence, retry_evidence,
+      revocation_evidence
+    ) values (
+      v_provider_id, v_connection_id, 'Real account read passed.',
+      'Retry and idempotency passed.', 'Credential revocation passed.'
+    ) returning id into v_pilot_id;
+
+    select public.promote_provider_live_pilot(v_pilot_id, null)
+    into v_result;
+    if v_result then
+      raise exception 'Pilot promoted without required inbound and outbound evidence.';
+    end if;
+
+    insert into public.integration_events (
+      partner_id, client_id, connection_id, direction, event_type, status
+    ) values (
+      v_partner_id, v_client_id, v_connection_id,
+      'inbound', 'verification.inbound', 'processed'
+    ) returning id into v_inbound_event_id;
+
+    insert into public.integration_events (
+      partner_id, client_id, connection_id, direction, event_type, status
+    ) values (
+      v_partner_id, v_client_id, v_connection_id,
+      'outbound', 'verification.outbound', 'processed'
+    ) returning id into v_outbound_event_id;
+
+    update public.provider_live_pilots
+    set inbound_event_id = v_inbound_event_id,
+        outbound_event_id = v_outbound_event_id
+    where id = v_pilot_id;
+
+    select public.promote_provider_live_pilot(v_pilot_id, null)
+    into v_result;
+    select connector_status into v_status
+    from public.integration_providers where id = v_provider_id;
+    if not v_result or v_status <> 'live_verified' then
+      raise exception 'Complete provider pilot did not promote to live verified.';
+    end if;
+
+    select public.revoke_provider_live_pilot(
+      v_pilot_id, null, 'Verifier rollback after completed lifecycle.'
+    ) into v_result;
+    select connector_status into v_status
+    from public.integration_providers where id = v_provider_id;
+    if not v_result or v_status <> 'contract_verified' then
+      raise exception 'Revoked provider pilot did not restore contract verified status.';
+    end if;
+  end $$;
+  rollback;
+`);
+
 const clientSupportPolicy = query(`
   select (
     coalesce(qual, '') like '%origin = ''client''%'
@@ -138,5 +255,5 @@ if (clientSupportPolicy !== "true") {
 }
 
 console.log(
-  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, support tickets, and guarded connector releases are scoped.`,
+  `Database security verified: workflow runs, ${scopedPolicies.length} CRM/approval policies, support tickets, guarded connector releases, and provider live pilots are scoped.`,
 );

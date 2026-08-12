@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, Eye, LifeBuoy, PlugZap, ShieldCheck, TriangleAlert, UsersRound } from "lucide-react";
+import { Building2, Eye, FlaskConical, LifeBuoy, PlugZap, ShieldCheck, TriangleAlert, UsersRound } from "lucide-react";
 
 import { startPlatformImpersonation } from "@/app/impersonation/actions";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
@@ -101,6 +101,12 @@ export default async function ControlRoomPage() {
             <Link href="/control/integrations">
               <PlugZap aria-hidden="true" />
               Integration requests
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/control/provider-pilots">
+              <FlaskConical aria-hidden="true" />
+              Provider pilots
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm">

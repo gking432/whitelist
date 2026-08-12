@@ -65,6 +65,14 @@ client package installation, Twilio call/SMS, web lead, web chat, forwarded
 lead email, calendar availability/booking, CRM write-back, support escalation,
 and owner-controlled release approval.
 
+Record connector evidence in **Control Room → Provider pilots**. The platform
+automatically attaches the latest processed inbound and outbound events for the
+selected real connection. The owner records provider-read, retry/idempotency,
+and credential-revocation evidence; only then can the guarded promotion action
+mark that provider `live_verified`. Revocation returns the provider to
+`contract_verified` when no other passed pilot remains and preserves the old
+pilot as immutable history.
+
 Connector release completion records the externally reviewed version and
 enables its optional tenant-scoped feature flag atomically. Rollback disables
 that flag, reopens the support request, preserves the reason and audit event,
