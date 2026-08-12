@@ -88,3 +88,28 @@ jobs:
             -f "${{ matrix.dockerfile }}" \
             -t "northstar-${{ matrix.name }}:${{ github.sha }}" \
             .
+
+  desktop-bundles:
+    name: desktop (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-14
+            build: desktop:dist:mac
+          - platform: windows
+            runner: windows-latest
+            build: desktop:dist:win
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ${{ matrix.build }}
+      - run: npm run verify:desktop-bundle

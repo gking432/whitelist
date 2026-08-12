@@ -20,6 +20,12 @@ The local artifact is unsigned. It proves packaging and behavior, not Apple or
 Microsoft trust. The GitHub release workflow fails unless signing credentials
 are configured.
 
+Every production branch also builds unsigned macOS and Windows installers in
+GitHub Actions. Both jobs inspect the packaged application archive, runtime
+files, updater configuration, release manifest, installer, and blockmap. Tag
+releases repeat those checks with valid Developer ID and Authenticode
+signatures required.
+
 ## Production update acceptance
 
 Before distributing a release, install the previous signed version on clean

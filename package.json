@@ -17,6 +17,7 @@
     "desktop:pack": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder --dir",
     "desktop:dist": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder",
     "desktop:dist:mac": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder --mac dmg zip",
+    "desktop:dist:win": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder --win nsis --x64",
     "desktop:release": "npm run desktop:clean && npm run desktop:icon && npm run desktop:deps && electron-builder --publish always",
     "verify:desktop-bundle": "node scripts/verify-desktop-bundle.mjs",
     "voice-stream": "node services/voice-stream/server.cjs",

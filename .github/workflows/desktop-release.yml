@@ -89,3 +89,8 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npm run desktop:icon && npx electron-builder --win nsis --x64 --publish always -c.forceCodeSigning=true
+      - name: Verify signed Windows bundle and updater metadata
+        shell: pwsh
+        env:
+          REQUIRE_SIGNED_DESKTOP: "true"
+        run: npm run verify:desktop-bundle
