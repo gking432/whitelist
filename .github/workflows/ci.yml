@@ -53,6 +53,7 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "SECRETS_ENCRYPTION_KEY=$(openssl rand -base64 32)"
           } >> "$GITHUB_ENV"
       - run: npm run verify:security
       - run: npm run verify:restore
@@ -80,4 +81,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.name }} image
-        run: docker build -f "${{ matrix.dockerfile }}" -t "northstar-${{ matrix.name }}:${{ github.sha }}" .
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=https://build-check.supabase.co \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=build_check_anon_key_longer_than_twenty_characters \
+            -f "${{ matrix.dockerfile }}" \
+            -t "northstar-${{ matrix.name }}:${{ github.sha }}" \
+            .
