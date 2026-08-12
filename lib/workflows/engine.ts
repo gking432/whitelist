@@ -5,6 +5,7 @@ import { recordLeadInInternalCrm } from "@/lib/crm/internal";
 import { syncRunToCrm } from "@/lib/crm/sync-from-run";
 import { emitAssistantEvent } from "@/lib/assistant/events";
 import { recordActionJob } from "@/lib/jobs/record";
+import { enqueueLeadConnectorWriteback } from "@/lib/integrations/connectors/writeback";
 import {
   buildKnowledgeBlock,
   getKnowledgeProfile,
@@ -232,6 +233,24 @@ async function executeInstance(
       analysis: analysisOutput ?? null,
     });
 
+    const connectorWriteback = await enqueueLeadConnectorWriteback(supabase, {
+      partnerId: event.partnerId,
+      clientId: event.clientId,
+      workflowRunId: runId,
+      templateKey: template.template_key,
+      eventType: event.eventType,
+      eventData: event.data,
+      runSummary: result.summary,
+      contactId:
+        typeof internalCrm?.internal_crm.contact_id === "string"
+          ? internalCrm.internal_crm.contact_id
+          : null,
+      leadId:
+        typeof internalCrm?.internal_crm.lead_id === "string"
+          ? internalCrm.internal_crm.lead_id
+          : null,
+    });
+
     // Live assistant events (docs/18): the feed popups consume.
     if (template.template_key === "new_lead_intake" && analysisOutput) {
       await emitAssistantEvent({
@@ -284,6 +303,7 @@ async function executeInstance(
       ...result.steps,
       ...(crmSync ? [crmSync.step] : []),
       ...(internalCrm ? [internalCrm.step] : []),
+      ...(connectorWriteback ? [connectorWriteback.step] : []),
       ...(bookingProposal ? [bookingProposal.step] : []),
     ];
 
@@ -292,6 +312,9 @@ async function executeInstance(
       output: result.output,
       ...(crmSync ? { crm: crmSync.crm } : {}),
       ...(internalCrm ? { internal_crm: internalCrm.internal_crm } : {}),
+      ...(connectorWriteback
+        ? { connector_writeback: connectorWriteback.writeback }
+        : {}),
       ...(bookingProposal ? { booking: bookingProposal.booking } : {}),
       // How the output was produced (ai vs deterministic fallback) plus the
       // redacted context the handler worked from — run detail renders both.

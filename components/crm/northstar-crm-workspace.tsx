@@ -425,7 +425,9 @@ export function NorthstarCrmWorkspace({
     data.integrationEvents as unknown as IntegrationEvent[];
   const teamMembers = data.teamMembers as unknown as ClientTeamMember[];
   const crmConnections = connections.filter(
-    (connection) => connection.provider?.category === "crm",
+    (connection) =>
+      connection.provider?.category === "crm" ||
+      connection.provider?.category === "field_service",
   );
   const crmConnectionIds = new Set(
     crmConnections.map((connection) => connection.id),
@@ -434,7 +436,9 @@ export function NorthstarCrmWorkspace({
     (event) =>
       (event.connection_id && crmConnectionIds.has(event.connection_id)) ||
       event.external_object_type === "crm_contact" ||
-      event.external_object_type === "crm_lead",
+      event.external_object_type === "crm_lead" ||
+      event.external_object_type === "customer" ||
+      event.external_object_type === "lead",
   );
   const contactById = useMemo(
     () => new Map(contacts.map((contact) => [contact.id, contact])),
@@ -2120,7 +2124,9 @@ export function NorthstarCrmWorkspace({
           <section className="overflow-hidden rounded-lg border bg-card">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
               <div>
-                <h2 className="text-sm font-semibold">CRM connections</h2>
+                <h2 className="text-sm font-semibold">
+                  CRM and field-service connections
+                </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Connection health and recent write-back activity
                 </p>

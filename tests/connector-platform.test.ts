@@ -21,6 +21,7 @@ import {
   connectorRetryDelayMinutes,
   executeConnectorSyncJob,
 } from "../lib/integrations/connectors/sync-executor.ts";
+import { planLeadConnectorWriteback } from "../lib/integrations/connectors/writeback.ts";
 import { quickBooksOnlineAdapter, mapQuickBooksCustomer } from "../lib/integrations/providers/quickbooks-online.ts";
 import { stripeAdapter } from "../lib/integrations/providers/stripe.ts";
 import { squareAdapter } from "../lib/integrations/providers/square.ts";
@@ -323,4 +324,102 @@ test("sync executor rejects malformed push jobs without calling provider", async
   assert.equal(pushed, false);
   assert.equal(connectorRetryDelayMinutes(0), 1);
   assert.equal(connectorRetryDelayMinutes(20), 60);
+});
+
+test("sync executor refuses push operations outside the provider contract", async () => {
+  let pushed = false;
+  const adapter = {
+    manifest: {
+      key: "customer_only_fixture",
+      name: "Customer-only fixture",
+      category: "crm",
+      description: "Push contract fixture.",
+      authStrategy: "api_key",
+      capabilities: ["customer.create"],
+      verificationStatus: "contract_verified",
+      requestable: false,
+    },
+    async testConnection() {
+      return { ok: true, detail: "ok" };
+    },
+    async pushRecord() {
+      pushed = true;
+      return { externalObjectId: "created" };
+    },
+  } satisfies ConnectorAdapter;
+
+  const outcome = await executeConnectorSyncJob({
+    adapter,
+    context: {
+      connectionId: "connection",
+      partnerId: "partner",
+      clientId: "client",
+      credentials: {},
+      config: {},
+    },
+    job: {
+      id: "job",
+      direction: "push",
+      objectType: "lead",
+      operation: "create",
+      attempts: 0,
+      maxAttempts: 5,
+      payload: {
+        nativeObjectId: "lead",
+        idempotencyKey: "lead-create",
+        data: { phone: "+13125550100" },
+      },
+    },
+    repository: {
+      async saveCanonicalRecord() {},
+      async saveCursor() {},
+      async saveObjectLink() {},
+    },
+  });
+
+  assert.equal(outcome.ok, false);
+  assert.equal(pushed, false);
+  if (!outcome.ok) assert.match(outcome.error, /lead\.create/);
+});
+
+test("lead write-back chooses the operation supported by the connected system", () => {
+  const lead = planLeadConnectorWriteback({
+    providerKey: "servicetitan",
+    capabilities: ["customer.read", "lead.create"],
+    workflowRunId: "run-1",
+    leadId: "lead-1",
+    eventType: "call.completed",
+    eventData: { name: "Jamie Rivera", phone: "+13125550100" },
+    runSummary: "Needs an HVAC estimate.",
+  });
+  assert.equal(lead?.objectType, "lead");
+  assert.equal(lead?.nativeObjectId, "lead-1");
+  assert.equal(lead?.data.first_name, "Jamie");
+
+  const customer = planLeadConnectorWriteback({
+    providerKey: "jobber",
+    capabilities: ["customer.create", "job.read"],
+    workflowRunId: "run-2",
+    contactId: "contact-1",
+    eventType: "form.submitted",
+    eventData: { email: "jamie@example.test" },
+    runSummary: "Requested service.",
+  });
+  assert.equal(customer?.objectType, "customer");
+  assert.equal(customer?.nativeObjectId, "contact-1");
+  assert.equal(customer?.idempotencyKey, "workflow-run-2-customer-create");
+});
+
+test("lead write-back refuses records without a stable customer identifier", () => {
+  assert.equal(
+    planLeadConnectorWriteback({
+      providerKey: "workiz",
+      capabilities: ["lead.create"],
+      workflowRunId: "run-3",
+      eventType: "chat.received",
+      eventData: { name: "Anonymous" },
+      runSummary: "No reply path.",
+    }),
+    null,
+  );
 });

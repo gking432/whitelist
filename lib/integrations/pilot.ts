@@ -309,6 +309,8 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
       { name: "clientSecret", label: "Client secret", placeholder: "Client secret", help: "Generated with the client ID.", secret: true },
       { name: "appKey", label: "Application key", placeholder: "ak1...", help: "From the ServiceTitan Developer Portal app.", secret: true },
       { name: "tenantId", label: "Tenant ID", placeholder: "123456", help: "The ServiceTitan business tenant ID.", secret: false },
+      { name: "businessUnitId", label: "Business unit ID", placeholder: "123456", help: "The business unit that should own leads created by this connection.", secret: false },
+      { name: "jobTypeId", label: "Job type ID", placeholder: "123456", help: "The default job type to assign to leads created by this connection.", secret: false },
       { name: "environment", label: "Environment", placeholder: "", help: "Use production for a client account and integration for vendor testing.", secret: false, options: [{ value: "production", label: "Production" }, { value: "integration", label: "Integration test" }] },
     ],
     whereToGet: "ServiceTitan administrator → Settings → Integrations → API Application Access. The platform app must first be approved and visible to the tenant.",

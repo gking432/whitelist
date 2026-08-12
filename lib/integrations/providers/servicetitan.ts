@@ -1,6 +1,6 @@
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
 
-export type ServiceTitanCredentials = { clientId: string; clientSecret: string; appKey: string; tenantId: string; environment?: "production" | "integration" };
+export type ServiceTitanCredentials = { clientId: string; clientSecret: string; appKey: string; tenantId: string; businessUnitId: string; jobTypeId: string; environment?: "production" | "integration" };
 
 async function token(credentials: ServiceTitanCredentials) {
   const response = await fetch("https://auth.servicetitan.io/connect/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "client_credentials", client_id: credentials.clientId, client_secret: credentials.clientSecret }), signal: AbortSignal.timeout(15_000) });
@@ -40,7 +40,7 @@ async function pull(credentials: ServiceTitanCredentials, objectType: CanonicalO
 async function push(credentials: ServiceTitanCredentials, input: ConnectorPushInput) {
   const tenant = encodeURIComponent(credentials.tenantId);
   if (input.objectType === "lead" && input.operation === "create") {
-    const response = await stFetch(credentials, `/crm/v2/tenant/${tenant}/leads`, { method: "POST", body: JSON.stringify({ customerId: input.data.customer_id ?? null, locationId: input.data.location_id ?? null, businessUnitId: input.data.business_unit_id, jobTypeId: input.data.job_type_id, priority: input.data.priority ?? "Normal", summary: input.data.description ?? input.data.summary ?? "New lead" }) });
+    const response = await stFetch(credentials, `/crm/v2/tenant/${tenant}/leads`, { method: "POST", body: JSON.stringify({ customerId: input.data.customer_id ?? null, locationId: input.data.location_id ?? null, businessUnitId: input.data.business_unit_id ?? credentials.businessUnitId, jobTypeId: input.data.job_type_id ?? credentials.jobTypeId, priority: input.data.priority ?? "Normal", summary: input.data.description ?? input.data.summary ?? "New lead" }) });
     const created = await response.json() as Record<string, unknown>;
     return { externalObjectId: String(created.id ?? ""), source: created };
   }

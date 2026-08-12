@@ -109,6 +109,15 @@ export async function executeConnectorSyncJob(input: {
       return { ok: false, retryable: false, error: "Connector cannot push records." };
     }
 
+    const requiredCapability = `${job.objectType}.${job.operation}`;
+    if (!adapter.manifest.capabilities.includes(requiredCapability as never)) {
+      return {
+        ok: false,
+        retryable: false,
+        error: `Connector does not advertise ${requiredCapability}.`,
+      };
+    }
+
     const nativeObjectId = text(job.payload.nativeObjectId);
     const idempotencyKey = text(job.payload.idempotencyKey);
     const data =

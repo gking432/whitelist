@@ -23,6 +23,8 @@ type JobRow = ConnectorSyncJob & {
   connection_id: string;
   provider: { provider_key: string } | null;
   connection_config: Record<string, unknown>;
+  connection_status: string;
+  connection_runtime_mode: string;
 };
 
 function value(data: Record<string, unknown>, key: string): string | null {
@@ -314,7 +316,7 @@ export async function processConnectorSyncJobs(limit = 20) {
   const admin = createSupabaseAdminClient();
   if (!admin) return { processed: 0, succeeded: 0, failed: 0 };
   const { data } = await admin.from("integration_sync_jobs")
-    .select("*, connection:integration_connections!inner(config, provider:integration_providers!inner(provider_key))")
+    .select("*, connection:integration_connections!inner(config, status, runtime_mode, provider:integration_providers!inner(provider_key))")
     .in("status", ["queued", "failed"])
     .lte("scheduled_for", new Date().toISOString())
     .order("created_at", { ascending: true })
@@ -323,7 +325,7 @@ export async function processConnectorSyncJobs(limit = 20) {
   let succeeded = 0;
   let failed = 0;
   for (const raw of data ?? []) {
-    const connection = raw.connection as unknown as { config?: Record<string, unknown>; provider?: { provider_key: string } };
+    const connection = raw.connection as unknown as { config?: Record<string, unknown>; status?: string; runtime_mode?: string; provider?: { provider_key: string } };
     const job: JobRow = {
       id: raw.id,
       direction: raw.direction,
@@ -337,10 +339,35 @@ export async function processConnectorSyncJobs(limit = 20) {
       connection_id: raw.connection_id,
       provider: connection.provider ?? null,
       connection_config: connection.config ?? {},
+      connection_status: connection.status ?? "not_connected",
+      connection_runtime_mode: connection.runtime_mode ?? "dry_run",
     } as JobRow;
     const adapter = job.provider ? getConnectorAdapter(job.provider.provider_key) : null;
     if (!adapter) {
       await admin.from("integration_sync_jobs").update({ status: "dead_letter", last_error: "Connector adapter is unavailable." }).eq("id", job.id);
+      failed += 1;
+      continue;
+    }
+    if (
+      job.direction === "push" &&
+      (job.connection_status !== "connected" ||
+        job.connection_runtime_mode !== "live")
+    ) {
+      await admin
+        .from("integration_sync_jobs")
+        .update({
+          status: "cancelled",
+          last_error:
+            "Write-back cancelled because the connection is not connected and live.",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+      await admin.from("integration_events").update({
+        event_type: `connector.${job.objectType}_writeback_skipped`,
+        status: "skipped",
+        error_message:
+          "Write-back skipped because the connection is not connected and live.",
+      }).eq("connection_id", job.connection_id).eq("idempotency_key", String(job.payload.idempotencyKey ?? ""));
       failed += 1;
       continue;
     }
@@ -388,6 +415,17 @@ export async function processConnectorSyncJobs(limit = 20) {
     });
     if (outcome.ok) {
       await admin.from("integration_sync_jobs").update({ status: "succeeded", result: outcome.result, completed_at: new Date().toISOString(), locked_at: null, locked_by: null }).eq("id", job.id);
+      if (job.direction === "push") {
+        await admin.from("integration_events").update({
+          event_type: `connector.${job.objectType}_writeback_sent`,
+          status: "sent",
+          external_object_id:
+            typeof outcome.result.externalObjectId === "string"
+              ? outcome.result.externalObjectId
+              : null,
+          response_payload: outcome.result,
+        }).eq("connection_id", job.connection_id).eq("idempotency_key", String(job.payload.idempotencyKey ?? ""));
+      }
       if (job.direction === "pull") {
         const nextCursor = outcome.result.nextCursor as Record<string, unknown> | null;
         await admin.from("integration_sync_jobs").insert({
@@ -416,6 +454,13 @@ export async function processConnectorSyncJobs(limit = 20) {
         locked_at: null,
         locked_by: null,
       }).eq("id", job.id);
+      if (job.direction === "push") {
+        await admin.from("integration_events").update({
+          event_type: `connector.${job.objectType}_writeback_failed`,
+          status: "failed",
+          error_message: outcome.error,
+        }).eq("connection_id", job.connection_id).eq("idempotency_key", String(job.payload.idempotencyKey ?? ""));
+      }
       failed += 1;
     }
   }

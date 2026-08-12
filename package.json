@@ -23,6 +23,7 @@
     "connector-worker": "node --experimental-strip-types services/connector-worker/worker.ts",
     "verify:restore": "node scripts/verify-database-restore.mjs",
     "verify:security": "node scripts/verify-database-security.mjs",
+    "verify:connector-writeback": "node --env-file=.env.local --experimental-strip-types scripts/verify-connector-writeback.ts",
     "verify:production-env": "node --experimental-strip-types scripts/verify-production-env.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
