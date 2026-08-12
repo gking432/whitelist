@@ -32,6 +32,7 @@
     "verify:service-images": "node scripts/verify-service-images.mjs",
     "verify:release-images": "npm run verify:web-image && npm run verify:service-images",
     "verify:release": "npm run verify:release-topology && npm run verify:security && npm run verify:restore && npm run verify:release-images",
+    "bootstrap:owner": "tsx --env-file-if-exists=.env.local scripts/bootstrap-platform-owner.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test \"tests/*.test.ts\""

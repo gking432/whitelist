@@ -83,6 +83,20 @@ in docs/24 and redeploy so public Next.js values are embedded correctly.
 
 ### A3. Give yourself an account (there's no signup yet)
 
+After the migrations and web service are live, run the owner bootstrap from a
+trusted terminal with the hosted Supabase service-role key in the environment:
+
+```bash
+npm run bootstrap:owner -- --email you@example.com --name "Your Name" --app-url https://app.example.com --dry-run
+npm run bootstrap:owner -- --email you@example.com --name "Your Name" --app-url https://app.example.com
+```
+
+The first command validates the target without changing it. The second sends a
+Supabase invite and creates only an active `platform_owner` membership; it does
+not run `seed.sql` or create demo partners and clients. The command is
+idempotent for the same dedicated owner email and refuses to elevate an email
+already attached to a partner or client tenant.
+
 The app only lets in emails that already have a membership. Bootstrap
 yourself once:
 
@@ -246,7 +260,8 @@ customer-facing goes out until both are true.
   staff-assisted path uses the WebSocket audio stream for live transcription.
 - The phone paths still need real deployed-account verification before they
   can be called production-proven.
-- No self-serve signup or in-app billing yet — bootstrap or invite the initial
-  partner account before onboarding.
+- Partner signup currently begins with an owner-created invitation from the
+  Control Room; payment collection remains intentionally disconnected during
+  the V1 end-to-end pilot.
 - Connector contracts are tested against published vendor APIs. Each provider
   still needs one live credential verification before it is marked live-verified.

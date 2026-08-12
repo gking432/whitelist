@@ -24,6 +24,9 @@ setup, and live-account verification.
    production app domain.
 7. Configure `PLATFORM_ALERT_WEBHOOK_URL`, confirm `/api/health`, run the job
    service once, and verify one alert reaches the owner channel.
+8. Run `npm run bootstrap:owner -- --email <owner> --name <name> --app-url
+   <production-url> --dry-run`, then repeat without `--dry-run` to send the
+   initial platform-owner invite. Never run `supabase/seed.sql` in production.
 
 Twilio is not a platform-owner account. Each partner connects its own Twilio
 parent account during onboarding; the platform provisions isolated client
