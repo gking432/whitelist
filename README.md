@@ -54,9 +54,18 @@ Implemented product surfaces:
 
 Local seed accounts use `local-password-change-me` and `.northstar.test`
 addresses (`platform@`, `partner@`, `client@`). They are for a local Supabase
-instance only. The seed is intentionally minimal — no packages, integrations,
-workflows, or CRM data. See `docs/22-demo-walkthrough.md` to build a demo
-tenant by walking the real onboarding.
+instance only. The seed is intentionally minimal — three sign-ins, one bare
+partner, one bare client, and no packages, integrations, workflows, or CRM
+data. Walk the real onboarding to build anything beyond that.
+
+Two things that trip up a first local run:
+
+- Set `NEXT_PUBLIC_SUPABASE_URL` to `http://127.0.0.1:54321`, not
+  `localhost`. `isLocalDevAutoLoginEnabled()` matches on `127.0.0.1`, so
+  `localhost` silently disables `/dev/auto-login`.
+- Auth invitations (partner team members, client owners) are real emails.
+  Locally Supabase catches them in Mailpit at `http://127.0.0.1:54324`; a
+  hosted environment needs real SMTP configured in Supabase Auth.
 
 Verification for each goal:
 

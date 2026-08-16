@@ -174,6 +174,7 @@ export async function createClientBusiness(
   }
 
   let clientId: string;
+  let inviteFailed = false;
 
   try {
     const access = await requirePrimaryPartnerAccess(
@@ -267,6 +268,7 @@ export async function createClientBusiness(
     let invitedUserId: string | null = null;
     let createdInvitationUser = false;
     let ownerMembershipId: string | null = null;
+    let inviteFailureReason: string | null = null;
 
     if (fields.primaryContactEmail) {
       const email = fields.primaryContactEmail.toLowerCase();
@@ -287,22 +289,21 @@ export async function createClientBusiness(
             redirectTo: `${getAppUrl()}/auth/confirm?next=/client`,
           });
 
+        // A mail failure must not cost the partner the client they just
+        // created. Keep the client, skip the membership, and tell the setup
+        // page to explain that the invitation still needs sending.
         if (invitationError || !invitation.user) {
-          await supabase.from("client_businesses").delete().eq("id", clientId);
-          return {
-            status: "error",
-            message:
-              invitationError?.message ??
-              "The client workspace invitation could not be created.",
-          };
+          inviteFailed = true;
+          inviteFailureReason = invitationError?.message ?? null;
+        } else {
+          invitedUserId = invitation.user.id;
+          createdInvitationUser = true;
         }
-
-        invitedUserId = invitation.user.id;
-        createdInvitationUser = true;
       }
 
       const ownerPermissions = permissionsForJobRole("owner");
-      const { data: membership, error: membershipError } = await admin
+      const { data: membership, error: membershipError } = invitedUserId
+        ? await admin
         .from("memberships")
         .insert({
           user_id: invitedUserId,
@@ -322,11 +323,12 @@ export async function createClientBusiness(
           },
         })
         .select("id")
-        .single();
+        .single()
+        : { data: null, error: null };
 
-      if (membershipError || !membership) {
+      if (invitedUserId && (membershipError || !membership)) {
         await supabase.from("client_businesses").delete().eq("id", clientId);
-        if (createdInvitationUser && invitedUserId) {
+        if (createdInvitationUser) {
           await admin.auth.admin.deleteUser(invitedUserId).catch(() => undefined);
         }
         return {
@@ -335,7 +337,7 @@ export async function createClientBusiness(
         };
       }
 
-      ownerMembershipId = membership.id;
+      ownerMembershipId = membership?.id ?? null;
     }
 
     await recordAuditEvent({
@@ -372,13 +374,31 @@ export async function createClientBusiness(
         },
       });
     }
+
+    if (inviteFailed) {
+      await recordAuditEvent({
+        actor: { ...access, clientId: created.id },
+        action: "client.owner_invite_failed",
+        targetType: "client_business",
+        targetId: created.id,
+        summary: `The client-owner invitation to ${fields.primaryContactEmail} could not be sent. The client was kept.`,
+        metadata: {
+          email: fields.primaryContactEmail.toLowerCase(),
+          reason: inviteFailureReason,
+        },
+      });
+    }
   } catch (error) {
     return accessErrorState(error);
   }
 
   revalidatePath("/partner/clients");
   // New clients land in the guided setup flow first.
-  redirect(`/partner/clients/${clientId}/setup`);
+  redirect(
+    inviteFailed
+      ? `/partner/clients/${clientId}/setup?invite=failed`
+      : `/partner/clients/${clientId}/setup`,
+  );
 }
 
 export async function updateClientBusiness(

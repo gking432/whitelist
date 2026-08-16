@@ -109,7 +109,7 @@ const CATEGORY_TO_PILOT_PROVIDERS: Partial<Record<string, PilotProviderKey[]>> =
 
 type PageProps = {
   params: Promise<{ clientId: string }>;
-  searchParams: Promise<{ google?: string }>;
+  searchParams: Promise<{ google?: string; invite?: string }>;
 };
 
 type ConnectionRow = {
@@ -187,7 +187,7 @@ export default async function ClientSetupPage({
   searchParams,
 }: PageProps) {
   const { clientId } = await params;
-  const { google } = await searchParams;
+  const { google, invite } = await searchParams;
   const workspace = await loadClientWorkspace(clientId);
 
   if (workspace.kind !== "ok") {
@@ -409,6 +409,16 @@ export default async function ClientSetupPage({
           staff need, then hand the finished setup to Test Center.
         </p>
       </header>
+
+      {invite === "failed" ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This client was created, but the invitation email to{" "}
+          {workspace.client.primary_contact_email ?? "the primary contact"}{" "}
+          could not be sent. Setup can continue without it. Send the invitation
+          again from the client&apos;s Settings tab once email delivery is
+          working.
+        </div>
+      ) : null}
 
       {googleOutcome ? (
         <div
