@@ -135,7 +135,7 @@ Notes:
 ## 4. Exact clicks in Northstar
 
 Assume you are signed in as a partner user (locally the dev auto-login signs
-you in as `partner.owner@example.test`).
+you in as `partner@northstar.test`).
 
 ### A. Create (or open) the client
 

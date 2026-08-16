@@ -164,7 +164,7 @@ docker exec -i supabase_db_partner-platform psql -U postgres -d postgres -v ON_E
 Local partner user:
 
 ```text
-partner.owner@example.test
+partner@northstar.test
 ```
 
 Local password:

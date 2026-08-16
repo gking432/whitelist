@@ -7,12 +7,13 @@ built-in CRM) without wiring up real phone/email accounts. Full walkthrough:
 
 ## One-time setup
 
-1. Start the app with the seeded demo business (`docs/22`). Log in as
-   `partner.owner@example.test`. **Summit Home Services** is already
-   onboarded (knowledge + workflows + built-in CRM).
-2. In the app, open Summit → **Setup** → the lead-source wizard, and connect
-   a **web form / generic inbound** source. Its connection page shows a
-   **webhook URL** and a **token** — copy both.
+1. Stand the app up and build the demo tenant by following `docs/22` — log in
+   as `partner@northstar.test` (password `local-password-change-me`), complete
+   partner onboarding, create a package, then create a client business and
+   give it knowledge + workflows.
+2. In the app, open that client → **Setup** → the lead-source wizard, and
+   connect a **web form / generic inbound** source. Its connection page shows
+   a **webhook URL** and a **token** — copy both.
 
 ## Run
 
@@ -34,8 +35,8 @@ draft waiting for a human), **CRM** (the new contact/lead/note), and the
 - Nothing is sent to anyone. Every connection starts in **dry run**; drafts
   wait for approval and only send once you connect a provider (e.g. a Twilio
   trial number) and switch it to **live**.
-- Zero-setup alternative: the **Send a test lead** button on Summit's Setup
-  page fires a sample lead through the same pipeline with no connection at
-  all.
+- Zero-setup alternative: the **Send a test lead** button on the client's
+  Setup page fires a sample lead through the same pipeline with no connection
+  at all.
 - With no AI key set, analysis and drafts use the labeled rule-based
   fallback — still a full result, just deterministic.

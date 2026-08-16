@@ -52,8 +52,11 @@ Implemented product surfaces:
 - `/client`, `/client/approvals`, `/client/activity`, `/client/integrations` —
   optional partner-branded client portal.
 
-Local seed accounts use `local-password-change-me` and `.example.test`
-addresses. They are for a local Supabase instance only.
+Local seed accounts use `local-password-change-me` and `.northstar.test`
+addresses (`platform@`, `partner@`, `client@`). They are for a local Supabase
+instance only. The seed is intentionally minimal — no packages, integrations,
+workflows, or CRM data. See `docs/22-demo-walkthrough.md` to build a demo
+tenant by walking the real onboarding.
 
 Verification for each goal:
 
