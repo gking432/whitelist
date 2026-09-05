@@ -15,7 +15,8 @@ import {
   describeConstraints,
   parseSchedulingConstraints,
 } from "@/lib/scheduling/constraints";
-import { computeOpenSlots, formatSlotLabel } from "@/lib/scheduling/slots";
+import { computeOpenSlots, formatSlotLabel, type AvailabilityWindow } from "@/lib/scheduling/slots";
+import { mayEnrichVoiceContact } from "./safety.ts";
 import {
   EXTERNAL_CALENDAR_PROVIDER_KEYS,
   type ExternalCalendarProvider,
@@ -45,7 +46,7 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
   {
     name: "lookup_contact",
     description:
-      "Look up an existing customer record by phone number or email. Use early in the call when you learn either one, so you do not re-ask for details we already have.",
+      "Existing customer information requires staff identity verification. This tool never discloses records or changes the call's customer association. Ask the caller to state their details and use save_contact_details.",
     parameters: {
       type: "object",
       properties: {
@@ -154,7 +155,7 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
   {
     name: "escalate",
     description:
-      "Flag this call for immediate human follow-up: the caller is upset, asks for a person, or the situation matches the business's escalation or emergency rules. Tell the caller a person will call them back.",
+      "Flag this call for immediate human follow-up: the caller is upset, asks for a person, or the situation matches the business's escalation or emergency rules. Tell the caller a callback was requested; do not promise a callback time or a live transfer.",
     parameters: {
       type: "object",
       properties: {
@@ -234,26 +235,16 @@ async function getSession(admin: SupabaseClient, callSessionId: string) {
   } | null;
 }
 
-// Read-modify-write merge into call_sessions.extracted. The voice tools
-// are the only writer while a call is in progress, so last-write-wins per
-// call is fine; completeCallSession later merges its own summary fields.
+// Merge distinct top-level extracted fields atomically inside the database.
 async function mergeExtracted(
   admin: SupabaseClient,
   callSessionId: string,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  const session = await getSession(admin, callSessionId);
-
-  if (!session) {
-    return;
-  }
-
-  await admin
-    .from("call_sessions")
-    .update({
-      extracted: redactAuditValue({ ...session.extracted, ...patch }),
-    })
-    .eq("id", callSessionId);
+  const { error } = await admin.rpc("merge_voice_session_extracted", {
+    p_session_id: callSessionId, p_patch: redactAuditValue(patch),
+  });
+  if (error) throw new Error("Call details could not be saved.");
 }
 
 async function appendToolLog(
@@ -284,73 +275,11 @@ async function appendToolLog(
 
 type ProposedSlot = { start_iso: string; end_iso: string; label: string };
 
-async function lookupContact(
-  admin: SupabaseClient,
-  context: VoiceToolContext,
-  args: Record<string, unknown>,
-): Promise<VoiceToolOutcome> {
-  const phone = asTrimmedString(args.phone);
-  const email = asTrimmedString(args.email);
-
-  if (!phone && !email) {
-    return {
-      result: { found: false, note: "Provide a phone or email to look up." },
-    };
-  }
-
-  let contact: {
-    id: string;
-    first_name: string | null;
-    last_name: string | null;
-    email: string | null;
-    phone: string | null;
-    address: string | null;
-  } | null = null;
-
-  if (email) {
-    const { data } = await admin
-      .from("crm_contacts")
-      .select("id, first_name, last_name, email, phone, address")
-      .eq("client_id", context.clientId)
-      .ilike("email", email)
-      .limit(1)
-      .maybeSingle();
-
-    contact = data;
-  }
-
-  if (!contact && phone) {
-    const { data } = await admin
-      .from("crm_contacts")
-      .select("id, first_name, last_name, email, phone, address")
-      .eq("client_id", context.clientId)
-      .eq("phone", phone)
-      .limit(1)
-      .maybeSingle();
-
-    contact = data;
-  }
-
-  if (!contact) {
-    return { result: { found: false } };
-  }
-
-  await admin
-    .from("call_sessions")
-    .update({ matched_contact_id: contact.id })
-    .eq("id", context.callSessionId);
-
-  return {
-    result: {
-      found: true,
-      name:
-        [contact.first_name, contact.last_name].filter(Boolean).join(" ") ||
-        null,
-      phone: contact.phone,
-      email: contact.email,
-      address: contact.address,
-    },
-  };
+async function lookupContact(): Promise<VoiceToolOutcome> {
+  return { result: {
+    status: "verification_required",
+    say: "For privacy, ask the caller to state their own contact details. The team can review existing records after verifying their identity.",
+  } };
 }
 
 async function saveContactDetails(
@@ -401,7 +330,7 @@ async function saveContactDetails(
   let contactId = session.matched_contact_id;
   let contactAction: "created" | "updated" | "none" = "none";
 
-  if (contactId) {
+  if (contactId && mayEnrichVoiceContact(session.extracted)) {
     // Additive: only fill fields that are currently empty.
     const { data: existing } = await admin
       .from("crm_contacts")
@@ -425,7 +354,7 @@ async function saveContactDetails(
         contactAction = "updated";
       }
     }
-  } else if (phone || email) {
+  } else if (!contactId && (phone || email)) {
     const [firstName, ...rest] = (name ?? "").split(/\s+/);
     const { data: created } = await admin
       .from("crm_contacts")
@@ -502,7 +431,7 @@ async function proposeSlots(
 ): Promise<VoiceToolOutcome> {
   const { data: client } = await admin
     .from("client_businesses")
-    .select("timezone")
+    .select("timezone, crm_operating_mode")
     .eq("id", context.clientId)
     .maybeSingle();
   const timezone = client?.timezone ?? "America/New_York";
@@ -532,6 +461,7 @@ async function proposeSlots(
     let businessStartHour = knowledge?.booking_hours_start ?? 9;
     let businessEndHour = knowledge?.booking_hours_end ?? 17;
     let durationMinutes = knowledge?.appointment_duration_minutes ?? 60;
+    let availabilityWindows: AvailabilityWindow[] | undefined;
 
     if (connection) {
       const credentials =
@@ -552,7 +482,10 @@ async function proposeSlots(
           ? await getGoogleWorkspaceBusyIntervals(credentials, now.toISOString(), weekOut.toISOString())
           : await getBusyIntervals(credentials, now.toISOString(), weekOut.toISOString());
     } else {
-      const [{ data: appointments }, { data: windows }] = await Promise.all([
+      if (!["primary_crm", "mirror", "assist"].includes(client?.crm_operating_mode ?? "")) {
+        throw new Error("Connect the business calendar before offering times.");
+      }
+      const [{ data: appointments, error: appointmentError }, { data: windows, error: windowsError }] = await Promise.all([
         admin
           .from("crm_appointments")
           .select("start_at, end_at")
@@ -562,18 +495,20 @@ async function proposeSlots(
           .lte("start_at", weekOut.toISOString()),
         admin
           .from("crm_availability_windows")
-          .select("start_time, end_time, appointment_minutes")
+          .select("weekday, start_time, end_time, appointment_minutes")
           .eq("client_id", context.clientId)
           .eq("active", true)
           .order("start_time", { ascending: true }),
       ]);
 
+      if (appointmentError || windowsError) throw new Error("Internal calendar availability is unavailable.");
       busy = (appointments ?? []).map((appointment) => ({
         start: appointment.start_at,
         end: appointment.end_at,
       }));
       source = "northstar_internal";
 
+      availabilityWindows = windows ?? undefined;
       if (windows && windows.length > 0) {
         const startHours = windows.map((window) =>
           Number(String(window.start_time).slice(0, 2)),
@@ -593,6 +528,7 @@ async function proposeSlots(
       businessStartHour,
       businessEndHour,
       durationMinutes,
+      availabilityWindows,
       constraints,
     });
 
@@ -605,6 +541,7 @@ async function proposeSlots(
         businessStartHour,
         businessEndHour,
         durationMinutes,
+        availabilityWindows,
       });
       constraintsRelaxed = slots.length > 0;
     }
@@ -690,14 +627,15 @@ async function requestBooking(
     };
   }
 
-  // One open booking request per client keeps the approval queue sane
-  // (same rule as the workflow path).
+  // Repeated tool calls for this call share a request; other callers must
+  // receive their own approval item. A partial unique index closes the race.
   const { data: existingPending } = await admin
     .from("approval_items")
     .select("id")
     .eq("client_id", context.clientId)
     .eq("type", "appointment_booking")
     .eq("status", "pending")
+    .contains("proposed_payload", { call_session_id: context.callSessionId })
     .limit(1)
     .maybeSingle();
 
@@ -733,8 +671,8 @@ async function requestBooking(
       summary: `The AI phone assistant took this request on a call. Approving books ${chosen.label} (${timezone}) in ${
         asTrimmedString(session.extracted.proposed_slots_provider) ===
         "northstar_internal"
-          ? "Northstar's internal calendar"
-          : "the connected Google Calendar"
+          ? "the business calendar"
+          : "the connected business calendar"
       }. Slots came from current availability${
         asTrimmedString(session.extracted.proposed_slots_constraints)
           ? session.extracted.proposed_slots_constraints_relaxed === true
@@ -770,6 +708,10 @@ async function requestBooking(
     .select("id")
     .single();
 
+  if (error?.code === "23505") {
+    return { result: { status: "already_pending", say: "Your request is awaiting team review; it is not yet booked." } };
+  }
+
   if (error || !approval) {
     return {
       result: {
@@ -801,7 +743,7 @@ async function requestBooking(
     result: {
       status: "requested",
       slot: chosen,
-      say: "Tell the caller the request is in and the team will confirm shortly. Do NOT say it is booked.",
+      say: "Tell the caller the request awaits human approval and confirmation. Do NOT say it is booked or promise a response time.",
     },
   };
 }
@@ -919,7 +861,7 @@ async function escalate(
   return {
     result: {
       status: "escalated",
-      say: "Reassure the caller that a person will call them back promptly.",
+      say: "Tell the caller a callback has been requested. Do not promise a response time or claim a live transfer.",
     },
   };
 }
@@ -934,7 +876,7 @@ export async function executeVoiceTool(
   try {
     switch (call.name) {
       case "lookup_contact":
-        outcome = await lookupContact(admin, context, call.arguments);
+        outcome = await lookupContact();
         break;
       case "save_contact_details":
         outcome = await saveContactDetails(admin, context, call.arguments);

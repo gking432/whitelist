@@ -337,7 +337,6 @@ export async function recordAppointmentBooking(input: {
     return;
   }
 
-  try {
     if (!(await clientUsesInternalCrm(admin, input.clientId))) {
       return;
     }
@@ -364,7 +363,13 @@ export async function recordAppointmentBooking(input: {
       phone: contact.phone ?? null,
     });
 
-    await admin.from("crm_appointments").insert({
+    // Internal bookings and their timeline are committed atomically by the
+    // booking RPC. Provider bookings need an idempotent local mirror only.
+    const { data: existing, error: lookupError } = await admin.from("crm_appointments")
+      .select("id").eq("approval_id", input.approvalId).maybeSingle();
+    if (lookupError) throw new Error("Appointment receipt lookup failed.");
+    if (existing) return;
+    const { error: appointmentError } = await admin.from("crm_appointments").upsert({
       partner_id: input.partnerId,
       client_id: input.clientId,
       contact_id: contactId,
@@ -373,9 +378,11 @@ export async function recordAppointmentBooking(input: {
       end_at: slot.end_iso,
       status: input.outcomeStatus === "succeeded" ? "booked" : "proposed",
       external_ref: input.externalRef,
-    });
+      approval_id: input.approvalId,
+    }, { onConflict: "approval_id", ignoreDuplicates: true });
+    if (appointmentError) throw new Error("Appointment mirror could not be saved; reconcile the provider booking before retrying.");
 
-    await admin.from("crm_timeline_entries").insert({
+    const { error: timelineError } = await admin.from("crm_timeline_entries").insert({
       partner_id: input.partnerId,
       client_id: input.clientId,
       contact_id: contactId,
@@ -389,7 +396,5 @@ export async function recordAppointmentBooking(input: {
       ref_run_id: input.workflowRunId,
       ref_approval_id: input.approvalId,
     });
-  } catch {
-    // Bookkeeping must never break booking reporting.
-  }
+    if (timelineError) throw new Error("Appointment timeline receipt could not be stored.");
 }

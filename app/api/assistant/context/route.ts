@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
   const context = await buildAssistantContext(
     supabase,
     client as ClientBusinessRecord,
-    { audience },
+    { audience, userId: authState.user.id, callSessionId: request.nextUrl.searchParams.get("call_session_id") },
   );
 
   return json(200, {

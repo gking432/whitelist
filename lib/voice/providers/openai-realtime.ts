@@ -9,11 +9,12 @@
 //   real actions with the same tenancy/approval/audit rules as everything
 //   else. It can REQUEST bookings and messages; humans approve them.
 
-import type { KnowledgeProfile } from "@/lib/knowledge/profile";
+import type { KnowledgeProfile } from "../../knowledge/profile.ts";
+import { CALLER_PRIVACY_INSTRUCTIONS } from "../safety.ts";
 import {
   buildKnowledgeBlock,
   KNOWLEDGE_GUARDRAILS,
-} from "@/lib/knowledge/profile";
+} from "../../knowledge/profile.ts";
 
 // gpt-realtime is the full ChatGPT-voice-quality model; gpt-realtime-mini
 // is the cheaper option. Configurable via OPENAI_REALTIME_MODEL.
@@ -76,18 +77,7 @@ export function buildVoiceAgentInstructions(
         `Open by disclosing you are an AI: "Hi, you've reached ${context.clientName} — I'm their AI assistant. I can get you booked in, or press on and a human will call you back."`)
       : `If asked, say honestly that you are an AI assistant. Do not volunteer it otherwise.`;
 
-  const knownFacts = context.matchedContact
-    ? `This caller matches an existing customer record — greet them accordingly and do NOT re-ask what we already know:
-${[
-  context.matchedContact.name && `- Name: ${context.matchedContact.name}`,
-  context.matchedContact.phone && `- Phone: ${context.matchedContact.phone}`,
-  context.matchedContact.email && `- Email: ${context.matchedContact.email}`,
-  context.matchedContact.address &&
-    `- Address: ${context.matchedContact.address}`,
-]
-  .filter(Boolean)
-  .join("\n")}`
-    : `This caller is not matched to an existing record. Collect naturally, one thing at a time, as the conversation allows: name, phone, email, address, what they need done, how urgent it is, project details, and appointment preferences. Use the save_contact_details tool as you learn things.`;
+  const knownFacts = CALLER_PRIVACY_INSTRUCTIONS;
 
   return `You are the phone assistant for ${context.clientName}, a home service business. Talk like a warm, genuine person on the phone — natural, relaxed, brief.
 
@@ -97,7 +87,7 @@ ${knownFacts}
 
 Scheduling: when the caller wants a visit, use the propose_slots tool to get REAL open times, offer at most two of them, and NEVER invent or agree to any time that the tool did not return. When they pick one, use request_booking with that exact slot — then tell them the team will confirm it shortly. You request bookings; a human approves them. Never claim anything is finally booked.
 
-Tools: use lookup_contact early if you have a phone or email. Use add_note for anything the team should know. If the caller is upset, asks for a human, or the situation matches the escalation rules, use escalate and tell them a person will call back.
+Tools: use add_note for anything the team should know. If the caller is upset, asks for a human, or the situation matches the escalation rules, use escalate and say you have requested a callback. You cannot transfer calls or promise a callback time. For an immediate danger advise the caller to contact the appropriate emergency service; do not imply this business is emergency dispatch.
 
 ${TURN_TAKING}
 

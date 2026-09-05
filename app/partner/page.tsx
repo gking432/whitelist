@@ -262,7 +262,7 @@ export default async function PartnerPage({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild size="sm" variant="outline">
-              <Link href="/partner/agency">Open sales CRM</Link>
+              <Link href="/partner/start">Agency launch guide</Link>
             </Button>
             {canAddClient ? (
               <Button asChild size="sm" variant="gold">

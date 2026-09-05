@@ -29,10 +29,20 @@ const EndSchema = z.object({
   action: z.literal("end"),
   call_session_id: z.string().uuid(),
 });
+const UsageSchema = z.object({
+  action: z.literal("usage"), call_session_id: z.string().uuid(),
+  response_id: z.string().trim().min(1).max(200),
+  model: z.string().trim().min(1).max(100),
+  input_tokens: z.number().int().min(0), output_tokens: z.number().int().min(0),
+  total_tokens: z.number().int().min(0),
+});
+const DrainedSchema = z.object({ action: z.literal("drained"), call_session_id: z.string().uuid() });
 const ControlSchema = z.discriminatedUnion("action", [
   BootstrapSchema,
   ToolSchema,
   EndSchema,
+  UsageSchema,
+  DrainedSchema,
 ]);
 
 function json(status: number, body: Record<string, unknown>) {
@@ -76,12 +86,38 @@ export async function POST(request: NextRequest) {
 
   if (!admin) return json(503, { error: "Data service unavailable." });
 
+  // Staff streams also drain; the gateway signature authenticates this event.
+  if (parsed.data.action === "drained") {
+    const { data: session } = await admin.from("call_sessions").select("id")
+      .eq("id", parsed.data.call_session_id).eq("provider", "twilio_voice").maybeSingle();
+    if (!session) return json(404, { error: "Call not found." });
+    // Stream closure can mean a handoff to Gather while the carrier call is
+    // still alive. Only a carrier terminal event may queue normal completion.
+    const { error } = await admin.rpc("merge_voice_session_extracted", {
+      p_session_id: session.id, p_patch: { gateway_drained_at: new Date().toISOString() },
+    });
+    if (error) return json(503, { error: "Stream completion could not be stored." });
+    return json(200, { accepted: true });
+  }
+
   const runtime = await loadVoiceRuntimeBootstrap(
     admin,
     parsed.data.call_session_id,
+    parsed.data.action === "end" || parsed.data.action === "usage",
   );
 
   if (!runtime) return json(404, { error: "Active AI call not found." });
+
+  if (parsed.data.action === "usage") {
+    const { error } = await admin.from("voice_usage_events").upsert({
+      call_session_id: parsed.data.call_session_id,
+      partner_id: runtime.toolContext.partnerId, client_id: runtime.toolContext.clientId,
+      response_id: parsed.data.response_id, model: parsed.data.model,
+      input_tokens: parsed.data.input_tokens, output_tokens: parsed.data.output_tokens,
+      total_tokens: parsed.data.total_tokens,
+    }, { onConflict: "call_session_id,response_id", ignoreDuplicates: true });
+    return error ? json(503, { error: "Voice usage could not be stored." }) : json(200, { accepted: true });
+  }
 
   if (parsed.data.action === "bootstrap") {
     return json(200, {

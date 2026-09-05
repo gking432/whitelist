@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getAppUrl } from "@/lib/env";
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -63,7 +64,7 @@ export default async function PartnerBrandingPage() {
   const [partnerResult, brandingResult, twilioResult] = await Promise.all([
     supabase
       .from("partners")
-      .select("name")
+      .select("name, slug")
       .eq("id", access.partnerId)
       .maybeSingle(),
     supabase
@@ -200,6 +201,13 @@ export default async function PartnerBrandingPage() {
               agency.
             </p>
           </div>
+          <section className="mb-6 rounded-lg border bg-secondary/30 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Your client sign-in link</h2><Link href="/partner/billing" className="text-sm underline">Manage agency billing</Link></div>
+            <p className="mt-2 text-sm text-muted-foreground">Share this link with clients to show your agency name and logo before they sign in.</p>
+            <a className="mt-3 block break-all text-sm underline" href={`${getAppUrl()}/login?agency=${partnerResult.data?.slug ?? ""}&next=/client`}>
+              {`${getAppUrl()}/login?agency=${partnerResult.data?.slug ?? ""}&next=/client`}
+            </a>
+          </section>
           <BrandingForm action={updatePartnerBranding} initial={initial} />
         </section>
 

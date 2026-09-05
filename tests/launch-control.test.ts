@@ -54,6 +54,7 @@ test("readiness separates sandbox testing from connection-gated go-live", () => 
   };
 
   const readiness = computeLaunchReadiness({
+    clientApprovedBeta: true,
     packageId: "package-1",
     deployment,
     requiredTemplateKeys: ["new_lead_intake"],
@@ -70,6 +71,7 @@ test("readiness separates sandbox testing from connection-gated go-live", () => 
 
 test("current test evidence and configured connections unlock go-live", () => {
   const readiness = computeLaunchReadiness({
+    clientApprovedBeta: true,
     packageId: "package-1",
     deployment: { id: "deployment-1", packageId: "package-1", status: "ready" },
     requiredTemplateKeys: ["new_lead_intake"],
@@ -115,6 +117,7 @@ test("current test evidence and configured connections unlock go-live", () => {
 
 test("live runtimes prevent package tests until rollback", () => {
   const readiness = computeLaunchReadiness({
+    clientApprovedBeta: true,
     packageId: "package-1",
     deployment: { id: "deployment-1", packageId: "package-1", status: "ready" },
     requiredTemplateKeys: ["new_lead_intake"],
@@ -135,4 +138,10 @@ test("live runtimes prevent package tests until rollback", () => {
 
   assert.equal(readiness.hasLiveRuntime, true);
   assert.equal(readiness.canRunTests, false);
+});
+
+ test("a business must explicitly approve beta scope before live launch", () => {
+  const readiness = computeLaunchReadiness({packageId:null,deployment:null,requiredTemplateKeys:[],integrationRequirements:[],workflows:[],connections:[],evidence:null});
+  assert.equal(readiness.canGoLive,false);
+  assert.equal(readiness.gates.find(gate=>gate.key === "client_consent")?.passed,false);
 });

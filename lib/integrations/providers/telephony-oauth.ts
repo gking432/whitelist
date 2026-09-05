@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { getAppUrl, getSecretsEncryptionKey } from "@/lib/env";
@@ -61,7 +62,7 @@ async function tokenRequest(providerKey: TelephonyOAuthProviderKey, client: Tele
     body: new URLSearchParams(params),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`${providerKey === "ringcentral" ? "RingCentral" : "Dialpad"} authorization failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("telephony-oauth", response);
   return response.json() as Promise<{ access_token?: string; refresh_token?: string; expires_in?: number }>;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ export function ApprovalResolutionForm({
   editableContent,
   consequence,
 }: ApprovalResolutionFormProps) {
+  const formId = useId();
   const [state, formAction, isPending] = useActionState(
     action,
     initialFormState,
@@ -48,9 +49,9 @@ export function ApprovalResolutionForm({
 
       {editableContent !== null ? (
         <div>
-          <Label htmlFor="edited_content">Message content</Label>
+          <Label htmlFor={`${formId}-content`}>Message content</Label>
           <Textarea
-            id="edited_content"
+            id={`${formId}-content`}
             name="edited_content"
             className="mt-1.5"
             defaultValue={editableContent}
@@ -63,9 +64,9 @@ export function ApprovalResolutionForm({
       ) : null}
 
       <div>
-        <Label htmlFor="note">Resolution note (optional)</Label>
+        <Label htmlFor={`${formId}-note`}>Resolution note (optional)</Label>
         <Input
-          id="note"
+          id={`${formId}-note`}
           name="note"
           className="mt-1.5"
           placeholder="Reason or context for this decision"

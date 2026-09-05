@@ -24,8 +24,9 @@
     "voice-stream": "node services/voice-stream/server.cjs",
     "connector-worker": "node --experimental-strip-types services/connector-worker/worker.ts",
     "verify:restore": "node scripts/verify-database-restore.mjs",
-    "verify:security": "node scripts/verify-database-security.mjs",
+    "verify:security": "npm run verify:security:prepare && npm run verify:security:matrix",
     "verify:connector-writeback": "node --env-file=.env.local --experimental-strip-types scripts/verify-connector-writeback.ts",
+    "verify:native-inbound": "tsx --env-file-if-exists=.env.local scripts/verify-native-inbound-journey.ts",
     "verify:release-journey": "tsx --env-file-if-exists=.env.local scripts/verify-release-journey.ts",
     "verify:production-env": "node --experimental-strip-types scripts/verify-production-env.ts",
     "verify:hosted": "node --experimental-strip-types scripts/verify-hosted-production.ts",
@@ -37,7 +38,10 @@
     "bootstrap:owner": "tsx --env-file-if-exists=.env.local scripts/bootstrap-platform-owner.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test \"tests/*.test.ts\""
+    "test": "node --experimental-strip-types --test \"tests/*.test.ts\"",
+    "verify:security:prepare": "node scripts/prepare-beta-test-database.mjs",
+    "verify:security:matrix": "node scripts/verify-database-security.mjs && node scripts/verify-beta-security.mjs && node scripts/verify-voice-beta.mjs && node scripts/verify-beta-concurrency.mjs && node scripts/verify-paid-capacity.mjs && node scripts/verify-embedded-connections.mjs",
+    "eval:ai": "tsx scripts/evaluate-ai.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
@@ -51,6 +55,7 @@
     "next": "16.3.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
+    "stripe": "^22.6.1",
     "tailwind-merge": "3.6.0",
     "ws": "^8.21.1",
     "zod": "^4.4.3"

@@ -1,3 +1,4 @@
+import type { AITenant } from "@/lib/ai/budget";
 import { z } from "zod";
 
 import { generateStructured, isAIConfigured } from "@/lib/ai/provider";
@@ -193,6 +194,7 @@ export function fallbackChatReply(
 }
 
 export async function generateChatReply(input: {
+  tenant?: AITenant;
   clientName: string;
   knowledge: KnowledgeProfile | null;
   fields: SessionFields;
@@ -219,6 +221,7 @@ export async function generateChatReply(input: {
   try {
     const result = await generateStructured({
       taskKey: "website_chat_reply",
+      tenant: input.tenant,
       system: CHAT_SYSTEM_PROMPT,
       user: buildChatUserPrompt({
         clientName: input.clientName,

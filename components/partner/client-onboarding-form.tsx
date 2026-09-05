@@ -105,9 +105,7 @@ export function ClientOnboardingForm({
         }
       }
 
-      const formData = formRef.current
-        ? new FormData(formRef.current)
-        : null;
+      const formData = formRef.current ? new FormData(formRef.current) : null;
       const email = String(formData?.get("primary_contact_email") ?? "").trim();
       const phone = String(formData?.get("primary_contact_phone") ?? "").trim();
 
@@ -380,10 +378,10 @@ export function ClientOnboardingForm({
         )}
       >
         <legend className="sr-only">Choose the client experience</legend>
-        <h2 className="font-semibold">Where will the client work?</h2>
+        <h2 className="font-semibold">Does the business already use a CRM?</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Their package stays the same. This choice decides whether Northstar
-          is their operating system or works behind their existing tools.
+          A CRM keeps track of customers and jobs. Keep the tools the business
+          already knows, or give them the built-in workspace under your brand.
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -407,11 +405,11 @@ export function ClientOnboardingForm({
               />
               <span>
                 <span className="block text-sm font-semibold">
-                  Northstar CRM
+                  Built-in CRM
                 </span>
                 <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                  Northstar is the client&apos;s home base for contacts,
-                  pipeline, tasks, calls, marketing, and reports.
+                  Your branded workspace becomes the client&apos;s home base for
+                  contacts, pipeline, tasks, calls, marketing, and reports.
                 </span>
               </span>
             </span>
@@ -441,8 +439,8 @@ export function ClientOnboardingForm({
                 </span>
                 <span className="mt-1 block text-xs leading-5 text-muted-foreground">
                   AI and automations run behind the client&apos;s current CRM,
-                  phone, email, and calendar. Their portal only shows service
-                  health and activity.
+                  phone, email, and calendar. They use a lightweight portal for
+                  approvals, service health, activity and support.
                 </span>
               </span>
             </span>
@@ -481,7 +479,7 @@ export function ClientOnboardingForm({
             <dt className="text-xs text-muted-foreground">Home base</dt>
             <dd className="mt-1 text-sm font-semibold">
               {experienceMode === "northstar_crm"
-                ? "Northstar CRM"
+                ? "Built-in CRM"
                 : "Existing systems"}
             </dd>
           </div>
@@ -533,9 +531,9 @@ export function ClientOnboardingForm({
         </div>
 
         <div className="mt-5 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-          Next, Northstar opens the client&apos;s Package &amp; Setup page.
-          You will provision the package in sandbox, connect these accounts,
-          test each included feature, and launch only after everything passes.
+          Next, Northstar opens the client&apos;s Package &amp; Setup page. You
+          will provision the package in sandbox, connect these accounts, test
+          each included feature, and launch only after everything passes.
         </div>
       </section>
 

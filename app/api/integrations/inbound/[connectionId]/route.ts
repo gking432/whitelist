@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 
 import { redactAuditValue } from "@/lib/audit/redact";
 import {
@@ -8,7 +8,8 @@ import {
 } from "@/lib/integrations/secrets";
 import { checkRateLimit } from "@/lib/integrations/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { runWorkflowsForEvent } from "@/lib/workflows/engine";
+import { enqueueInboundEvent, processInboundEventJobs } from "@/lib/integrations/inbound/queue";
+import { createHash } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -236,142 +237,14 @@ export async function POST(
       ? (envelope.data as Record<string, unknown>)
       : {};
 
-  if (idempotencyKey) {
-    const { data: existing } = await supabase
-      .from("integration_events")
-      .select("id, status, workflow_run_id")
-      .eq("connection_id", connectionId)
-      .eq("idempotency_key", idempotencyKey)
-      .eq("direction", "inbound")
-      .maybeSingle();
-
-    if (existing) {
-      return json(200, {
-        event_id: existing.id,
-        duplicate: true,
-        message: "Event with this idempotency key was already processed.",
-      });
-    }
-  }
-
-  const redactedEnvelope = redactAuditValue({
-    event_type: eventType,
-    event_version:
-      typeof envelope.event_version === "string" ? envelope.event_version : null,
-    occurred_at:
-      typeof envelope.occurred_at === "string" ? envelope.occurred_at : null,
-    source: envelope.source ?? null,
-    data,
-  });
-
-  const { data: insertedEvent, error: insertError } = await supabase
-    .from("integration_events")
-    .insert({
-      partner_id: connection.partner_id,
-      client_id: connection.client_id,
-      connection_id: connection.id,
-      direction: "inbound",
-      event_type: eventType,
-      status: "received",
-      idempotency_key: idempotencyKey,
-      request_payload: redactedEnvelope,
-      redacted: true,
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !insertedEvent) {
-    // Unique violation means a concurrent duplicate delivery won the race.
-    if (insertError?.code === "23505" && idempotencyKey) {
-      const { data: existing } = await supabase
-        .from("integration_events")
-        .select("id")
-        .eq("connection_id", connectionId)
-        .eq("idempotency_key", idempotencyKey)
-        .eq("direction", "inbound")
-        .maybeSingle();
-
-      return json(200, {
-        event_id: existing?.id ?? null,
-        duplicate: true,
-        message: "Event with this idempotency key was already processed.",
-      });
-    }
-
-    return json(500, { error: "The event could not be stored." });
-  }
-
-  const eventId: string = insertedEvent.id;
-
   try {
-    const engineResult = await runWorkflowsForEvent(supabase, {
-      id: eventId,
-      partnerId: connection.partner_id,
-      clientId: connection.client_id,
-      connectionId: connection.id,
-      eventType,
-      data: (redactedEnvelope as { data: Record<string, unknown> }).data ?? {},
+    const receipt = await enqueueInboundEvent(supabase, {
+      partnerId: connection.partner_id, clientId: connection.client_id, connectionId,
+      eventType, idempotencyKey: idempotencyKey ?? createHash("sha256").update(rawBody).digest("hex"), data,
     });
-
-    const firstRunId = engineResult.runs[0]?.runId ?? null;
-
-    await supabase
-      .from("integration_events")
-      .update({
-        status: "processed",
-        workflow_run_id: firstRunId,
-      })
-      .eq("id", eventId);
-
-    await supabase
-      .from("integration_connections")
-      .update({
-        status: "connected",
-        last_success_at: new Date().toISOString(),
-        health_summary:
-          engineResult.runs.length > 0
-            ? "Receiving events and triggering workflows."
-            : "Receiving events. No active workflow matched the last event type.",
-      })
-      .eq("id", connection.id);
-
-    return json(202, {
-      event_id: eventId,
-      matched_workflows: engineResult.matchedInstances,
-      runs_started: engineResult.runs.length,
-      runs: engineResult.runs.map((run) => ({
-        run_id: run.runId,
-        template_key: run.templateKey,
-        status: run.status,
-      })),
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Workflow processing failed.";
-
-    await supabase
-      .from("integration_events")
-      .update({
-        status: "failed",
-        error_code: "processing_failed",
-        error_message: message,
-      })
-      .eq("id", eventId);
-
-    await supabase
-      .from("integration_connections")
-      .update({
-        status: "needs_attention",
-        last_failure_at: new Date().toISOString(),
-        error_count: connection.error_count + 1,
-        health_summary:
-          "The last inbound event failed during workflow processing.",
-      })
-      .eq("id", connection.id);
-
-    return json(500, {
-      event_id: eventId,
-      error: "The event was stored but workflow processing failed.",
-    });
+    after(() => processInboundEventJobs(supabase, 1, receipt.eventId));
+    return json(202, { event_id: receipt.eventId, duplicate: receipt.duplicate, status: receipt.status });
+  } catch {
+    return json(503, { error: "The event could not be committed to the processing queue." });
   }
 }

@@ -29,7 +29,7 @@ export type DeliveryOutcome = {
   delivered: boolean;
   detail: string;
   // Explicit machine-readable outcome for durable job recording.
-  status: "succeeded" | "dry_run" | "skipped" | "failed";
+  status: "succeeded" | "dry_run" | "skipped" | "failed" | "uncertain" | "provider_pending";
   // Provider-side reference for the delivered artifact (message SID,
   // calendar event id) when one exists.
   externalRef?: string | null;
@@ -188,6 +188,7 @@ export async function deliverApprovedCustomerMessage(
     };
   }
 
+  let providerAttempted = false;
   try {
     if (message.channel === "sms") {
       const credentials = await readProviderCredentials<TwilioCredentials>(
@@ -203,6 +204,7 @@ export async function deliverApprovedCustomerMessage(
         throw new Error("Twilio credentials are incomplete. Reconnect Twilio.");
       }
 
+      providerAttempted = true;
       const outcome = await sendSms(credentials, message.to, message.body);
 
       await logEvent("sent", {
@@ -222,6 +224,7 @@ export async function deliverApprovedCustomerMessage(
         attempted: true,
         delivered: true,
         status: "succeeded",
+      externalRef: outcome.messageSid,
       detail: `SMS sent to ${message.to} via Twilio (${outcome.messageSid}).`,
       };
     }
@@ -239,6 +242,7 @@ export async function deliverApprovedCustomerMessage(
       body: message.body,
       idempotencyKey: message.approvalId,
     };
+    providerAttempted = true;
     const outcome = providerKey === "google_workspace"
       ? await sendGoogleWorkspaceEmail(credentials, emailInput)
       : providerKey === "microsoft_365"
@@ -261,6 +265,7 @@ export async function deliverApprovedCustomerMessage(
       attempted: true,
       delivered: true,
       status: "succeeded",
+      externalRef: outcome.messageId,
       detail: `Email sent to ${message.to} through the connected business email account (${outcome.messageId}).`,
     };
   } catch (error) {
@@ -284,8 +289,8 @@ export async function deliverApprovedCustomerMessage(
     return {
       attempted: true,
       delivered: false,
-      status: "failed",
-      detail: `Approval recorded, but the ${message.channel} failed to send: ${detail}`,
+      status: providerAttempted ? "uncertain" : "failed",
+      detail: providerAttempted ? "The provider result is uncertain. Check the provider before resending; automatic retry is disabled." : `Approval recorded, but the ${message.channel} failed to send: ${detail}`,
     };
   }
 }

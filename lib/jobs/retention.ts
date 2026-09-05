@@ -22,7 +22,7 @@ export function operationalRetentionPolicy(
 export async function runOperationalRetention(admin: SupabaseClient) {
   const policy = operationalRetentionPolicy();
 
-  const [rateLimits, setupSessions, syncJobs, resolvedErrors] = await Promise.all([
+  const [rateLimits, setupSessions, syncJobs, resolvedErrors, inboundPayloads, interactions] = await Promise.all([
     admin
       .from("api_rate_limit_windows")
       .delete({ count: "exact" })
@@ -41,13 +41,17 @@ export async function runOperationalRetention(admin: SupabaseClient) {
       .delete({ count: "exact" })
       .not("resolved_at", "is", null)
       .lt("resolved_at", policy.operationalCutoff),
+    admin.from("inbound_event_jobs").update({ encrypted_payload: null }, { count: "exact" })
+      .in("status", ["succeeded", "cancelled", "dead_letter"]).lt("completed_at", policy.operationalCutoff)
+      .not("encrypted_payload", "is", null),
+    admin.rpc("purge_customer_interaction_content", { p_cutoff: policy.operationalCutoff }),
   ]);
 
   const error =
     rateLimits.error ??
     setupSessions.error ??
     syncJobs.error ??
-    resolvedErrors.error;
+    resolvedErrors.error ?? inboundPayloads.error ?? interactions.error;
 
   return {
     ok: !error,
@@ -57,6 +61,8 @@ export async function runOperationalRetention(admin: SupabaseClient) {
       expiredSetupSessions: setupSessions.count ?? 0,
       completedSyncJobs: syncJobs.count ?? 0,
       resolvedPlatformErrors: resolvedErrors.count ?? 0,
+      expiredInboundPayloads: inboundPayloads.count ?? 0,
+      expiredInteractionContent: interactions.data ?? null,
     },
     error: error?.message ?? null,
   };

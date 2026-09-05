@@ -1,3 +1,5 @@
+import { queueEmbeddedWorkflowActions } from "@/lib/integrations/embedded/runtime";
+import { crmSyncDeliveryStatus } from "@/lib/crm/sync-outcome";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { redactAuditValue } from "@/lib/audit/redact";
@@ -116,6 +118,7 @@ async function executeInstance(
       workflow_instance_id: instance.id,
       template_id: template.id,
       trigger_event_id: event.id,
+      execution_key: `${event.id}:${instance.id}`,
       status: "running",
       runtime_mode: instance.runtime_mode,
       started_at: startedAt,
@@ -128,7 +131,16 @@ async function executeInstance(
     .single();
 
   if (runInsertError || !run) {
-    return null;
+    if (runInsertError?.code === "23505") {
+      const { data: existing, error } = await supabase.from("workflow_runs")
+        .select("id, status").eq("execution_key", `${event.id}:${instance.id}`)
+        .eq("client_id", event.clientId).maybeSingle();
+      if (!error && existing && ["succeeded", "paused_for_approval"].includes(existing.status)) {
+        return { runId: existing.id, templateKey: template.template_key, status: existing.status as EngineRunResult["status"] };
+      }
+      throw new Error("Prior workflow execution needs reconciliation; automatic replay is disabled.");
+    }
+    throw new Error("Workflow run could not be persisted; execution stopped.");
   }
 
   const runId: string = run.id;
@@ -146,12 +158,15 @@ async function executeInstance(
     }
 
     const result: HandlerResult = await handler({
+      tenant: { partnerId: event.partnerId, clientId: event.clientId },
       eventType: event.eventType,
       data: event.data,
       settings: instance.settings ?? {},
       clientName,
       knowledgeBlock,
     });
+
+
 
     const needsApproval = Boolean(result.approvalDraft) &&
       approvalRequired(instance, template);
@@ -181,14 +196,7 @@ async function executeInstance(
         outcome: {
           attempted: crmStatus !== "skipped",
           delivered: crmStatus === "synced",
-          status:
-            crmStatus === "synced"
-              ? "succeeded"
-              : crmStatus === "dry_run"
-                ? "dry_run"
-                : crmStatus === "failed"
-                  ? "failed"
-                  : "skipped",
+          status: crmSyncDeliveryStatus(crmStatus),
           detail: crmSync.step.detail,
         },
         workflowRunId: runId,
@@ -326,6 +334,13 @@ async function executeInstance(
       },
     };
 
+    const externalApprovals = await queueEmbeddedWorkflowActions(supabase, {
+      partnerId: event.partnerId, clientId: event.clientId, runId,
+      templateKey: template.template_key, eventType: event.eventType,
+      eventData: event.data, summary: result.summary, output: result.output,
+      simulation: Boolean(event.simulation) || instance.runtime_mode !== "live",
+    });
+
     if (result.approvalDraft && !needsApproval) {
       outputSnapshot.note =
         "Draft prepared without approval requirement by policy. No delivery occurs in this release.";
@@ -405,6 +420,12 @@ async function executeInstance(
         templateKey: template.template_key,
         status: "paused_for_approval",
       };
+    }
+
+    if (externalApprovals > 0) {
+      await supabase.from("workflow_runs").update({ status: "paused_for_approval", requires_approval: true, summary: result.summary, output_snapshot: outputSnapshot }).eq("id", runId).throwOnError();
+      await emitUsageEvent(supabase, event, template.template_key, "paused_for_approval");
+      return { runId, templateKey: template.template_key, status: "paused_for_approval" };
     }
 
     await supabase
@@ -531,6 +552,7 @@ export async function runWorkflowsForEvent(
 
     if (result) {
       runs.push(result);
+      if (result.status === "failed") throw new Error(`Workflow ${result.runId} failed and requires reconciliation.`);
     }
   }
 

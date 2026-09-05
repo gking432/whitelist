@@ -39,7 +39,7 @@ export type LaunchEvidence = {
 } | null;
 
 export type LaunchGate = {
-  key: "deployment" | "workflows" | "connections" | "tests";
+  key: "deployment" | "workflows" | "connections" | "tests" | "client_consent";
   label: string;
   passed: boolean;
   detail: string;
@@ -89,6 +89,7 @@ export function computeLaunchReadiness(input: {
   connections: LaunchConnection[];
   evidence: LaunchEvidence;
   uncoveredTemplateKeys?: string[];
+  clientApprovedBeta?: boolean;
 }): LaunchReadiness {
   const deploymentReady = Boolean(
     input.packageId &&
@@ -150,9 +151,11 @@ export function computeLaunchReadiness(input: {
   if (missingIntegrationIds.length > 0) {
     blockers.push(`Connect: ${missingIntegrationIds.join(", ")}.`);
   }
+  if (!input.clientApprovedBeta) blockers.push("Ask the business owner to complete the beta launch checklist in their portal at /client/launch.");
   if (!testsReady) blockers.push("Run and pass the final safety check.");
 
   const gates: LaunchGate[] = [
+    { key: "client_consent", label: "Business owner approved beta setup", passed: input.clientApprovedBeta === true, detail: "The business owner records the agreed scope, supervised testing and fallback contact in their portal." },
     {
       key: "deployment",
       label: "Package deployed",
@@ -192,7 +195,7 @@ export function computeLaunchReadiness(input: {
     blockers,
     canRunTests: deploymentReady && workflowsReady && !hasLiveRuntime,
     canGoLive:
-      deploymentReady && workflowsReady && connectionsReady && testsReady,
+      deploymentReady && workflowsReady && connectionsReady && testsReady && input.clientApprovedBeta === true,
     targetWorkflowIds: targetWorkflows.map((workflow) => workflow.id),
     targetConnectionIds,
     missingWorkflowKeys,

@@ -1,4 +1,4 @@
-import { after, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
 
 import { getAppUrl } from "@/lib/env";
 import { readProviderCredentials } from "@/lib/integrations/credentials";
@@ -7,7 +7,7 @@ import { checkRateLimit } from "@/lib/integrations/rate-limit";
 import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { verifyTwilioSignature } from "@/lib/integrations/twilio-signature";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { completeTextVoiceCall } from "@/lib/voice/simulate";
+import { enqueueVoiceFinalization } from "@/lib/voice/finalization";
 import {
   rejectVoiceWebhook,
   TWILIO_VOICE_PROVIDER,
@@ -118,12 +118,12 @@ export async function POST(
   }
 
   if (session?.status === "in_progress" && callStatus === "completed") {
-    after(async () => {
-      // Twilio emits the status callback alongside the Media Stream stop.
-      // Let the gateway's signed transcript deliveries drain first.
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-      await completeTextVoiceCall(admin, session.id, TWILIO_VOICE_PROVIDER);
-    });
+    try {
+      await enqueueVoiceFinalization(admin, session.id);
+      await admin.from("call_sessions").update({ ended_at: new Date().toISOString() }).eq("id", session.id);
+    } catch {
+      return rejectVoiceWebhook(503);
+    }
   } else if (
     session?.status === "in_progress" &&
     ["busy", "failed", "no-answer", "canceled"].includes(callStatus)

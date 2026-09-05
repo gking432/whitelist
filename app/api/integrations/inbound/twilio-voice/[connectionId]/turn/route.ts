@@ -1,4 +1,4 @@
-import { after, type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
 import { getAppUrl } from "@/lib/env";
 import { readProviderCredentials } from "@/lib/integrations/credentials";
@@ -7,10 +7,9 @@ import { checkRateLimit } from "@/lib/integrations/rate-limit";
 import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { verifyTwilioSignature } from "@/lib/integrations/twilio-signature";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import {
-  completeTextVoiceCall,
-  runTextVoiceCallerTurn,
-} from "@/lib/voice/simulate";
+import { runTextVoiceCallerTurn } from "@/lib/voice/simulate";
+import { enqueueVoiceFinalization } from "@/lib/voice/finalization";
+import { voiceCallExpired } from "@/lib/voice/safety";
 import {
   gatherTwiml,
   hangupTwiml,
@@ -64,7 +63,7 @@ export async function POST(
   const { data: connectionData } = await admin
     .from("integration_connections")
     .select(
-      "id, status, provider:integration_providers!inner(provider_key)",
+      "id, status, runtime_mode, provider:integration_providers!inner(provider_key)",
     )
     .eq("id", connectionId)
     .eq("provider.provider_key", "twilio")
@@ -109,10 +108,14 @@ export async function POST(
     return rejectVoiceWebhook(403);
   }
 
+  if (connectionData.runtime_mode !== "live") {
+    return hangupTwiml("This phone assistant is no longer active. Please contact the business directly.");
+  }
+
   const callSid = values.CallSid?.trim() ?? "";
   const { data: session } = await admin
     .from("call_sessions")
-    .select("id, status")
+    .select("id, status, started_at")
     .eq("id", sessionId)
     .eq("connection_id", connectionId)
     .eq("provider", TWILIO_VOICE_PROVIDER)
@@ -127,13 +130,16 @@ export async function POST(
     return hangupTwiml("Thanks for calling. Goodbye.");
   }
 
+  if (voiceCallExpired(session.started_at, process.env.VOICE_MAX_CALL_SECONDS)) {
+    await enqueueVoiceFinalization(admin, sessionId);
+    return hangupTwiml("The assistant has reached its call time limit. Please contact the business directly for further help. Goodbye.");
+  }
+
   const callerText = values.SpeechResult?.trim() ?? "";
 
   if (!callerText) {
     if (attempt >= 1) {
-      after(() =>
-        completeTextVoiceCall(admin, sessionId, TWILIO_VOICE_PROVIDER),
-      );
+      await enqueueVoiceFinalization(admin, sessionId);
       return hangupTwiml(
         "I could not hear a response. The team will see that you called. Goodbye.",
       );
@@ -155,18 +161,14 @@ export async function POST(
   );
 
   if (!result.ok) {
-    after(() =>
-      completeTextVoiceCall(admin, sessionId, TWILIO_VOICE_PROVIDER),
-    );
+    await enqueueVoiceFinalization(admin, sessionId);
     return hangupTwiml(
-      "I am having trouble right now. The team will see your call and follow up.",
+      "I am having trouble right now. Please contact the business directly for further help.",
     );
   }
 
   if (result.endCall) {
-    after(() =>
-      completeTextVoiceCall(admin, sessionId, TWILIO_VOICE_PROVIDER),
-    );
+    await enqueueVoiceFinalization(admin, sessionId);
     return hangupTwiml(result.reply);
   }
 

@@ -274,11 +274,11 @@ export async function syncRunToCrm(
   }
 
   const noteBody = [
-    "AI Assistant — Northstar",
+    "AI Assistant",
     "",
     input.runSummary,
     "",
-    `Source: ${input.eventType}. Full run detail is available in Northstar.`,
+    `Source: ${input.eventType}.`,
   ].join("\n");
 
   const payloadPreview = buildContactPayloadPreview(fields, noteBody);
@@ -301,7 +301,7 @@ export async function syncRunToCrm(
       response_payload: redactAuditValue(response),
       error_message: errorMessage ?? null,
       redacted: true,
-    });
+    }).throwOnError();
   };
 
   if (connection.runtime_mode !== "live") {
@@ -340,17 +340,19 @@ export async function syncRunToCrm(
         last_success_at: new Date().toISOString(),
         status: "connected",
       })
-      .eq("id", connection.id);
+      .eq("id", connection.id).throwOnError();
 
     return {
       step: { name: "CRM synced", detail: outcome.detail },
       crm: outcome.crm,
     };
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "CRM sync failed.";
+  } catch {
+    // HubSpot/GHL may have committed a contact or note before a timeout or a
+    // persistence failure. No live failure from this multi-step path is safe
+    // for automatic replay, including a failure while recording success.
+    const message = "CRM write outcome is uncertain. Check the provider contact and notes before creating another sync; automatic replay is disabled.";
 
-    await logEvent("failed", "crm.contact_sync_failed", {}, message);
+    await logEvent("failed", "crm.contact_sync_uncertain", {}, message);
 
     await admin
       .from("integration_connections")
@@ -360,14 +362,14 @@ export async function syncRunToCrm(
         error_count: (connection.error_count ?? 0) + 1,
         health_summary: `Last CRM sync failed: ${message}`,
       })
-      .eq("id", connection.id);
+      .eq("id", connection.id).throwOnError();
 
     return {
       step: {
-        name: "CRM sync failed",
-        detail: `${message} The run itself completed; fix the ${providerLabel} connection and future leads will sync.`,
+        name: "CRM sync needs reconciliation",
+        detail: message,
       },
-      crm: { status: "failed", provider: providerKey, error: message },
+      crm: { status: "uncertain", provider: providerKey, error: message },
     };
   }
 }

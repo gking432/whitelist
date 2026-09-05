@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
-import { access } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
 
 import { createChunks, stringToBase64URL } from "@supabase/ssr";
 import {
@@ -11,6 +11,7 @@ import {
   type SupabaseClient,
 } from "@supabase/supabase-js";
 
+import { processInboundEventJobs } from "../lib/integrations/inbound/queue.ts";
 import { generateWidgetKey } from "../lib/chat/widget.ts";
 import {
   buildConnectorDevelopmentPrompt,
@@ -40,6 +41,10 @@ if (!url || !anonKey || !serviceKey) {
 // separately by the audited production pilot.
 process.env.ANTHROPIC_API_KEY = "";
 process.env.OPENAI_API_KEY = "";
+
+if (!["127.0.0.1", "localhost", "[::1]"].includes(new URL(url).hostname)) {
+  throw new Error("Release verification is restricted to an isolated local Supabase backend.");
+}
 
 const admin = createClient(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -150,10 +155,34 @@ async function postBridgeEvent(input: {
   );
   const raw = await response.text();
   assert.equal(response.status, 202, raw);
-  return JSON.parse(raw) as {
-    runs_started: number;
-    runs: { run_id: string; template_key: string; status: string }[];
-  };
+  const receipt = JSON.parse(raw) as { event_id: string };
+  assert.ok(receipt.event_id);
+  await awaitInboundEvent(receipt.event_id);
+  const { data: runs, error } = await admin.from("workflow_runs")
+    .select("id,status,workflow_templates(template_key)").eq("trigger_event_id", receipt.event_id);
+  assert.ifError(error);
+  return { runs_started: runs?.length ?? 0, runs: (runs ?? []).map((run) => ({
+    run_id: run.id, status: run.status,
+    template_key: (run.workflow_templates as unknown as { template_key: string }).template_key,
+  })) };
+
+}
+
+async function awaitInboundEvent(eventId: string) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await processInboundEventJobs(admin, 1, eventId);
+    const { data: job, error } = await admin.from("inbound_event_jobs").select("status,last_error,encrypted_payload")
+      .eq("event_id", eventId).single();
+    assert.ifError(error);
+    assert.ok(job);
+    if (job.status === "succeeded") {
+      assert.equal(job.encrypted_payload, null, "Successful inbound jobs must purge the replay payload.");
+      return;
+    }
+    assert.ok(!["dead_letter", "cancelled", "failed"].includes(job.status), job.last_error ?? job.status);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  assert.fail("Durable inbound job did not finish within 15 seconds.");
 }
 
 async function availablePort() {
@@ -487,7 +516,7 @@ async function main() {
         }),
       },
     );
-    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.status, 202);
     assert.equal(
       ((await duplicate.json()) as { duplicate?: boolean }).duplicate,
       true,
@@ -717,7 +746,7 @@ async function main() {
       report?: {
         status?: string;
         transcript_turns?: number;
-        intake_event?: { status?: string } | null;
+        intake_event?: { id?: string; status?: string } | null;
         approvals_from_call?: { type?: string; status?: string }[];
       };
       error?: string;
@@ -732,7 +761,11 @@ async function main() {
       (voiceComplete.report?.transcript_turns ?? 0) >= 5,
       `Voice completion lost transcript turns: ${JSON.stringify(voiceComplete.report)}`,
     );
-    assert.equal(voiceComplete.report?.intake_event?.status, "processed");
+    assert.ok(voiceComplete.report?.intake_event?.id);
+    if (voiceComplete.report.intake_event.status !== "processed") await awaitInboundEvent(voiceComplete.report.intake_event.id);
+    const { data: completedIntake } = await admin.from("integration_events").select("status")
+      .eq("id", voiceComplete.report.intake_event.id).single();
+    assert.equal(completedIntake?.status, "processed");
     assert.ok(
       voiceComplete.report?.approvals_from_call?.some(
         (approval) =>
@@ -1178,6 +1211,12 @@ async function main() {
       ),
     );
   } finally {
+    if (process.env.RELEASE_JOURNEY_KEEP_FIXTURES === "true") {
+      await writeFile("/tmp/northstar-beta-journey-identities.json", JSON.stringify({
+        partnerId: ids.partner, clientId: ids.client, appUrl,
+        platform: platform?.email, partner: partner?.email, client: client?.email, password,
+      }), { mode: 0o600 });
+    } else {
     if (ids.partner) {
       const { error } = await admin
         .from("partners")
@@ -1195,6 +1234,7 @@ async function main() {
         const { error } = await admin.auth.admin.deleteUser(userId);
         assert.ifError(error);
       }
+    }
     }
   }
 }

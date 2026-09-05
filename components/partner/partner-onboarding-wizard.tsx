@@ -372,9 +372,9 @@ function IntegrationsStep({
         <p className="text-xs text-muted-foreground">
           {twilioReady
             ? "Twilio is verified. Optional agency tools can be connected at any time."
-            : "Connect and verify the Twilio billing account above to continue."}
+            : "You can connect phone service later, before launching a phone workflow."}
         </p>
-        <Button type="submit" disabled={pending || !twilioReady}>
+        <Button type="submit" disabled={pending}>
           {pending ? "Saving..." : "Continue"}
           <ArrowRight aria-hidden="true" />
         </Button>
@@ -447,7 +447,7 @@ function PlanStep() {
         <div>
           <p className="text-sm font-medium">No payment is collected today</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Billing is not connected yet. This confirms the current plan
+            Your billing arrangement is managed by the platform. This confirms the current plan
             structure and opens your partner workspace.
           </p>
         </div>

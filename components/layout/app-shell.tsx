@@ -14,6 +14,7 @@ import { ImpersonationBanner } from "@/components/impersonation/impersonation-ba
 import { cn } from "@/lib/utils";
 
 const navigation = [
+  { key: "start", label: "Launch guide", href: "/partner/start", icon: BriefcaseBusiness },
   {
     key: "dashboard",
     label: "Overview",

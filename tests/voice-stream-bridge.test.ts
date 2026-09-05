@@ -101,7 +101,7 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
           end_call: input.name === "end_call",
         }),
       );
-    } else if (input.action === "end") {
+    } else if (["end", "usage", "drained"].includes(input.action)) {
       response.end('{"ended":true}');
     }
   });
@@ -196,7 +196,7 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
         socket.send(
           JSON.stringify({
             type: "response.done",
-            response: { output: [] },
+            response: { id: "response-usage-1", usage: { input_tokens: 12, output_tokens: 4, total_tokens: 16 }, output: [] },
           }),
         );
       }
@@ -289,6 +289,9 @@ test("voice gateway bridges Twilio and OpenAI with tools, transcripts, and barge
       () => receivedControl.some((item) => item.action === "end"),
       "signed carrier hangup",
     );
+
+    await waitFor(() => receivedControl.some((item) => item.action === "usage"), "voice usage receipt");
+    assert.equal(receivedControl.find((item) => item.action === "usage")?.total_tokens, 16);
 
     assert.ok(
       openAiEvents.some(

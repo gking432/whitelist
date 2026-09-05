@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage } from "../connectors/types";
 
 export type OpenPhoneCredentials = { apiKey: string; phoneNumberIds?: string };
@@ -5,7 +6,7 @@ const BASE = "https://api.openphone.com/v1";
 
 async function openPhoneFetch(credentials: OpenPhoneCredentials, path: string, init: RequestInit = {}) {
   const response = await fetch(`${BASE}${path}`, { ...init, headers: { Authorization: credentials.apiKey, "Content-Type": "application/json", ...init.headers }, signal: init.signal ?? AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Quo API failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("openphone", response);
   return response;
 }
 

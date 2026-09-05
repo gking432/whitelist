@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { microsoftBusyIntervals } from "./calendar-availability.ts";
 import type {
   CanonicalObjectType,
   CanonicalRecord,
@@ -11,23 +13,28 @@ import {
   type WorkspaceCredentials,
   workspaceApiRequiresReconnect,
 } from "./workspace-oauth.ts";
-import { ConnectorAuthorizationError } from "../connectors/errors.ts";
+import { ConnectorAuthorizationError, ConnectorHttpError, parseRetryAfter } from "../connectors/errors.ts";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
-class MicrosoftGraphError extends Error {
+class MicrosoftGraphError extends ConnectorHttpError {
   readonly status: number;
 
-  constructor(status: number) {
-    super(`Microsoft Graph failed (${status}).`);
+  constructor(status: number, retryAfter: string | null = null) {
+    super(`Microsoft Graph failed (${status}).`, status, parseRetryAfter(retryAfter));
     this.status = status;
   }
 }
 
 async function graphFetch(credentials: WorkspaceCredentials, path: string, init: RequestInit = {}) {
+  const url = new URL(path.startsWith("http") ? path : `${GRAPH}${path}`);
+  if (url.protocol !== "https:" || url.hostname !== "graph.microsoft.com" || url.username || url.password || (url.port && url.port !== "443")) {
+    throw new Error("Microsoft returned an invalid pagination destination.");
+  }
   const token = await mintWorkspaceAccessToken("microsoft_365", credentials);
-  const response = await fetch(path.startsWith("http") ? path : `${GRAPH}${path}`, {
+  const response = await fetch(url, {
     ...init,
+    redirect: "error",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...init.headers },
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
@@ -35,7 +42,7 @@ async function graphFetch(credentials: WorkspaceCredentials, path: string, init:
     if (workspaceApiRequiresReconnect(response.status)) {
       throw new ConnectorAuthorizationError();
     }
-    throw new MicrosoftGraphError(response.status);
+    throw new MicrosoftGraphError(response.status, response.headers.get("retry-after"));
   }
   return response;
 }
@@ -194,6 +201,7 @@ async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: Con
     const response = await graphFetch(credentials, `/me/events${id ? `/${encodeURIComponent(id)}` : ""}`, {
       method: id ? "PATCH" : "POST",
       body: JSON.stringify(connectorPushPayload(input.externalData, {
+        ...(!id ? { transactionId: input.idempotencyKey } : {}),
         subject: text(input.data, "title") || "Appointment",
         body: { contentType: "text", content: text(input.data, "description") },
         start: { dateTime: text(input.data, "start_at"), timeZone },
@@ -229,12 +237,12 @@ export async function getMicrosoftBusyIntervals(credentials: WorkspaceCredential
     body: JSON.stringify({ schedules: [address], startTime: { dateTime: timeMin, timeZone: "UTC" }, endTime: { dateTime: timeMax, timeZone: "UTC" }, availabilityViewInterval: 30 }),
   });
   const body = (await response.json()) as { value?: { scheduleItems?: { start?: { dateTime?: string }; end?: { dateTime?: string } }[] }[] };
-  return (body.value?.[0]?.scheduleItems ?? []).flatMap((item) => item.start?.dateTime && item.end?.dateTime ? [{ start: item.start.dateTime, end: item.end.dateTime }] : []);
+  return microsoftBusyIntervals(body, address);
 }
 
 export async function createMicrosoftCalendarEvent(
   credentials: WorkspaceCredentials,
-  event: { summary: string; description: string; startIso: string; endIso: string; timeZone?: string },
+  event: { summary: string; description: string; startIso: string; endIso: string; timeZone?: string; idempotencyKey?: string },
 ): Promise<{ eventId: string; htmlLink: string | null }> {
   const result = await pushMicrosoftRecord(credentials, {
     operation: "create",
@@ -247,7 +255,7 @@ export async function createMicrosoftCalendarEvent(
       end_at: event.endIso,
       timezone: event.timeZone ?? "UTC",
     },
-    idempotencyKey: `calendar-${event.startIso}`,
+    idempotencyKey: event.idempotencyKey ?? randomUUID(),
   });
   const source = (result.source ?? {}) as Record<string, unknown>;
   return {

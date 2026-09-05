@@ -3,7 +3,10 @@
 import { useState, useTransition } from "react";
 import { RotateCcw } from "lucide-react";
 
-import { retryActionJob } from "@/app/partner/clients/[clientId]/runs/actions";
+import {
+  reconcileActionJob,
+  retryActionJob,
+} from "@/app/partner/clients/[clientId]/runs/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime, formatEnum } from "@/lib/format";
@@ -36,6 +39,8 @@ const statusStyles: Record<string, string> = {
   dry_run: "border-sky-200 bg-sky-50 text-sky-800",
   skipped: "border-slate-200 bg-slate-50 text-slate-700",
   failed: "border-red-200 bg-red-50 text-red-900",
+  processing: "border-amber-200 bg-amber-50 text-amber-900",
+  uncertain: "border-red-200 bg-red-50 text-red-900",
   pending: "border-amber-200 bg-amber-50 text-amber-900",
   cancelled: "border-slate-200 bg-slate-50 text-slate-500",
 };
@@ -44,10 +49,12 @@ export function ActionJobsPanel({
   clientId,
   jobs,
   canRetry,
+  canReconcile = false,
 }: {
   clientId: string;
   jobs: ActionJobView[];
   canRetry: boolean;
+  canReconcile?: boolean;
 }) {
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -122,6 +129,84 @@ export function ActionJobsPanel({
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 {messages[job.id]}
               </p>
+            ) : null}
+            {job.status === "uncertain" ? (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
+                <p>
+                  Delivery is unconfirmed. Check the connected provider before
+                  taking any further action.
+                </p>
+                {canReconcile ? (
+                  <form
+                    className="mt-3 space-y-3"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const form = new FormData(event.currentTarget);
+                      setPendingId(job.id);
+                      startTransition(async () => {
+                        const result = await reconcileActionJob(
+                          clientId,
+                          job.id,
+                          String(form.get("outcome") ?? ""),
+                          String(form.get("evidence") ?? ""),
+                        );
+                        setMessages((previous) => ({
+                          ...previous,
+                          [job.id]: result.message ?? "",
+                        }));
+                        setPendingId(null);
+                      });
+                    }}
+                  >
+                    <label className="block">
+                      Confirmed provider result
+                      <select
+                        name="outcome"
+                        required
+                        defaultValue=""
+                        className="mt-1 block w-full rounded border bg-white p-2"
+                      >
+                        <option value="" disabled>
+                          Select after checking the provider
+                        </option>
+                        <option value="succeeded">
+                          Provider confirms it completed
+                        </option>
+                        <option value="cancelled">
+                          Provider confirms it did not complete; close this
+                          attempt
+                        </option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      Evidence from the provider
+                      <textarea
+                        name="evidence"
+                        required
+                        minLength={20}
+                        maxLength={1000}
+                        rows={2}
+                        placeholder="Reference number, time checked, and what the provider confirmed. Do not include passwords or customer details."
+                        className="mt-1 block w-full rounded border bg-white p-2"
+                      />
+                    </label>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isPending}
+                      type="submit"
+                    >
+                      {isPending && pendingId === job.id
+                        ? "Saving…"
+                        : "Record result without resending"}
+                    </Button>
+                  </form>
+                ) : (
+                  <p className="mt-2">
+                    The business owner can record the confirmed result here.
+                  </p>
+                )}
+              </div>
             ) : null}
           </li>
         ))}

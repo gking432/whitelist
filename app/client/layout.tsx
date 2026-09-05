@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 
 import { PortalShell } from "@/components/client/portal-shell";
@@ -80,6 +81,7 @@ export default async function ClientPortalLayout({
       unreadNotificationCount={unreadNotificationCount}
       banner={<ImpersonationBanner />}
     >
+      {portal.access.role === "client_owner" && !portal.access.isImpersonating ? <div className="mb-5 rounded-lg border bg-secondary/30 px-4 py-3 text-sm"><Link className="font-medium underline underline-offset-4" href="/client/launch">Review your supervised beta launch checklist</Link><span className="mx-3" aria-hidden="true">·</span><Link className="underline underline-offset-4" href="/client/integrations">Manage connected automations</Link></div> : null}
       {children}
     </PortalShell>
   );

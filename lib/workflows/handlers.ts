@@ -1,3 +1,4 @@
+import type { AITenant } from "@/lib/ai/budget";
 // Workflow handlers for the Lead Response Pack. Each handler is AI-capable
 // with a deterministic fallback: if the AI provider is not configured or a
 // call fails, the handler still produces schema-shaped output, labeled
@@ -54,6 +55,7 @@ export type HandlerResult = {
 };
 
 export type HandlerContext = {
+  tenant?: AITenant;
   eventType: string;
   data: Record<string, unknown>;
   settings: Record<string, unknown>;
@@ -71,6 +73,7 @@ function asString(value: unknown): string {
 // Runs the structured AI call, degrading to the deterministic fallback on
 // missing credentials or any AI failure. Never throws.
 async function structuredWithFallback<T>(args: {
+  tenant?: AITenant;
   taskKey: string;
   system: string;
   user: string;
@@ -87,6 +90,7 @@ async function structuredWithFallback<T>(args: {
   try {
     const result = await generateStructured({
       taskKey: args.taskKey,
+      tenant: args.tenant,
       system: args.system,
       user: args.user,
       schema: args.schema,
@@ -143,6 +147,7 @@ async function handleLeadIntake(context: HandlerContext): Promise<HandlerResult>
     : undefined;
 
   const { data: analysis, ai } = await structuredWithFallback({
+    tenant: context.tenant,
     taskKey: "lead_intake_analysis",
     system: LEAD_INTAKE_SYSTEM_PROMPT,
     user: withKnowledge(
@@ -201,6 +206,7 @@ async function handleLeadIntake(context: HandlerContext): Promise<HandlerResult>
       asString(context.settings.message_template) || undefined;
 
     const draftResult = await structuredWithFallback<CustomerDraft>({
+    tenant: context.tenant,
       taskKey: "new_lead_response_draft",
       system: CUSTOMER_DRAFT_SYSTEM_PROMPT,
       user: withKnowledge(
@@ -284,6 +290,7 @@ function draftHandler(options: {
       asString(context.settings.message_template) || undefined;
 
     const { data: draft, ai } = await structuredWithFallback<CustomerDraft>({
+    tenant: context.tenant,
       taskKey: `${options.draftKind}_draft`,
       system: CUSTOMER_DRAFT_SYSTEM_PROMPT,
       user: withKnowledge(
@@ -358,6 +365,7 @@ async function handleIntakeRouting(
     : undefined;
 
   const { data: routing, ai } = await structuredWithFallback({
+    tenant: context.tenant,
     taskKey: "intake_routing",
     system: INTAKE_ROUTING_SYSTEM_PROMPT,
     user: withKnowledge(

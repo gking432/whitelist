@@ -9,6 +9,8 @@ import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { verifyTwilioSignature } from "@/lib/integrations/twilio-signature";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createCallSession } from "@/lib/voice/sessions";
+import { enqueueVoiceFinalization } from "@/lib/voice/finalization";
+import { voiceCallExpired } from "@/lib/voice/safety";
 import { signVoiceStreamSession } from "@/lib/voice/stream-signature";
 import { normalizeVoiceStreamUrl } from "@/lib/voice/stream-url";
 import { startTextVoiceCall } from "@/lib/voice/simulate";
@@ -111,6 +113,10 @@ export async function POST(
     return rejectVoiceWebhook(403);
   }
 
+  if (connection.runtime_mode !== "live") {
+    return hangupTwiml("This phone assistant is not active. Please contact the business directly.");
+  }
+
   const callSid = values.CallSid?.trim();
 
   if (!callSid) {
@@ -119,13 +125,17 @@ export async function POST(
 
   const { data: existing } = await admin
     .from("call_sessions")
-    .select("id, status, extracted")
+    .select("id, status, extracted, started_at")
     .eq("connection_id", connectionId)
     .eq("provider", TWILIO_VOICE_PROVIDER)
     .eq("external_ref", callSid)
     .maybeSingle();
 
   if (existing?.status === "in_progress") {
+    if (existing.extracted?.handling_mode !== "staff_assisted" && voiceCallExpired(existing.started_at, process.env.VOICE_MAX_CALL_SECONDS)) {
+      await enqueueVoiceFinalization(admin, existing.id);
+      return hangupTwiml("The assistant has reached its call time limit. Please contact the business directly for further help. Goodbye.");
+    }
     if (existing.extracted?.handling_mode === "staff_assisted") {
       const streamUrl = normalizeVoiceStreamUrl(
         process.env.NORTHSTAR_VOICE_STREAM_URL,
@@ -199,7 +209,7 @@ export async function POST(
 
     if (!created) {
       return hangupTwiml(
-        "The phone assistant is unavailable. The team has been notified.",
+        "The phone assistant is unavailable. Please contact the business directly.",
       );
     }
 
@@ -277,7 +287,7 @@ export async function POST(
     });
 
     return hangupTwiml(
-      "The phone assistant is unavailable. The team has been notified.",
+      "The phone assistant is unavailable. Please contact the business directly.",
     );
   }
 

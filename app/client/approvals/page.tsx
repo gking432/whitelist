@@ -1,3 +1,7 @@
+import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
+import { ActionJobsPanel } from "@/components/partner/action-jobs-panel";
+import { isRetryableJobStatus } from "@/lib/jobs/outcome";
+import type { ActionJobView } from "@/components/partner/action-jobs-panel";
 import { BellCheck } from "lucide-react";
 
 import { resolveClientApproval } from "@/app/client/approvals/actions";
@@ -20,6 +24,7 @@ type ApprovalRow = {
   summary: string | null;
   risk_level: string;
   editable_content: string | null;
+  proposed_payload: Record<string, unknown> | null;
   resolution_note: string | null;
   resolved_at: string | null;
   created_at: string;
@@ -55,7 +60,7 @@ export default async function ClientPortalApprovalsPage() {
   const { data, error } = await supabase
     .from("approval_items")
     .select(
-      "id, type, status, title, summary, risk_level, editable_content, resolution_note, resolved_at, created_at, action_jobs!action_jobs_approval_id_fkey(status, outcome_detail, created_at)",
+      "id, type, status, title, summary, risk_level, editable_content, resolution_note, resolved_at, created_at, proposed_payload, action_jobs!action_jobs_approval_id_fkey(status, outcome_detail, created_at)",
     )
     .eq("client_id", access.clientId)
     .order("created_at", { ascending: false })
@@ -72,6 +77,14 @@ export default async function ClientPortalApprovalsPage() {
     );
   }
 
+  const { data: jobs, error: jobsError } = await supabase
+    .from("action_jobs")
+    .select(
+      "id, kind, status, attempt_count, outcome_detail, last_error, last_attempt_at, created_at",
+    )
+    .eq("client_id", access.clientId)
+    .order("created_at", { ascending: false })
+    .limit(50);
   const approvals = (data ?? []) as ApprovalRow[];
   const pending = approvals.filter((item) => item.status === "pending");
   const resolved = approvals.filter((item) => item.status !== "pending");
@@ -112,12 +125,13 @@ export default async function ClientPortalApprovalsPage() {
                   {formatEnum(item.risk_level)} risk
                 </Badge>
               </div>
+              {item.type === "external_action" ? <ExternalActionPreview payload={item.proposed_payload} /> : null}
               <div className="mt-4 border-t pt-4">
                 {access.canResolveApprovals ? (
                   <ApprovalResolutionForm
                     action={resolveClientApproval.bind(null, item.id)}
                     editableContent={item.editable_content}
-                    consequence="Approving records your decision and completes the automation. Rejecting cancels it. Nothing is sent to your customers without an approval."
+                    consequence="Approving authorizes this action and queues delivery. Check its delivery status below. Rejecting cancels the proposed action."
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">
@@ -130,6 +144,26 @@ export default async function ClientPortalApprovalsPage() {
         </div>
       )}
 
+      {jobsError ? (
+        <p role="alert">
+          Action history is unavailable. Do not resend an action until its
+          delivery is confirmed.
+        </p>
+      ) : (
+        <ActionJobsPanel
+          clientId={access.clientId}
+          canRetry={access.canOperateCustomerActions && !access.isImpersonating}
+          canReconcile={
+            access.role === "client_owner" && !access.isImpersonating
+          }
+          jobs={
+            (jobs ?? []).map((job) => ({
+              ...job,
+              retryable: isRetryableJobStatus(job.status),
+            })) as ActionJobView[]
+          }
+        />
+      )}
       {resolved.length > 0 ? (
         <section className="overflow-hidden rounded-lg border bg-card">
           <div className="border-b px-5 py-4">

@@ -46,7 +46,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
   },
   {
     key: "generic_inbound_webhook", name: "Inbound Webhook", category: "lead_source",
-    description: "Signed intake endpoint for forms and systems without a native connector.", authStrategy: "webhook",
+    description: "Token-authenticated intake endpoint for forms and systems without a native connector.", authStrategy: "webhook",
     capabilities: ["lead.webhook"], verificationStatus: "contract_verified", requestable: false,
   },
   {
@@ -86,8 +86,8 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
   },
   {
     key: "google_business_profile", name: "Google Business Profile", category: "reputation",
-    description: "Locations, customer reviews, ratings, and approved replies.", authStrategy: "oauth2",
-    capabilities: ["review.read", "review.update"], verificationStatus: "contract_verified", requestable: false,
+    description: "Locations, customer reviews, and ratings.", authStrategy: "oauth2",
+    capabilities: ["review.read"], verificationStatus: "contract_verified", requestable: false,
     docsUrl: "https://developers.google.com/my-business/reference/rest",
   },
   {
@@ -97,8 +97,8 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
     docsUrl: "https://resend.com/docs/dashboard/receiving/introduction", webhookEvents: ["email.received"],
   },
   {
-    key: "podium", name: "Podium", category: "reputation", description: "Customer reviews and approval-gated responses from Podium.", authStrategy: "oauth2",
-    capabilities: ["review.read", "review.update"], verificationStatus: "contract_verified", requestable: false, docsUrl: "https://docs.podium.com/reference",
+    key: "podium", name: "Podium", category: "reputation", description: "Customer reviews from Podium.", authStrategy: "oauth2",
+    capabilities: ["review.read"], verificationStatus: "contract_verified", requestable: false, docsUrl: "https://docs.podium.com/reference",
   },
   {
     key: "birdeye", name: "Birdeye", category: "reputation", description: "Aggregated customer reviews and ratings from Birdeye.", authStrategy: "api_key",
@@ -135,21 +135,21 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
   {
     key: "quickbooks_online", name: "QuickBooks Online", category: "accounting",
     description: "Customers, invoices, payments, and payment status from QuickBooks Online.", authStrategy: "oauth2",
-    capabilities: ["customer.read", "customer.create", "invoice.read", "payment.read"],
+    capabilities: ["customer.read", "invoice.read", "payment.read"],
     verificationStatus: "contract_verified", requestable: false,
     docsUrl: "https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api",
   },
   {
     key: "stripe", name: "Stripe", category: "payments",
-    description: "Customers, invoices, payment status, and hosted payment links from Stripe.", authStrategy: "api_key",
-    capabilities: ["customer.read", "customer.create", "invoice.read", "payment.read", "payment.create"],
+    description: "Customers, invoices, payment status from Stripe.", authStrategy: "api_key",
+    capabilities: ["customer.read", "invoice.read", "payment.read"],
     verificationStatus: "contract_verified", requestable: false,
     docsUrl: "https://docs.stripe.com/api",
   },
   {
     key: "square", name: "Square", category: "payments",
-    description: "Customers, invoices, payment status, and hosted payment links from Square.", authStrategy: "oauth2",
-    capabilities: ["customer.read", "customer.create", "invoice.read", "payment.read", "payment.create"],
+    description: "Customers, invoices, payment status from Square.", authStrategy: "oauth2",
+    capabilities: ["customer.read", "invoice.read", "payment.read"],
     verificationStatus: "contract_verified", requestable: false,
     docsUrl: "https://developer.squareup.com/reference/square",
   },
@@ -236,4 +236,11 @@ export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
 
 export function findConnectorManifest(key: string): ConnectorManifest | null {
   return CONNECTOR_CATALOG.find((connector) => connector.key === key) ?? null;
+}
+
+// Phone history has its own call-session workflow path. Import automation is
+// limited to lead records so polling does not also trigger the call workflows.
+export function supportsImportedLeadAutomation(key: string): boolean {
+  const manifest = findConnectorManifest(key);
+  return Boolean(manifest && manifest.category !== "phone" && manifest.capabilities.includes("lead.read"));
 }

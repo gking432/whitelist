@@ -50,16 +50,32 @@ export const getActiveImpersonation = cache(
 
     if (error || !session) return null;
 
+    // A cookie must not preserve authority after the actor is suspended or
+    // removed. Recheck the real membership on every request, not the role
+    // captured when this support session started.
+    const { data: actorMemberships, error: actorError } = await admin
+      .from("memberships")
+      .select("role, partner_id, client_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .is("client_id", null);
+    const authorized = actorMemberships?.some((membership) =>
+      membership.partner_id === null
+        ? ["platform_owner", "platform_admin", "platform_support"].includes(membership.role)
+        : session.target_kind === "client" && membership.partner_id === session.target_partner_id,
+    );
+    if (actorError || !authorized) return null;
+
     const [{ data: partner }, clientResult] = await Promise.all([
       admin
         .from("partners")
-        .select("id, name")
+        .select("id, name, is_test_account")
         .eq("id", session.target_partner_id)
         .maybeSingle(),
       session.target_client_id
         ? admin
             .from("client_businesses")
-            .select("id, name, account_kind")
+            .select("id, name, account_kind, is_test_account")
             .eq("id", session.target_client_id)
             .eq("partner_id", session.target_partner_id)
             .maybeSingle()
@@ -67,6 +83,9 @@ export const getActiveImpersonation = cache(
     ]);
 
     if (!partner) return null;
+    if (session.target_client_id && !clientResult.data) return null;
+    if (session.mode === "sandbox_full" && !(session.target_kind === "partner"
+      ? partner.is_test_account : clientResult.data?.is_test_account)) return null;
 
     return {
       id: session.id,

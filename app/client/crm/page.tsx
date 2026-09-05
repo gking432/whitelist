@@ -1,6 +1,7 @@
 import { NorthstarCrmWorkspace } from "@/components/crm/northstar-crm-workspace";
 import { NorthstarDesktopShell } from "@/components/crm/northstar-desktop-shell";
 import { loadClientPortal } from "@/lib/clients/portal";
+import { filterClientCrmData } from "@/lib/crm/permission-filter";
 import { loadNorthstarCrm } from "@/lib/crm/operating-suite";
 import { CRM_VIEWS, parseCrmView } from "@/lib/crm/views";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -86,7 +87,7 @@ export default async function ClientCrmPage({
         approvalsPath="/client/approvals"
         assistantPath="/client/assistant"
         actionCenterPath="/client/action-center"
-        data={data}
+        data={filterClientCrmData(data, portal.access.visibleClientSections, portal.access.canManageClientTeam)}
         embedded
         initialSearch={params.search ?? ""}
         showNewLead={params.new === "1"}

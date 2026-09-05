@@ -1,5 +1,7 @@
 # Start Here
 
+For the current implementation, verified beta scope, partner setup and remaining launch checks, start with [the supervised beta launch guide](28-beta-launch-guide.md). Product specifications below describe intent, not proof of real-provider readiness.
+
 ## Purpose
 
 Build a new production-grade partner/agency platform for selling, managing, and monitoring AI automations and business-system integrations for home service businesses.
@@ -127,3 +129,4 @@ It does need:
 - audit logging.
 - no accidental dependence on Northstar.
 
+- [Connected apps beta: setup, verification and activation](30-connected-apps-beta.md)

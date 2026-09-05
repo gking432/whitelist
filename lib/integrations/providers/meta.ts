@@ -1,8 +1,9 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage } from "../connectors/types";
 import type { MetaCredentials } from "./marketing-oauth";
 
 function version() { return process.env.META_GRAPH_VERSION ?? "v24.0"; }
-async function graph(credentials: MetaCredentials, path: string, token = credentials.pageAccessToken, init: RequestInit = {}) { const separator = path.includes("?") ? "&" : "?"; const response = await fetch(`https://graph.facebook.com/${version()}/${path}${separator}access_token=${encodeURIComponent(token)}`, { ...init, headers: { "Content-Type": "application/json", ...init.headers }, signal: init.signal ?? AbortSignal.timeout(15_000) }); if (!response.ok) throw new Error(`Meta Graph API failed (${response.status}).`); return response; }
+async function graph(credentials: MetaCredentials, path: string, token = credentials.pageAccessToken, init: RequestInit = {}) { const separator = path.includes("?") ? "&" : "?"; const response = await fetch(`https://graph.facebook.com/${version()}/${path}${separator}access_token=${encodeURIComponent(token)}`, { ...init, headers: { "Content-Type": "application/json", ...init.headers }, signal: init.signal ?? AbortSignal.timeout(15_000) }); if (!response.ok) throw connectorHttpError("meta", response); return response; }
 function fieldMap(value: unknown) { const rows = Array.isArray(value) ? value : []; return Object.fromEntries(rows.map((raw) => { const field = raw as { name?: string; values?: unknown[] }; return [field.name ?? "field", field.values?.[0] ?? null]; })); }
 function actionTotal(value: unknown, include: (actionType: string) => boolean) {
   return (Array.isArray(value) ? value : []).reduce((total, raw) => {

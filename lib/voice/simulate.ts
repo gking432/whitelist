@@ -227,7 +227,7 @@ async function runScriptedAgentTurn(
     return {
       ok: true,
       reply:
-        "I marked this as urgent for the team. If anyone is in immediate danger, call emergency services now. A person from the business will follow up as quickly as possible.",
+        "I marked this as urgent for the team. If anyone is in immediate danger, call emergency services now. I cannot transfer this call or promise a callback time.",
       toolsUsed,
       endCall: false,
     };
@@ -256,7 +256,9 @@ async function runScriptedAgentTurn(
     toolsUsed.push({ name: "request_booking", result: booking.result });
     return {
       ok: true,
-      reply: `Great. I requested ${chosen.label}. The team will confirm it shortly.`,
+      reply: ["requested", "already_pending"].includes(String(booking.result.status))
+        ? `Your request is awaiting team review. It still requires approval and confirmation before it is booked.`
+        : "I could not save that booking request. Please contact the business directly to confirm a time.",
       toolsUsed,
       endCall: false,
     };
@@ -280,7 +282,7 @@ async function runScriptedAgentTurn(
       reply:
         choices.length > 0
           ? `Based on what you said and the current calendar, I can offer ${choices.join(" or ")}. Which works better?`
-          : "I saved your scheduling preference. The team will contact you to confirm an available time.",
+          : "I saved your scheduling preference. The team needs to review availability before confirming a booking.",
       toolsUsed,
       endCall: false,
     };
@@ -405,13 +407,14 @@ async function runAgentWithTools(args: {
     reply =
       choices.length > 0
         ? `I can offer ${choices.join(" or ")}. Which works better?`
-        : "I saved your scheduling preference. The team will contact you with an available time.";
+        : "I saved your scheduling preference. The team needs to review availability before confirming a booking.";
   } else if (lastTool?.name === "request_booking") {
-    reply =
-      "I requested that time. The team will confirm the appointment shortly.";
+    reply = ["requested", "already_pending"].includes(String(lastTool.result.status))
+      ? "Your request is awaiting team review. It requires approval and confirmation before it is booked."
+      : "I could not save that booking request. Please contact the business directly to confirm a time.";
   } else if (lastTool?.name === "escalate") {
     reply =
-      "I flagged this for immediate human follow-up. A person from the team will contact you as quickly as possible.";
+      "I requested a callback from the team. I cannot transfer this call or promise a callback time.";
   } else if (lastTool?.name === "end_call") {
     reply = `Thanks for calling ${args.toolContext.clientName}. Goodbye.`;
   } else if (toolsUsed.length > 0) {
@@ -592,7 +595,7 @@ export async function runTextVoiceCallerTurn(
     return {
       ok: true,
       reply:
-        "This simulated call reached its length limit — complete it to run the post-call pipeline.",
+        "We have reached the call time limit. I will save your request for the team. Thank you for calling.",
       toolsUsed: [],
       endCall: true,
     };

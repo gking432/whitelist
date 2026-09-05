@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import { randomBytes } from "node:crypto";
 
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage } from "../connectors/types";
@@ -18,7 +19,7 @@ async function dialpadFetch(credentials: DialpadCredentials, path: string, init:
     headers: { Authorization: `Bearer ${credentials.accessToken}`, "Content-Type": "application/json", ...init.headers },
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`Dialpad API failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("dialpad", response);
   return response;
 }
 

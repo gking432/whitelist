@@ -1,3 +1,4 @@
+import type { AITenant } from "@/lib/ai/budget";
 import { z } from "zod";
 
 import {
@@ -20,6 +21,7 @@ import {
 } from "@/lib/ai/schemas";
 
 async function structuredOrFallback<T>(input: {
+  tenant?: AITenant;
   taskKey: string;
   system: string;
   user: string;
@@ -36,6 +38,7 @@ async function structuredOrFallback<T>(input: {
   try {
     const result = await generateStructured({
       taskKey: input.taskKey,
+      tenant: input.tenant,
       system: input.system,
       user: input.user,
       schema: input.schema,
@@ -63,10 +66,12 @@ async function structuredOrFallback<T>(input: {
 }
 
 export async function analyzeManualLead(input: {
+  tenant?: AITenant;
   businessName: string;
   data: Record<string, unknown>;
 }): Promise<{ analysis: LeadIntakeAnalysis; ai: AIExecutionInfo }> {
   const result = await structuredOrFallback({
+    tenant: input.tenant,
     taskKey: "crm_manual_lead_analysis",
     system: LEAD_INTAKE_SYSTEM_PROMPT,
     user: buildLeadIntakePrompt({
@@ -93,11 +98,13 @@ export type DraftObjective =
   | "review_request";
 
 export async function draftCrmMessage(input: {
+  tenant?: AITenant;
   businessName: string;
   objective: DraftObjective;
   data: Record<string, unknown>;
 }): Promise<{ draft: CustomerDraft; ai: AIExecutionInfo }> {
   const result = await structuredOrFallback({
+    tenant: input.tenant,
     taskKey: `crm_${input.objective}_draft`,
     system: CUSTOMER_DRAFT_SYSTEM_PROMPT,
     user: buildCustomerDraftPrompt({
@@ -180,6 +187,7 @@ function feedbackFallback(input: {
 }
 
 export async function analyzeCrmFeedback(input: {
+  tenant?: AITenant;
   businessName: string;
   source: string;
   rating: number | null;
@@ -189,6 +197,7 @@ export async function analyzeCrmFeedback(input: {
     feedbackFallback({ rating: input.rating, text: input.text });
 
   const result = await structuredOrFallback({
+    tenant: input.tenant,
     taskKey: "crm_feedback_analysis",
     system: `You analyze customer feedback for a service business. Identify sentiment and operational risk, summarize the issue, recommend a concrete internal action, and draft a calm response. Never invent facts or make legal promises. Urgent safety, legal, repeated-contact, or public-reputation threats require urgent or high risk.`,
     user: `Business: ${input.businessName}

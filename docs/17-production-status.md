@@ -1,5 +1,7 @@
 # 17 — Production Status: Real vs Preview
 
+Historical implementation snapshot. For the September 2026 beta, use [the current launch guide and evidence](28-beta-launch-guide.md). “Real” below describes connected code; it does not establish deployed or real-provider verification.
+
 Snapshot of what is genuinely wired end-to-end versus honest preview,
 after the production push. Read with docs/16 (provider capability matrix)
 and docs/08 (acceptance checklist). Northstar's primary posture is the AI

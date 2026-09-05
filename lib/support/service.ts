@@ -54,6 +54,7 @@ export async function triageAndPersistSupportTicket(input: {
 }) {
   const health = await loadSupportHealthContext(input.supabase, input.clientId);
   const result = await analyzeSupportTicket({
+    tenant: { partnerId: input.partnerId, clientId: input.clientId },
     origin: input.origin,
     title: input.title,
     description: input.description,

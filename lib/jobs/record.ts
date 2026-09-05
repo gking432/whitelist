@@ -1,5 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-
 import { redactAuditValue } from "@/lib/audit/redact";
 import type { DeliveryOutcome } from "@/lib/delivery/customer-message";
 import { actionJobOutcomeFields } from "@/lib/jobs/outcome";
@@ -15,7 +13,8 @@ export type ActionJobKind =
   | "sms.send"
   | "email.send"
   | "calendar.book"
-  | "crm.sync";
+  | "crm.sync"
+  | "external.action";
 
 export type ActionJobRecord = {
   id: string;
@@ -62,19 +61,4 @@ export async function recordActionJob(input: {
     attempt_count: 1,
     last_attempt_at: new Date().toISOString(),
   });
-}
-
-export async function updateActionJobAfterRetry(
-  admin: SupabaseClient,
-  job: Pick<ActionJobRecord, "id" | "attempt_count">,
-  outcome: DeliveryOutcome,
-): Promise<void> {
-  await admin
-    .from("action_jobs")
-    .update({
-      ...actionJobOutcomeFields(outcome),
-      attempt_count: job.attempt_count + 1,
-      last_attempt_at: new Date().toISOString(),
-    })
-    .eq("id", job.id);
 }

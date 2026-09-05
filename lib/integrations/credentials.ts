@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { registerCredentialStore } from "./credential-lifecycle";
 import { decryptSecret, encryptSecret } from "@/lib/integrations/secrets";
 
 // Provider credentials are stored as one encrypted JSON document per
@@ -26,7 +27,16 @@ export async function readProviderCredentials<T>(
   }
 
   try {
-    return JSON.parse(decryptSecret(data.encrypted_value)) as T;
+    const credentials = JSON.parse(decryptSecret(data.encrypted_value)) as T;
+    if (credentials && typeof credentials === "object") {
+      registerCredentialStore(credentials, async (updated) => {
+        const stored = encryptProviderCredentials(updated as Record<string, string>);
+        const { error } = await admin.from("integration_secrets").update({ ...stored, updated_at: new Date().toISOString() })
+          .eq("connection_id", connectionId).eq("secret_kind", PROVIDER_CREDENTIALS_KIND);
+        if (error) throw new Error("Rotated provider credentials could not be persisted.");
+      });
+    }
+    return credentials;
   } catch {
     return null;
   }

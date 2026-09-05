@@ -12,7 +12,7 @@ test("schema compatibility accepts the required or a newer migration", () => {
     true,
   );
   assert.equal(
-    schemaVersionIsCompatible("20260813000000_future_additive_release"),
+    schemaVersionIsCompatible("20990101000000_future_additive_release"),
     true,
   );
 });

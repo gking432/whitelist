@@ -19,7 +19,7 @@ export async function runJobs(env = process.env) {
       Authorization: `Bearer ${secret}`,
       ...(release ? { "X-Northstar-Scheduler-Release": release } : {}),
     },
-    signal: AbortSignal.timeout(55_000),
+    signal: AbortSignal.timeout(330_000),
   });
 
   if (!response.ok) {

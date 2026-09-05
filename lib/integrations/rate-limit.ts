@@ -16,14 +16,14 @@ const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 60;
 const MAX_TRACKED_KEYS = 10_000;
 
-function checkLocalRateLimit(key: string): {
+function checkLocalRateLimit(key: string, limit: number, windowMs: number): {
   allowed: boolean;
   retryAfterSeconds: number;
 } {
   const now = Date.now();
   const state = windows.get(key);
 
-  if (!state || now - state.windowStartMs >= WINDOW_MS) {
+  if (!state || now - state.windowStartMs >= windowMs) {
     if (windows.size >= MAX_TRACKED_KEYS && !windows.has(key)) {
       // Drop the oldest window rather than grow without bound.
       const oldestKey = windows.keys().next().value;
@@ -38,11 +38,11 @@ function checkLocalRateLimit(key: string): {
     return { allowed: true, retryAfterSeconds: 0 };
   }
 
-  if (state.count >= MAX_REQUESTS_PER_WINDOW) {
+  if (state.count >= limit) {
     return {
       allowed: false,
       retryAfterSeconds: Math.ceil(
-        (state.windowStartMs + WINDOW_MS - now) / 1000,
+        (state.windowStartMs + windowMs - now) / 1000,
       ),
     };
   }
@@ -77,5 +77,6 @@ export async function checkRateLimit(
     }
   }
 
-  return checkLocalRateLimit(`${key}:${limit}:${windowSeconds}`);
+  if (process.env.NODE_ENV === "production") return { allowed: false, retryAfterSeconds: windowSeconds };
+  return checkLocalRateLimit(`${key}:${limit}:${windowSeconds}`, limit, windowSeconds * 1000);
 }

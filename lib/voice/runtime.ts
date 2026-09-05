@@ -24,6 +24,7 @@ export type VoiceRuntimeBootstrap = {
 export async function loadVoiceRuntimeBootstrap(
   admin: SupabaseClient,
   callSessionId: string,
+  allowInactiveConnection = false,
 ): Promise<VoiceRuntimeBootstrap | null> {
   const { data: session } = await admin
     .from("call_sessions")
@@ -42,6 +43,12 @@ export async function loadVoiceRuntimeBootstrap(
   ) {
     return null;
   }
+
+  const { data: connection } = await admin.from("integration_connections")
+    .select("status, runtime_mode").eq("id", session.connection_id)
+    .eq("client_id", session.client_id).eq("partner_id", session.partner_id).maybeSingle();
+  if (!connection || (!allowInactiveConnection &&
+    (connection.status !== "connected" || connection.runtime_mode !== "live"))) return null;
 
   const [{ data: client }, knowledge] = await Promise.all([
     admin

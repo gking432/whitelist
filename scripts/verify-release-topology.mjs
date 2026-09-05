@@ -89,7 +89,7 @@ if (!jobsDockerfile.includes('CMD ["node", "run-jobs.mjs"]')) {
 for (const fragment of [
   "/api/jobs/run",
   "Authorization: `Bearer ${secret}`",
-  "AbortSignal.timeout(55_000)",
+  "AbortSignal.timeout(330_000)",
   "export async function runJobs",
 ]) {
   if (!jobsRunner.includes(fragment)) fail(`job runner lacks ${fragment}`);

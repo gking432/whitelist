@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import { randomBytes } from "node:crypto";
 
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage } from "../connectors/types";
@@ -19,7 +20,7 @@ async function rcFetch(credentials: RingCentralCredentials, path: string, init: 
     headers: { Authorization: `Bearer ${credentials.accessToken}`, "Content-Type": "application/json", ...init.headers },
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`RingCentral API failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("ringcentral", response);
   return response;
 }
 

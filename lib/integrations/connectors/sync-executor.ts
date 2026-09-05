@@ -15,7 +15,7 @@ import type {
   ConnectorFieldMapping,
   ConnectorPushInput,
 } from "./types.ts";
-import { isConnectorAuthorizationError } from "./errors.ts";
+import { connectorFailurePolicy, ConnectorExecutionCancelledError } from "./errors.ts";
 
 export type ConnectorSyncJob = {
   id: string;
@@ -28,6 +28,7 @@ export type ConnectorSyncJob = {
 };
 
 export type ConnectorSyncRepository = {
+  assertCanExecute?(context: ConnectorContext): Promise<void>;
   saveCanonicalRecord(record: CanonicalRecord): Promise<void>;
   saveCursor(cursor: Record<string, unknown> | null): Promise<void>;
   saveObjectLink(input: {
@@ -46,6 +47,9 @@ export type ConnectorSyncOutcome =
       retryable: boolean;
       error: string;
       reconnectRequired?: boolean;
+      cancelled?: boolean;
+      uncertainWrite?: boolean;
+      retryAfterSeconds?: number | null;
     };
 
 export function connectorRetryDelayMinutes(attempts: number): number {
@@ -77,6 +81,7 @@ export async function executeConnectorSyncJob(input: {
     };
   }
 
+  let writeStarted = false;
   try {
     if (job.direction === "pull") {
       if (!adapter.pullPage) {
@@ -89,6 +94,7 @@ export async function executeConnectorSyncJob(input: {
         !Array.isArray(job.payload.cursor)
           ? (job.payload.cursor as Record<string, unknown>)
           : null;
+      await repository.assertCanExecute?.(context);
       const page = await adapter.pullPage(context, job.objectType, cursor);
 
       for (const rawRecord of page.records) {
@@ -161,17 +167,16 @@ export async function executeConnectorSyncJob(input: {
       return { ok: false, retryable: false, error: "Push operation is invalid." };
     }
 
+    const externalData = applyPushFieldMappings(job.objectType, data, fieldMappings);
+    await repository.assertCanExecute?.(context);
+    writeStarted = true;
     const result = await adapter.pushRecord(context, {
       operation,
       objectType: job.objectType,
       nativeObjectId,
       externalObjectId: text(job.payload.externalObjectId),
       data,
-      externalData: applyPushFieldMappings(
-        job.objectType,
-        data,
-        fieldMappings,
-      ),
+      externalData,
       idempotencyKey,
     });
 
@@ -197,15 +202,15 @@ export async function executeConnectorSyncJob(input: {
       result: { externalObjectId: result.externalObjectId },
     };
   } catch (error) {
-    const reconnectRequired = isConnectorAuthorizationError(error);
+    if (error instanceof ConnectorExecutionCancelledError) return { ok: false, retryable: false, cancelled: true, error: error.message };
+    const policy = connectorFailurePolicy(error, { ...job, writeStarted });
     return {
       ok: false,
-      retryable:
-        !reconnectRequired &&
-        !(error instanceof ConnectorFieldMappingError) &&
-        job.attempts + 1 < job.maxAttempts,
-      error: error instanceof Error ? error.message : "Connector sync failed.",
-      reconnectRequired,
+      ...policy,
+      retryable: policy.retryable && !(error instanceof ConnectorFieldMappingError),
+      error: policy.uncertainWrite
+        ? "External write outcome is uncertain. Reconcile the provider record before retrying."
+        : error instanceof Error ? error.message : "Connector sync failed.",
     };
   }
 }

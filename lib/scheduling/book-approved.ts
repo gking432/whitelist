@@ -3,9 +3,11 @@ import type { DeliveryOutcome } from "@/lib/delivery/customer-message";
 import { readProviderCredentials } from "@/lib/integrations/credentials";
 import {
   createCalendarEvent,
+  getBusyIntervals,
   type GoogleCalendarCredentials,
 } from "@/lib/integrations/providers/google-calendar";
-import { createMicrosoftCalendarEvent } from "@/lib/integrations/providers/microsoft-365";
+import { getGoogleWorkspaceBusyIntervals } from "@/lib/integrations/providers/google-workspace";
+import { createMicrosoftCalendarEvent, getMicrosoftBusyIntervals } from "@/lib/integrations/providers/microsoft-365";
 import type { WorkspaceCredentials } from "@/lib/integrations/providers/workspace-oauth";
 import { EXTERNAL_CALENDAR_PROVIDER_KEYS } from "@/lib/scheduling/provider";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -59,6 +61,12 @@ export async function bookApprovedAppointment(
     };
   }
 
+  const startTime = Date.parse(slot.start_iso);
+  const endTime = Date.parse(slot.end_iso);
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime || startTime <= Date.now()) {
+    return { attempted: false, delivered: false, status: "failed", detail: "The approved slot is invalid or has passed. Request a new time before booking." };
+  }
+
   const { data: connection } = await admin
     .from("integration_connections")
     .select(
@@ -67,7 +75,8 @@ export async function bookApprovedAppointment(
     .eq("client_id", booking.clientId)
     .eq("partner_id", booking.partnerId)
     .in("status", ["connected", "needs_attention"])
-    .in("provider.provider_key", [...EXTERNAL_CALENDAR_PROVIDER_KEYS])
+    .in("provider.provider_key", EXTERNAL_CALENDAR_PROVIDER_KEYS.includes(booking.payload.provider as typeof EXTERNAL_CALENDAR_PROVIDER_KEYS[number])
+      ? [booking.payload.provider as string] : [...EXTERNAL_CALENDAR_PROVIDER_KEYS])
     .limit(1)
     .maybeSingle();
 
@@ -114,19 +123,14 @@ export async function bookApprovedAppointment(
     (!connection && booking.payload.provider === "northstar_internal")
   ) {
     const internalRef = `northstar-${booking.approvalId}`;
-
-    await logEvent("sent", {
-      note: "Booked in Northstar's internal calendar.",
-      internal_ref: internalRef,
-    });
-
-    return {
-      attempted: true,
-      delivered: true,
-      status: "succeeded",
-      externalRef: internalRef,
-      detail: `Appointment booked in Northstar for ${slot.label ?? slot.start_iso}.`,
-    };
+    const { error } = await admin.rpc("book_internal_approved_appointment", { p_approval_id: booking.approvalId });
+    if (error) {
+      await logEvent("failed", {}, "The internal calendar rejected the booking. Recheck availability.");
+      return { attempted: true, delivered: false, status: "failed", detail: "Nothing was booked. The internal calendar could not save this appointment; recheck its time and availability." };
+    }
+    await logEvent("sent", { note: "Booked in the business calendar.", internal_ref: internalRef });
+    return { attempted: true, delivered: true, status: "succeeded", externalRef: internalRef,
+      detail: `Appointment booked for ${slot.label ?? slot.start_iso}.` };
   }
 
   if (!connection) {
@@ -156,6 +160,7 @@ export async function bookApprovedAppointment(
     };
   }
 
+  let providerAttempted = false;
   try {
     const credentials = await readProviderCredentials<GoogleCalendarCredentials & WorkspaceCredentials>(
       admin,
@@ -171,19 +176,35 @@ export async function bookApprovedAppointment(
     const contactName =
       typeof contact.name === "string" && contact.name ? contact.name : "Customer";
     const descriptionLines = [
-      `Booked via Northstar after human approval (approval ${booking.approvalId}).`,
+      `Booked after human approval (approval ${booking.approvalId}).`,
       contact.phone ? `Phone: ${contact.phone}` : null,
       contact.email ? `Email: ${contact.email}` : null,
       contact.address ? `Address: ${contact.address}` : null,
     ].filter(Boolean);
 
     const providerKey = (connection.provider as unknown as { provider_key?: string } | null)?.provider_key;
+    const busy = providerKey === "microsoft_365"
+      ? await getMicrosoftBusyIntervals(credentials, slot.start_iso, slot.end_iso)
+      : providerKey === "google_workspace"
+        ? await getGoogleWorkspaceBusyIntervals(credentials, slot.start_iso, slot.end_iso)
+        : await getBusyIntervals(credentials, slot.start_iso, slot.end_iso);
+    if (busy.some((interval) => {
+      const start = Date.parse(interval.start);
+      const end = Date.parse(interval.end);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error("The calendar returned invalid availability.");
+      return start < endTime && end > startTime;
+    })) {
+      await logEvent("skipped", { reason: "calendar_conflict" });
+      return { attempted: false, delivered: false, status: "skipped", detail: "This time is no longer available. Nothing was booked; request another slot." };
+    }
     const eventInput = {
+      idempotencyKey: booking.approvalId,
       summary: `${contactName} — ${booking.clientName} appointment`,
       description: descriptionLines.join("\n"),
       startIso: slot.start_iso,
       endIso: slot.end_iso,
     };
+    providerAttempted = true;
     const created = providerKey === "microsoft_365"
       ? await createMicrosoftCalendarEvent(credentials, eventInput)
       : await createCalendarEvent(credentials, eventInput);
@@ -224,8 +245,8 @@ export async function bookApprovedAppointment(
     return {
       attempted: true,
       delivered: false,
-      status: "failed",
-      detail: `Approval recorded, but the booking failed: ${detail}`,
+      status: providerAttempted ? "uncertain" : "failed",
+      detail: providerAttempted ? "Calendar result is uncertain. Check the calendar before creating another booking; automatic retry is disabled." : `Approval recorded, but the booking failed: ${detail}`,
     };
   }
 }

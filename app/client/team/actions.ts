@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
+import { InvitationIdentityError, findVerifiedInvitationIdentity, assertClientIdentityIsIndependent } from "@/lib/auth/invitation-identity";
 import { getAuthState } from "@/lib/auth/session";
 import { getAppUrl } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
@@ -122,11 +123,14 @@ export async function inviteClientTeamMember(input: {
   }
 
   const { access, admin } = context;
-  const { data: existingProfile } = await admin
-    .from("profiles")
-    .select("id")
-    .ilike("email", email)
-    .maybeSingle();
+  let existingProfile;
+  try {
+    existingProfile = await findVerifiedInvitationIdentity(admin, email);
+    if (existingProfile) await assertClientIdentityIsIndependent(admin, existingProfile.id);
+  } catch (error) {
+    if (error instanceof InvitationIdentityError) return result(error.message, "error");
+    throw error;
+  }
   let userId = existingProfile?.id ?? null;
 
   if (!userId) {

@@ -1,9 +1,10 @@
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { ArrowLeft, PhoneCall, CalendarClock, Workflow } from "lucide-react";
 
+import { publicAgencyBrand } from "@/lib/partners/public-brand";
 import { LoginForm } from "@/app/login/login-form";
-import { NorthstarMark } from "@/components/brand/northstar-mark";
 import { Button } from "@/components/ui/button";
 import { getAuthState } from "@/lib/auth/session";
 import { toSafeNextPath } from "@/lib/auth/redirects";
@@ -13,12 +14,16 @@ type LoginPageProps = {
   searchParams: Promise<{
     next?: string;
     error?: string;
+    agency?: string;
   }>;
 };
 
-export const metadata = {
-  title: "Sign In",
-};
+export async function generateMetadata({ searchParams }: LoginPageProps) {
+  const brand = await publicAgencyBrand((await searchParams).agency);
+  return {
+    title: { absolute: `Sign in | ${brand?.name ?? "Business workspace"}` },
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +47,7 @@ const pillars = [
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
+  const brand = await publicAgencyBrand(params.agency);
   const nextPath = toSafeNextPath(params.next);
   const authState = await getAuthState();
 
@@ -64,7 +70,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           }}
         />
         <div className="relative">
-          <NorthstarMark subtitle="AI Operations Platform" />
+          <span className="flex items-center gap-3 text-lg font-semibold">
+            {brand?.logoUrl ? (
+              <Image
+                src={brand.logoUrl}
+                alt=""
+                width={40}
+                height={40}
+                unoptimized
+                className="size-10 rounded object-contain"
+              />
+            ) : null}
+            {brand?.name ?? "Business workspace"}
+          </span>
         </div>
 
         <div className="relative max-w-md">
@@ -72,8 +90,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             The AI operations layer for home service businesses.
           </h1>
           <p className="mt-4 text-sm leading-6 text-white/60">
-            Partners run the command center. Clients keep their own tools.
-            Every AI action is observable, approval-gated, and audited.
+            Partners run the command center. Clients keep their own tools. Your
+            business reviews customer messages and booking requests before
+            delivery.
           </p>
 
           <ul className="mt-8 space-y-4">
@@ -100,7 +119,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </div>
 
         <p className="relative text-[11px] text-white/35">
-          White-label ready — your clients see your brand, never ours.
+          Secure access to your business workspace.
         </p>
       </section>
 
@@ -108,7 +127,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <section className="flex items-center justify-center px-6 py-12">
         <div className="ns-fade-up w-full max-w-sm">
           <div className="mb-8 lg:hidden">
-            <NorthstarMark surface="light" subtitle="AI Operations Platform" />
+            <span className="flex items-center gap-3 text-lg font-semibold">
+              {brand?.logoUrl ? (
+                <Image
+                  src={brand.logoUrl}
+                  alt=""
+                  width={40}
+                  height={40}
+                  unoptimized
+                  className="size-10 rounded object-contain"
+                />
+              ) : null}
+              {brand?.name ?? "Business workspace"}
+            </span>
           </div>
 
           <Button asChild variant="ghost" size="sm" className="-ml-2 mb-6 px-2">
@@ -145,7 +176,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button asChild variant="outline" size="sm">
-                  <Link href={`/dev/auto-login?next=${encodeURIComponent(nextPath)}`}>
+                  <Link
+                    href={`/dev/auto-login?next=${encodeURIComponent(nextPath)}`}
+                  >
                     Sign in as partner
                   </Link>
                 </Button>

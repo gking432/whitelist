@@ -63,12 +63,19 @@ export function LiveCallOverlay({
   const [context, setContext] = useState<AssistantContextData | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [dismissedCallId, setDismissedCallId] = useState<string | null>(null);
+  const [selectedCallId, setSelectedCallId] = useState("");
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState(false);
+  const [connectionInterrupted, setConnectionInterrupted] = useState(false);
   const latestCallId = useRef<string | null>(null);
   const activeCallRef = useRef(false);
+  const hasCallToHandle = Boolean(context?.call) || Boolean(
+    context?.activeCalls?.some((call) => !call.assigned || call.assignedToMe),
+  );
 
   useEffect(() => {
-    activeCallRef.current = Boolean(context?.call);
-  }, [context?.call]);
+    activeCallRef.current = hasCallToHandle;
+  }, [hasCallToHandle]);
 
   useEffect(() => {
     let active = true;
@@ -76,9 +83,10 @@ export function LiveCallOverlay({
 
     const poll = async () => {
       try {
-        const query = clientId
-          ? `?client_id=${encodeURIComponent(clientId)}`
-          : "";
+        const params = new URLSearchParams();
+        if (clientId) params.set("client_id", clientId);
+        if (selectedCallId) params.set("call_session_id", selectedCallId);
+        const query = params.size ? `?${params}` : "";
         const response = await fetch(`/api/assistant/context${query}`, {
           cache: "no-store",
         });
@@ -88,9 +96,14 @@ export function LiveCallOverlay({
 
         if (active && response.ok && body.context) {
           setContext(body.context);
+          setConnectionInterrupted(false);
+        } else if (active) {
+          if ([401, 403, 404].includes(response.status)) setContext(null);
+          setConnectionInterrupted(true);
         }
       } catch {
         // A brief network interruption should not close an active assistant.
+        if (active) setConnectionInterrupted(true);
       } finally {
         if (active) {
           timer = window.setTimeout(
@@ -107,7 +120,7 @@ export function LiveCallOverlay({
       active = false;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [clientId]);
+  }, [clientId, selectedCallId]);
 
   useEffect(() => {
     const callId = context?.call?.id ?? null;
@@ -118,23 +131,54 @@ export function LiveCallOverlay({
       setExpanded(true);
     }
 
-    window.northstarDesktop?.setCallActive(Boolean(callId));
-  }, [context?.call?.id]);
+    window.northstarDesktop?.setCallActive(hasCallToHandle);
+  }, [context?.call?.id, hasCallToHandle]);
+
+  const callPicker = context?.activeCalls?.length ? (
+    <label className="block text-left text-xs font-medium">
+      Business calls
+      <select aria-label="Select a live call" value={selectedCallId}
+        onChange={(event) => { setSelectedCallId(event.target.value); setAssignmentError(null); }}
+        className="mt-1 w-full rounded-md border bg-background p-2 text-sm">
+        <option value="">My call / select a caller</option>
+        {context.activeCalls.map((call) => (
+          <option key={call.id} value={call.id}>
+            {call.label} · {call.assignedToMe ? "Assigned to me" : call.assigned ? "Another employee" : "Unassigned"}
+          </option>
+        ))}
+      </select>
+    </label>
+  ) : null;
+
+  const assignCall = async (action: "claim" | "release") => {
+    if (!context?.call || assigning) return;
+    setAssigning(true);
+    setAssignmentError(null);
+    try {
+      const response = await fetch("/api/voice/assignment", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, call_session_id: context.call.id }),
+      });
+      const body = await response.json();
+      if (!response.ok) setAssignmentError(body.error ?? "Assignment could not be saved.");
+    } catch { setAssignmentError("Connection interrupted. Try assigning the call again."); }
+    finally { setAssigning(false); }
+  };
 
   if (!context?.call) {
-    if (!standalone) return null;
+    if (!standalone && !callPicker) return null;
 
     return (
-      <main className="grid min-h-screen place-items-center bg-background p-6">
+      <main className={standalone ? "grid min-h-screen place-items-center bg-background p-6" : "fixed bottom-5 right-5 z-[80] w-96 rounded-lg border bg-background p-6 shadow-xl"}>
         <div className="max-w-sm text-center">
           <span className="mx-auto flex size-12 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
             <PhoneCall className="size-5" aria-hidden="true" />
           </span>
           <h1 className="mt-3 text-sm font-semibold">Phone assistant ready</h1>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            This window will come forward automatically when a connected
-            business call begins.
+            {callPicker ? "Select the caller you are helping. Calls remain separate when several people call at once." : "This window will come forward automatically when a connected business call begins."}
           </p>
+          <div className="mt-4">{callPicker}</div>
         </div>
       </main>
     );
@@ -235,6 +279,15 @@ export function LiveCallOverlay({
       </header>
 
       <div className="max-h-[calc(100vh-7.25rem)] space-y-4 overflow-y-auto p-4">
+        {connectionInterrupted ? <p role="status" className="text-xs text-destructive">Live updates are interrupted. Confirm the caller and appointment details before acting.</p> : null}
+        {callPicker}
+        <div>
+          <Button size="sm" variant="outline" disabled={assigning || Boolean(context.call.assigned && !context.call.assignedToMe)}
+            onClick={() => void assignCall(context.call?.assignedToMe ? "release" : "claim")}>
+            {context.call.assignedToMe ? "Release my call" : context.call.assigned ? "Handled by another employee" : "I'm handling this call"}
+          </Button>
+          {assignmentError ? <p role="alert" className="mt-1 text-xs text-destructive">{assignmentError}</p> : null}
+        </div>
         <section>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">

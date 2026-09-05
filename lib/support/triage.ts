@@ -1,3 +1,4 @@
+import type { AITenant } from "@/lib/ai/budget";
 import { z } from "zod";
 
 import { generateStructured } from "@/lib/ai/provider";
@@ -33,6 +34,7 @@ Routing rules:
 - No code is deployed automatically.`;
 
 export async function analyzeSupportTicket(input: {
+  tenant?: AITenant;
   origin: SupportOrigin;
   title: string;
   description: string;
@@ -44,6 +46,7 @@ export async function analyzeSupportTicket(input: {
   try {
     const result = await generateStructured({
       taskKey: "support_triage",
+      tenant: input.tenant,
       system: SYSTEM_PROMPT,
       user: JSON.stringify({
         origin: input.origin,

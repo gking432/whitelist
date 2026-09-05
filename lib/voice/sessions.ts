@@ -11,6 +11,8 @@ import {
   getKnowledgeProfile,
   KNOWLEDGE_GUARDRAILS,
 } from "@/lib/knowledge/profile";
+import { enqueueInboundEvent } from "@/lib/integrations/inbound/queue";
+import { mayEnrichVoiceContact } from "./safety.ts";
 import { runWorkflowsForEvent } from "@/lib/workflows/engine";
 
 // Call session lifecycle (docs/11 Phase 4, docs/20). Voice provider
@@ -116,6 +118,16 @@ export async function createCallSession(
     return null;
   }
 
+  if (input.provider === "twilio_voice" && handlingMode === "ai_answered") {
+    const { error: queueError } = await admin.rpc("enqueue_voice_finalization", {
+      p_session_id: session.id, p_delay_seconds: 1290,
+    });
+    if (queueError) {
+      await admin.from("call_sessions").update({ status: "failed" }).eq("id", session.id);
+      return null;
+    }
+  }
+
   await emitAssistantEvent({
     partnerId: input.partnerId,
     clientId: input.clientId,
@@ -146,23 +158,10 @@ export async function updateCallSessionExtracted(
   callSessionId: string,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  const { data: session } = await admin
-    .from("call_sessions")
-    .select("extracted")
-    .eq("id", callSessionId)
-    .maybeSingle();
-
-  if (!session) return;
-
-  const current =
-    typeof session.extracted === "object" && session.extracted !== null
-      ? (session.extracted as Record<string, unknown>)
-      : {};
-
-  await admin
-    .from("call_sessions")
-    .update({ extracted: redactAuditValue({ ...current, ...patch }) })
-    .eq("id", callSessionId);
+  const { error } = await admin.rpc("merge_voice_session_extracted", {
+    p_session_id: callSessionId, p_patch: redactAuditValue(patch),
+  });
+  if (error) throw new Error("Call details could not be saved.");
 }
 
 export async function addTranscriptTurn(
@@ -170,54 +169,15 @@ export async function addTranscriptTurn(
   callSessionId: string,
   turn: TranscriptTurnInput,
 ): Promise<boolean> {
-  const { data: session } = await admin
-    .from("call_sessions")
-    .select("id, partner_id, client_id")
-    .eq("id", callSessionId)
-    .maybeSingle();
-
-  if (!session) {
-    return false;
-  }
-
-  if (turn.sourceEventId) {
-    const { data: duplicate } = await admin
-      .from("call_transcript_turns")
-      .select("id")
-      .eq("call_session_id", callSessionId)
-      .eq("source_event_id", turn.sourceEventId)
-      .maybeSingle();
-
-    if (duplicate) return false;
-  }
-
-  const { count } = await admin
-    .from("call_transcript_turns")
-    .select("id", { count: "exact", head: true })
-    .eq("call_session_id", callSessionId);
-
-  const { error } = await admin.from("call_transcript_turns").insert({
-    call_session_id: callSessionId,
-    partner_id: session.partner_id,
-    client_id: session.client_id,
-    seq: (count ?? 0) + 1,
-    role: turn.role,
-    content: turn.content,
-    occurred_at: turn.occurredAt ?? new Date().toISOString(),
-    source_event_id: turn.sourceEventId ?? null,
+  const { data: inserted, error } = await admin.rpc("append_voice_transcript", {
+    p_session_id: callSessionId,
+    p_role: turn.role,
+    p_content: turn.content,
+    p_occurred_at: turn.occurredAt ?? new Date().toISOString(),
+    p_source_event_id: turn.sourceEventId ?? null,
   });
-
-  if (error) return false;
-
-  await emitAssistantEvent({
-    partnerId: session.partner_id,
-    clientId: session.client_id,
-    eventType: "transcript_turn_added",
-    payload: { role: turn.role, seq: (count ?? 0) + 1 },
-    callSessionId,
-  });
-
-  return true;
+  if (error) throw new Error("Transcript persistence failed; retry delivery.");
+  return inserted === true;
 }
 
 function fallbackCallSummary(
@@ -269,10 +229,10 @@ export async function completeCallSession(
     .from("call_transcript_turns")
     .select("role, content")
     .eq("call_session_id", callSessionId)
-    .order("seq", { ascending: true })
+    .order("seq", { ascending: false })
     .limit(200);
 
-  const turns = (turnsData ?? []) as { role: string; content: string }[];
+  const turns = ((turnsData ?? []) as { role: string; content: string }[]).reverse();
 
   const { data: client } = await admin
     .from("client_businesses")
@@ -298,6 +258,7 @@ export async function completeCallSession(
 
       const result = await generateStructured({
         taskKey: "call_summary",
+        tenant: { partnerId: session.partner_id, clientId: session.client_id },
         system: CALL_SUMMARY_SYSTEM_PROMPT,
         user: `${buildKnowledgeBlock(clientName, knowledge)}
 
@@ -355,7 +316,7 @@ Summarize this call.`,
   };
   summary = { ...summary, extracted: mergedExtracted };
 
-  if (session.matched_contact_id) {
+  if (session.matched_contact_id && mayEnrichVoiceContact(session.extracted ?? {})) {
     const { data: existingContact } = await admin
       .from("crm_contacts")
       .select("first_name, last_name, phone, email, address, tags")
@@ -404,29 +365,6 @@ Summarize this call.`,
     }
   }
 
-  await admin
-    .from("call_sessions")
-    .update({
-      status: "completed",
-      ended_at: new Date().toISOString(),
-      summary: summary.internal_summary,
-      crm_note: summary.crm_note,
-      extracted: redactAuditValue({
-        ...(session.extracted as Record<string, unknown>),
-        ...summary.extracted,
-        voice_collected: voiceCollected,
-      }),
-    })
-    .eq("id", callSessionId);
-
-  await emitAssistantEvent({
-    partnerId: session.partner_id,
-    clientId: session.client_id,
-    eventType: "call_completed",
-    payload: { ai_status: ai.status, direction: session.direction },
-    callSessionId,
-  });
-
   // The completed call becomes a normal intake event: router classifies
   // it, lead workflows run, approvals gate anything customer-facing, and
   // CRM sync posts the clean note (never the raw transcript).
@@ -460,6 +398,16 @@ Summarize this call.`,
         : null,
   };
 
+  if (session.connection_id) {
+    await enqueueInboundEvent(admin, {
+      partnerId: session.partner_id,
+      clientId: session.client_id,
+      connectionId: session.connection_id,
+      eventType: "call.completed",
+      data: eventData,
+      idempotencyKey: `call-session-${callSessionId}`,
+    });
+  } else {
   const { data: insertedEvent } = await admin
     .from("integration_events")
     .insert({
@@ -510,19 +458,16 @@ Summarize this call.`,
     }
   }
 
-  // Timeline note on the matched built-in CRM contact (note, not raw
-  // transcript — the transcript stays in call_transcript_turns).
-  if (session.matched_contact_id) {
-    await admin.from("crm_timeline_entries").insert({
-      partner_id: session.partner_id,
-      client_id: session.client_id,
-      contact_id: session.matched_contact_id,
-      kind: "note",
-      actor_type: "ai_assistant",
-      title: "AI Assistant summarized a call",
-      body: summary.crm_note,
-    });
   }
+
+  const { error: finishError } = await admin.rpc("finish_voice_call", {
+    p_session_id: callSessionId,
+    p_summary: summary.internal_summary,
+    p_note: summary.crm_note,
+    p_extracted: redactAuditValue({ ...summary.extracted, voice_collected: voiceCollected }),
+    p_ai_status: ai.status,
+  });
+  if (finishError) throw new Error("Call summary could not be saved; retry completion.");
 
   return { summary, ai };
 }

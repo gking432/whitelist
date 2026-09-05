@@ -1,3 +1,4 @@
+import { selectActiveCall } from "../voice/safety.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { resolveAssistantCallMatchStatus } from "@/lib/assistant/call-match";
@@ -125,9 +126,12 @@ export type AssistantContextData = {
     providerLabel: string;
     detail: string;
   };
+  activeCalls?: { id: string; label: string; assignedToMe: boolean; assigned: boolean }[];
   call: {
     id: string;
     status: "in_progress";
+    assignedToMe?: boolean;
+    assigned?: boolean;
     handlingMode: "ai_answered" | "staff_assisted";
     matchedContactId: string | null;
     matchStatus: "matched" | "created" | "unavailable";
@@ -168,6 +172,7 @@ type RunRow = {
 
 type CallRow = {
   id: string;
+  assigned_user_id: string | null;
   status: string;
   from_number: string | null;
   started_at: string;
@@ -505,7 +510,7 @@ function buildActions(input: {
 export async function buildAssistantContext(
   supabase: SupabaseClient,
   client: ClientBusinessRecord,
-  options?: { audience?: "partner" | "client" },
+  options?: { audience?: "partner" | "client"; callSessionId?: string | null; userId?: string | null },
 ): Promise<AssistantContextData> {
   const audience = options?.audience ?? "partner";
   const base =
@@ -520,7 +525,6 @@ export async function buildAssistantContext(
     { data: auditData },
     { data: assistantEventsData },
     { data: callsData },
-    { data: transcriptData },
   ] = await Promise.all([
     client.package_id
       ? supabase
@@ -575,18 +579,12 @@ export async function buildAssistantContext(
       .limit(8),
     supabase
       .from("call_sessions")
-      .select(
-        "id, status, from_number, started_at, extracted, matched_contact_id, matched_contact:crm_contacts(first_name, last_name, phone, email, address)",
-      )
+      .select("id, status, assigned_user_id, from_number, started_at, extracted, matched_contact_id, matched_contact:crm_contacts(first_name, last_name, phone, email, address)")
       .eq("client_id", client.id)
-      .order("started_at", { ascending: false })
-      .limit(1),
-    supabase
-      .from("call_transcript_turns")
-      .select("call_session_id, role, content, occurred_at")
-      .eq("client_id", client.id)
-      .order("occurred_at", { ascending: false })
-      .limit(40),
+      .eq("status", "in_progress")
+      .is("ended_at", null)
+      .order("started_at", { ascending: true })
+      .limit(50),
   ]);
 
   const pkg = packageData as PartnerPackageRecord | null;
@@ -662,13 +660,15 @@ export async function buildAssistantContext(
       run.template?.template_key ?? "",
     ),
   );
-  const latestCall = ((callsData ?? []) as CallRow[])[0] ?? null;
-  const activeCall = latestCall?.status === "in_progress" ? latestCall : null;
-  const activeCallTurns = activeCall
-    ? ((transcriptData ?? []) as TranscriptRow[])
-        .filter((turn) => turn.call_session_id === activeCall.id)
-        .sort((a, b) => (a.occurred_at > b.occurred_at ? 1 : -1))
-    : [];
+  const calls = (callsData ?? []) as CallRow[];
+  const activeCall = selectActiveCall(calls, options?.callSessionId, options?.userId);
+  const { data: transcriptData } = activeCall
+    ? await supabase.from("call_transcript_turns")
+      .select("call_session_id, role, content, occurred_at")
+      .eq("client_id", client.id).eq("call_session_id", activeCall.id)
+      .order("seq", { ascending: false }).limit(40)
+    : { data: [] };
+  const activeCallTurns = ((transcriptData ?? []) as TranscriptRow[]).reverse();
 
   const mode: AssistantContextData["mode"] =
     latestRun || activeCall ? "live" : "idle";
@@ -1105,10 +1105,17 @@ export async function buildAssistantContext(
     analysis,
     draft,
     crm,
+    activeCalls: calls.map((call) => ({
+      id: call.id, label: call.from_number ?? "Unknown caller",
+      assignedToMe: Boolean(options?.userId && call.assigned_user_id === options.userId),
+      assigned: Boolean(call.assigned_user_id),
+    })),
     call: activeCall
       ? {
           id: activeCall.id,
           status: "in_progress",
+          assignedToMe: Boolean(options?.userId && activeCall.assigned_user_id === options.userId),
+          assigned: Boolean(activeCall.assigned_user_id),
           handlingMode:
             asString(activeCall.extracted?.handling_mode) === "staff_assisted"
               ? "staff_assisted"

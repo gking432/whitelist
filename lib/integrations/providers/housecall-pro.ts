@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
 import { connectorPushPayload } from "../connectors/field-mappings.ts";
 
@@ -10,7 +11,7 @@ async function hcpFetch(credentials: HousecallProCredentials, path: string, init
     headers: { Authorization: `Bearer ${credentials.apiKey}`, "Content-Type": "application/json", ...init.headers },
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`Housecall Pro API failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("housecall-pro", response);
   return response;
 }
 

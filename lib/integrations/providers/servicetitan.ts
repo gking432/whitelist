@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import type {
   CanonicalObjectType,
   CanonicalRecord,
@@ -29,7 +30,7 @@ async function token(credentials: ServiceTitanCredentials) {
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok)
-    throw new Error(`ServiceTitan authorization failed (${response.status}).`);
+    throw connectorHttpError("servicetitan", response);
   const body = (await response.json()) as { access_token?: string };
   if (!body.access_token)
     throw new Error("ServiceTitan returned no access token.");
@@ -57,7 +58,7 @@ async function stFetch(
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
   if (!response.ok)
-    throw new Error(`ServiceTitan API failed (${response.status}).`);
+    throw connectorHttpError("servicetitan", response);
   return response;
 }
 

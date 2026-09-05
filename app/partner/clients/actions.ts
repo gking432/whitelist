@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
+import { InvitationIdentityError, findVerifiedInvitationIdentity, assertClientIdentityIsIndependent } from "@/lib/auth/invitation-identity";
 import { getAuthState } from "@/lib/auth/session";
 import {
   CLIENT_EXPERIENCE_MODES,
@@ -139,6 +140,7 @@ function slugify(name: string): string {
 }
 
 function accessErrorState(error: unknown): FormState {
+  if (error instanceof InvitationIdentityError) return { status: "error", message: error.message };
   if (isAccessError(error)) {
     return {
       status: "error",
@@ -232,6 +234,10 @@ export async function createClientBusiness(
       suffix += 1;
     }
 
+    const existingProfile = fields.primaryContactEmail
+      ? await findVerifiedInvitationIdentity(admin, fields.primaryContactEmail) : null;
+    if (existingProfile) await assertClientIdentityIsIndependent(admin, existingProfile.id);
+
     const { data: created, error: insertError } = await supabase
       .from("client_businesses")
       .insert({
@@ -258,7 +264,9 @@ export async function createClientBusiness(
     if (insertError || !created) {
       return {
         status: "error",
-        message: "The client could not be created. Try again.",
+        message: insertError?.code === "P1001" || insertError?.code === "P1002"
+          ? insertError.message
+          : "The client could not be created. Try again.",
       };
     }
 
@@ -270,11 +278,6 @@ export async function createClientBusiness(
 
     if (fields.primaryContactEmail) {
       const email = fields.primaryContactEmail.toLowerCase();
-      const { data: existingProfile } = await admin
-        .from("profiles")
-        .select("id")
-        .ilike("email", email)
-        .maybeSingle();
 
       invitedUserId = existingProfile?.id ?? null;
 

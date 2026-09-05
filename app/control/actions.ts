@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
+import { InvitationIdentityError, findVerifiedInvitationIdentity } from "@/lib/auth/invitation-identity";
 import { getAuthState } from "@/lib/auth/session";
 import {
   partnerSlugBase,
@@ -60,15 +61,7 @@ export async function createPartnerAccount(
       return { status: "error", message: "The data service is unavailable." };
     }
 
-    const { data: existingProfile, error: profileError } = await admin
-      .from("profiles")
-      .select("id")
-      .ilike("email", fields.ownerEmail)
-      .maybeSingle();
-
-    if (profileError) {
-      return { status: "error", message: "Could not verify the owner email." };
-    }
+    const existingProfile = await findVerifiedInvitationIdentity(admin, fields.ownerEmail);
 
     if (existingProfile) {
       const { data: partnerMembership, error: membershipLookupError } =
@@ -230,6 +223,7 @@ export async function createPartnerAccount(
         : `Partner created. ${fields.ownerEmail} can sign in and begin onboarding.`,
     };
   } catch (error) {
+    if (error instanceof InvitationIdentityError) return { status: "error", message: error.message };
     if (isAccessError(error)) {
       return {
         status: "error",

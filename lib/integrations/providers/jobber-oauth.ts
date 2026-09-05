@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { getAppUrl, getSecretsEncryptionKey } from "@/lib/env";
@@ -44,7 +45,7 @@ export function buildJobberAuthorizationUrl(client: JobberOAuthClient, connectio
 
 async function tokenRequest(client: JobberOAuthClient, params: Record<string, string>) {
   const response = await fetch(TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: client.clientId, client_secret: client.clientSecret, ...params }), signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Jobber authorization failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("jobber-oauth", response);
   const body = await response.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
   if (!body.access_token || !body.refresh_token) throw new Error("Jobber returned incomplete OAuth credentials.");
   return { ...client, accessToken: body.access_token, refreshToken: body.refresh_token, expiresAt: new Date(Date.now() + (body.expires_in ?? 3600) * 1000).toISOString() } satisfies JobberCredentials;

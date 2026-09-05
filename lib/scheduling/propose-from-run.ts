@@ -22,6 +22,7 @@ import {
 import {
   computeOpenSlots,
   formatSlotLabel,
+  type AvailabilityWindow,
 } from "@/lib/scheduling/slots";
 import type { RunStep } from "@/lib/workflows/handlers";
 
@@ -271,22 +272,25 @@ export async function proposeBookingFromRun(
     };
   }
 
-  // One open proposal per client at a time keeps the approval queue sane.
-  const { data: existingPending } = await admin
+  // Deduplicate this source interaction, never another customer's request.
+  const callSessionId = asString(input.eventData.call_session_id) || null;
+  let pendingQuery = admin
     .from("approval_items")
     .select("id")
     .eq("client_id", input.clientId)
     .eq("type", "appointment_booking")
-    .eq("status", "pending")
-    .limit(1)
-    .maybeSingle();
+    .eq("status", "pending");
+  pendingQuery = callSessionId
+    ? pendingQuery.contains("proposed_payload", { call_session_id: callSessionId })
+    : pendingQuery.eq("workflow_run_id", input.runId);
+  const { data: existingPending } = await pendingQuery.limit(1).maybeSingle();
 
   if (existingPending) {
     return {
       step: {
         name: "Booking proposal skipped",
         detail:
-          "A booking proposal is already waiting for approval for this client.",
+          "A booking proposal for this interaction is already waiting for approval.",
       },
       booking: { status: "skipped", reason: "proposal_already_pending" },
     };
@@ -331,15 +335,22 @@ export async function proposeBookingFromRun(
     const constraintsDescription = describeConstraints(constraints);
 
     let busy: { start: string; end: string }[];
+    let availabilityWindows: AvailabilityWindow[] | undefined;
 
     if (usesInternalCalendar) {
-      const { data: appointments } = await admin
+      const { data: appointments, error: availabilityError } = await admin
         .from("crm_appointments")
         .select("start_at, end_at")
         .eq("client_id", input.clientId)
         .in("status", ["proposed", "booked", "confirmed"])
         .lt("start_at", weekOut.toISOString())
         .gt("end_at", now.toISOString());
+      if (availabilityError) throw new Error("Internal availability is unavailable.");
+      const { data: windows, error: windowsError } = await admin.from("crm_availability_windows")
+        .select("weekday, start_time, end_time, appointment_minutes")
+        .eq("client_id", input.clientId).eq("active", true);
+      if (windowsError) throw new Error("Internal availability windows are unavailable.");
+      availabilityWindows = windows ?? undefined;
       busy = (appointments ?? []).map((appointment) => ({
         start: appointment.start_at,
         end: appointment.end_at,
@@ -368,6 +379,7 @@ export async function proposeBookingFromRun(
       businessStartHour: knowledge?.booking_hours_start ?? 9,
       businessEndHour: knowledge?.booking_hours_end ?? 17,
       durationMinutes: knowledge?.appointment_duration_minutes ?? 60,
+      availabilityWindows,
       constraints,
     });
 
@@ -382,6 +394,7 @@ export async function proposeBookingFromRun(
         businessStartHour: knowledge?.booking_hours_start ?? 9,
         businessEndHour: knowledge?.booking_hours_end ?? 17,
         durationMinutes: knowledge?.appointment_duration_minutes ?? 60,
+        availabilityWindows,
       });
       constraintsRelaxed = slots.length > 0;
     }
@@ -437,6 +450,7 @@ export async function proposeBookingFromRun(
       proposed_payload: {
         kind: "appointment_booking",
         provider: schedulingProvider,
+        call_session_id: callSessionId,
         timezone,
         duration_minutes: knowledge?.appointment_duration_minutes ?? 60,
         constraints_understood: constraintsDescription,

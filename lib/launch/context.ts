@@ -62,7 +62,7 @@ export async function loadClientLaunchContext(
 ): Promise<ClientLaunchContext> {
   const { data: client, error: clientError } = await supabase
     .from("client_businesses")
-    .select("id, name, package_id, default_runtime_mode, crm_operating_mode")
+    .select("id, name, package_id, default_runtime_mode, crm_operating_mode, is_test_account, account_kind")
     .eq("id", input.clientId)
     .eq("partner_id", input.partnerId)
     .maybeSingle();
@@ -194,7 +194,11 @@ export async function loadClientLaunchContext(
         passed: latestLaunch.test_summary.passed === true,
       }
     : null;
+  const { data: acceptance, error: acceptanceError } = await supabase.from("client_beta_acceptances")
+    .select("package_id").eq("client_id", input.clientId).maybeSingle();
+  if (acceptanceError) throw new Error("The business owner's beta approval could not be checked.");
   const readiness = computeLaunchReadiness({
+    clientApprovedBeta: client.is_test_account || client.account_kind === "partner_agency" || Boolean(acceptance && acceptance.package_id === client.package_id),
     packageId: client.package_id,
     deployment,
     requiredTemplateKeys: requirements?.workflowTemplateKeys ?? [],

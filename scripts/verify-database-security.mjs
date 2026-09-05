@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 
-const container =
-  process.env.SECURITY_DATABASE_CONTAINER ?? "supabase_db_partner-platform";
+// Hardcoded local disposable schema: never target an environment-provided DB.
+const container = "supabase_db_partner-platform";
 
 function query(sql) {
   return execFileSync(
     "docker",
-    ["exec", container, "psql", "-U", "postgres", "-d", "postgres", "-Atc", sql],
+    ["exec", container, "psql", "-U", "supabase_admin", "-d", "beta_security_test", "-v", "ON_ERROR_STOP=1", "-Atc", sql],
     { encoding: "utf8" },
   ).trim();
 }
@@ -68,21 +68,34 @@ const scopedPolicies = [
   ["crm_timeline_entries", "crm_timeline_entries_update_editors"],
 ];
 
+// The current policies use permission helpers plus composite foreign keys.
+// Assert both the authority predicate and structural tenant pairing, then run
+// actual JWT/role behavior in verify-beta-security.mjs.
 for (const [table, policy] of scopedPolicies) {
+  const permission = table === "approval_items" ? "resolve_approvals" : "edit_crm_data";
   const isScoped = query(`
     select (
-      coalesce(qual, '') || coalesce(with_check, '')
-    ) like '%business.partner_id = ${table}.partner_id%'
-    from pg_policies
-    where schemaname = 'public'
-      and tablename = '${table}'
-      and policyname = '${policy}'
+      coalesce(with_check, '') like '%current_user_client_permission(client_id, ''${permission}''%'
+      and coalesce(with_check, '') like '%current_user_agency_operator(partner_id, client_id)%'
+      and (cmd = 'INSERT' or (
+        coalesce(qual, '') like '%current_user_client_permission(client_id, ''${permission}''%'
+        and coalesce(qual, '') like '%current_user_agency_operator(partner_id, client_id)%'
+      ))
+      and exists(select 1 from pg_constraint c
+        where c.conrelid='public.${table}'::regclass and c.contype='f'
+          and pg_get_constraintdef(c.oid) like 'FOREIGN KEY (partner_id, client_id) REFERENCES client_businesses(partner_id, id)%')
+    )::text
+    from pg_policies where schemaname='public' and tablename='${table}' and policyname='${policy}'
   `);
-
-  if (isScoped !== "t") {
-    throw new Error(`${policy} does not enforce ${table}.partner_id scope.`);
-  }
+  if (isScoped !== "true") throw new Error(`${policy} lacks permission enforcement or its composite tenant foreign key.`);
 }
+const helpersScoped = query(`
+  select (pg_get_functiondef('public.current_user_client_permission(uuid,text)'::regprocedure)
+    like '%c.partner_id=m.partner_id%'
+    and pg_get_functiondef('public.current_user_agency_operator(uuid,uuid)'::regprocedure)
+    like '%id=target_client_id and partner_id=target_partner_id%')::text
+`);
+if (helpersScoped !== "true") throw new Error("Permission helpers do not verify the client/partner pairing.");
 
 const releaseFunctions = [
   "complete_connector_support_release(uuid,uuid,text,text)",
@@ -199,6 +212,8 @@ query(`
     v_partner_id uuid;
     v_client_id uuid;
     v_provider_id uuid;
+    v_owner_id uuid := extensions.gen_random_uuid();
+    v_package_id uuid;
     v_connection_id uuid;
     v_inbound_event_id uuid;
     v_outbound_event_id uuid;
@@ -217,6 +232,18 @@ query(`
     insert into public.client_businesses (partner_id, name, slug)
     values (v_partner_id, 'Provider pilot client', 'provider-pilot-client')
     returning id into v_client_id;
+
+    insert into auth.users(id,email,email_confirmed_at)
+    values(v_owner_id,'pilot-verifier-'||v_owner_id||'@synthetic.invalid',now());
+    insert into public.memberships(user_id,partner_id,client_id,role)
+    values(v_owner_id,v_partner_id,v_client_id,'client_owner');
+    insert into public.partner_packages(partner_id,name)
+    values(v_partner_id,'Synthetic pilot package') returning id into v_package_id;
+    update public.client_businesses set package_id=v_package_id where id=v_client_id;
+    insert into public.client_beta_acceptances(client_id,partner_id,package_id,accepted_by,provider_test_notes,fallback_contact)
+    values(v_client_id,v_partner_id,v_package_id,v_owner_id,
+      'Synthetic provider pilot verification and recovery plan for rollback-only tests.',
+      'pilot-verifier@synthetic.invalid');
 
     insert into public.integration_providers (
       provider_key, display_name, category, supports_inbound,

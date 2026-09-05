@@ -119,6 +119,11 @@ export async function analyzeStaffCall(
   admin: SupabaseClient,
   callSessionId: string,
 ): Promise<StaffAssist | null> {
+  const { data: claim, error: claimError } = await admin.rpc("claim_staff_voice_analysis", {
+    p_session_id: callSessionId,
+  });
+  if (claimError || !claim) return null;
+  try {
   const { data: session } = await admin
     .from("call_sessions")
     .select(
@@ -140,7 +145,7 @@ export async function analyzeStaffCall(
       .from("call_transcript_turns")
       .select("role, content")
       .eq("call_session_id", callSessionId)
-      .order("seq", { ascending: true })
+      .order("seq", { ascending: false })
       .limit(120),
     session.matched_contact_id
       ? admin
@@ -150,7 +155,7 @@ export async function analyzeStaffCall(
           .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
-  const turns = (turnsData ?? []) as { role: string; content: string }[];
+  const turns = ((turnsData ?? []) as { role: string; content: string }[]).reverse();
   const fallback = fallbackAssist(turns, session.from_number, knownContact);
   let analysis = fallback;
   let source: StaffAssist["source"] = "fallback";
@@ -160,6 +165,7 @@ export async function analyzeStaffCall(
       const knowledge = await getKnowledgeProfile(admin, session.client_id);
       const result = await generateStructured({
         taskKey: "staff_call_live_assist",
+        tenant: { partnerId: session.partner_id, clientId: session.client_id },
         system: `You assist a staff member during a live customer phone call.
 
 ${KNOWLEDGE_GUARDRAILS}
@@ -242,4 +248,9 @@ ${turns.map((turn) => `${turn.role}: ${turn.content}`).join("\n").slice(0, 16_00
   });
 
   return { ...analysis, source, slots };
+  } finally {
+    await admin.from("call_sessions").update({ staff_analysis_lease_until: null })
+      .eq("id", callSessionId).eq("staff_analysis_claim", claim);
+  }
+
 }

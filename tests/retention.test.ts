@@ -20,9 +20,12 @@ test("operational retention uses narrow tables, statuses, and cutoffs", async ()
   const resultFor = (count: number) => ({ error: null, count });
 
   const admin = {
+    rpc: async (name: string, args: unknown) => { calls.push({ table: name, operation: "rpc", args: [args] }); return { data: {}, error: null }; },
     from(table: string) {
       calls.push({ table, operation: "from", args: [] });
       const chain = {
+        then(resolve: (value: unknown) => unknown) { return Promise.resolve(resultFor(table.length)).then(resolve); },
+        update(values: unknown) { calls.push({ table, operation: "update", args: [values] }); return chain; },
         delete(options: unknown) {
           calls.push({ table, operation: "delete", args: [options] });
           return chain;
@@ -37,7 +40,7 @@ test("operational retention uses narrow tables, statuses, and cutoffs", async ()
         },
         lt(column: string, value: string) {
           calls.push({ table, operation: "lt", args: [column, value] });
-          return Promise.resolve(resultFor(table.length));
+          return chain;
         },
       };
       return chain;
@@ -63,14 +66,16 @@ test("operational retention uses narrow tables, statuses, and cutoffs", async ()
       "client_connection_setup_sessions",
       "integration_sync_jobs",
       "platform_error_events",
+      "inbound_event_jobs",
     ],
   );
+  assert.equal(calls.some((call) => call.operation === "rpc" && call.table === "purge_customer_interaction_content"), true);
   assert.deepEqual(
     calls.find((call) => call.operation === "in")?.args,
     ["status", ["succeeded", "cancelled"]],
   );
   assert.deepEqual(
     calls.filter((call) => call.operation === "lt").map((call) => call.args[0]),
-    ["window_started_at", "expires_at", "completed_at", "resolved_at"],
+    ["window_started_at", "expires_at", "completed_at", "resolved_at", "completed_at"],
   );
 });

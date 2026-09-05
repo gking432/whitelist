@@ -55,12 +55,14 @@ jobs:
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
             echo "SECRETS_ENCRYPTION_KEY=$(openssl rand -base64 32)"
           } >> "$GITHUB_ENV"
-      - run: npm run verify:security
+      - name: Verify security against a disposable schema with synthetic fixtures
+        run: npm run verify:security
       - run: npm run verify:restore
       - name: Build and verify the complete release journey
         run: |
           npm run build
           npm run verify:release-journey
+          npm run verify:native-inbound
       - if: always()
         run: supabase stop --no-backup
 

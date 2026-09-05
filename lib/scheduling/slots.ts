@@ -5,6 +5,7 @@
 export type BusyInterval = { start: string; end: string };
 
 export type OpenSlot = { startIso: string; endIso: string };
+export type AvailabilityWindow = { weekday: number; start_time: string; end_time: string; appointment_minutes: number };
 
 export type SlotConstraints = {
   earliestHour: number | null;
@@ -21,6 +22,7 @@ export type SlotOptions = {
   daysAhead?: number;
   maxSlots?: number;
   maxPerDay?: number;
+  availabilityWindows?: AvailabilityWindow[];
   // Customer constraints (parsed by lib/scheduling/constraints.ts),
   // intersected with business hours.
   constraints?: SlotConstraints;
@@ -28,7 +30,7 @@ export type SlotOptions = {
   now?: Date;
 };
 
-type LocalParts = { weekday: number; hour: number; dayKey: string };
+type LocalParts = { weekday: number; hour: number; minute: number; dayKey: string };
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -40,11 +42,13 @@ function localParts(date: Date, timezone: string): LocalParts {
     month: "2-digit",
     day: "2-digit",
     hour: "numeric",
+    minute: "numeric",
     hour12: false,
   });
 
   let weekday = 0;
   let hour = 0;
+  let minute = 0;
   let year = "";
   let month = "";
   let day = "";
@@ -54,6 +58,8 @@ function localParts(date: Date, timezone: string): LocalParts {
       weekday = WEEKDAYS.indexOf(part.value);
     } else if (part.type === "hour") {
       hour = Number(part.value) % 24;
+    } else if (part.type === "minute") {
+      minute = Number(part.value);
     } else if (part.type === "year") {
       year = part.value;
     } else if (part.type === "month") {
@@ -63,7 +69,7 @@ function localParts(date: Date, timezone: string): LocalParts {
     }
   }
 
-  return { weekday, hour, dayKey: `${year}-${month}-${day}` };
+  return { weekday, hour, minute, dayKey: `${year}-${month}-${day}` };
 }
 
 function overlaps(
@@ -92,6 +98,7 @@ export function computeOpenSlots(
     maxSlots = 3,
     maxPerDay = 1,
     constraints,
+    availabilityWindows,
     now = new Date(),
   } = options;
 
@@ -124,7 +131,8 @@ export function computeOpenSlots(
     );
 
   const gridMs = 30 * 60 * 1000;
-  const durationMs = durationMinutes * 60 * 1000;
+  const windows = availabilityWindows?.length ? availabilityWindows : null;
+  const timeMinutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
   // First candidate: at least 2 hours out, rounded up to the grid.
   const earliest = now.getTime() + 2 * 60 * 60 * 1000;
   const firstCandidate = Math.ceil(earliest / gridMs) * gridMs;
@@ -135,13 +143,20 @@ export function computeOpenSlots(
 
   for (
     let startMs = firstCandidate;
-    startMs + durationMs <= horizon && slots.length < maxSlots;
+    startMs < horizon && slots.length < maxSlots;
     startMs += gridMs
   ) {
     const start = new Date(startMs);
-    const { weekday, hour, dayKey } = localParts(start, timezone);
+    const { weekday, hour, minute, dayKey } = localParts(start, timezone);
+    const localMinute = hour * 60 + minute;
+    const window = windows?.find((candidate) => candidate.weekday === weekday &&
+      localMinute >= timeMinutes(candidate.start_time) &&
+      localMinute + candidate.appointment_minutes <= timeMinutes(candidate.end_time));
+    if (windows && !window) continue;
+    const durationMs = (window?.appointment_minutes ?? durationMinutes) * 60 * 1000;
+    if (durationMs <= 0 || startMs + durationMs > horizon) continue;
 
-    if (weekday === 0 || weekday === 6) {
+    if (!windows && (weekday === 0 || weekday === 6)) {
       continue;
     }
 
@@ -157,7 +172,7 @@ export function computeOpenSlots(
       continue;
     }
 
-    if (hour < startHour) {
+    if (localMinute < (windows ? constraints?.earliestHour ?? 0 : startHour) * 60) {
       continue;
     }
 
@@ -166,11 +181,9 @@ export function computeOpenSlots(
     const endParts = localParts(new Date(endMs), timezone);
 
     if (
-      endParts.hour > endHour ||
-      (endParts.hour === endHour &&
-        endMs % (60 * 60 * 1000) !== 0 &&
-        endParts.dayKey === dayKey) ||
-      hour >= endHour
+      endParts.dayKey !== dayKey ||
+      endParts.hour * 60 + endParts.minute > (windows ? constraints?.latestHour ?? 24 : endHour) * 60 ||
+      (window && endParts.hour * 60 + endParts.minute > timeMinutes(window.end_time))
     ) {
       continue;
     }

@@ -6,7 +6,7 @@ ENV PORT=8081
 COPY services/voice-stream/package.json services/voice-stream/package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY services/voice-stream/server.cjs services/voice-stream/protocol.cjs ./
+COPY services/voice-stream/server.cjs services/voice-stream/protocol.cjs services/voice-stream/limits.cjs ./
 
 USER node
 EXPOSE 8081

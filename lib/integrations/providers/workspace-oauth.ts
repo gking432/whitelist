@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { getAppUrl, getSecretsEncryptionKey } from "../../env.ts";
-import { ConnectorAuthorizationError } from "../connectors/errors.ts";
+import { persistRotatedCredentials } from "../credential-lifecycle.ts";
+import { ConnectorAuthorizationError, connectorHttpError } from "../connectors/errors.ts";
 
 export const WORKSPACE_PROVIDER_KEYS = [
   "google_workspace",
@@ -240,14 +241,19 @@ export async function mintWorkspaceAccessToken(
   );
   const body = (await response.json().catch(() => ({}))) as {
     access_token?: string;
+    refresh_token?: string;
     error?: string;
   };
   if (!response.ok) {
     if (workspaceTokenRefreshRequiresReconnect(response.status, body.error)) {
       throw new ConnectorAuthorizationError();
     }
-    throw new Error(`Workspace token refresh failed (${response.status}).`);
+    throw connectorHttpError("Workspace token refresh", response);
   }
   if (!body.access_token) throw new Error("Workspace token refresh returned no access token.");
+  if (body.refresh_token && body.refresh_token !== credentials.refreshToken) {
+    credentials.refreshToken = body.refresh_token;
+    await persistRotatedCredentials(credentials);
+  }
   return body.access_token;
 }

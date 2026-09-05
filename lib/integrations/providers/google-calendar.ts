@@ -1,10 +1,11 @@
+import { googleBusyIntervals } from "./calendar-availability.ts";
 // Google Calendar REST adapter (pilot stack). Server-side only. Uses the
 // OAuth 2.0 authorization-code flow: the partner supplies their own Google
 // Cloud OAuth client (ID + secret), authorizes with the client business's
 // Google account, and Northstar stores the refresh token encrypted. Access
 // tokens are minted on demand and never persisted.
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 
 import { getAppUrl, getSecretsEncryptionKey } from "@/lib/env";
 
@@ -196,7 +197,7 @@ export async function testCalendarAccess(
     const busy = (await response.json()) as {
       calendars?: { primary?: { busy?: unknown[] } };
     };
-    const busyCount = busy.calendars?.primary?.busy?.length ?? 0;
+    const busyCount = googleBusyIntervals(busy).length;
 
     return {
       ok: true,
@@ -242,7 +243,7 @@ export async function getBusyIntervals(
     calendars?: { primary?: { busy?: { start: string; end: string }[] } };
   };
 
-  return body.calendars?.primary?.busy ?? [];
+  return googleBusyIntervals(body);
 }
 
 export async function createCalendarEvent(
@@ -250,6 +251,7 @@ export async function createCalendarEvent(
   event: {
     summary: string;
     description: string;
+    idempotencyKey?: string;
     startIso: string;
     endIso: string;
   },
@@ -265,6 +267,7 @@ export async function createCalendarEvent(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        ...(event.idempotencyKey ? { id: createHash("sha256").update(event.idempotencyKey).digest("hex") } : {}),
         summary: event.summary,
         description: event.description,
         start: { dateTime: event.startIso },

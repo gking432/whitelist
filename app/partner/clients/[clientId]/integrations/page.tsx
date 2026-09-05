@@ -1,3 +1,4 @@
+import { ConnectedApps } from "@/components/integrations/connected-apps";
 import Link from "next/link";
 import { Link2, PlugZap, Plus } from "lucide-react";
 
@@ -101,6 +102,8 @@ export default async function ClientIntegrationsPage({ params }: PageProps) {
           </div>
         ) : null}
       </div>
+
+      {access.canManageIntegrations ? <ConnectedApps clientId={clientId} /> : null}
 
       {connections.length === 0 ? (
         <section className="flex min-h-64 flex-col items-center justify-center rounded-lg border bg-card px-6 py-12 text-center">

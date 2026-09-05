@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
 import type { JobberCredentials } from "./jobber-oauth";
 import { connectorPushPayload } from "../connectors/field-mappings.ts";
@@ -7,7 +8,7 @@ const API_VERSION = "2025-04-16";
 
 async function graph(credentials: JobberCredentials, query: string, variables: Record<string, unknown> = {}) {
   const response = await fetch(ENDPOINT, { method: "POST", headers: { Authorization: `Bearer ${credentials.accessToken}`, "X-JOBBER-GRAPHQL-VERSION": API_VERSION, "Content-Type": "application/json" }, body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Jobber API failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("jobber", response);
   const body = await response.json() as { data?: Record<string, unknown>; errors?: { message?: string }[] };
   if (body.errors?.length) throw new Error(`Jobber rejected the request: ${body.errors[0]?.message ?? "GraphQL error"}`);
   return body.data ?? {};

@@ -1,17 +1,11 @@
+import { settleWorkflowApprovals } from "@/lib/approvals/workflow-status";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
-import {
-  deliverApprovedCustomerMessage,
-  type DeliveryOutcome,
-} from "@/lib/delivery/customer-message";
-import {
-  recordAppointmentBooking,
-  recordTimelineMessage,
-} from "@/lib/crm/internal";
-import { recordActionJob } from "@/lib/jobs/record";
-import { bookApprovedAppointment } from "@/lib/scheduling/book-approved";
-import { queueBookingConfirmationDraft } from "@/lib/scheduling/confirmation";
+import type { DeliveryOutcome } from "@/lib/delivery/customer-message";
+import { dispatchActionJob } from "@/lib/jobs/dispatch";
+import type { ActionJobRecord } from "@/lib/jobs/record";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { FormState } from "@/lib/forms/state";
 import type { AccessContext } from "@/lib/permissions/types";
 
@@ -114,7 +108,7 @@ export async function resolveApprovalItem(
 
   const resolvedAt = new Date().toISOString();
 
-  const { error: updateError } = await supabase
+  const { data: resolved, error: updateError } = await supabase
     .from("approval_items")
     .update({
       status: nextStatus,
@@ -124,129 +118,33 @@ export async function resolveApprovalItem(
       resolution_note: input.note?.trim() || null,
     })
     .eq("id", approvalId)
-    .eq("status", "pending");
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
 
-  if (updateError) {
+  if (updateError || !resolved) {
     return {
       status: "error",
       message: "The approval could not be resolved. Try again.",
     };
   }
 
-  // Delivery/booking happens only here — strictly after a human approved.
-  // Each path itself refuses to act unless its connection is in live mode.
+  // The database committed delivery intent in the same transaction as the
+  // winning resolution. A crashed request leaves a pending job for the worker.
   let delivery: DeliveryOutcome | null = null;
-
-  if (
-    resolution !== "reject" &&
-    approval.type === "customer_message" &&
-    resolvedContent
-  ) {
-    const payload = approval.proposed_payload ?? {};
-
-    delivery = await deliverApprovedCustomerMessage({
-      approvalId: approval.id,
-      partnerId: approval.partner_id,
-      clientId: approval.client_id,
-      workflowRunId: approval.workflow_run_id,
-      channel: typeof payload.channel === "string" ? payload.channel : null,
-      to: typeof payload.to === "string" ? payload.to : null,
-      body: resolvedContent,
-      subject: typeof payload.subject === "string" ? payload.subject : null,
-    });
-
-    await recordActionJob({
-      partnerId: approval.partner_id,
-      clientId: approval.client_id,
-      kind: payload.channel === "email" ? "email.send" : "sms.send",
-      payload: {
-        channel: payload.channel ?? "sms",
-        to: payload.to ?? null,
-        subject: payload.subject ?? null,
-        body: resolvedContent,
-      },
-      outcome: delivery,
-      approvalId: approval.id,
-      workflowRunId: approval.workflow_run_id,
-    });
-
-    // Built-in CRM timeline contribution (no-op for external-only modes).
-    await recordTimelineMessage({
-      partnerId: approval.partner_id,
-      clientId: approval.client_id,
-      approvalId: approval.id,
-      workflowRunId: approval.workflow_run_id,
-      channel: typeof payload.channel === "string" ? payload.channel : "sms",
-      to: typeof payload.to === "string" ? payload.to : null,
-      body: resolvedContent,
-      outcomeStatus: delivery.status,
-    });
-
-    // Keep the CRM inbox in sync with the universal approval lifecycle.
-    await supabase
-      .from("crm_communications")
-      .update({
-        status:
-          delivery.status === "succeeded"
-            ? "sent"
-            : delivery.status === "failed"
-              ? "failed"
-              : "approved",
-        human_approved: true,
-        provider_ref: delivery.externalRef ?? null,
-      })
-      .eq("approval_id", approval.id);
-  } else if (
-    resolution !== "reject" &&
-    approval.type === "appointment_booking"
-  ) {
-    const { data: clientRow } = await supabase
-      .from("client_businesses")
-      .select("name")
-      .eq("id", approval.client_id)
-      .maybeSingle();
-
-    delivery = await bookApprovedAppointment({
-      approvalId: approval.id,
-      partnerId: approval.partner_id,
-      clientId: approval.client_id,
-      workflowRunId: approval.workflow_run_id,
-      payload: approval.proposed_payload ?? {},
-      clientName: clientRow?.name ?? "the business",
-    });
-
-    await recordActionJob({
-      partnerId: approval.partner_id,
-      clientId: approval.client_id,
-      kind: "calendar.book",
-      payload: approval.proposed_payload ?? {},
-      outcome: delivery,
-      approvalId: approval.id,
-      workflowRunId: approval.workflow_run_id,
-    });
-
-    // Built-in CRM appointment + timeline (no-op for external-only modes).
-    await recordAppointmentBooking({
-      partnerId: approval.partner_id,
-      clientId: approval.client_id,
-      approvalId: approval.id,
-      workflowRunId: approval.workflow_run_id,
-      payload: approval.proposed_payload ?? {},
-      outcomeStatus: delivery.status,
-      externalRef: delivery.externalRef ?? null,
-    });
-
-    // Chain the customer confirmation as a NEW approval-gated draft —
-    // booking approval never implies message approval.
-    if (delivery.status === "succeeded" || delivery.status === "dry_run") {
-      await queueBookingConfirmationDraft({
-        partnerId: approval.partner_id,
-        clientId: approval.client_id,
-        clientName: clientRow?.name ?? "the business",
-        workflowRunId: approval.workflow_run_id,
-        payload: approval.proposed_payload ?? {},
-        bookedLive: delivery.status === "succeeded",
-      });
+  if (resolution !== "reject") {
+    const admin = createSupabaseAdminClient();
+    if (admin) {
+      const { data: job } = await admin.from("action_jobs").select("*")
+        .eq("execution_key", `approval:${approval.id}`).maybeSingle();
+      if (job) {
+        try {
+          delivery = await dispatchActionJob(admin, job as ActionJobRecord);
+        } catch {
+          delivery = { status: "uncertain", attempted: false, delivered: false,
+            detail: "Approval saved. Delivery needs review in Action history; do not send it again." };
+        }
+      }
     }
   }
 
@@ -260,15 +158,8 @@ export async function resolveApprovalItem(
           ? `Approved: ${approval.title}. ${delivery.detail}`
           : `Approved: ${approval.title}. The approved content is recorded on the approval item; no automatic delivery applies to this item type.`;
 
-    await supabase
-      .from("workflow_runs")
-      .update({
-        status: resolution === "reject" ? "cancelled" : "succeeded",
-        finished_at: resolvedAt,
-        summary: approvedSummary,
-      })
-      .eq("id", approval.workflow_run_id)
-      .eq("status", "paused_for_approval");
+    const statusDb = createSupabaseAdminClient();
+    if (statusDb) await settleWorkflowApprovals(statusDb, approval.partner_id, clientId, approval.workflow_run_id, approvedSummary);
   }
 
   await recordAuditEvent({

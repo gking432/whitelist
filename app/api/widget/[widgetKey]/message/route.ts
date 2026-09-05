@@ -115,6 +115,7 @@ export async function POST(
   };
 
   const { data: reply } = await generateChatReply({
+    tenant: { partnerId: connection.partner_id, clientId: connection.client_id },
     clientName: connection.client_name,
     knowledge,
     fields,

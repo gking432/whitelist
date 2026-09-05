@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -53,28 +53,30 @@ export async function POST(request: NextRequest) {
     .from("call_sessions")
     .select("id, status, extracted")
     .eq("id", input.call_session_id)
-    .eq("status", "in_progress")
     .maybeSingle();
 
   if (!session) {
     return NextResponse.json({ error: "Active call not found." }, { status: 404 });
   }
 
-  const inserted = await addTranscriptTurn(admin, input.call_session_id, {
-    role: input.role,
-    content: input.text,
-    occurredAt: input.occurred_at,
-    sourceEventId: input.source_event_id,
-  });
+  let inserted: boolean;
+  try {
+    inserted = await addTranscriptTurn(admin, input.call_session_id, {
+      role: input.role,
+      content: input.text,
+      occurredAt: input.occurred_at,
+      sourceEventId: input.source_event_id,
+    });
+  } catch {
+    return NextResponse.json({ error: "Transcript could not be stored; retry." }, { status: 503 });
+  }
 
   if (!inserted) {
     return NextResponse.json({ accepted: true, duplicate: true });
   }
 
-  const assist =
-    session.extracted?.handling_mode === "staff_assisted"
-      ? await analyzeStaffCall(admin, input.call_session_id)
-      : null;
-
-  return NextResponse.json({ accepted: true, assist });
+  if (session.extracted?.handling_mode === "staff_assisted") {
+    after(async () => { await analyzeStaffCall(admin, input.call_session_id); });
+  }
+  return NextResponse.json({ accepted: true });
 }

@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
 import { connectorPushPayload } from "../connectors/field-mappings.ts";
 
@@ -5,7 +6,7 @@ export type WorkizCredentials = { apiToken: string };
 
 async function workizFetch(credentials: WorkizCredentials, path: string, init: RequestInit = {}) {
   const response = await fetch(`https://api.workiz.com/api/v1/${encodeURIComponent(credentials.apiToken)}${path}`, { ...init, headers: { "Content-Type": "application/json", ...init.headers }, signal: init.signal ?? AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Workiz API failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("workiz", response);
   return response;
 }
 
@@ -18,7 +19,7 @@ function workizRows(body: unknown): Record<string, unknown>[] {
 }
 
 export function mapWorkizLead(source: Record<string, unknown>): CanonicalRecord {
-  return { objectType: "lead", externalId: String(source.UUID ?? source.uuid ?? source.id ?? ""), updatedAt: typeof source.LastUpdated === "string" ? source.LastUpdated : null, data: { name: source.FirstName || source.LastName ? [source.FirstName, source.LastName].filter(Boolean).join(" ") : source.ClientName ?? null, first_name: source.FirstName ?? null, last_name: source.LastName ?? null, email: source.Email ?? null, phone: source.Phone ?? source.MobilePhone ?? null, status: source.Status ?? null, description: source.JobNotes ?? source.Notes ?? null }, source };
+  return { objectType: "lead", externalId: String(source.UUID ?? source.uuid ?? source.id ?? ""), updatedAt: typeof source.LastUpdated === "string" ? source.LastUpdated : null, data: { name: source.FirstName || source.LastName ? [source.FirstName, source.LastName].filter(Boolean).join(" ") : source.ClientName ?? null, first_name: source.FirstName ?? null, last_name: source.LastName ?? null, email: source.Email ?? null, phone: source.Phone ?? source.MobilePhone ?? null, status: typeof source.Status === "string" && source.Status.toLowerCase() === "new" ? "new" : source.Status ?? null, description: source.JobNotes ?? source.Notes ?? null }, source };
 }
 
 function mapWorkizJob(source: Record<string, unknown>): CanonicalRecord {

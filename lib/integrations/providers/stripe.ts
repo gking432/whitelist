@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
 import { connectorPushParams } from "../connectors/field-mappings.ts";
 
@@ -6,7 +7,7 @@ const BASE = "https://api.stripe.com/v1";
 
 async function stripeFetch(credentials: StripeCredentials, path: string, init: RequestInit = {}) {
   const response = await fetch(`${BASE}${path}`, { ...init, headers: { Authorization: `Bearer ${credentials.apiKey}`, "Content-Type": "application/x-www-form-urlencoded", ...init.headers }, signal: init.signal ?? AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Stripe API failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("stripe", response);
   return response;
 }
 
@@ -41,8 +42,8 @@ async function push(credentials: StripeCredentials, input: ConnectorPushInput) {
 }
 
 export const stripeAdapter: ConnectorAdapter<StripeCredentials> = {
-  manifest: { key: "stripe", name: "Stripe", category: "payments", description: "Customers, invoices, payments, and payment links from Stripe.", authStrategy: "api_key", capabilities: ["customer.read", "customer.create", "invoice.read", "payment.read", "payment.create"], verificationStatus: "contract_verified", requestable: false, docsUrl: "https://docs.stripe.com/api" },
-  async testConnection(context) { try { const account = await (await stripeFetch(context.credentials, "/account")).json() as Record<string, unknown>; return { ok: true, detail: "Stripe connected. Customers, invoices, payments, and payment links are ready.", externalAccountId: String(account.id ?? ""), externalAccountName: String((account.business_profile as Record<string, unknown> | undefined)?.name ?? account.email ?? "Stripe account") }; } catch (error) { return { ok: false, detail: error instanceof Error ? error.message : "Stripe verification failed." }; } },
+  manifest: { key: "stripe", name: "Stripe", category: "payments", description: "Customers, invoices, payments from Stripe.", authStrategy: "api_key", capabilities: ["customer.read", "invoice.read", "payment.read"], verificationStatus: "contract_verified", requestable: false, docsUrl: "https://docs.stripe.com/api" },
+  async testConnection(context) { try { const account = await (await stripeFetch(context.credentials, "/account")).json() as Record<string, unknown>; return { ok: true, detail: "Stripe connected. Customers, invoices, payments are ready.", externalAccountId: String(account.id ?? ""), externalAccountName: String((account.business_profile as Record<string, unknown> | undefined)?.name ?? account.email ?? "Stripe account") }; } catch (error) { return { ok: false, detail: error instanceof Error ? error.message : "Stripe verification failed." }; } },
   pullPage(context, objectType, cursor) { return pull(context.credentials, objectType, cursor); },
   pushRecord(context, input) { return push(context.credentials, input); },
 };

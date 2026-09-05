@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import type { CanonicalObjectType, CanonicalRecord, ConnectorAdapter, ConnectorPage, ConnectorPushInput } from "../connectors/types";
 import type { QuickBooksCredentials } from "./commerce-oauth";
 import { connectorPushPayload } from "../connectors/field-mappings.ts";
@@ -10,7 +11,7 @@ async function qboFetch(credentials: QuickBooksCredentials, path: string, init: 
     headers: { Authorization: `Bearer ${credentials.accessToken}`, Accept: "application/json", "Content-Type": "application/json", ...init.headers },
     signal: init.signal ?? AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`QuickBooks API failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("quickbooks-online", response);
   return response;
 }
 
@@ -55,7 +56,7 @@ async function push(credentials: QuickBooksCredentials, input: ConnectorPushInpu
 }
 
 export const quickBooksOnlineAdapter: ConnectorAdapter<QuickBooksCredentials> = {
-  manifest: { key: "quickbooks_online", name: "QuickBooks Online", category: "accounting", description: "Customers, invoices, and payments from QuickBooks Online.", authStrategy: "oauth2", capabilities: ["customer.read", "customer.create", "invoice.read", "payment.read"], verificationStatus: "contract_verified", requestable: false, docsUrl: "https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api" },
+  manifest: { key: "quickbooks_online", name: "QuickBooks Online", category: "accounting", description: "Customers, invoices, and payments from QuickBooks Online.", authStrategy: "oauth2", capabilities: ["customer.read", "invoice.read", "payment.read"], verificationStatus: "contract_verified", requestable: false, docsUrl: "https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api" },
   async testConnection(context) {
     try {
       const body = await (await qboFetch(context.credentials, `/companyinfo/${encodeURIComponent(context.credentials.realmId)}?minorversion=75`)).json() as { CompanyInfo?: Record<string, unknown> };

@@ -10,7 +10,6 @@ import { getAppUrl } from "@/lib/env";
 import type { FormState } from "@/lib/forms/state";
 import {
   furthestOnboardingStep,
-  partnerTwilioConnectionIsReady,
   PARTNER_V1_PLAN,
   type PartnerOnboardingRecord,
   type PartnerOnboardingStep,
@@ -111,21 +110,6 @@ async function updateOnboardingProgress(
   if (error) throw new Error(error.message);
 }
 
-async function partnerTwilioIsReady(
-  supabase: NonNullable<
-    Awaited<ReturnType<typeof createSupabaseServerClient>>
-  >,
-  partnerId: string,
-) {
-  const { data, error } = await supabase
-    .from("partner_provider_connections")
-    .select("status, credential_status, last_success_at")
-    .eq("partner_id", partnerId)
-    .eq("provider_key", "twilio")
-    .maybeSingle();
-
-  return !error && partnerTwilioConnectionIsReady(data);
-}
 
 export async function savePartnerAgencyDetails(
   _previousState: FormState,
@@ -399,19 +383,6 @@ export async function finishPartnerIntegrationsStep(
       return { status: "error", message: "Sign in to continue onboarding." };
     }
 
-    if (
-      !(await partnerTwilioIsReady(
-        context.supabase,
-        context.access.partnerId!,
-      ))
-    ) {
-      return {
-        status: "error",
-        message:
-          "Connect and verify your Twilio billing account before continuing.",
-      };
-    }
-
     await updateOnboardingProgress(
       context.supabase,
       context.access.partnerId!,
@@ -446,14 +417,6 @@ export async function completePartnerOnboarding(
 
     const { access, admin, supabase } = context;
 
-    if (!(await partnerTwilioIsReady(supabase, access.partnerId!))) {
-      return {
-        status: "error",
-        message:
-          "Your verified Twilio billing account is required to finish onboarding.",
-      };
-    }
-
     const now = new Date().toISOString();
     const { error } = await supabase.from("partner_onboarding").upsert(
       {
@@ -466,7 +429,6 @@ export async function completePartnerOnboarding(
         included_active_clients: PARTNER_V1_PLAN.includedActiveClients,
         additional_client_fee_cents:
           PARTNER_V1_PLAN.additionalClientFeeCents,
-        billing_status: "not_configured",
         plan_confirmed_at: now,
         completed_at: now,
       },
@@ -496,13 +458,12 @@ export async function completePartnerOnboarding(
         setup_fee_cents: PARTNER_V1_PLAN.setupFeeCents,
         monthly_fee_cents: PARTNER_V1_PLAN.monthlyFeeCents,
         included_active_clients: PARTNER_V1_PLAN.includedActiveClients,
-        billing_status: "not_configured",
       },
     });
 
     revalidatePath("/partner");
     revalidatePath("/partner/onboarding");
-    redirect("/partner?onboarding=complete");
+    redirect("/partner/start");
   } catch (error) {
     return accessErrorState(error);
   }

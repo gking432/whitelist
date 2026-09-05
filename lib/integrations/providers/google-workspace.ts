@@ -1,3 +1,4 @@
+import { googleBusyIntervals } from "./calendar-availability.ts";
 import type {
   CanonicalObjectType,
   CanonicalRecord,
@@ -11,21 +12,22 @@ import {
   type WorkspaceCredentials,
   workspaceApiRequiresReconnect,
 } from "./workspace-oauth.ts";
-import { ConnectorAuthorizationError } from "../connectors/errors.ts";
+import { ConnectorAuthorizationError, ConnectorHttpError, parseRetryAfter } from "../connectors/errors.ts";
 
 const PEOPLE = "https://people.googleapis.com/v1";
 const CALENDAR = "https://www.googleapis.com/calendar/v3";
 const GMAIL = "https://gmail.googleapis.com/gmail/v1";
 
-class GoogleWorkspaceApiError extends Error {
+class GoogleWorkspaceApiError extends ConnectorHttpError {
   readonly status: number;
   readonly responseBody: string;
 
   constructor(
     status: number,
     responseBody: string,
+    retryAfter: string | null = null,
   ) {
-    super(`Google Workspace API failed (${status}).`);
+    super(`Google Workspace API failed (${status}).`, status, parseRetryAfter(retryAfter));
     this.status = status;
     this.responseBody = responseBody;
   }
@@ -50,7 +52,7 @@ async function googleFetch(
     if (workspaceApiRequiresReconnect(response.status)) {
       throw new ConnectorAuthorizationError();
     }
-    throw new GoogleWorkspaceApiError(response.status, await response.text());
+    throw new GoogleWorkspaceApiError(response.status, await response.text(), response.headers.get("retry-after"));
   }
   return response;
 }
@@ -405,7 +407,7 @@ export async function getGoogleWorkspaceBusyIntervals(
     body: JSON.stringify({ timeMin, timeMax, items: [{ id: "primary" }] }),
   });
   const body = (await response.json()) as { calendars?: { primary?: { busy?: { start: string; end: string }[] } } };
-  return body.calendars?.primary?.busy ?? [];
+  return googleBusyIntervals(body);
 }
 
 export async function sendGoogleWorkspaceEmail(

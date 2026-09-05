@@ -1,3 +1,4 @@
+import { connectorHttpError } from "../connectors/errors.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { getAppUrl, getSecretsEncryptionKey } from "@/lib/env";
@@ -100,7 +101,7 @@ async function qboTokenRequest(client: CommerceOAuthClient, params: Record<strin
     body: new URLSearchParams(params),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`QuickBooks authorization failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("commerce-oauth", response);
   return response.json() as Promise<{ access_token?: string; refresh_token?: string; expires_in?: number }>;
 }
 
@@ -123,7 +124,7 @@ async function squareTokenRequest(client: CommerceOAuthClient, body: Record<stri
     body: JSON.stringify({ client_id: client.clientId, client_secret: client.clientSecret, ...body }),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`Square authorization failed (${response.status}).`);
+  if (!response.ok) throw connectorHttpError("commerce-oauth", response);
   return response.json() as Promise<{ access_token?: string; refresh_token?: string; expires_at?: string; merchant_id?: string }>;
 }
 

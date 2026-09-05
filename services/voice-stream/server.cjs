@@ -17,6 +17,8 @@ const port = Number(process.env.PORT || process.env.VOICE_STREAM_PORT || 8081);
 const appUrl = (process.env.NORTHSTAR_APP_URL || "").replace(/\/$/, "");
 const apiKey = process.env.OPENAI_API_KEY || "";
 const sharedSecret = process.env.VOICE_STREAM_SHARED_SECRET || "";
+const { voiceLimits } = require("./limits.cjs");
+const { maxCallSeconds, maxCallTokens } = voiceLimits(process.env);
 const transcriptionModel =
   process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-mini-transcribe";
 const release = (() => {
@@ -244,6 +246,9 @@ async function createAiBridge(input) {
   let toolQueue = Promise.resolve();
   let closed = false;
   let failed = false;
+  let totalTokens = 0;
+  const seenUsage = new Set();
+  let limitReached = false;
 
   const openai = new WebSocket(realtimeUrl(bootstrap.model), {
     headers: {
@@ -272,6 +277,20 @@ async function createAiBridge(input) {
       input.twilio.close(1011, "AI stream unavailable");
     }
   }
+
+  function endForLimit() {
+    if (closed || limitReached) return;
+    limitReached = true;
+    hangupRequested = true;
+    sendOpenAI({ type: "response.cancel" });
+    sendOpenAI(initialResponse("The call has reached its service limit. In one short sentence, say you are saving the request for the team and must end the call now. Do not promise a callback time. Do not call tools."));
+    hangupTimer ??= setTimeout(() => {
+      responseActive = false;
+      pendingMarks.clear();
+      requestCarrierHangup();
+    }, 10_000);
+  }
+  const durationTimer = setTimeout(endForLimit, maxCallSeconds * 1000);
 
   function interruptAssistant() {
     if (!input.streamSid || pendingMarks.size === 0) return;
@@ -421,7 +440,21 @@ async function createAiBridge(input) {
 
     if (event.type === "response.done") {
       responseActive = false;
-      const calls = functionCallsFromResponse(event);
+      const usage = event.response?.usage;
+      const responseId = event.response?.id;
+      if (usage && typeof responseId === "string" && !seenUsage.has(responseId)) {
+        seenUsage.add(responseId);
+        const integer = (value) => Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+        totalTokens += integer(usage.total_tokens);
+        input.deliveries.deliver("/api/voice/provider/control", {
+          action: "usage", call_session_id: input.callSessionId,
+          response_id: responseId, model: bootstrap.model,
+          input_tokens: integer(usage.input_tokens), output_tokens: integer(usage.output_tokens),
+          total_tokens: integer(usage.total_tokens),
+        });
+        if (totalTokens >= maxCallTokens && !limitReached) { endForLimit(); return; }
+      }
+      const calls = limitReached ? [] : functionCallsFromResponse(event);
       if (calls.length > 0) {
         toolQueue = toolQueue.then(() => executeFunctionCalls(calls));
       } else {
@@ -463,6 +496,7 @@ async function createAiBridge(input) {
     },
     async close() {
       closed = true;
+      clearTimeout(durationTimer);
       if (hangupTimer) clearTimeout(hangupTimer);
       await toolQueue.catch(() => {});
       if (openai.readyState === WebSocket.OPEN) openai.close(1000);
@@ -488,7 +522,7 @@ const server = http.createServer((request, response) => {
   response.end();
 });
 
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 });
 
 server.on("upgrade", (request, socket, head) => {
   if (request.url !== "/twilio") {
@@ -512,6 +546,9 @@ wss.on("connection", (twilio) => {
   const transcribers = new Map();
   const deliveries = createDeliveryTracker();
   const queuedAiMedia = [];
+  const authenticationTimer = setTimeout(() => { if (!authenticated) twilio.close(1008, "Stream authentication timed out"); }, 10_000);
+  // A hard transport cap also bounds silent/stalled and staff transcription sessions.
+  const transportTimer = setTimeout(() => twilio.close(1000, "Call stream time limit"), (maxCallSeconds + 20) * 1000);
 
   async function startAiBridge() {
     if (!callSessionId || !streamSid || bridgeStarting || aiBridge) return;
@@ -538,10 +575,19 @@ wss.on("connection", (twilio) => {
   async function finalize() {
     if (finalized) return;
     finalized = true;
+    clearTimeout(authenticationTimer);
+    clearTimeout(transportTimer);
+    if (bridgeStarting) await bridgeStarting.catch(() => {});
+    // Let already-produced final transcription events arrive before closing sockets.
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
     await aiBridge?.close();
     for (const transcriber of transcribers.values()) transcriber.close();
     transcribers.clear();
     await deliveries.settle();
+    if (authenticated && callSessionId) {
+      await postSigned("/api/voice/provider/control", { action: "drained", call_session_id: callSessionId })
+        .catch((error) => console.error("Call completion delivery failed:", error.message));
+    }
   }
 
   twilio.on("message", (message) => {
@@ -555,6 +601,8 @@ wss.on("connection", (twilio) => {
     }
 
     if (event.event === "start") {
+      if (authenticated) { twilio.close(1008, "Stream already started"); return; }
+      clearTimeout(authenticationTimer);
       const parameters = event.start?.customParameters || {};
       callSessionId = parameters.callSessionId || null;
       mode =

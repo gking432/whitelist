@@ -19,6 +19,7 @@ import {
   type CrmAppointmentStatus,
 } from "@/lib/crm/appointments";
 import type { FormState } from "@/lib/forms/state";
+import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 import { isAccessError } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -61,6 +62,7 @@ function revalidateCrm(clientId: string) {
 async function actionContext(
   clientId: string,
   operation: "crm_edit" | "customer_action",
+  requiredSection: ClientSectionKey,
 ): Promise<ActionContext | FormState> {
   const auth = await getAuthState();
 
@@ -72,6 +74,7 @@ async function actionContext(
     const access = await resolveAssistantAccess(auth.user.id, clientId, "write");
 
     if (
+      (access.role.startsWith("client_") && !access.visibleClientSections.includes(requiredSection)) ||
       (operation === "crm_edit" && !access.canEditCrmData) ||
       (operation === "customer_action" &&
         !access.canOperateCustomerActions)
@@ -199,7 +202,7 @@ export async function startCrmAiCallback(input: {
   contactId: string;
   reason: OutboundCallbackReason;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "customer_action");
+  const context = await actionContext(input.clientId, "customer_action", "calls");
   if ("status" in context) return context;
 
   if (context.access.isImpersonating) {
@@ -272,7 +275,7 @@ export async function createCrmLead(input: {
   description?: string;
   source?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "contacts");
   if ("status" in context) return context;
 
   const name = clean(input.name, 200);
@@ -348,6 +351,7 @@ export async function createCrmLead(input: {
     source,
   };
   const { analysis, ai } = await analyzeManualLead({
+    tenant: { partnerId: context.partnerId, clientId: context.clientId },
     businessName: context.clientName,
     data: leadData,
   });
@@ -436,7 +440,7 @@ export async function updateCrmLeadStage(input: {
   leadId: string;
   status: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "pipeline");
   if ("status" in context) return context;
 
   const allowed = ["new", "contacted", "quoted", "scheduled", "won", "lost"];
@@ -489,7 +493,7 @@ export async function updateCrmLead(input: {
   estimatedValueMin?: number;
   estimatedValueMax?: number;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "contacts");
   if ("status" in context) return context;
 
   if (!validUuid(input.leadId)) return result("Lead not found.", "error");
@@ -548,7 +552,7 @@ export async function updateCrmContact(input: {
   address?: string;
   preferredChannel?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "contacts");
   if ("status" in context) return context;
 
   if (!validUuid(input.contactId)) return result("Contact not found.", "error");
@@ -609,7 +613,7 @@ export async function createCrmTask(input: {
   contactId?: string;
   leadId?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "tasks");
   if ("status" in context) return context;
 
   const title = clean(input.title, 300);
@@ -660,7 +664,7 @@ export async function setCrmTaskStatus(input: {
   taskId: string;
   status: "open" | "done" | "cancelled";
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "tasks");
   if ("status" in context) return context;
 
   if (!validUuid(input.taskId)) return result("Task not found.", "error");
@@ -684,7 +688,7 @@ export async function setCrmAppointmentStatus(input: {
   appointmentId: string;
   status: CrmAppointmentStatus;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "schedule");
   if ("status" in context) return context;
 
   if (!validUuid(input.appointmentId)) {
@@ -741,7 +745,7 @@ export async function createCrmMessageDraft(input: {
   channel: "sms" | "email";
   context?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "customer_action");
+  const context = await actionContext(input.clientId, "customer_action", "inbox");
   if ("status" in context) return context;
 
   if (!validUuid(input.contactId)) return result("Choose a contact.", "error");
@@ -767,6 +771,7 @@ export async function createCrmMessageDraft(input: {
     .filter(Boolean)
     .join(" ");
   const { draft, ai } = await draftCrmMessage({
+    tenant: { partnerId: context.partnerId, clientId: context.clientId },
     businessName: context.clientName,
     objective: input.objective,
     data: {
@@ -851,7 +856,7 @@ export async function receiveCrmCommunication(input: {
   email?: string;
   message: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "customer_action");
+  const context = await actionContext(input.clientId, "customer_action", "inbox");
   if ("status" in context) return context;
 
   const message = clean(input.message, 4000);
@@ -958,7 +963,7 @@ export async function createCrmAppointment(input: {
   location?: string;
   notes?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "schedule");
   if ("status" in context) return context;
 
   const title = clean(input.title, 300);
@@ -1037,7 +1042,7 @@ export async function updateCrmAppointment(input: {
   location?: string;
   notes?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "schedule");
   if ("status" in context) return context;
 
   if (!validUuid(input.appointmentId)) {
@@ -1123,7 +1128,7 @@ export async function saveCrmAvailability(input: {
   appointmentMinutes?: number;
   label?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "schedule");
   if ("status" in context) return context;
 
   const weekday = Math.max(0, Math.min(6, Math.trunc(input.weekday)));
@@ -1165,7 +1170,7 @@ export async function createCrmQuote(input: {
   complexity: "standard" | "complex" | "premium";
   notes?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "quotes");
   if ("status" in context) return context;
 
   const serviceType = clean(input.serviceType, 200);
@@ -1230,7 +1235,7 @@ export async function setCrmQuoteStatus(input: {
   quoteId: string;
   status: "internal_ballpark" | "draft" | "sent" | "accepted" | "declined";
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "quotes");
   if ("status" in context) return context;
 
   if (!validUuid(input.quoteId)) return result("Quote not found.", "error");
@@ -1281,7 +1286,7 @@ export async function updateCrmWorkspaceSettings(input: {
   primaryContactEmail?: string;
   primaryContactPhone?: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "settings");
   if ("status" in context) return context;
 
   const name = clean(input.name, 200);
@@ -1337,7 +1342,7 @@ export async function analyzeAndSaveCrmFeedback(input: {
   rating?: number;
   feedbackText: string;
 }): Promise<FormState> {
-  const context = await actionContext(input.clientId, "crm_edit");
+  const context = await actionContext(input.clientId, "crm_edit", "marketing");
   if ("status" in context) return context;
 
   const feedbackText = clean(input.feedbackText, 6000);
@@ -1347,6 +1352,7 @@ export async function analyzeAndSaveCrmFeedback(input: {
       ? Math.round(input.rating)
       : null;
   const { analysis, ai } = await analyzeCrmFeedback({
+    tenant: { partnerId: context.partnerId, clientId: context.clientId },
     businessName: context.clientName,
     source: clean(input.source, 120) || "manual",
     rating,
