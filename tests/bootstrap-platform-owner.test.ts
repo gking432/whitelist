@@ -23,6 +23,7 @@ function fakeAdmin(input?: { existingUser?: boolean; memberships?: Membership[] 
   };
   const memberships = [...(input?.memberships ?? [])];
   const invited: string[] = [];
+  const inviteRedirects: string[] = [];
   const query = (table: string) => {
     const filters: Record<string, unknown> = {};
     let mutation: { kind: "insert" | "update"; payload: Record<string, unknown> } | null = null;
@@ -71,8 +72,9 @@ function fakeAdmin(input?: { existingUser?: boolean; memberships?: Membership[] 
               error: null,
             };
           },
-          async inviteUserByEmail(email: string) {
+          async inviteUserByEmail(email: string, options: { redirectTo: string }) {
             invited.push(email);
+            inviteRedirects.push(options.redirectTo);
             return { data: { user }, error: null };
           },
         },
@@ -80,6 +82,7 @@ function fakeAdmin(input?: { existingUser?: boolean; memberships?: Membership[] 
       from: query,
     },
     invited,
+    inviteRedirects,
     memberships,
   };
 }
@@ -113,6 +116,9 @@ test("owner bootstrap invites once and creates only a platform membership", asyn
   });
   assert.equal(result.existingUser, false);
   assert.deepEqual(fake.invited, ["owner@example.com"]);
+  assert.deepEqual(fake.inviteRedirects, [
+    "https://app.example.com/auth/confirm?next=/control/activation",
+  ]);
   assert.equal(fake.memberships.length, 1);
   assert.equal(fake.memberships[0]?.role, "platform_owner");
   assert.equal(fake.memberships[0]?.partner_id, null);

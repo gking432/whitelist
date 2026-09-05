@@ -86,7 +86,7 @@ export async function bootstrapPlatformOwner(
   if (!user) {
     const { data, error } = await admin.auth.admin.inviteUserByEmail(options.email, {
       data: options.fullName ? { full_name: options.fullName } : undefined,
-      redirectTo: `${options.appUrl}/auth/callback?next=/control/activation`,
+      redirectTo: `${options.appUrl}/auth/confirm?next=/control/activation`,
     });
     if (error) throw error;
     user = data.user;

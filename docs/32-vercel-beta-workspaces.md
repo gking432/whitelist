@@ -8,7 +8,7 @@ Support views retain the existing one-hour audited session mechanism. Live accou
 
 ## Data and enrollment
 
-Supabase already stores partners with UUID primary keys and clients with their own UUIDs plus a partner_id foreign key. Memberships scope account access. Tickets carry partner/client relationships. IDs are generated when records are created; adding a public self-service signup/checkout is a separate enrollment feature. The current owner workflow creates a partner and guides their setup.
+Supabase stores partners with UUID primary keys and clients with their own UUIDs plus a partner_id foreign key. Memberships scope account access. Tickets carry partner/client relationships. IDs are generated when records are created. The owner workflow creates a partner and guides their setup; public paid enrollment still needs hosted billing configuration and verification.
 
 ## Hosting
 
@@ -22,14 +22,16 @@ The existing Git production branch remains `main`; the current beta implementati
 
 ## Hosted database activation
 
-The existing development database is local. Hosted account testing requires:
+The original development database remains local and unchanged. Hosted activation status:
 
-1. Accept Supabase Marketplace terms in the Vercel account. The CLI explicitly requires this human step before installation.
-2. Provision the `partner-platform-beta` Supabase Free resource and connect it to this project. Pull its environment into a separate ignored/private file, never over the local database environment.
-3. Apply repository migrations to the newly created hosted database. Do not import `supabase/seed.sql` into the hosted project; it contains local test identities.
-4. Set the hosted Supabase URL, public key, server-only service-role key, fresh server-only SECRETS_ENCRYPTION_KEY, and stable APP_URL in Vercel. Check the integration's injected variable names against `lib/env.ts`.
-5. Configure Supabase auth URLs and bootstrap the owner's chosen email using the existing owner bootstrap procedure. Create explicitly marked beta partner/client accounts for walkthroughs.
-6. Redeploy after setting variables, then verify owner login, account creation, escalation, audited account entry/exit, and tenant isolation against the hosted database.
+1. Complete: Marketplace terms accepted; `partner-platform-beta` provisioned on the Free plan, project ref `memyvqqlosoeqnpgxfvq`, connected to Vercel production and preview.
+2. Complete: all 84 repository migrations applied, through `20260904200000_embedded_app_connections`. Local `supabase/seed.sql` was not imported. All public tables have row-level security enabled.
+3. Complete: hosted Supabase environment and fresh server encryption/cron secrets configured. Production APP_URL is `https://partner-platform-eta.vercel.app`. Private environment files remain ignored under `.vercel/`; `.env.local` still targets development.
+4. Complete: `Beta Agency — Test Account` and `Sample Home Services — Test Client` created and explicitly marked as test accounts. The agency also has its automatically created internal business workspace. The sample client uses the CRM experience with fictional contact, lead, and task data and sandbox runtime. Agency onboarding is intentionally unfinished for the guided walkthrough.
+5. Pending owner action: in Supabase Authentication > URL Configuration, set Site URL to `https://partner-platform-eta.vercel.app` and add `https://partner-platform-eta.vercel.app/**` to Redirect URLs. A generated-link check still resolved to localhost; no sign-in email was sent by that check.
+6. Pending owner email: bootstrap the chosen owner identity after the redirect configuration is verified. The bootstrap invitation now returns to `/auth/confirm`, which handles invite fragment tokens; `/auth/callback` handles code exchange. Then verify real email delivery, owner login, and hosted escalation/support-session entry and exit.
+
+Production and preview currently share this beta database. Use a separate preview database before onboarding real customers.
 
 The web deployment alone does not activate live telephony or background processing. The repository's voice-stream service, connector worker, and scheduled job runner need deployment and provider credentials as described by the existing release topology. Vercel now has WebSocket support in beta, but connections still end at function-duration limits; the existing standalone voice server is not automatically converted by deploying Next.js. The current Vercel Hobby cron frequency is insufficient for the existing five-minute job runner.
 
@@ -42,10 +44,13 @@ Local checks: TypeScript, ESLint, 279 tests, and production build. Browser walkt
 ## Published web deployment — September 5, 2026
 
 - Public beta entry: https://partner-platform-eta.vercel.app
-- Production deployment: `dpl_4G2QS55GAavVJo6q7NE7hhvfQ2uo`, code commit `2770df7`, status READY. Vercel build completed in approximately one minute.
-- Public opening page verified in the browser. Protected workspace entries redirect to sign-in; no console errors observed on the opening/sign-in journey. Hosted sign-in remains disabled because the database integration is awaiting the account owner's marketplace terms acceptance. No hosted owner/partner/client records have been provisioned yet.
+- Production deployment with hosted database: `dpl_8sCUTD5BXxqGiPkPDGMTd8xsUn78`, source commit `472456a`, status READY. Vercel build completed in approximately 40 seconds.
+- Public opening page and enabled sign-in form verified in the browser. Protected workspace entries require sign-in. Personal email sign-in remains pending the Supabase redirect setting and owner email above.
+- Hosted API and page tests passed using temporary authenticated owner, partner, and client identities: each workspace loaded, the owner saw the account directory, tenants could not access another tenant or grant themselves owner access, and anonymous account reads were denied. Temporary identities and isolation tenant were removed. No permanent hosted login identities have been created yet.
+- Health endpoint returned HTTP 200 with database and schema ready. Production readiness enforcement remains disabled; this result does not certify live providers or workers. Worker release attribution was unavailable on this deployment.
+- Owner invitation regression checks passed: six focused bootstrap/session tests, including tenant identity rejection and the fragment-compatible return page.
 - Desktop and phone-width local walkthroughs passed, including account search, sandbox client entry/exit, and read-only partner entry from an escalation and return to that escalation.
 - Local runtime-dependency audit reported zero vulnerabilities; the cloud installation warnings concerned the broader dependency set including development tooling.
 - Original local database preserved. Disposable walkthrough database stopped with its backup retained.
 
-To unblock hosted database creation, the account owner must complete https://vercel.com/gking432s-projects/~/integrations/accept-terms/supabase?source=cli. Then retry the prepared free installation and complete the activation steps above. The Vercel project is deployed; authenticated cloud account testing and live provider services are not yet ready.
+Next: complete owner email sign-in, walk through the hosted agency/client setup and support escalation journey, then configure and test the live provider services and background workers. The database and protected workspaces are available; the application is not yet a fully operational live-services beta.
