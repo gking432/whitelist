@@ -1,6 +1,8 @@
 # Vercel beta workspaces
 
-The opening page offers Platform owner, Partner, and Client workspaces. Signed-in platform users selecting Partner or Client are sent to the owner account directory to choose the target account. Other users are sent to their existing role-protected workspace; selecting a button never grants permissions.
+The opening page offers Platform owner, Partner, and Client workspaces. For signed-in platform owners/admins, Partner and Client submit server actions that open the designated beta test agency/client directly in an audited, editable test session. The server verifies both the real platform role and the target's test-account flag. A missing test fixture falls back to the account directory. Other users retain links to their own role-protected workspaces; selecting a button never grants permissions.
+
+Owner invitations and sign-in requests without an explicit destination now land on the three-choice opening page. Existing invitation links that point to the activation checklist remain valid; that page has a prominent "Open the three workspaces" link. Test sessions opened from the launcher display "Choose workspace" to end the session and return home. The agency starts with its unfinished guided onboarding; the client opens its sample CRM. These are persisted test records, not evidence that external providers are connected.
 
 The owner directory groups managed clients beneath their partners, includes account IDs, supports searching by name or ID, and labels test accounts. Live account totals exclude test accounts. Recent unresolved escalations appear on the dashboard. Support tickets have partner/client support-view buttons that return to the ticket when the session ends.
 
@@ -54,3 +56,11 @@ Local checks: TypeScript, ESLint, 279 tests, and production build. Browser walkt
 - Original local database preserved. Disposable walkthrough database stopped with its backup retained.
 
 Next: complete owner email sign-in, walk through the hosted agency/client setup and support escalation journey, then configure and test the live provider services and background workers. The database and protected workspaces are available; the application is not yet a fully operational live-services beta.
+
+## Direct beta workspace entry — September 5, 2026
+
+The owner's screenshot confirmed successful personal sign-in but exposed a confusing initial destination: the production activation checklist. The launcher is now the default invitation/sign-in destination. Deployment `dpl_7GHePycyWbdDRhm7TYC4U2rAgw1R` (source `9d8f627`) is published at the canonical beta URL.
+
+Hosted form submissions verified both Partner and Client buttons start an editable, audited test session, load the corresponding workspace, and end the session when returning home. Agency onboarding now includes the same return banner as the other workspace pages. An ordinary partner replaying the owner-only form was denied and gained no support session. Existing tenant-isolation and anonymous-access checks passed, and temporary verification identities were removed. TypeScript, ESLint, 279 tests, and the Vercel production build passed. The public launcher was checked in the browser with no console errors; signed-in transitions were verified through authenticated HTTP requests and database assertions.
+
+Next owner walkthrough: open the launcher, explore the owner directory, complete the test agency's guided setup, then use the sample client's CRM. Live AI/phone/provider delivery and worker operation still require configuration and end-to-end evidence.
