@@ -12,7 +12,7 @@ Supabase already stores partners with UUID primary keys and clients with their o
 
 ## Hosting
 
-Vercel project: `partner-platform`, team `gking432s-projects`, linked to `gking432/whitelist`. Node 24, Next.js framework. `vercel.json` skips downloading the desktop Electron binary during web installation. The existing standalone build remains compatible with the Render/desktop release paths.
+Vercel project: `partner-platform`, team `gking432s-projects`, linked to `gking432/whitelist`. Node 24, Next.js framework. `vercel.json` skips downloading the desktop Electron binary during web installation. Next.js output is standalone for Render/desktop builds and uses Vercel packaging when VERCEL=1. The initial hosted build failed on a missing next-server trace when standalone output was forced; selecting Vercel packaging resolved it.
 
 The existing Git production branch remains `main`; the current beta implementation is on `codex/v1-scenario-lab`. An explicit CLI production deployment can publish this branch without merging. Branch pushes otherwise create previews until the beta is merged or the production branch is intentionally changed.
 
@@ -38,3 +38,14 @@ References: [Vercel WebSockets](https://vercel.com/docs/functions/websockets), [
 ## Verification
 
 Local checks: TypeScript, ESLint, 279 tests, and production build. Browser walkthrough: three workspace links, owner-to-client selector, sandbox client entry/exit, escalation-to-partner read-only view and return. Hosted verification is recorded separately after deployment; local passing checks do not establish live provider readiness.
+
+## Published web deployment — September 5, 2026
+
+- Public beta entry: https://partner-platform-eta.vercel.app
+- Production deployment: `dpl_4G2QS55GAavVJo6q7NE7hhvfQ2uo`, code commit `2770df7`, status READY. Vercel build completed in approximately one minute.
+- Public opening page verified in the browser. Protected workspace entries redirect to sign-in; no console errors observed on the opening/sign-in journey. Hosted sign-in remains disabled because the database integration is awaiting the account owner's marketplace terms acceptance. No hosted owner/partner/client records have been provisioned yet.
+- Desktop and phone-width local walkthroughs passed, including account search, sandbox client entry/exit, and read-only partner entry from an escalation and return to that escalation.
+- Local runtime-dependency audit reported zero vulnerabilities; the cloud installation warnings concerned the broader dependency set including development tooling.
+- Original local database preserved. Disposable walkthrough database stopped with its backup retained.
+
+To unblock hosted database creation, the account owner must complete https://vercel.com/gking432s-projects/~/integrations/accept-terms/supabase?source=cli. Then retry the prepared free installation and complete the activation steps above. The Vercel project is deployed; authenticated cloud account testing and live provider services are not yet ready.
