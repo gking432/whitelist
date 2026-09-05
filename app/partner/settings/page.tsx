@@ -74,7 +74,9 @@ export default async function PartnerBrandingPage() {
       .maybeSingle(),
     supabase
       .from("partner_provider_connections")
-      .select("status, credential_status, health_summary, last_success_at, config")
+      .select(
+        "status, credential_status, health_summary, last_success_at, config",
+      )
       .eq("partner_id", access.partnerId)
       .eq("provider_key", "twilio")
       .maybeSingle(),
@@ -113,11 +115,11 @@ export default async function PartnerBrandingPage() {
           <div>
             <div className="flex items-center gap-2">
               <Palette className="size-5 text-primary" aria-hidden="true" />
-              <h1 className="text-xl font-semibold">Partner settings</h1>
+              <h1 className="text-xl font-semibold">Your brand & settings</h1>
             </div>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Control the white-label product your agency sells and jump to the
-              operating tools that belong to your own business.
+              Make the client experience your own with your name, logo, colors,
+              and support details.
             </p>
           </div>
           <Badge variant="outline">Owner and admin only</Badge>
@@ -129,7 +131,7 @@ export default async function PartnerBrandingPage() {
         >
           <div className="border-b p-4 md:border-b-0 md:border-r">
             <Palette className="size-4 text-primary" aria-hidden="true" />
-            <p className="mt-2 text-sm font-semibold">White-label identity</p>
+            <p className="mt-2 text-sm font-semibold">Your brand</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               Product name, logo, colors, and support identity.
             </p>
@@ -162,7 +164,7 @@ export default async function PartnerBrandingPage() {
               aria-hidden="true"
             />
             <p className="mt-2 flex items-center justify-between gap-2 text-sm font-semibold">
-              Agency home base
+              Sales workspace
               <ArrowRight
                 className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
                 aria-hidden="true"
@@ -176,7 +178,10 @@ export default async function PartnerBrandingPage() {
             href="/partner/onboarding?step=agency"
             className="group p-4 transition-colors hover:bg-secondary/40"
           >
-            <ClipboardCheck className="size-4 text-primary" aria-hidden="true" />
+            <ClipboardCheck
+              className="size-4 text-primary"
+              aria-hidden="true"
+            />
             <p className="mt-2 flex items-center justify-between gap-2 text-sm font-semibold">
               Onboarding and plan
               <ArrowRight
@@ -193,7 +198,7 @@ export default async function PartnerBrandingPage() {
         <section aria-labelledby="branding-heading" className="space-y-5">
           <div>
             <h2 id="branding-heading" className="text-lg font-semibold">
-              White-label identity
+              Your brand
             </h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Set this during partner onboarding before selling to clients.
@@ -202,16 +207,30 @@ export default async function PartnerBrandingPage() {
             </p>
           </div>
           <section className="mb-6 rounded-lg border bg-secondary/30 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Your client sign-in link</h2><Link href="/partner/billing" className="text-sm underline">Manage agency billing</Link></div>
-            <p className="mt-2 text-sm text-muted-foreground">Share this link with clients to show your agency name and logo before they sign in.</p>
-            <a className="mt-3 block break-all text-sm underline" href={`${getAppUrl()}/login?agency=${partnerResult.data?.slug ?? ""}&next=/client`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-semibold">Your client sign-in link</h2>
+              <Link href="/partner/billing" className="text-sm underline">
+                Manage agency billing
+              </Link>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Share this link with clients to show your agency name and logo
+              before they sign in.
+            </p>
+            <a
+              className="mt-3 block break-all text-sm underline"
+              href={`${getAppUrl()}/login?agency=${partnerResult.data?.slug ?? ""}&next=/client`}
+            >
               {`${getAppUrl()}/login?agency=${partnerResult.data?.slug ?? ""}&next=/client`}
             </a>
           </section>
           <BrandingForm action={updatePartnerBranding} initial={initial} />
         </section>
 
-        <section aria-labelledby="phone-heading" className="space-y-5 border-t pt-6">
+        <section
+          aria-labelledby="phone-heading"
+          className="space-y-5 border-t pt-6"
+        >
           <div>
             <div className="flex items-center gap-2">
               <PhoneCall className="size-4 text-primary" aria-hidden="true" />
@@ -220,7 +239,8 @@ export default async function PartnerBrandingPage() {
               </h2>
             </div>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Connect the Twilio account owned and billed by your agency. Client phone systems are provisioned underneath it.
+              Connect the Twilio account owned and billed by your agency. Client
+              phone systems are provisioned underneath it.
             </p>
           </div>
           <PartnerTwilioForm

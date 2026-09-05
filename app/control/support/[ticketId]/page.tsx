@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Bot, Code2 } from "lucide-react";
+import { Bot, Code2 } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import {
@@ -9,7 +9,6 @@ import {
   startRequesterValidation,
   updatePlatformSupportTicket,
 } from "@/app/control/support/actions";
-import { NorthstarMark } from "@/components/brand/northstar-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +16,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { requirePlatformRole } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { supportReference, supportStatusLabel } from "@/lib/support/presentation";
+import {
+  supportReference,
+  supportStatusLabel,
+} from "@/lib/support/presentation";
 import { codeRequestReadyForValidation } from "@/lib/support/release-gates";
 
 export const dynamic = "force-dynamic";
@@ -45,36 +47,41 @@ export default async function PlatformSupportTicketPage({
   const admin = createSupabaseAdminClient();
   if (!admin) return null;
 
-  const [ticketResult, messagesResult, eventsResult, releaseResult, codeResult] =
-    await Promise.all([
-      admin
-        .from("support_tickets")
-        .select(
-          "*, partner:partners(name), client:client_businesses!support_tickets_client_id_fkey(name)",
-        )
-        .eq("id", ticketId)
-        .maybeSingle(),
-      admin
-        .from("support_ticket_messages")
-        .select("id, author_kind, audience, body, created_at")
-        .eq("ticket_id", ticketId)
-        .order("created_at"),
-      admin
-        .from("support_ticket_events")
-        .select("id, event_type, audience, summary, created_at")
-        .eq("ticket_id", ticketId)
-        .order("created_at", { ascending: false }),
-      admin
-        .from("support_ticket_releases")
-        .select("*")
-        .eq("ticket_id", ticketId)
-        .maybeSingle(),
-      admin
-        .from("integration_requests")
-        .select("id, status")
-        .eq("support_ticket_id", ticketId)
-        .maybeSingle(),
-    ]);
+  const [
+    ticketResult,
+    messagesResult,
+    eventsResult,
+    releaseResult,
+    codeResult,
+  ] = await Promise.all([
+    admin
+      .from("support_tickets")
+      .select(
+        "*, partner:partners(name), client:client_businesses!support_tickets_client_id_fkey(name)",
+      )
+      .eq("id", ticketId)
+      .maybeSingle(),
+    admin
+      .from("support_ticket_messages")
+      .select("id, author_kind, audience, body, created_at")
+      .eq("ticket_id", ticketId)
+      .order("created_at"),
+    admin
+      .from("support_ticket_events")
+      .select("id, event_type, audience, summary, created_at")
+      .eq("ticket_id", ticketId)
+      .order("created_at", { ascending: false }),
+    admin
+      .from("support_ticket_releases")
+      .select("*")
+      .eq("ticket_id", ticketId)
+      .maybeSingle(),
+    admin
+      .from("integration_requests")
+      .select("id, status")
+      .eq("support_ticket_id", ticketId)
+      .maybeSingle(),
+  ]);
 
   const ticket = ticketResult.data;
   if (!ticket) notFound();
@@ -87,18 +94,8 @@ export default async function PlatformSupportTicketPage({
   const client = ticket.client as unknown as { name?: string } | null;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <NorthstarMark surface="light" subtitle="Support Queue" />
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/control/support">
-              <ArrowLeft aria-hidden="true" />Support queue
-            </Link>
-          </Button>
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-6">
+    <div className="min-w-0">
+      <div className="space-y-5">
         <header className="border-b pb-5">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold">{ticket.title}</h1>
@@ -107,7 +104,8 @@ export default async function PlatformSupportTicketPage({
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
             {supportReference(ticket.id)} · {partner?.name ?? "Partner"} ·{" "}
-            {client?.name ?? "Agency-wide"} · {ticket.category.replaceAll("_", " ")}
+            {client?.name ?? "Agency-wide"} ·{" "}
+            {ticket.category.replaceAll("_", " ")}
           </p>
         </header>
 
@@ -128,7 +126,10 @@ export default async function PlatformSupportTicketPage({
             ) : null}
             <section className="space-y-3">
               {messages.map((message) => (
-                <article key={message.id} className="rounded-lg border bg-card p-4">
+                <article
+                  key={message.id}
+                  className="rounded-lg border bg-card p-4"
+                >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-semibold uppercase text-muted-foreground">
@@ -221,26 +222,53 @@ export default async function PlatformSupportTicketPage({
 
             {!release || release.status === "rolled_back" ? (
               validationReady ? (
-                <form action={startRequesterValidation} className="rounded-lg border bg-card p-4">
+                <form
+                  action={startRequesterValidation}
+                  className="rounded-lg border bg-card p-4"
+                >
                   <input type="hidden" name="ticket_id" value={ticket.id} />
                   <h2 className="text-sm font-semibold">Start validation</h2>
                   <div className="mt-3 grid gap-3">
-                    <Input name="branch_name" required placeholder="Tested branch" />
-                    <Input name="release_version" required placeholder="Release version, e.g. 1.2.0" />
-                    <Input name="feature_flag_key" placeholder="Tenant feature flag" />
-                    <Input name="staging_url" type="url" placeholder="Staging URL" />
-                    <Textarea name="test_evidence" rows={3} placeholder="Checks completed" />
-                    <Button type="submit" variant="outline">Send to requester</Button>
+                    <Input
+                      name="branch_name"
+                      required
+                      placeholder="Tested branch"
+                    />
+                    <Input
+                      name="release_version"
+                      required
+                      placeholder="Release version, e.g. 1.2.0"
+                    />
+                    <Input
+                      name="feature_flag_key"
+                      placeholder="Tenant feature flag"
+                    />
+                    <Input
+                      name="staging_url"
+                      type="url"
+                      placeholder="Staging URL"
+                    />
+                    <Textarea
+                      name="test_evidence"
+                      rows={3}
+                      placeholder="Checks completed"
+                    />
+                    <Button type="submit" variant="outline">
+                      Send to requester
+                    </Button>
                   </div>
                 </form>
               ) : (
                 <section className="rounded-lg border bg-card p-4">
                   <h2 className="text-sm font-semibold">Validation locked</h2>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    Finish testing and mark the linked development request ready before sending it to the requester.
+                    Finish testing and mark the linked development request ready
+                    before sending it to the requester.
                   </p>
                   <Button asChild variant="outline" size="sm" className="mt-3">
-                    <Link href="/control/integrations">Open development request</Link>
+                    <Link href="/control/integrations">
+                      Open development request
+                    </Link>
                   </Button>
                 </section>
               )
@@ -248,26 +276,51 @@ export default async function PlatformSupportTicketPage({
               <section className="rounded-lg border bg-card p-4">
                 <h2 className="text-sm font-semibold">Release</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {release.status.replaceAll("_", " ")} · {release.release_version || "Unversioned"} · {release.branch_name}
+                  {release.status.replaceAll("_", " ")} ·{" "}
+                  {release.release_version || "Unversioned"} ·{" "}
+                  {release.branch_name}
                 </p>
                 {release.status === "requester_approved" && validationReady ? (
                   <form action={markSupportReleaseComplete} className="mt-3">
                     <input type="hidden" name="ticket_id" value={ticket.id} />
-                    <Textarea name="resolution" rows={3} placeholder="Final resolution" />
-                    <Button type="submit" className="mt-3">Mark release complete</Button>
+                    <Textarea
+                      name="resolution"
+                      rows={3}
+                      placeholder="Final resolution"
+                    />
+                    <Button type="submit" className="mt-3">
+                      Mark release complete
+                    </Button>
                   </form>
                 ) : release.status === "requester_approved" ? (
                   <p className="mt-3 text-sm text-muted-foreground">
-                    Release is locked until the linked development request is ready.
+                    Release is locked until the linked development request is
+                    ready.
                   </p>
                 ) : release.status === "released" ? (
-                  <form action={rollbackSupportRelease} className="mt-4 border-t pt-4">
+                  <form
+                    action={rollbackSupportRelease}
+                    className="mt-4 border-t pt-4"
+                  >
                     <input type="hidden" name="ticket_id" value={ticket.id} />
-                    <Textarea name="reason" required rows={3} placeholder="Why this release must be rolled back" />
-                    <Button type="submit" variant="destructive" className="mt-3">Roll back release</Button>
+                    <Textarea
+                      name="reason"
+                      required
+                      rows={3}
+                      placeholder="Why this release must be rolled back"
+                    />
+                    <Button
+                      type="submit"
+                      variant="destructive"
+                      className="mt-3"
+                    >
+                      Roll back release
+                    </Button>
                   </form>
                 ) : release.status === "rolled_back" ? (
-                  <p className="mt-3 text-sm text-muted-foreground">{release.rollback_reason}</p>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {release.rollback_reason}
+                  </p>
                 ) : null}
               </section>
             )}
@@ -279,7 +332,8 @@ export default async function PlatformSupportTicketPage({
                   <div key={event.id}>
                     <p className="text-xs font-medium">{event.summary}</p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {new Date(event.created_at).toLocaleString()} · {event.audience}
+                      {new Date(event.created_at).toLocaleString()} ·{" "}
+                      {event.audience}
                     </p>
                   </div>
                 ))}
@@ -287,7 +341,7 @@ export default async function PlatformSupportTicketPage({
             </section>
           </aside>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

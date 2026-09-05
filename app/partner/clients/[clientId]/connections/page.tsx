@@ -53,9 +53,9 @@ export default async function ConnectionSetupPage({ params }: PageProps) {
     (connections ?? [])
       .filter((connection) => connection.status === "connected")
       .map((connection) => {
-        const provider = connection.provider as unknown as
-          | { provider_key: string }
-          | null;
+        const provider = connection.provider as unknown as {
+          provider_key: string;
+        } | null;
         return provider?.provider_key;
       })
       .filter(Boolean),
@@ -75,27 +75,48 @@ export default async function ConnectionSetupPage({ params }: PageProps) {
     <div className="space-y-7">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase text-muted-foreground">Client setup</p>
-          <h1 className="mt-1 text-2xl font-semibold">Connect {workspace.client.name}</h1>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">
+            Client setup
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold">
+            Connect {workspace.client.name}
+          </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Choose the systems, let the client authorize them securely, then install and verify the automation stack.
+            Connect the tools this client already uses. Start with phone,
+            calendar, and customer records, or browse the expanded app catalog.
           </p>
         </div>
         <Badge variant="outline" className="w-fit">
-          {connectedCount}/{requestedProviderKeys.length} accounts connected
+          {connectedCount} accounts connected
         </Badge>
       </header>
 
       <ol className="grid gap-px overflow-hidden rounded-lg border bg-border md:grid-cols-3">
         {[
-          ["1", "Send connection link", "The client enters credentials; the partner never sees them."],
-          ["2", "Install the stack", "The platform provisions the selected workflows automatically."],
-          ["3", "Run real tests", "Nothing becomes active until its real event is verified."],
+          [
+            "1",
+            "Send connection link",
+            "The client enters credentials; the partner never sees them.",
+          ],
+          [
+            "2",
+            "Choose solutions",
+            "Install the automations included in the client’s package.",
+          ],
+          [
+            "3",
+            "Run real tests",
+            "Check a real example before completing the launch checklist.",
+          ],
         ].map(([number, title, detail]) => (
           <li key={number} className="bg-card p-5">
-            <span className="text-xs font-semibold text-primary">STEP {number}</span>
+            <span className="text-xs font-semibold text-primary">
+              STEP {number}
+            </span>
             <p className="mt-2 font-medium">{title}</p>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">{detail}</p>
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">
+              {detail}
+            </p>
           </li>
         ))}
       </ol>
@@ -107,30 +128,53 @@ export default async function ConnectionSetupPage({ params }: PageProps) {
               <LockKeyhole className="size-5" aria-hidden="true" />
             </div>
             <div>
-              <h2 className="font-semibold">Secure client authorization</h2>
+              <h2 className="font-semibold">
+                Let your client connect their accounts
+              </h2>
               <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                Select what this client uses. The link works for seven days and is replaced whenever you create a new one.
+                Select what this client uses. The link works for seven days and
+                is replaced whenever you create a new one.
               </p>
             </div>
           </div>
           <div className="mt-5">
-            <ConnectionLinkForm action={boundCreate} hasActiveLink={Boolean(activeSession)} />
+            <ConnectionLinkForm
+              action={boundCreate}
+              hasActiveLink={Boolean(activeSession)}
+            />
           </div>
         </div>
 
         <aside className="space-y-3">
+          <div className="rounded-xl border bg-primary/5 p-5">
+            <h2 className="font-semibold">Need another app?</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Connect forms, accounting tools, and other software to the
+              client’s solutions.
+            </p>
+            <Button asChild className="mt-4 w-full">
+              <Link
+                href={`/partner/clients/${clientId}/integrations#connected-apps`}
+              >
+                Browse connected apps
+                <ArrowRight aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
           <div className="rounded-lg border bg-card p-5">
             <div className="flex items-center gap-2">
               <PhoneCall className="size-4 text-primary" aria-hidden="true" />
               <h2 className="font-semibold">Phone setup</h2>
             </div>
             <p className="mt-2 text-sm leading-5 text-muted-foreground">
-              Your agency provisions each client under your Twilio account. The client can forward their existing line to the new number or port it later.
+              Your agency provisions each client under your Twilio account. The
+              client can forward their existing line to the new number or port
+              it later.
             </p>
           </div>
           <Button asChild variant="outline" className="w-full justify-between">
             <Link href={`/partner/clients/${clientId}/setup`}>
-              Connect accounts here
+              Set up core connections
               <ArrowRight aria-hidden="true" />
             </Link>
           </Button>
@@ -149,13 +193,23 @@ export default async function ConnectionSetupPage({ params }: PageProps) {
             return (
               <div key={provider.key} className="rounded-lg border bg-card p-4">
                 {connected ? (
-                  <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
+                  <CheckCircle2
+                    className="size-4 text-emerald-600"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <CircleDashed className="size-4 text-muted-foreground" aria-hidden="true" />
+                  <CircleDashed
+                    className="size-4 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                 )}
                 <p className="mt-3 text-sm font-medium">{provider.title}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {connected ? "Connected and verified" : "Waiting for client"}
+                  {connected
+                    ? "Connected"
+                    : activeSession
+                      ? "Waiting for client"
+                      : "Available to connect"}
                 </p>
               </div>
             );
@@ -167,7 +221,7 @@ export default async function ConnectionSetupPage({ params }: PageProps) {
         <Button asChild>
           <Link href={`/partner/clients/${clientId}/automation-packs`}>
             <Workflow aria-hidden="true" />
-            Open automation installer
+            Choose client automations
           </Link>
         </Button>
       </div>

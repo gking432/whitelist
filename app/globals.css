@@ -38,8 +38,9 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", sans-serif;
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
 }
 
 :root {
@@ -57,7 +58,7 @@
   --secondary: #f0f0ec;
   --secondary-foreground: #2a2f2b;
   --muted: #f2f2ef;
-  --muted-foreground: #6b7069;
+  --muted-foreground: #60685f;
   --accent: #c79a3b;
   --accent-foreground: #1c1608;
   --destructive: #b42318;
@@ -65,7 +66,7 @@
   --border: #e6e5e0;
   --input: #d9d8d2;
   --ring: #2c6a4f;
-  --radius: 0.5rem;
+  --radius: 0.75rem;
 
   /* Deep-green surface tokens: reserved for small brand moments (the
      assistant window bar), never for full app chrome. */
@@ -144,4 +145,49 @@ a {
   .ns-fade-up {
     animation: none;
   }
+}
+
+/* Keyboard navigation stays visible across every workspace. */
+a:focus-visible,
+summary:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.ns-skip-link {
+  position: fixed;
+  top: -6rem;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.ns-skip-link:focus {
+  top: 1rem;
+}
+.ns-disclosure > summary {
+  cursor: pointer;
+  padding: 1rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.ns-disclosure[open] > summary {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+.ns-disclosure {
+  scroll-margin-top: 8rem;
+}
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+dialog::backdrop {
+  background: rgb(15 23 18 / 40%);
+  backdrop-filter: blur(2px);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import { saveKnowledgeProfile } from "@/app/partner/clients/[clientId]/knowledge/actions";
 import { Button } from "@/components/ui/button";
@@ -35,8 +35,8 @@ const FIELDS: {
   },
   {
     name: "business_hours",
-    label: "Business hours (description)",
-    help: "Human-readable hours, e.g. \"Mon–Fri 8am–5pm, emergency service 24/7\".",
+    label: "Business hours",
+    help: 'For example, "Mon–Fri 8am–5pm, emergency service 24/7".',
   },
   {
     name: "emergency_rules",
@@ -45,7 +45,7 @@ const FIELDS: {
   },
   {
     name: "pricing_disclaimer",
-    label: "Pricing / quote disclaimer",
+    label: "What to say about pricing",
     help: "What the AI says when pricing comes up. It never invents prices.",
   },
   {
@@ -55,12 +55,12 @@ const FIELDS: {
   },
   {
     name: "escalation_rules",
-    label: "Escalation rules",
+    label: "When to get a person",
     help: "When the AI must hand off to a human and who to flag.",
   },
   {
     name: "ai_disclosure",
-    label: "AI disclosure text",
+    label: "How the assistant introduces itself",
     help: "How the assistant introduces itself (shown in chat; spoken on calls per the mode below).",
   },
 ];
@@ -77,9 +77,10 @@ export function KnowledgeForm({
   const bound = saveKnowledgeProfile.bind(null, clientId);
   const [state, formAction, pending] = useActionState(bound, initialFormState);
 
-  const faqText = (profile?.faq ?? [])
-    .map((entry) => `${entry.q} :: ${entry.a}`)
-    .join("\n");
+  const [faqs, setFaqs] = useState(() =>
+    (profile?.faq ?? []).map((entry, index) => ({ ...entry, id: index })),
+  );
+  const faqJson = JSON.stringify(faqs.map(({ q, a }) => ({ q, a })));
 
   if (!canManage) {
     return (
@@ -91,58 +92,184 @@ export function KnowledgeForm({
 
   return (
     <form action={formAction} className="space-y-5">
-      <div className="grid grid-cols-2 gap-4">
-        {FIELDS.map((field) => (
-          <div key={field.name} className="space-y-1.5">
-            <Label htmlFor={field.name}>{field.label}</Label>
-            <Textarea
-              id={field.name}
-              name={field.name}
-              rows={field.rows ?? 3}
-              defaultValue={(profile?.[field.name] as string | null) ?? ""}
-            />
-            <p className="text-xs text-muted-foreground">{field.help}</p>
+      <div className="rounded-xl border bg-secondary/30 p-4 text-sm leading-6">
+        Tell the assistant what this business does and how to help its
+        customers. Use everyday language, just as you would when training a new
+        team member.
+      </div>
+      {[
+        {
+          title: "About the business",
+          names: [
+            "business_description",
+            "services_offered",
+            "service_areas",
+            "business_hours",
+          ],
+        },
+        {
+          title: "How to help customers",
+          names: [
+            "emergency_rules",
+            "pricing_disclaimer",
+            "booking_rules",
+            "escalation_rules",
+            "ai_disclosure",
+          ],
+        },
+      ].map((group) => (
+        <fieldset key={group.title} className="space-y-4">
+          <legend className="mb-4 text-base font-semibold">
+            {group.title}
+          </legend>
+          <div className="grid gap-5 sm:grid-cols-2">
+            {FIELDS.filter((field) => group.names.includes(field.name)).map(
+              (field) => (
+                <div key={field.name} className="space-y-1.5">
+                  <Label htmlFor={field.name}>{field.label}</Label>
+                  <Textarea
+                    id={field.name}
+                    name={field.name}
+                    rows={field.rows ?? 3}
+                    defaultValue={
+                      (profile?.[field.name] as string | null) ?? ""
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">{field.help}</p>
+                </div>
+              ),
+            )}
           </div>
-        ))}
-
-        <div className="space-y-1.5">
-          <Label htmlFor="faq">Approved FAQ</Label>
-          <Textarea
-            id="faq"
-            name="faq"
-            rows={5}
-            defaultValue={faqText}
-            placeholder={"Do you offer free estimates? :: Yes, estimates are free.\nAre you licensed? :: Yes, licensed and insured."}
-          />
-          <p className="text-xs text-muted-foreground">
-            One entry per line: <code>Question :: Answer</code>. Only these
-            answers are given verbatim.
+        </fieldset>
+      ))}
+      <section className="space-y-4 border-t pt-5">
+        <div>
+          <h3 className="font-semibold">Common questions & answers</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Give the assistant the answers you want customers to hear.
           </p>
         </div>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="booking_hours_start">Booking start (hour)</Label>
+        <input type="hidden" name="faq_json" value={faqJson} />
+        {faqs.map((entry, index) => (
+          <div
+            key={entry.id}
+            className="space-y-3 rounded-xl border bg-secondary/20 p-4"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium">Question {index + 1}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={`Remove question ${index + 1}`}
+                onClick={() =>
+                  setFaqs((current) =>
+                    current.filter((item) => item.id !== entry.id),
+                  )
+                }
+              >
+                Remove
+              </Button>
+            </div>
+            <div>
+              <Label htmlFor={`faq-question-${entry.id}`}>
+                Customer question
+              </Label>
               <Input
-                id="booking_hours_start"
-                name="booking_hours_start"
-                type="number"
-                min={0}
-                max={23}
-                defaultValue={profile?.booking_hours_start ?? 9}
+                className="mt-1.5"
+                id={`faq-question-${entry.id}`}
+                value={entry.q}
+                required
+                placeholder="Do you offer free estimates?"
+                onChange={(event) =>
+                  setFaqs((current) =>
+                    current.map((item) =>
+                      item.id === entry.id
+                        ? { ...item, q: event.target.value }
+                        : item,
+                    ),
+                  )
+                }
               />
             </div>
+            <div>
+              <Label htmlFor={`faq-answer-${entry.id}`}>Your answer</Label>
+              <Textarea
+                className="mt-1.5"
+                id={`faq-answer-${entry.id}`}
+                value={entry.a}
+                required
+                placeholder="Yes, we offer free estimates. Call us to arrange a visit."
+                onChange={(event) =>
+                  setFaqs((current) =>
+                    current.map((item) =>
+                      item.id === entry.id
+                        ? { ...item, a: event.target.value }
+                        : item,
+                    ),
+                  )
+                }
+              />
+            </div>
+          </div>
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={faqs.length >= 50}
+          onClick={() =>
+            setFaqs((current) => [
+              ...current,
+              {
+                id: Math.max(-1, ...current.map((item) => item.id)) + 1,
+                q: "",
+                a: "",
+              },
+            ])
+          }
+        >
+          Add a question
+        </Button>
+      </section>
+      <details className="ns-disclosure rounded-xl border bg-card">
+        <summary>Appointment times & phone introduction</summary>
+        <div className="space-y-4 px-5 pb-5">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label htmlFor="booking_hours_end">Booking end (hour)</Label>
-              <Input
+              <Label htmlFor="booking_hours_start">First booking time</Label>
+              <Select
+                id="booking_hours_start"
+                name="booking_hours_start"
+                defaultValue={profile?.booking_hours_start ?? 9}
+              >
+                {Array.from({ length: 24 }, (_, index) => index + 0).map(
+                  (hour) => (
+                    <option key={hour} value={hour}>
+                      {hour === 24
+                        ? "Midnight (end of day)"
+                        : `${hour % 12 || 12}:00 ${hour < 12 ? "AM" : "PM"}`}
+                    </option>
+                  ),
+                )}
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="booking_hours_end">Last booking ends by</Label>
+              <Select
                 id="booking_hours_end"
                 name="booking_hours_end"
-                type="number"
-                min={1}
-                max={24}
                 defaultValue={profile?.booking_hours_end ?? 17}
-              />
+              >
+                {Array.from({ length: 24 }, (_, index) => index + 1).map(
+                  (hour) => (
+                    <option key={hour} value={hour}>
+                      {hour === 24
+                        ? "Midnight (end of day)"
+                        : `${hour % 12 || 12}:00 ${hour < 12 ? "AM" : "PM"}`}
+                    </option>
+                  ),
+                )}
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="appointment_duration_minutes">
@@ -184,17 +311,19 @@ export function KnowledgeForm({
             </p>
           </div>
         </div>
-      </div>
+      </details>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 border-t pt-5">
         <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save knowledge"}
+          {pending ? "Saving…" : "Save business knowledge"}
         </Button>
         {state.message ? (
           <p
             className={cn(
               "text-sm",
-              state.status === "error" ? "text-destructive" : "text-emerald-700",
+              state.status === "error"
+                ? "text-destructive"
+                : "text-emerald-700",
             )}
           >
             {state.message}

@@ -248,7 +248,7 @@ export function AssistantConsole({
         <div className="flex items-center justify-between bg-sidebar px-4 py-2.5 text-white">
           <div className="flex items-center gap-2">
             <Sparkles className="size-4 text-brand-gold" aria-hidden="true" />
-            <span className="text-sm font-semibold">Assistant</span>
+            <h2 className="text-sm font-semibold">Assistant</h2>
             <span className="hidden text-xs text-white/60 sm:inline">
               {context.clientName}
             </span>

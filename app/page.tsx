@@ -16,14 +16,12 @@ const capabilities = [
   {
     icon: PhoneCall,
     label: "AI voice",
-    detail:
-      "Inbound answering and speed-to-lead callbacks that capture every opportunity.",
+    detail: "Help answer calls and follow up with new leads.",
   },
   {
     icon: CalendarClock,
     label: "AI scheduling",
-    detail:
-      "Real availability, real calendars — the assistant only offers times that exist.",
+    detail: "Help customers find appointment times in connected calendars.",
   },
   {
     icon: Workflow,
@@ -33,15 +31,15 @@ const capabilities = [
   },
   {
     icon: BellCheck,
-    label: "Approval-gated",
+    label: "Client approvals",
     detail:
       "Customer-facing actions pause for a human decision. Nothing sends silently.",
   },
   {
     icon: ScrollText,
-    label: "Fully audited",
+    label: "Clear activity history",
     detail:
-      "Every run, approval, and change leaves a trace partners and clients can inspect.",
+      "See what happened, what needs attention, and who approved each action.",
   },
 ];
 
@@ -58,10 +56,14 @@ export default function HomePage() {
       />
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-8">
-        <header className="flex items-center justify-between">
+        <header className="flex flex-wrap items-center justify-between gap-4">
           <NorthstarMark subtitle="AI Operations Platform" />
           <div className="flex items-center gap-2">
-            <Button asChild variant="ghost" className="text-white/80 hover:bg-white/10 hover:text-white">
+            <Button
+              asChild
+              variant="ghost"
+              className="text-white/80 hover:bg-white/10 hover:text-white"
+            >
               <Link href="/client">Client portal</Link>
             </Button>
             <Button asChild variant="gold">
@@ -78,17 +80,17 @@ export default function HomePage() {
             For partners &amp; agencies
           </p>
           <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
-            The AI operations layer for home service businesses.
+            Build your AI agency. Make it your own.
           </h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-white/60">
-            Sell AI voice, scheduling, and workflow automation under your own
-            brand. Your clients keep their CRM, phone, and calendar — Northstar
-            is the command center that makes it all work.
+            Offer phone assistants, scheduling, follow-ups, and automations
+            under your own brand. Connect each client’s existing tools and
+            manage their solutions from one workspace.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg" variant="gold">
               <Link href="/partner">
-                Open partner command center
+                Open partner workspace
                 <ArrowRight aria-hidden="true" />
               </Link>
             </Button>
@@ -119,7 +121,7 @@ export default function HomePage() {
           })}
         </section>
 
-        <footer className="flex items-center justify-between py-6 text-[11px] text-white/35">
+        <footer className="flex flex-wrap items-center justify-between gap-2 py-6 text-[11px] text-white/35">
           <p>Northstar — white-label AI operations.</p>
           <p>Clients see your brand. Homeowners see theirs.</p>
         </footer>

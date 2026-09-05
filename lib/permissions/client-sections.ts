@@ -54,21 +54,21 @@ export type StoredClientPermissions = {
 };
 
 export const CLIENT_SECTION_LABELS: Record<ClientSectionKey, string> = {
-  overview: "Overview",
+  overview: "Customer workspace overview",
   inbox: "Inbox",
   contacts: "Leads and customers",
   calls: "Calls",
   pipeline: "Pipeline",
   tasks: "Tasks",
   schedule: "Appointments",
-  quotes: "Quote tool",
+  quotes: "Estimates",
   marketing: "Marketing",
-  automations: "AI automations",
+  automations: "Automations",
   reports: "Reports",
-  "crm-sync": "CRM sync",
+  "crm-sync": "CRM connection",
   settings: "Settings",
   notifications: "Notifications",
-  "action-center": "Action Center",
+  "action-center": "Automation overview",
   assistant: "Assistant",
   approvals: "Approvals",
   activity: "Activity",
@@ -174,9 +174,8 @@ export function resolveClientPermissions(input: {
   }
 
   const storedSections = Array.isArray(input.stored?.sections)
-    ? input.stored.sections.filter(
-        (section): section is ClientSectionKey =>
-          CLIENT_SECTION_KEYS.includes(section as ClientSectionKey),
+    ? input.stored.sections.filter((section): section is ClientSectionKey =>
+        CLIENT_SECTION_KEYS.includes(section as ClientSectionKey),
       )
     : defaults.visibleSections;
   const visibleSections: ClientSectionKey[] = [
@@ -187,10 +186,7 @@ export function resolveClientPermissions(input: {
     defaults.canViewActionCenter,
   );
 
-  if (
-    canViewActionCenter &&
-    !visibleSections.includes("action-center")
-  ) {
+  if (canViewActionCenter && !visibleSections.includes("action-center")) {
     visibleSections.push("action-center");
   }
 
@@ -234,9 +230,7 @@ export function clientHomePath(
           "assistant",
           "approvals",
           "activity",
-        ].includes(
-          section,
-        ) && sections.includes(section),
+        ].includes(section) && sections.includes(section),
     );
 
     if (firstCrmSection) {

@@ -25,34 +25,35 @@ export async function ClientActionCenter() {
 
   const clientId = access.clientId;
 
-  const [instances, approvals, connections, runs, actionJobs] = await Promise.all([
-    supabase
-      .from("client_workflow_instances")
-      .select("id, name, status, runtime_mode, last_run_at")
-      .eq("client_id", clientId)
-      .order("name", { ascending: true }),
-    supabase
-      .from("approval_items")
-      .select("id")
-      .eq("client_id", clientId)
-      .eq("status", "pending"),
-    supabase
-      .from("integration_connections")
-      .select("id, display_name, status")
-      .eq("client_id", clientId),
-    supabase
-      .from("workflow_runs")
-      .select("id, status, summary, created_at")
-      .eq("client_id", clientId)
-      .order("created_at", { ascending: false })
-      .limit(5),
-    supabase
-      .from("action_jobs")
-      .select("id, kind, status, outcome_detail, created_at")
-      .eq("client_id", clientId)
-      .order("created_at", { ascending: false })
-      .limit(10),
-  ]);
+  const [instances, approvals, connections, runs, actionJobs] =
+    await Promise.all([
+      supabase
+        .from("client_workflow_instances")
+        .select("id, name, status, runtime_mode, last_run_at")
+        .eq("client_id", clientId)
+        .order("name", { ascending: true }),
+      supabase
+        .from("approval_items")
+        .select("id")
+        .eq("client_id", clientId)
+        .eq("status", "pending"),
+      supabase
+        .from("integration_connections")
+        .select("id, display_name, status")
+        .eq("client_id", clientId),
+      supabase
+        .from("workflow_runs")
+        .select("id, status, summary, created_at")
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("action_jobs")
+        .select("id, kind, status, outcome_detail, created_at")
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ]);
 
   const workflowList = instances.data ?? [];
   const activeWorkflows = workflowList.filter(
@@ -66,7 +67,7 @@ export async function ClientActionCenter() {
   const recentRuns = runs.data ?? [];
   const recentActionJobs = actionJobs.data ?? [];
   const deliveryIssues = recentActionJobs.filter((job) =>
-    ["failed", "dry_run", "skipped"].includes(job.status),
+    ["failed", "uncertain"].includes(job.status),
   );
 
   const cards = [
@@ -108,14 +109,29 @@ export async function ClientActionCenter() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-xl font-semibold">
-          {client.name} automation status
-        </h1>
+        <h1 className="text-xl font-semibold">{client.name} at a glance</h1>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
           What&apos;s running for your business, what needs your approval, and
           recent activity.
         </p>
       </header>
+
+      {pendingApprovals > 0 ? (
+        <section className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4">
+          <p className="text-sm font-medium text-amber-900">
+            {pendingApprovals} item{pendingApprovals === 1 ? "" : "s"} waiting
+            for your approval.
+          </p>
+          {access.visibleClientSections.includes("approvals") ? (
+            <Link
+              href="/client/approvals"
+              className="mt-1 inline-block text-sm font-medium text-amber-900 underline"
+            >
+              Review approvals
+            </Link>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => {
@@ -142,23 +158,6 @@ export async function ClientActionCenter() {
         })}
       </section>
 
-      {pendingApprovals > 0 ? (
-        <section className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4">
-          <p className="text-sm font-medium text-amber-900">
-            {pendingApprovals} item{pendingApprovals === 1 ? "" : "s"} waiting
-            for your approval.
-          </p>
-          {access.visibleClientSections.includes("approvals") ? (
-            <Link
-              href="/client/approvals"
-              className="mt-1 inline-block text-sm font-medium text-amber-900 underline"
-            >
-              Review approvals
-            </Link>
-          ) : null}
-        </section>
-      ) : null}
-
       {deliveryIssues.length > 0 ? (
         <section className="overflow-hidden rounded-lg border bg-card">
           <div className="border-b px-5 py-4">
@@ -168,13 +167,12 @@ export async function ClientActionCenter() {
             {deliveryIssues.slice(0, 5).map((job) => (
               <div key={job.id} className="px-5 py-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm font-medium">
-                    {formatEnum(job.kind)}
-                  </p>
+                  <p className="text-sm font-medium">{formatEnum(job.kind)}</p>
                   <Badge variant="outline">{formatEnum(job.status)}</Badge>
                 </div>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {job.outcome_detail ?? "The approved action was not delivered."}
+                  {job.outcome_detail ??
+                    "Delivery needs review. Check its status before trying again."}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {formatDateTime(job.created_at)}

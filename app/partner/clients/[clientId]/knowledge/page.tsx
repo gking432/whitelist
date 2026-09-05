@@ -39,12 +39,11 @@ export default async function KnowledgePage({ params }: PageProps) {
             <BookOpenCheck className="size-5" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="font-semibold">Approved AI knowledge</h2>
+            <h2 className="font-semibold">Business knowledge</h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Everything the AI assistants (website chat, drafting, and voice
-              when it ships) are allowed to say about {workspace.client.name}.
-              Assistants use only this content — they never invent services,
-              pricing, guarantees, or availability. Every change is audited.
+              Teach the assistant about {workspace.client.name}. Add the
+              business details, answers, and handoff instructions it should use
+              when helping customers.
             </p>
           </div>
         </div>

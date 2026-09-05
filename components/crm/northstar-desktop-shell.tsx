@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef } from "react";
 import {
   Activity,
   BarChart3,
@@ -72,7 +72,7 @@ const CRM_NAVIGATION: Array<{
     icon: CalendarDays,
   },
   {
-    label: "Quote Tool",
+    label: "Estimates",
     view: "quotes",
     icon: Calculator,
   },
@@ -82,7 +82,7 @@ const CRM_NAVIGATION: Array<{
     icon: Activity,
   },
   {
-    label: "AI Automations",
+    label: "Automations",
     view: "automations",
     icon: Workflow,
   },
@@ -92,7 +92,7 @@ const CRM_NAVIGATION: Array<{
     icon: BarChart3,
   },
   {
-    label: "CRM Sync",
+    label: "CRM connection",
     view: "crm-sync",
     icon: Cable,
   },
@@ -111,11 +111,11 @@ const PAGE_TITLES: Record<CrmView, string> = {
   pipeline: "Pipeline",
   tasks: "Tasks",
   schedule: "Appointments",
-  quotes: "Quote Tool",
+  quotes: "Estimates",
   marketing: "Marketing",
-  automations: "AI Automations",
+  automations: "Automations",
   reports: "Reports",
-  "crm-sync": "CRM Sync",
+  "crm-sync": "CRM connection",
   settings: "Settings",
 };
 
@@ -150,7 +150,7 @@ function SidebarContent({
 }) {
   return (
     <>
-      <div className="flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-foreground/10 px-5">
+      <div className="flex h-16 shrink-0 items-center gap-2 border-b border-border pl-5 pr-12">
         <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-brand-gold text-brand-deep">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -160,10 +160,10 @@ function SidebarContent({
           )}
         </span>
         <div className="min-w-0 leading-tight">
-          <p className="line-clamp-2 text-xs font-semibold leading-4 text-sidebar-foreground">
+          <p className="line-clamp-2 text-xs font-semibold leading-4 text-foreground">
             {productName}
           </p>
-          <p className="truncate text-[11px] text-sidebar-foreground/60">
+          <p className="truncate text-[11px] text-muted-foreground">
             {clientName}
           </p>
         </div>
@@ -173,37 +173,68 @@ function SidebarContent({
         aria-label="CRM sections"
         className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4"
       >
-        {CRM_NAVIGATION.filter((item) =>
-          visibleSections.includes(item.view),
-        ).map((item) => {
-          const Icon = item.icon;
-          const active = item.view === currentView;
+        {[
+          {
+            label: "Daily work",
+            views: [
+              "overview",
+              "inbox",
+              "contacts",
+              "calls",
+              "tasks",
+              "schedule",
+            ],
+          },
+          {
+            label: "Grow your business",
+            views: ["pipeline", "quotes", "marketing", "reports"],
+          },
+          { label: "Manage", views: ["automations", "crm-sync", "settings"] },
+        ]
+          .filter((group) =>
+            group.views.some((view) =>
+              visibleSections.includes(view as ClientSectionKey),
+            ),
+          )
+          .map((group) => (
+            <div key={group.label} className="mb-5 last:mb-0">
+              <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {group.label}
+              </p>
+              {CRM_NAVIGATION.filter((item) => group.views.includes(item.view))
+                .filter((item) => visibleSections.includes(item.view))
+                .map((item) => {
+                  const Icon = item.icon;
+                  const active = item.view === currentView;
 
-          return (
-            <Link
-              key={item.view}
-              href={`${basePath}?view=${item.view}`}
-              onClick={onNavigate}
-              className={cn(
-                "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
-                active
-                  ? "bg-sidebar-foreground/10 text-sidebar-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground",
-              )}
-            >
-              <Icon className="size-4" aria-hidden="true" />
-              {item.label}
-            </Link>
-          );
-        })}
+                  return (
+                    <Link
+                      key={item.view}
+                      href={`${basePath}?view=${item.view}`}
+                      onClick={onNavigate}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+                        active
+                          ? "bg-primary/8 text-primary"
+                          : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="size-4" aria-hidden="true" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+            </div>
+          ))}
       </nav>
 
-      <div className="border-t border-sidebar-foreground/10 p-4">
+      <div className="border-t border-border p-4">
         {actionCenterLink ? (
           <Link
             href={actionCenterLink.href}
             onClick={onNavigate}
-            className="mb-4 flex h-9 items-center gap-3 rounded-md border border-brand-gold/35 bg-brand-gold/10 px-3 text-sm font-medium text-brand-gold transition-colors hover:bg-brand-gold/20"
+            className="mb-4 flex min-h-11 items-center gap-3 rounded-md border bg-background px-3 text-sm font-medium text-primary transition-colors hover:bg-secondary"
           >
             <Activity className="size-4" aria-hidden="true" />
             {actionCenterLink.label}
@@ -213,21 +244,21 @@ function SidebarContent({
           <Link
             href={homeLink.href}
             onClick={onNavigate}
-            className="mb-4 flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground"
+            className="mb-4 flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <LayoutDashboard className="size-4" aria-hidden="true" />
             {homeLink.label}
           </Link>
         ) : null}
         <div className="flex items-center gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sidebar-foreground/10 text-sm font-medium text-sidebar-foreground">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/8 text-sm font-medium text-foreground">
             {initials(userEmail)}
           </span>
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-sm font-medium text-sidebar-foreground">
+            <p className="truncate text-sm font-medium text-foreground">
               {userEmail}
             </p>
-            <p className="text-[11px] text-sidebar-foreground/60">
+            <p className="text-[11px] text-muted-foreground">
               {workspaceLabel}
             </p>
           </div>
@@ -252,7 +283,7 @@ export function NorthstarDesktopShell({
   assistantPath,
   notificationsPath = "/client/notifications",
   actionCenterPath = "/client/action-center",
-  actionCenterLabel = "Action Center",
+  actionCenterLabel = "Automation overview",
   homeLink = null,
   workspaceLabel = "Client workspace",
   brandColors,
@@ -276,7 +307,7 @@ export function NorthstarDesktopShell({
   workspaceLabel?: string;
   brandColors?: BrandColors;
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const navigationDialog = useRef<HTMLDialogElement>(null);
   const resolvedAssistantPath =
     assistantPath === undefined
       ? visibleSections.includes("assistant")
@@ -293,7 +324,10 @@ export function NorthstarDesktopShell({
       className="flex min-h-screen bg-background"
       style={brandColors ? brandStyleVariables(brandColors) : undefined}
     >
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground lg:flex">
+      <a href="#crm-content" className="ns-skip-link">
+        Skip to content
+      </a>
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r bg-card text-foreground lg:flex">
         <SidebarContent
           clientName={clientName}
           productName={productName}
@@ -308,41 +342,42 @@ export function NorthstarDesktopShell({
         />
       </aside>
 
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <button
+      <dialog
+        ref={navigationDialog}
+        aria-label="Customer workspace navigation"
+        className="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-80 max-w-[90vw] border-r bg-card p-0 shadow-xl"
+        onClick={(event) => {
+          if (event.target === event.currentTarget)
+            navigationDialog.current?.close();
+        }}
+      >
+        <aside className="relative flex h-full flex-col bg-card text-foreground">
+          <Button
             type="button"
-            className="absolute inset-0 bg-black/45"
+            size="icon"
+            variant="ghost"
+            className="absolute right-2 top-3 z-10 text-foreground hover:bg-primary/8 hover:text-foreground"
+            onClick={() => navigationDialog.current?.close()}
+            title="Close navigation"
             aria-label="Close navigation"
-            onClick={() => setMobileOpen(false)}
+          >
+            <X aria-hidden="true" />
+          </Button>
+          <SidebarContent
+            clientName={clientName}
+            productName={productName}
+            logoUrl={logoUrl}
+            currentView={currentView}
+            userEmail={userEmail}
+            visibleSections={visibleSections}
+            basePath={basePath}
+            actionCenterLink={actionCenterLink}
+            homeLink={homeLink}
+            workspaceLabel={workspaceLabel}
+            onNavigate={() => navigationDialog.current?.close()}
           />
-          <aside className="relative flex h-full w-72 max-w-[86vw] flex-col bg-sidebar text-sidebar-foreground shadow-xl">
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="absolute right-2 top-3 z-10 text-sidebar-foreground hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
-              onClick={() => setMobileOpen(false)}
-              title="Close navigation"
-            >
-              <X aria-hidden="true" />
-            </Button>
-            <SidebarContent
-              clientName={clientName}
-              productName={productName}
-              logoUrl={logoUrl}
-              currentView={currentView}
-              userEmail={userEmail}
-              visibleSections={visibleSections}
-              basePath={basePath}
-              actionCenterLink={actionCenterLink}
-              homeLink={homeLink}
-              workspaceLabel={workspaceLabel}
-              onNavigate={() => setMobileOpen(false)}
-            />
-          </aside>
-        </div>
-      ) : null}
+        </aside>
+      </dialog>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur sm:px-6">
@@ -351,8 +386,9 @@ export function NorthstarDesktopShell({
             size="icon"
             variant="ghost"
             className="lg:hidden"
-            onClick={() => setMobileOpen(true)}
+            onClick={() => navigationDialog.current?.showModal()}
             title="Open navigation"
+            aria-label="Open navigation"
           >
             <Menu aria-hidden="true" />
           </Button>
@@ -366,12 +402,13 @@ export function NorthstarDesktopShell({
             >
               <input type="hidden" name="view" value="contacts" />
               <Search
-                className="absolute left-2.5 top-2.5 size-4 text-muted-foreground"
+                className="absolute left-3 top-3.5 size-4 text-muted-foreground"
                 aria-hidden="true"
               />
               <Input
                 name="search"
                 placeholder="Search leads"
+                aria-label="Search leads"
                 className="pl-9"
               />
             </form>
@@ -417,12 +454,18 @@ export function NorthstarDesktopShell({
               </Link>
             </Button>
           ) : null}
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
+          <span className="hidden size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm sm:flex font-medium text-primary-foreground">
             {initials(userEmail)}
           </span>
         </header>
 
-        <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>
+        <main
+          id="crm-content"
+          tabIndex={-1}
+          className="min-w-0 flex-1 p-4 outline-none sm:p-6 lg:p-8"
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

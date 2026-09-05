@@ -77,7 +77,7 @@ export default async function ClientWorkspaceLayout({
       activeNav={isAgencyAccount ? "agency" : "clients"}
     >
       <div className="space-y-6">
-        <header className="overflow-hidden rounded-lg border bg-card ns-surface">
+        <header className="relative rounded-lg border bg-card ns-surface">
           <div className="flex flex-col gap-4 px-5 pb-0 pt-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 items-start gap-4">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">
@@ -120,31 +120,40 @@ export default async function ClientWorkspaceLayout({
                 </form>
               ) : null}
               <Badge variant="secondary">{formatEnum(client.status)}</Badge>
-              {isAgencyAccount ? (
-                <Badge variant="outline">Partner-owned workspace</Badge>
-              ) : (
-                <Badge variant="outline">
-                  CRM: {formatEnum(client.crm_operating_mode)}
-                </Badge>
-              )}
               <Badge variant="outline">
-                Runtime: {formatEnum(client.default_runtime_mode)}
+                {formatEnum(client.default_runtime_mode)}
               </Badge>
-              {!isAgencyAccount ? (
-                <>
-                  <Badge variant="outline">
-                    Portal: {client.client_portal_enabled ? "Enabled" : "Off"}
-                  </Badge>
-                  <Badge variant="outline">
-                    Partner edits:{" "}
-                    {client.partner_can_edit_client_data
-                      ? "Granted"
-                      : "Not granted"}
-                  </Badge>
-                </>
-              ) : null}
             </div>
           </div>
+          <details className="mx-5 mt-4 text-xs text-muted-foreground">
+            <summary className="w-fit cursor-pointer py-1">
+              Account details & access
+            </summary>
+            <dl className="grid gap-3 py-3 sm:grid-cols-3">
+              <div>
+                <dt>Customer system</dt>
+                <dd className="mt-1 font-medium text-foreground">
+                  {isAgencyAccount
+                    ? "Your agency workspace"
+                    : formatEnum(client.crm_operating_mode)}
+                </dd>
+              </div>
+              <div>
+                <dt>Client portal</dt>
+                <dd className="mt-1 font-medium text-foreground">
+                  {client.client_portal_enabled ? "Enabled" : "Not enabled"}
+                </dd>
+              </div>
+              <div>
+                <dt>Permission to edit client data</dt>
+                <dd className="mt-1 font-medium text-foreground">
+                  {client.partner_can_edit_client_data
+                    ? "Granted"
+                    : "Not granted"}
+                </dd>
+              </div>
+            </dl>
+          </details>
           <div className="mt-4 border-t px-5">
             <WorkspaceTabs
               clientId={client.id}

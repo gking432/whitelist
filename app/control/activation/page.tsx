@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  ArrowLeft,
   CheckCircle2,
   CircleDashed,
   ExternalLink,
@@ -10,7 +9,6 @@ import {
   ServerCog,
 } from "lucide-react";
 
-import { NorthstarMark } from "@/components/brand/northstar-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
@@ -31,20 +29,8 @@ export default async function ProductionActivationPage() {
   const appUrl = getAppUrl();
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <NorthstarMark surface="light" subtitle="Production Activation" />
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/control">
-              <ArrowLeft aria-hidden="true" />
-              Control room
-            </Link>
-          </Button>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 sm:px-6">
+    <div className="min-w-0">
+      <div className="space-y-6">
         <section className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -52,7 +38,8 @@ export default async function ProductionActivationPage() {
               <h1 className="text-xl font-semibold">Activate production</h1>
             </div>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              This page separates required account configuration from live proof that the deployed system is operating. No secret value is exposed.
+              This page separates required account configuration from live proof
+              that the deployed system is operating. No secret value is exposed.
             </p>
           </div>
           <div className="grid min-w-64 grid-cols-2 divide-x rounded-lg border bg-card">
@@ -79,7 +66,9 @@ export default async function ProductionActivationPage() {
                 <h2 className="font-semibold">Live runtime evidence</h2>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Checked {new Date(runtime.checkedAt).toLocaleString()}. These checks read deployed services and production records; they are not inferred from environment variables.
+                Checked {new Date(runtime.checkedAt).toLocaleString()}. These
+                checks read deployed services and production records; they are
+                not inferred from environment variables.
               </p>
             </div>
             <Badge
@@ -98,7 +87,10 @@ export default async function ProductionActivationPage() {
               const ready = item.state === "ready";
               const Icon = ready ? CheckCircle2 : CircleDashed;
               return (
-                <div key={item.key} className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)] sm:items-start">
+                <div
+                  key={item.key}
+                  className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)] sm:items-start"
+                >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <Icon
@@ -122,9 +114,13 @@ export default async function ProductionActivationPage() {
                               : "Pilot pending"}
                       </Badge>
                     </div>
-                    <p className="mt-2 text-xs leading-5 text-muted-foreground">{item.purpose}</p>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {item.purpose}
+                    </p>
                   </div>
-                  <p className="text-xs leading-5 text-muted-foreground">{item.detail}</p>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {item.detail}
+                  </p>
                 </div>
               );
             })}
@@ -135,16 +131,23 @@ export default async function ProductionActivationPage() {
           <div className="flex gap-3">
             <Phone className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <div>
-              <p className="text-sm font-semibold">Twilio is configured by each partner</p>
+              <p className="text-sm font-semibold">
+                Twilio is configured by each partner
+              </p>
               <p className="mt-1 text-xs leading-5">
-                You do not enter a shared Twilio key here. Partner onboarding connects that agency&apos;s Twilio parent account; client setup provisions isolated subaccounts and numbers beneath it.
+                You do not enter a shared Twilio key here. Partner onboarding
+                connects that agency&apos;s Twilio parent account; client setup
+                provisions isolated subaccounts and numbers beneath it.
               </p>
             </div>
           </div>
         </section>
 
         {activation.groups.map((group) => (
-          <section key={group.key} className="overflow-hidden rounded-lg border bg-card">
+          <section
+            key={group.key}
+            className="overflow-hidden rounded-lg border bg-card"
+          >
             <div className="border-b px-5 py-4">
               <h2 className="font-semibold">{group.label}</h2>
             </div>
@@ -152,34 +155,64 @@ export default async function ProductionActivationPage() {
               {group.items.map((item) => {
                 const Icon = item.configured ? CheckCircle2 : CircleDashed;
                 return (
-                  <div key={item.key} className="grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]">
+                  <div
+                    key={item.key}
+                    className="grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]"
+                  >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Icon className={`size-4 ${item.configured ? "text-emerald-700" : "text-amber-700"}`} aria-hidden="true" />
+                        <Icon
+                          className={`size-4 ${item.configured ? "text-emerald-700" : "text-amber-700"}`}
+                          aria-hidden="true"
+                        />
                         <p className="text-sm font-semibold">{item.label}</p>
                         <Badge variant="outline">
-                          {item.configured ? "Configured" : item.required ? "Required" : "Add when sold"}
+                          {item.configured
+                            ? "Configured"
+                            : item.required
+                              ? "Required"
+                              : "Add when sold"}
                         </Badge>
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">{item.purpose}</p>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                        {item.purpose}
+                      </p>
                       {item.environmentKeys?.length ? (
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           {item.environmentKeys.map((key) => (
-                            <code key={key} className="rounded border bg-secondary px-1.5 py-1 text-[11px]">{key}</code>
+                            <code
+                              key={key}
+                              className="rounded border bg-secondary px-1.5 py-1 text-[11px]"
+                            >
+                              {key}
+                            </code>
                           ))}
                         </div>
                       ) : null}
                     </div>
                     <div className="min-w-0 space-y-2">
                       {item.callbackPaths?.map((path) => (
-                        <div key={path} className="flex min-w-0 items-start gap-2 rounded-md border bg-background px-3 py-2">
-                          <KeyRound className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                          <code className="min-w-0 break-all text-[11px] leading-5">{appUrl}{path}</code>
+                        <div
+                          key={path}
+                          className="flex min-w-0 items-start gap-2 rounded-md border bg-background px-3 py-2"
+                        >
+                          <KeyRound
+                            className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          <code className="min-w-0 break-all text-[11px] leading-5">
+                            {appUrl}
+                            {path}
+                          </code>
                         </div>
                       ))}
                       {item.accountUrl ? (
                         <Button asChild variant="outline" size="sm">
-                          <a href={item.accountUrl} target="_blank" rel="noreferrer">
+                          <a
+                            href={item.accountUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
                             Open account setup
                             <ExternalLink aria-hidden="true" />
                           </a>
@@ -192,7 +225,7 @@ export default async function ProductionActivationPage() {
             </div>
           </section>
         ))}
-      </main>
+      </div>
     </div>
   );
 }

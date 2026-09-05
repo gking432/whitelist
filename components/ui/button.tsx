@@ -22,10 +22,10 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-3.5",
-        sm: "h-8 px-2.5 text-[13px]",
-        lg: "h-10 px-4",
-        icon: "size-9",
+        default: "h-11 px-4",
+        sm: "h-10 px-3 text-[13px]",
+        lg: "h-12 px-5",
+        icon: "size-11",
       },
     },
     defaultVariants: {
@@ -36,7 +36,8 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }

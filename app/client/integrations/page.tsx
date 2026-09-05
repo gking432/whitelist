@@ -72,8 +72,9 @@ export default async function ClientPortalIntegrationsPage({
       <header>
         <h1 className="text-2xl font-semibold">Apps and automations</h1>
         <p className="mt-3 text-sm leading-7 text-muted-foreground">
-          Connect your existing tools and choose which activity starts your solutions.
-          Test the setup here, and review proposed customer actions in Approvals.
+          Connect your existing tools and choose which activity starts your
+          solutions. Test the setup here, and review proposed customer actions
+          in Approvals.
         </p>
       </header>
       <ConnectedApps clientId={portal.client.id} />
@@ -127,8 +128,8 @@ export default async function ClientPortalIntegrationsPage({
                 <input type="hidden" name="enabled" value={String(!enabled)} />
                 <Button type="submit" variant={enabled ? "outline" : "default"}>
                   {enabled
-                    ? "Stop future imported lead automation"
-                    : "Enable future imported lead automation"}
+                    ? "Pause lead automations"
+                    : "Turn on lead automations"}
                 </Button>
               </form>
             </section>
@@ -150,10 +151,10 @@ export default async function ClientPortalIntegrationsPage({
           </p>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {lifecycleEnabled
-              ? "CRM lifecycle automation is enabled."
-              : "CRM lifecycle automation is off."}{" "}
-            Turning this off also cancels native events that have not started
-            processing. Existing approvals remain available for review.
+              ? "CRM automations are on."
+              : "CRM automations are off."}{" "}
+            Turning this off cancels activity that has not started processing.
+            You can still review existing approvals.
           </p>
           <form action={setNativeLifecycleAutomation} className="mt-4">
             <input
@@ -166,13 +167,13 @@ export default async function ClientPortalIntegrationsPage({
               variant={lifecycleEnabled ? "outline" : "default"}
             >
               {lifecycleEnabled
-                ? "Stop CRM lifecycle automation"
-                : "Enable future CRM lifecycle automation"}
+                ? "Pause CRM automations"
+                : "Turn on CRM automations"}
             </Button>
           </form>
         </section>
       ) : null}
-      <nav className="flex gap-5 text-sm">
+      <nav className="flex flex-wrap gap-5 text-sm">
         <Link href="/client/approvals" className="underline underline-offset-4">
           Review pending approvals
         </Link>

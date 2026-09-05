@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 
 import { PortalShell } from "@/components/client/portal-shell";
@@ -38,8 +37,8 @@ export default async function ClientPortalLayout({
           <h1 className="text-lg font-semibold">Portal access unavailable</h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Your account is not connected to an active client portal. Contact
-            the partner that manages your business&apos;s automations to
-            request access.
+            the partner that manages your business&apos;s automations to request
+            access.
           </p>
         </div>
       </main>
@@ -80,8 +79,16 @@ export default async function ClientPortalLayout({
       visibleSections={portal.access.visibleClientSections}
       unreadNotificationCount={unreadNotificationCount}
       banner={<ImpersonationBanner />}
+      canManageConnections={
+        !portal.access.isImpersonating &&
+        ["client_owner", "client_manager"].includes(portal.access.role) &&
+        portal.access.canOperateCustomerActions &&
+        portal.access.visibleClientSections.includes("settings")
+      }
+      canReviewLaunch={
+        portal.access.role === "client_owner" && !portal.access.isImpersonating
+      }
     >
-      {portal.access.role === "client_owner" && !portal.access.isImpersonating ? <div className="mb-5 rounded-lg border bg-secondary/30 px-4 py-3 text-sm"><Link className="font-medium underline underline-offset-4" href="/client/launch">Review your supervised beta launch checklist</Link><span className="mx-3" aria-hidden="true">·</span><Link className="underline underline-offset-4" href="/client/integrations">Manage connected automations</Link></div> : null}
       {children}
     </PortalShell>
   );

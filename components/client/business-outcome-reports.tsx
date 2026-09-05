@@ -54,6 +54,7 @@ function compactMoney(value: number): string {
     style: "currency",
     currency: "USD",
     notation: "compact",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 1,
   }).format(value);
 }
@@ -401,9 +402,8 @@ export function BusinessOutcomeReports({
                   </div>
                   <p className="mt-3 text-sm leading-6 text-muted-foreground">
                     A defensible ROI percentage requires realized invoice
-                    revenue, ad spend, labor cost, and service cost.
-                    This report will not substitute estimates for those actual
-                    inputs.
+                    revenue, ad spend, labor cost, and service cost. This report
+                    will not substitute estimates for those actual inputs.
                   </p>
                 </div>
               </section>
@@ -415,16 +415,11 @@ export function BusinessOutcomeReports({
                       className="size-4 text-primary"
                       aria-hidden="true"
                     />
-                    <h2 className="text-sm font-semibold">
-                      Outcome insights
-                    </h2>
+                    <h2 className="text-sm font-semibold">Outcome insights</h2>
                   </div>
                   <div className="divide-y">
                     {report.insights.map((insight) => (
-                      <p
-                        key={insight}
-                        className="px-5 py-3 text-sm leading-6"
-                      >
+                      <p key={insight} className="px-5 py-3 text-sm leading-6">
                         {insight}
                       </p>
                     ))}
@@ -505,12 +500,12 @@ export function BusinessOutcomeReports({
                         money(report.estimatedPipelineValue),
                       ],
                       ["Won customers", report.wonCount],
-                      [
-                        "Estimated won value",
-                        money(report.estimatedWonValue),
-                      ],
+                      ["Estimated won value", money(report.estimatedWonValue)],
                       ["Quotes created", report.quoteCount],
-                      ["Accepted quote value", money(report.acceptedQuoteValue)],
+                      [
+                        "Accepted quote value",
+                        money(report.acceptedQuoteValue),
+                      ],
                     ].map(([label, value]) => (
                       <div
                         key={String(label)}

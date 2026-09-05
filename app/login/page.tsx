@@ -31,7 +31,7 @@ const pillars = [
   {
     icon: PhoneCall,
     label: "AI voice",
-    detail: "Answer, call back, and capture every lead.",
+    detail: "Help answer calls and follow up with new leads.",
   },
   {
     icon: CalendarClock,
@@ -41,7 +41,7 @@ const pillars = [
   {
     icon: Workflow,
     label: "AI workflows",
-    detail: "Approval-gated automation with a full audit trail.",
+    detail: "Automate routine tasks and review customer actions.",
   },
 ];
 
@@ -87,10 +87,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
         <div className="relative max-w-md">
           <h1 className="text-3xl font-semibold leading-tight tracking-tight">
-            The AI operations layer for home service businesses.
+            Less busywork. More time for your customers.
           </h1>
           <p className="mt-4 text-sm leading-6 text-white/60">
-            Partners run the command center. Clients keep their own tools. Your
+            Manage your customers and connected tools in one place. Your
             business reviews customer messages and booking requests before
             delivery.
           </p>
@@ -151,8 +151,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
           <h2 className="text-2xl font-semibold tracking-tight">Sign in</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Use the email connected to your partner, client, or platform
-            membership. We&apos;ll send you a secure sign-in link.
+            Enter your work email. We&apos;ll send you a secure sign-in link.
           </p>
 
           <div className="mt-8">

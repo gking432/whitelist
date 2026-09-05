@@ -57,14 +57,57 @@ export async function saveKnowledgeProfile(
     return typeof value === "string" ? value.trim() || null : null;
   };
 
-  const disclosureMode = String(formData.get("voice_disclosure_mode") ?? "explicit");
+  let faq = parseFaq(String(formData.get("faq") ?? ""));
+  if (formData.has("faq_json")) {
+    try {
+      const entries: unknown = JSON.parse(String(formData.get("faq_json")));
+      if (
+        !Array.isArray(entries) ||
+        entries.length > 50 ||
+        entries.some(
+          (entry) =>
+            !entry ||
+            typeof entry.q !== "string" ||
+            typeof entry.a !== "string" ||
+            !entry.q.trim() ||
+            !entry.a.trim(),
+        )
+      ) {
+        return {
+          status: "error",
+          message:
+            "Add a question and answer to each entry. You can save up to 50 questions.",
+        };
+      }
+      faq = entries.map((entry) => ({ q: entry.q.trim(), a: entry.a.trim() }));
+    } catch {
+      return {
+        status: "error",
+        message: "The questions could not be read. Refresh and try again.",
+      };
+    }
+  }
+
+  const disclosureMode = String(
+    formData.get("voice_disclosure_mode") ?? "explicit",
+  );
 
   if (!DISCLOSURE_MODES.includes(disclosureMode as never)) {
     return { status: "error", message: "Choose a valid disclosure mode." };
   }
 
-  const bookingStart = clampInt(String(formData.get("booking_hours_start") ?? ""), 9, 0, 23);
-  const bookingEnd = clampInt(String(formData.get("booking_hours_end") ?? ""), 17, 1, 24);
+  const bookingStart = clampInt(
+    String(formData.get("booking_hours_start") ?? ""),
+    9,
+    0,
+    23,
+  );
+  const bookingEnd = clampInt(
+    String(formData.get("booking_hours_end") ?? ""),
+    17,
+    1,
+    24,
+  );
 
   if (bookingEnd <= bookingStart) {
     return {
@@ -104,7 +147,7 @@ export async function saveKnowledgeProfile(
       emergency_rules: text("emergency_rules"),
       pricing_disclaimer: text("pricing_disclaimer"),
       booking_rules: text("booking_rules"),
-      faq: parseFaq(String(formData.get("faq") ?? "")),
+      faq,
       escalation_rules: text("escalation_rules"),
       ai_disclosure: text("ai_disclosure"),
       voice_disclosure_mode: disclosureMode,

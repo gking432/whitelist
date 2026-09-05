@@ -38,10 +38,19 @@ type Overview = {
   }>;
 };
 const inputStyle =
-  "mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm";
-const label = (key: string) => key.replaceAll("_", " ");
+  "mt-1 min-h-11 w-full rounded-lg border bg-card px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const label = (key: string) => {
+  const text = key.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 
 export function ConnectedApps({ clientId }: { clientId: string }) {
+  const [step, setStep] = useState(1);
+  const stepHeading = useRef<HTMLHeadingElement>(null);
+  function goToStep(next: number) {
+    setStep(next);
+    requestAnimationFrame(() => stepHeading.current?.focus());
+  }
   const [overview, setOverview] = useState<Overview | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -166,7 +175,10 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                 authenticationId: String(event.data.authId),
               });
               await refresh();
-              setMessage(`${app.title} connected. Choose a solution below.`);
+              goToStep(2);
+              setMessage(
+                `${app.title} connected. Now choose what it should do.`,
+              );
             });
           } else if (event.data?.type === "authenticationError") {
             cleanup();
@@ -301,17 +313,26 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
   return (
     <section
       id="connected-apps"
-      className="space-y-5 rounded-xl border bg-card p-6"
+      className="space-y-5 rounded-xl border bg-card p-4 sm:p-6"
     >
       <header>
-        <h2 className="text-xl font-semibold">Connect your existing apps</h2>
+        <h2
+          ref={stepHeading}
+          tabIndex={-1}
+          className="text-xl font-semibold outline-none"
+        >
+          Connect your existing apps
+        </h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Keep the tools your business uses. Connect an account, choose what it
-          should do with your solutions, and test a sample before enabling it.
-          Phone conversations and live scheduling use their direct connections.
+          Keep the tools your business already uses. Choose an app, decide what
+          it should do, then try a sample before turning it on.
         </p>
       </header>
-      <p role="status" aria-live="polite" className="text-sm">
+      <p
+        role="status"
+        aria-live="polite"
+        className="empty:hidden rounded-lg bg-secondary/60 px-4 py-3 text-sm"
+      >
         {busy ? "Working…" : message}
       </p>
       {!overview ? (
@@ -325,8 +346,55 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
         </div>
       ) : (
         <>
-          <fieldset disabled={busy} className="space-y-3">
-            <legend className="font-medium">1. Find and connect an app</legend>
+          <ol
+            aria-label="Connection setup steps"
+            className="grid grid-cols-3 gap-2"
+          >
+            {[
+              { number: 1, title: "Connect app", available: true },
+              {
+                number: 2,
+                title: "Choose task",
+                available: overview.connections.length > 0,
+              },
+              {
+                number: 3,
+                title: "Test & turn on",
+                available: overview.bindings.length > 0,
+              },
+            ].map((item) => (
+              <li key={item.number}>
+                <button
+                  type="button"
+                  disabled={busy || !item.available}
+                  aria-current={step === item.number ? "step" : undefined}
+                  onClick={() => goToStep(item.number)}
+                  className={`flex h-full w-full flex-col gap-2 rounded-xl border p-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:flex-row sm:items-center ${step === item.number ? "border-primary/30 bg-primary/5 text-primary" : "hover:bg-secondary"}`}
+                >
+                  <span
+                    className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${step === item.number ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
+                  >
+                    {item.number}
+                  </span>
+                  <span className="font-medium">{item.title}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          {step === 1 && overview.connections.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-secondary/50 p-4">
+              <p className="text-sm">
+                {overview.connections.length} account
+                {overview.connections.length === 1 ? "" : "s"} connected. Use an
+                existing account or add another.
+              </p>
+              <Button variant="outline" onClick={() => goToStep(2)}>
+                Use connected account
+              </Button>
+            </div>
+          ) : null}
+          <fieldset hidden={step !== 1} disabled={busy} className="space-y-4">
+            <legend className="font-medium">Find your app</legend>
             <form
               className="flex items-end gap-2"
               onSubmit={(event) => {
@@ -389,10 +457,8 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
             </p>
           </fieldset>
           {overview.connections.length ? (
-            <fieldset disabled={busy} className="space-y-3 border-t pt-5">
-              <legend className="font-medium">
-                2. Choose a solution and an app operation
-              </legend>
+            <fieldset hidden={step !== 2} disabled={busy} className="space-y-4">
+              <legend className="font-medium">Choose what happens</legend>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-sm">
                   Connected account
@@ -461,7 +527,7 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                 </label>
                 {pack ? (
                   <label className="text-sm">
-                    Business event
+                    Treat incoming activity as
                     <select
                       className={inputStyle}
                       value={eventType}
@@ -519,11 +585,11 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                   })
                 }
               >
-                Show available operations
+                Find supported tasks
               </Button>
               {actions.length ? (
                 <label className="block text-sm">
-                  App operation
+                  Task in this app
                   <select
                     className={inputStyle}
                     value={actionKey}
@@ -593,7 +659,7 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                       }}
                       placeholder={
                         direction === "outbound"
-                          ? "Optional fixed value; customer fields can be mapped in step 3"
+                          ? "Optional fixed value. You can choose customer information in the next step."
                           : "Enter the app setting"
                       }
                     />
@@ -639,6 +705,7 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                               : {},
                         });
                         setBindingId(result.bindingId);
+                        goToStep(3);
                         setMappingDirty(true);
                         setMapping(
                           Object.fromEntries(
@@ -654,15 +721,22 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                       })
                     }
                   >
-                    Save setup
+                    Save & continue
                   </Button>
                 </div>
               ) : null}
             </fieldset>
           ) : null}
           {overview.bindings.length ? (
-            <fieldset disabled={busy} className="space-y-3 border-t pt-5">
-              <legend className="font-medium">3. Map, test and enable</legend>
+            <fieldset hidden={step !== 3} disabled={busy} className="space-y-4">
+              <legend className="font-medium">
+                Check a sample, then turn it on
+              </legend>
+              <p className="text-sm text-muted-foreground">
+                Match the information from your app to the fields below. Check a
+                sample to see exactly what will be used. Nothing is sent during
+                this test.
+              </p>
               <label className="block text-sm">
                 Saved setup
                 <select
@@ -727,7 +801,7 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                   </p>
                   {binding.direction === "outbound" ? (
                     <label className="block text-sm">
-                      Sample workflow run
+                      Example automation result
                       <select
                         className={inputStyle}
                         value={runId}
@@ -783,7 +857,7 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                                 })
                               )}
                             >
-                              <option value="">Leave unmapped</option>
+                              <option value="">Do not use this field</option>
                               {mapping[key] && "value" in mapping[key] ? (
                                 <option value="__fixed">
                                   Fixed: {String(mapping[key].value)}
@@ -825,7 +899,7 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                           })
                         }
                       >
-                        Load sample and test mapping
+                        Load sample & check fields
                       </Button>
                     </>
                   ) : null}
@@ -847,7 +921,9 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                     <Button
                       disabled={
                         binding.status !== "enabled" &&
-                        (!binding.verified_at || mappingDirty)
+                        (!binding.verified_at ||
+                          mappingDirty ||
+                          !overview.clientLive)
                       }
                       onClick={() =>
                         task(async () => {
@@ -862,8 +938,8 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                       }
                     >
                       {binding.status === "enabled"
-                        ? "Pause processing"
-                        : "Enable for this client"}
+                        ? "Pause this connection"
+                        : "Turn on this connection"}
                     </Button>
                   </div>
                   {!overview.clientLive ? (
@@ -875,6 +951,15 @@ export function ConnectedApps({ clientId }: { clientId: string }) {
                 </>
               ) : null}
             </fieldset>
+          ) : null}
+          {step > 1 ? (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => goToStep(step - 1)}
+            >
+              Back to {step === 2 ? "apps" : "task setup"}
+            </Button>
           ) : null}
         </>
       )}

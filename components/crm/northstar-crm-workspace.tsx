@@ -231,9 +231,9 @@ const VIEW_ITEMS: {
   { key: "calls", label: "AI Calls", icon: PhoneCall },
   { key: "quotes", label: "Quotes", icon: CircleDollarSign },
   { key: "marketing", label: "Marketing", icon: Star },
-  { key: "automations", label: "AI Automations", icon: Workflow },
+  { key: "automations", label: "Automations", icon: Workflow },
   { key: "reports", label: "Reports", icon: BarChart3 },
-  { key: "crm-sync", label: "CRM Sync", icon: Cable },
+  { key: "crm-sync", label: "CRM connection", icon: Cable },
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -300,7 +300,9 @@ function localDateTimeToIso(value: string): string {
 }
 
 function statusClass(status: string): string {
-  if (["won", "sent", "delivered", "booked", "done", "positive"].includes(status)) {
+  if (
+    ["won", "sent", "delivered", "booked", "done", "positive"].includes(status)
+  ) {
     return "border-emerald-200 bg-emerald-50 text-emerald-800";
   }
   if (["urgent", "failed", "lost", "negative"].includes(status)) {
@@ -313,9 +315,7 @@ function statusClass(status: string): string {
 }
 
 function runtimeLabel(runtimeMode: string): string {
-  return runtimeMode === "sandbox"
-    ? "setup"
-    : runtimeMode.replaceAll("_", " ");
+  return runtimeMode === "sandbox" ? "setup" : runtimeMode.replaceAll("_", " ");
 }
 
 function Metric({
@@ -341,13 +341,7 @@ function Metric({
   );
 }
 
-function Empty({
-  title,
-  detail,
-}: {
-  title: string;
-  detail: string;
-}) {
+function Empty({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="grid min-h-40 place-items-center px-6 py-8 text-center">
       <div>
@@ -400,9 +394,9 @@ export function NorthstarCrmWorkspace({
   const [actionMessage, setActionMessage] = useState<FormState | null>(null);
   const [search, setSearch] = useState(initialSearch);
   const [newLeadOpen, setNewLeadOpen] = useState(showNewLead);
-  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(
-    null,
-  );
+  const [editingAppointmentId, setEditingAppointmentId] = useState<
+    string | null
+  >(null);
   const [renderedAt] = useState(() => Date.now());
   const canSeeView = (candidate: CrmView) =>
     !visibleSections || visibleSections.includes(candidate);
@@ -413,8 +407,7 @@ export function NorthstarCrmWorkspace({
   const appointments = data.appointments as unknown as Appointment[];
   const availability = data.availability as unknown as Availability[];
   const calls = data.calls as unknown as Call[];
-  const transcriptTurns =
-    data.transcriptTurns as unknown as TranscriptTurn[];
+  const transcriptTurns = data.transcriptTurns as unknown as TranscriptTurn[];
   const quotes = data.quotes as unknown as Quote[];
   const feedback = data.feedback as unknown as Feedback[];
   const campaigns = data.campaigns;
@@ -521,67 +514,67 @@ export function NorthstarCrmWorkspace({
   return (
     <div className="space-y-5">
       {!embedded ? (
-      <header className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Sparkles className="size-4" aria-hidden="true" />
-            </span>
-            <div>
-              <h1 className="font-semibold">{clientName} CRM</h1>
-              <p className="text-xs text-muted-foreground">
-                {productName} AI operations suite
-              </p>
+        <header className="flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                <Sparkles className="size-4" aria-hidden="true" />
+              </span>
+              <div>
+                <h1 className="font-semibold">{clientName} CRM</h1>
+                <p className="text-xs text-muted-foreground">
+                  {productName} AI operations suite
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {data.pendingApprovals > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {data.pendingApprovals > 0 ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={approvalsPath}>
+                  <ClipboardCheck aria-hidden="true" />
+                  {data.pendingApprovals} approval
+                  {data.pendingApprovals === 1 ? "" : "s"}
+                </Link>
+              </Button>
+            ) : null}
             <Button asChild variant="outline" size="sm">
-              <Link href={approvalsPath}>
-                <ClipboardCheck aria-hidden="true" />
-                {data.pendingApprovals} approval
-                {data.pendingApprovals === 1 ? "" : "s"}
+              <Link href={assistantPath}>
+                <Bot aria-hidden="true" />
+                Assistant popup
               </Link>
             </Button>
-          ) : null}
-          <Button asChild variant="outline" size="sm">
-            <Link href={assistantPath}>
-              <Bot aria-hidden="true" />
-              Assistant popup
-            </Link>
-          </Button>
-          {!canEdit && !canOperate ? (
-            <Badge variant="outline">Read-only support view</Badge>
-          ) : null}
-        </div>
-      </header>
+            {!canEdit && !canOperate ? (
+              <Badge variant="outline">Read-only support view</Badge>
+            ) : null}
+          </div>
+        </header>
       ) : null}
 
       {!embedded ? (
-      <nav
-        aria-label="CRM sections"
-        className="flex gap-1 overflow-x-auto border-b"
-      >
-        {VIEW_ITEMS.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.key}
-              href={`${basePath}?view=${item.key}`}
-              className={cn(
-                "-mb-px inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-xs font-medium",
-                view === item.key
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+        <nav
+          aria-label="CRM sections"
+          className="flex gap-1 overflow-x-auto border-b"
+        >
+          {VIEW_ITEMS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.key}
+                href={`${basePath}?view=${item.key}`}
+                className={cn(
+                  "-mb-px inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-xs font-medium",
+                  view === item.key
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="size-3.5" aria-hidden="true" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
       ) : null}
 
       {actionMessage ? (
@@ -606,7 +599,7 @@ export function NorthstarCrmWorkspace({
 
       {view === "overview" ? (
         <div className="space-y-5">
-          <section className="grid overflow-hidden rounded-lg border bg-card sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-2 overflow-hidden rounded-lg border bg-card xl:grid-cols-4">
             <Metric
               label="Open pipeline"
               value={openLeads.length}
@@ -616,7 +609,7 @@ export function NorthstarCrmWorkspace({
             <Metric
               label="Pipeline value"
               value={money(pipelineValue)}
-              detail="Midpoint of current ballparks"
+              detail="Based on estimate ranges"
               icon={CircleDollarSign}
             />
             <Metric
@@ -636,7 +629,7 @@ export function NorthstarCrmWorkspace({
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]">
             <section className="overflow-hidden rounded-lg border bg-card">
               <div className="flex items-center justify-between border-b px-4 py-3">
-                <h2 className="text-sm font-semibold">Priority queue</h2>
+                <h2 className="text-sm font-semibold">Needs your attention</h2>
                 {canSeeView("pipeline") ? (
                   <Link
                     href={`${basePath}?view=pipeline`}
@@ -710,14 +703,18 @@ export function NorthstarCrmWorkspace({
                     </p>
                   </div>
                 ))}
-                {openTasks.slice(0, Math.max(0, 5 - upcoming.length)).map((task) => (
-                  <div key={task.id} className="px-4 py-3">
-                    <p className="text-sm font-medium">{task.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {task.due_at ? `Due ${when(task.due_at)}` : "No due date"}
-                    </p>
-                  </div>
-                ))}
+                {openTasks
+                  .slice(0, Math.max(0, 5 - upcoming.length))
+                  .map((task) => (
+                    <div key={task.id} className="px-4 py-3">
+                      <p className="text-sm font-medium">{task.title}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {task.due_at
+                          ? `Due ${when(task.due_at)}`
+                          : "No due date"}
+                      </p>
+                    </div>
+                  ))}
                 {upcoming.length === 0 && openTasks.length === 0 ? (
                   <Empty
                     title="Nothing waiting"
@@ -737,9 +734,7 @@ export function NorthstarCrmWorkspace({
               id="new-lead"
               className="rounded-lg border bg-card"
               open={newLeadOpen}
-              onToggle={(event) =>
-                setNewLeadOpen(event.currentTarget.open)
-              }
+              onToggle={(event) => setNewLeadOpen(event.currentTarget.open)}
             >
               <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
                 Add lead
@@ -785,7 +780,9 @@ export function NorthstarCrmWorkspace({
           <section className="overflow-x-auto pb-2">
             <div className="grid min-w-[1080px] grid-cols-6 gap-3">
               {PIPELINE_STAGES.map((stage) => {
-                const stageLeads = leads.filter((lead) => lead.status === stage);
+                const stageLeads = leads.filter(
+                  (lead) => lead.status === stage,
+                );
                 return (
                   <div key={stage} className="min-w-0">
                     <div className="mb-2 flex items-center justify-between px-1">
@@ -890,7 +887,9 @@ export function NorthstarCrmWorkspace({
             </div>
             {filteredLeads.length === 0 ? (
               <Empty
-                title={leads.length === 0 ? "No leads yet" : "No matching leads"}
+                title={
+                  leads.length === 0 ? "No leads yet" : "No matching leads"
+                }
                 detail="New customer requests and manually entered opportunities appear here."
               />
             ) : (
@@ -925,7 +924,9 @@ export function NorthstarCrmWorkspace({
                             {lead.service_type ?? "General inquiry"}
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {lead.next_action ?? lead.summary ?? "No next action"}
+                            {lead.next_action ??
+                              lead.summary ??
+                              "No next action"}
                           </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -1044,7 +1045,11 @@ export function NorthstarCrmWorkspace({
                               />
                             </div>
                             {canEdit ? (
-                              <Button type="submit" size="sm" disabled={pending}>
+                              <Button
+                                type="submit"
+                                size="sm"
+                                disabled={pending}
+                              >
                                 Save opportunity
                               </Button>
                             ) : null}
@@ -1079,7 +1084,9 @@ export function NorthstarCrmWorkspace({
                                 );
                               }}
                             >
-                              <h3 className="text-sm font-semibold">Customer</h3>
+                              <h3 className="text-sm font-semibold">
+                                Customer
+                              </h3>
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <Input
                                   name="first_name"
@@ -1187,7 +1194,7 @@ export function NorthstarCrmWorkspace({
           {contacts.length > 0 ? (
             <section className="overflow-hidden rounded-lg border bg-card">
               <div className="border-b px-4 py-3">
-                <h2 className="text-sm font-semibold">Customer directory</h2>
+                <h2 className="text-sm font-semibold">Customers</h2>
                 <p className="text-xs text-muted-foreground">
                   {filteredContacts.length} matching contact
                   {filteredContacts.length === 1 ? "" : "s"}
@@ -1252,7 +1259,9 @@ export function NorthstarCrmWorkspace({
                         </p>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {task.due_at ? `Due ${when(task.due_at)}` : "No due date"}
+                        {task.due_at
+                          ? `Due ${when(task.due_at)}`
+                          : "No due date"}
                         {task.contact_id
                           ? ` · ${contactName(contactById.get(task.contact_id))}`
                           : ""}
@@ -1268,9 +1277,7 @@ export function NorthstarCrmWorkspace({
                               clientId,
                               taskId: task.id,
                               status: event.target.value as
-                                | "open"
-                                | "done"
-                                | "cancelled",
+                                "open" | "done" | "cancelled",
                             }),
                           )
                         }
@@ -1349,7 +1356,7 @@ export function NorthstarCrmWorkspace({
           <section className="overflow-hidden rounded-lg border bg-card">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div>
-                <h2 className="text-sm font-semibold">Omnichannel inbox</h2>
+                <h2 className="text-sm font-semibold">Inbox</h2>
                 <p className="text-xs text-muted-foreground">
                   Forms, calls, texts, emails, and AI drafts
                 </p>
@@ -1429,7 +1436,7 @@ export function NorthstarCrmWorkspace({
                 }}
               >
                 <div>
-                  <h2 className="text-sm font-semibold">AI message drafting</h2>
+                  <h2 className="text-sm font-semibold">Draft a reply</h2>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Every customer-facing draft goes to Approvals.
                   </p>
@@ -1495,7 +1502,9 @@ export function NorthstarCrmWorkspace({
                     <div key={appointment.id} className="px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-medium">{appointment.title}</p>
+                          <p className="text-sm font-medium">
+                            {appointment.title}
+                          </p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {when(appointment.start_at)} · {duration} min
                             {appointment.location
@@ -1535,12 +1544,24 @@ export function NorthstarCrmWorkspace({
                               size="icon"
                               className="size-8"
                               onClick={() =>
-                                setEditingAppointmentId(editing ? null : appointment.id)
+                                setEditingAppointmentId(
+                                  editing ? null : appointment.id,
+                                )
                               }
-                              aria-label={editing ? "Close appointment editor" : `Edit ${appointment.title}`}
-                              title={editing ? "Close editor" : "Edit appointment"}
+                              aria-label={
+                                editing
+                                  ? "Close appointment editor"
+                                  : `Edit ${appointment.title}`
+                              }
+                              title={
+                                editing ? "Close editor" : "Edit appointment"
+                              }
                             >
-                              {editing ? <X aria-hidden="true" /> : <Pencil aria-hidden="true" />}
+                              {editing ? (
+                                <X aria-hidden="true" />
+                              ) : (
+                                <Pencil aria-hidden="true" />
+                              )}
                             </Button>
                           </div>
                         ) : (
@@ -1583,10 +1604,15 @@ export function NorthstarCrmWorkspace({
                           <Input
                             name="start_at"
                             type="datetime-local"
-                            defaultValue={localDateTimeInput(appointment.start_at)}
+                            defaultValue={localDateTimeInput(
+                              appointment.start_at,
+                            )}
                             required
                           />
-                          <Select name="duration" defaultValue={String(duration)}>
+                          <Select
+                            name="duration"
+                            defaultValue={String(duration)}
+                          >
                             <option value="30">30 minutes</option>
                             <option value="60">60 minutes</option>
                             <option value="90">90 minutes</option>
@@ -1605,7 +1631,11 @@ export function NorthstarCrmWorkspace({
                             placeholder="Internal notes"
                             className="sm:col-span-2"
                           />
-                          <Button type="submit" disabled={pending} className="sm:col-span-2 sm:justify-self-end">
+                          <Button
+                            type="submit"
+                            disabled={pending}
+                            className="sm:col-span-2 sm:justify-self-end"
+                          >
                             <CalendarDays aria-hidden="true" />
                             Save appointment
                           </Button>
@@ -1684,7 +1714,11 @@ export function NorthstarCrmWorkspace({
                   </Select>
                   <Input name="start_time" type="time" defaultValue="09:00" />
                   <Input name="end_time" type="time" defaultValue="17:00" />
-                  <Button type="submit" className="sm:col-span-2" disabled={pending}>
+                  <Button
+                    type="submit"
+                    className="sm:col-span-2"
+                    disabled={pending}
+                  >
                     <Plus aria-hidden="true" />
                     Add availability
                   </Button>
@@ -1766,18 +1800,24 @@ export function NorthstarCrmWorkspace({
                     clientId,
                     contactId: String(form.get("contact_id") ?? ""),
                     reason: String(form.get("reason") ?? "lead_callback") as
-                      | "lead_callback"
-                      | "reschedule"
-                      | "reminder",
+                      "lead_callback" | "reschedule" | "reminder",
                   }),
                 );
               }}
             >
               <div>
-                <label className="text-xs font-medium" htmlFor="ai-callback-contact">
+                <label
+                  className="text-xs font-medium"
+                  htmlFor="ai-callback-contact"
+                >
                   Customer
                 </label>
-                <Select id="ai-callback-contact" name="contact_id" required defaultValue="">
+                <Select
+                  id="ai-callback-contact"
+                  name="contact_id"
+                  required
+                  defaultValue=""
+                >
                   <option value="" disabled>
                     Choose a customer to call
                   </option>
@@ -1791,10 +1831,17 @@ export function NorthstarCrmWorkspace({
                 </Select>
               </div>
               <div>
-                <label className="text-xs font-medium" htmlFor="ai-callback-reason">
+                <label
+                  className="text-xs font-medium"
+                  htmlFor="ai-callback-reason"
+                >
                   Reason
                 </label>
-                <Select id="ai-callback-reason" name="reason" defaultValue="lead_callback">
+                <Select
+                  id="ai-callback-reason"
+                  name="reason"
+                  defaultValue="lead_callback"
+                >
                   <option value="lead_callback">New lead follow-up</option>
                   <option value="reschedule">Reschedule</option>
                   <option value="reminder">Appointment reminder</option>
@@ -1841,8 +1888,7 @@ export function NorthstarCrmWorkspace({
                     ["Address", extracted.address],
                   ].filter(
                     (fact): fact is [string, string] =>
-                      typeof fact[1] === "string" &&
-                      Boolean(fact[1].trim()),
+                      typeof fact[1] === "string" && Boolean(fact[1].trim()),
                   );
 
                   return (
@@ -1852,7 +1898,7 @@ export function NorthstarCrmWorkspace({
                           <p className="text-sm font-medium">
                             {matchedContact
                               ? contactName(matchedContact)
-                              : call.from_number ?? "Unknown caller"}
+                              : (call.from_number ?? "Unknown caller")}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {when(call.started_at)}
@@ -1967,8 +2013,7 @@ export function NorthstarCrmWorkspace({
                                 </dl>
                               </div>
                             ) : null}
-                            {call.summary &&
-                            call.summary !== call.crm_note ? (
+                            {call.summary && call.summary !== call.crm_note ? (
                               <div>
                                 <p className="text-[10px] font-semibold uppercase text-muted-foreground">
                                   Internal summary
@@ -1994,7 +2039,7 @@ export function NorthstarCrmWorkspace({
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
           <section className="overflow-hidden rounded-lg border bg-card">
             <div className="border-b px-4 py-3">
-              <h2 className="text-sm font-semibold">Quote intelligence</h2>
+              <h2 className="text-sm font-semibold">Estimate assistance</h2>
               <p className="text-xs text-muted-foreground">
                 Internal ballparks only; inspection required before final price
               </p>
@@ -2079,15 +2124,15 @@ export function NorthstarCrmWorkspace({
                     serviceType: String(form.get("service_type") ?? ""),
                     quantity: Number(form.get("quantity")),
                     complexity: String(form.get("complexity")) as
-                      | "standard"
-                      | "complex"
-                      | "premium",
+                      "standard" | "complex" | "premium",
                     notes: String(form.get("notes") ?? ""),
                   }),
                 );
               }}
             >
-              <h2 className="text-sm font-semibold">Build ballpark</h2>
+              <h2 className="text-sm font-semibold">
+                Prepare an estimate range
+              </h2>
               <Select name="lead_id" defaultValue="">
                 <option value="">Choose lead (optional)</option>
                 {openLeads.map((lead) => (
@@ -2368,7 +2413,7 @@ export function NorthstarCrmWorkspace({
 
             <aside className="space-y-5">
               <section className="rounded-lg border bg-card p-5">
-                <h2 className="text-sm font-semibold">Operating mode</h2>
+                <h2 className="text-sm font-semibold">How your CRM works</h2>
                 <dl className="mt-3 space-y-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <dt className="text-muted-foreground">CRM</dt>
@@ -2397,19 +2442,19 @@ export function NorthstarCrmWorkspace({
       ) : null}
 
       {!embedded ? (
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-xs text-muted-foreground">
-        <p>
-          {productName} is the system of record when no external CRM is
-          connected; mirror and assist modes keep it alongside another CRM.
-        </p>
-        <Link
-          href={`${basePath}?view=${VIEW_ITEMS[(VIEW_ITEMS.findIndex((item) => item.key === view) + 1) % VIEW_ITEMS.length].key}`}
-          className="inline-flex items-center gap-1 font-medium text-primary"
-        >
-          Next section
-          <ChevronRight className="size-3.5" aria-hidden="true" />
-        </Link>
-      </footer>
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-xs text-muted-foreground">
+          <p>
+            {productName} is the system of record when no external CRM is
+            connected; mirror and assist modes keep it alongside another CRM.
+          </p>
+          <Link
+            href={`${basePath}?view=${VIEW_ITEMS[(VIEW_ITEMS.findIndex((item) => item.key === view) + 1) % VIEW_ITEMS.length].key}`}
+            className="inline-flex items-center gap-1 font-medium text-primary"
+          >
+            Next section
+            <ChevronRight className="size-3.5" aria-hidden="true" />
+          </Link>
+        </footer>
       ) : null}
     </div>
   );
