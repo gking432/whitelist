@@ -2,7 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["*.trycloudflare.com"],
-  output: "standalone",
+  // Vercel packages its own functions; standalone output is for the separate
+  // Render and desktop distribution paths.
+  output: process.env.VERCEL === "1" ? undefined : "standalone",
   async headers() {
     return [
       {
