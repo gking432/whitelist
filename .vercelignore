@@ -3,10 +3,11 @@
 .git
 .next
 node_modules
-desktop
+/desktop/
 release
 supabase/.temp
 supabase/.branches
 supabase/seed.sql
 docs
 tests
+*.tsbuildinfo
