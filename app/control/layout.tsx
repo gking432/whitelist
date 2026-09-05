@@ -14,6 +14,7 @@ export default async function ControlLayout({
     <WorkspaceChrome
       brand={<NorthstarMark surface="light" />}
       home="/control"
+      workspaceSwitcher
       workspaceName="Platform management"
       roleLabel={access.role.replaceAll("_", " ")}
       userEmail={user.email ?? "Signed in"}

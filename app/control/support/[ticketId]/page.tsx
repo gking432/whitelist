@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bot, Code2 } from "lucide-react";
+import { Bot, Code2, Eye } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import {
@@ -9,6 +9,7 @@ import {
   startRequesterValidation,
   updatePlatformSupportTicket,
 } from "@/app/control/support/actions";
+import { startPlatformImpersonation } from "@/app/impersonation/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,6 +108,36 @@ export default async function PlatformSupportTicketPage({
             {client?.name ?? "Agency-wide"} ·{" "}
             {ticket.category.replaceAll("_", " ")}
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <form
+              action={startPlatformImpersonation.bind(null, {
+                targetKind: "partner",
+                targetId: ticket.partner_id,
+                requestedMode: "read_only",
+                returnPath: `/control/support/${ticket.id}`,
+              })}
+            >
+              <Button type="submit" variant="outline" size="sm">
+                <Eye aria-hidden="true" />
+                View partner account
+              </Button>
+            </form>
+            {ticket.client_id ? (
+              <form
+                action={startPlatformImpersonation.bind(null, {
+                  targetKind: "client",
+                  targetId: ticket.client_id,
+                  requestedMode: "read_only",
+                  returnPath: `/control/support/${ticket.id}`,
+                })}
+              >
+                <Button type="submit" variant="outline" size="sm">
+                  <Eye aria-hidden="true" />
+                  View client account
+                </Button>
+              </form>
+            ) : null}
+          </div>
         </header>
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(19rem,.65fr)]">

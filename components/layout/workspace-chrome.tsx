@@ -15,6 +15,7 @@ type Props = {
   navigation: WorkspaceNavItem[];
   banner?: React.ReactNode;
   footer?: React.ReactNode;
+  workspaceSwitcher?: boolean;
   help?: { href: string; label: string };
 };
 
@@ -29,6 +30,7 @@ export function WorkspaceChrome({
   banner,
   footer,
   help,
+  workspaceSwitcher = false,
 }: Props) {
   return (
     <div className="min-h-screen bg-background">
@@ -58,6 +60,14 @@ export function WorkspaceChrome({
               <WorkspaceNavigation items={navigation} />
             </div>
             <div className="space-y-4 border-t p-4">
+              {workspaceSwitcher ? (
+                <Link
+                  href="/"
+                  className="block rounded-md border px-3 py-2 text-sm font-medium hover:bg-secondary"
+                >
+                  Choose workspace
+                </Link>
+              ) : null}
               {help ? <WorkspaceHelpLink {...help} /> : null}
               <div className="flex items-center gap-3 px-2">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/8 text-sm font-semibold text-primary">
@@ -86,6 +96,14 @@ export function WorkspaceChrome({
                 {workspaceName}
               </span>
             </div>
+            {workspaceSwitcher ? (
+              <Link
+                href="/"
+                className="block border-t px-5 py-2 text-xs font-medium"
+              >
+                Choose workspace
+              </Link>
+            ) : null}
             <WorkspaceNavigation items={navigation} mobile />
           </header>
           <main

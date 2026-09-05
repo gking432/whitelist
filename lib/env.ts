@@ -44,10 +44,17 @@ export function getSecretsEncryptionKey(): string | null {
 }
 
 export function getAppUrl() {
+  const vercelHost =
+    process.env.VERCEL_ENV === "production"
+      ? process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
+      : process.env.VERCEL_ENV === "preview"
+        ? process.env.VERCEL_URL
+        : undefined;
   return (
-    process.env.APP_URL ??
-    process.env.RENDER_EXTERNAL_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.APP_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (vercelHost ? `https://${vercelHost}` : undefined) ||
     "http://localhost:3000"
   ).replace(/\/$/, "");
 }

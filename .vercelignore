@@ -1,0 +1,12 @@
+.env*
+!.env.example
+.git
+.next
+node_modules
+desktop
+release
+supabase/.temp
+supabase/.branches
+supabase/seed.sql
+docs
+tests
