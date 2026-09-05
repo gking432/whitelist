@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { PartnerOnboardingWizard } from "@/components/partner/partner-onboarding-wizard";
+import { ImpersonationBanner } from "@/components/impersonation/impersonation-banner";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { DEFAULT_BRAND_COLORS, normalizeBrandColor } from "@/lib/branding";
 import {
@@ -111,6 +112,8 @@ export default async function PartnerOnboardingPage({
   const partnerName = partner.name;
 
   return (
+    <>
+    <ImpersonationBanner />
     <PartnerOnboardingWizard
       step={step}
       furthestStep={furthestStep}
@@ -165,5 +168,6 @@ export default async function PartnerOnboardingPage({
           : null
       }
     />
+    </>
   );
 }
