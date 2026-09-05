@@ -1,0 +1,19 @@
+services:
+  connector-worker:
+    build:
+      context: .
+      dockerfile: deploy/connector-worker.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${CONNECTOR_WORKER_ENV_FILE:-.env.connector-worker}
+    environment:
+      ENABLE_CODEX_CONNECTOR_WORKER: "true"
+      CODEX_CONNECTOR_WORKSPACE_PATH: /workspace
+      CODEX_CONNECTOR_WORKTREE_ROOT: /worktrees
+      RELEASE_SHA: ${RELEASE_SHA:?RELEASE_SHA is required}
+    volumes:
+      - ${CONNECTOR_WORKSPACE_PATH}:/workspace
+      - connector_worktrees:/worktrees
+
+volumes:
+  connector_worktrees:

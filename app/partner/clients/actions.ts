@@ -4,14 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
+import { InvitationIdentityError, findVerifiedInvitationIdentity, assertClientIdentityIsIndependent } from "@/lib/auth/invitation-identity";
 import { getAuthState } from "@/lib/auth/session";
 import {
+  CLIENT_EXPERIENCE_MODES,
   CLIENT_STATUSES,
   CRM_OPERATING_MODES,
   RUNTIME_MODES,
   type ClientBusinessRecord,
 } from "@/lib/clients/constants";
 import type { FormState } from "@/lib/forms/state";
+import { getAppUrl } from "@/lib/env";
+import { permissionsForJobRole } from "@/lib/permissions/client-sections";
 import {
   isAccessError,
   requireClientWorkspaceAccess,
@@ -19,12 +23,14 @@ import {
 } from "@/lib/permissions/access";
 import { PARTNER_MANAGER_ROLES } from "@/lib/permissions/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type ClientFieldValues = {
   name: string;
   industry: string;
   timezone: string;
   status: string;
+  clientExperienceMode: string;
   crmOperatingMode: string;
   defaultRuntimeMode: string;
   websiteUrl: string;
@@ -33,6 +39,7 @@ type ClientFieldValues = {
   primaryContactPhone: string;
   clientPortalEnabled: boolean;
   partnerCanEditClientData: boolean;
+  packageId: string;
 };
 
 function readFields(formData: FormData): ClientFieldValues {
@@ -46,6 +53,7 @@ function readFields(formData: FormData): ClientFieldValues {
     industry: text("industry"),
     timezone: text("timezone"),
     status: text("status") || "onboarding",
+    clientExperienceMode: text("client_experience_mode"),
     crmOperatingMode: text("crm_operating_mode"),
     defaultRuntimeMode: text("default_runtime_mode"),
     websiteUrl: text("website_url"),
@@ -55,10 +63,14 @@ function readFields(formData: FormData): ClientFieldValues {
     clientPortalEnabled: formData.get("client_portal_enabled") === "on",
     partnerCanEditClientData:
       formData.get("partner_can_edit_client_data") === "on",
+    packageId: text("package_id"),
   };
 }
 
-function validateFields(fields: ClientFieldValues): Record<string, string> {
+function validateFields(
+  fields: ClientFieldValues,
+  options: { requirePackage?: boolean } = {},
+): Record<string, string> {
   const errors: Record<string, string> = {};
 
   if (!fields.name) {
@@ -73,7 +85,10 @@ function validateFields(fields: ClientFieldValues): Record<string, string> {
     errors.timezone = "Timezone is required.";
   }
 
-  if (!fields.primaryContactEmail && !fields.primaryContactPhone) {
+  if (fields.clientPortalEnabled && !fields.primaryContactEmail) {
+    errors.primary_contact_email =
+      "A client-owner email is required to send workspace access.";
+  } else if (!fields.primaryContactEmail && !fields.primaryContactPhone) {
     errors.primary_contact_email =
       "A primary contact email or phone is required.";
   }
@@ -89,12 +104,22 @@ function validateFields(fields: ClientFieldValues): Record<string, string> {
     errors.crm_operating_mode = "Choose a CRM operating mode.";
   }
 
+  if (
+    !CLIENT_EXPERIENCE_MODES.includes(fields.clientExperienceMode as never)
+  ) {
+    errors.client_experience_mode = "Choose a client experience.";
+  }
+
   if (!RUNTIME_MODES.includes(fields.defaultRuntimeMode as never)) {
     errors.default_runtime_mode = "Choose a default runtime mode.";
   }
 
   if (!CLIENT_STATUSES.includes(fields.status as never)) {
     errors.status = "Choose a valid status.";
+  }
+
+  if (options.requirePackage && !fields.packageId) {
+    errors.package_id = "Choose the package this client purchased.";
   }
 
   if (fields.websiteUrl && !/^https?:\/\//.test(fields.websiteUrl)) {
@@ -115,6 +140,7 @@ function slugify(name: string): string {
 }
 
 function accessErrorState(error: unknown): FormState {
+  if (error instanceof InvitationIdentityError) return { status: "error", message: error.message };
   if (isAccessError(error)) {
     return {
       status: "error",
@@ -139,7 +165,7 @@ export async function createClientBusiness(
   }
 
   const fields = readFields(formData);
-  const fieldErrors = validateFields(fields);
+  const fieldErrors = validateFields(fields, { requirePackage: true });
 
   if (Object.keys(fieldErrors).length > 0) {
     return {
@@ -162,11 +188,29 @@ export async function createClientBusiness(
     }
 
     const supabase = await createSupabaseServerClient();
+    const admin = createSupabaseAdminClient();
 
-    if (!supabase) {
+    if (!supabase || !admin) {
       return {
         status: "error",
         message: "The data service is not configured for this environment.",
+      };
+    }
+
+    const { data: selectedPackage, error: packageError } = await supabase
+      .from("partner_packages")
+      .select("id, name")
+      .eq("id", fields.packageId)
+      .eq("partner_id", access.partnerId)
+      .eq("is_archived", false)
+      .is("client_id", null)
+      .maybeSingle();
+
+    if (packageError || !selectedPackage) {
+      return {
+        status: "error",
+        message: "The selected package is no longer available.",
+        fieldErrors: { package_id: "Choose an available package." },
       };
     }
 
@@ -190,6 +234,10 @@ export async function createClientBusiness(
       suffix += 1;
     }
 
+    const existingProfile = fields.primaryContactEmail
+      ? await findVerifiedInvitationIdentity(admin, fields.primaryContactEmail) : null;
+    if (existingProfile) await assertClientIdentityIsIndependent(admin, existingProfile.id);
+
     const { data: created, error: insertError } = await supabase
       .from("client_businesses")
       .insert({
@@ -198,6 +246,7 @@ export async function createClientBusiness(
         slug,
         status: fields.status,
         industry: fields.industry,
+        client_experience_mode: fields.clientExperienceMode,
         crm_operating_mode: fields.crmOperatingMode,
         default_runtime_mode: fields.defaultRuntimeMode,
         website_url: fields.websiteUrl || null,
@@ -207,6 +256,7 @@ export async function createClientBusiness(
         timezone: fields.timezone,
         client_portal_enabled: fields.clientPortalEnabled,
         partner_can_edit_client_data: fields.partnerCanEditClientData,
+        package_id: selectedPackage.id,
       })
       .select("id, name, status")
       .single();
@@ -214,11 +264,82 @@ export async function createClientBusiness(
     if (insertError || !created) {
       return {
         status: "error",
-        message: "The client could not be created. Try again.",
+        message: insertError?.code === "P1001" || insertError?.code === "P1002"
+          ? insertError.message
+          : "The client could not be created. Try again.",
       };
     }
 
     clientId = created.id;
+
+    let invitedUserId: string | null = null;
+    let createdInvitationUser = false;
+    let ownerMembershipId: string | null = null;
+
+    if (fields.primaryContactEmail) {
+      const email = fields.primaryContactEmail.toLowerCase();
+
+      invitedUserId = existingProfile?.id ?? null;
+
+      if (!invitedUserId) {
+        const { data: invitation, error: invitationError } =
+          await admin.auth.admin.inviteUserByEmail(email, {
+            data: {
+              full_name: fields.primaryContactName || fields.name,
+            },
+            redirectTo: `${getAppUrl()}/auth/confirm?next=/client`,
+          });
+
+        if (invitationError || !invitation.user) {
+          await supabase.from("client_businesses").delete().eq("id", clientId);
+          return {
+            status: "error",
+            message:
+              invitationError?.message ??
+              "The client workspace invitation could not be created.",
+          };
+        }
+
+        invitedUserId = invitation.user.id;
+        createdInvitationUser = true;
+      }
+
+      const ownerPermissions = permissionsForJobRole("owner");
+      const { data: membership, error: membershipError } = await admin
+        .from("memberships")
+        .insert({
+          user_id: invitedUserId,
+          partner_id: access.partnerId,
+          client_id: clientId,
+          role: "client_owner",
+          status: "active",
+          invited_by: access.userId,
+          client_job_role: "owner",
+          client_permissions: {
+            sections: ownerPermissions.visibleSections,
+            view_action_center: ownerPermissions.canViewActionCenter,
+            resolve_approvals: ownerPermissions.canResolveApprovals,
+            operate_customer_actions:
+              ownerPermissions.canOperateCustomerActions,
+            edit_crm_data: ownerPermissions.canEditCrmData,
+          },
+        })
+        .select("id")
+        .single();
+
+      if (membershipError || !membership) {
+        await supabase.from("client_businesses").delete().eq("id", clientId);
+        if (createdInvitationUser && invitedUserId) {
+          await admin.auth.admin.deleteUser(invitedUserId).catch(() => undefined);
+        }
+        return {
+          status: "error",
+          message: "The client owner could not be granted workspace access.",
+        };
+      }
+
+      ownerMembershipId = membership.id;
+    }
 
     await recordAuditEvent({
       actor: { ...access, clientId: created.id },
@@ -229,18 +350,38 @@ export async function createClientBusiness(
       afterSnapshot: {
         name: fields.name,
         status: fields.status,
+        client_experience_mode: fields.clientExperienceMode,
         crm_operating_mode: fields.crmOperatingMode,
         default_runtime_mode: fields.defaultRuntimeMode,
         client_portal_enabled: fields.clientPortalEnabled,
         partner_can_edit_client_data: fields.partnerCanEditClientData,
+        package_id: selectedPackage.id,
+        package_name: selectedPackage.name,
       },
     });
+
+    if (ownerMembershipId) {
+      await recordAuditEvent({
+        actor: { ...access, clientId: created.id },
+        action: "client.owner_invited",
+        targetType: "membership",
+        targetId: ownerMembershipId,
+        summary: createdInvitationUser
+          ? `Invited ${fields.primaryContactEmail} as the client owner.`
+          : `Granted ${fields.primaryContactEmail} client-owner access.`,
+        metadata: {
+          email: fields.primaryContactEmail.toLowerCase(),
+          invitation_sent: createdInvitationUser,
+        },
+      });
+    }
   } catch (error) {
     return accessErrorState(error);
   }
 
   revalidatePath("/partner/clients");
-  redirect(`/partner/clients/${clientId}`);
+  // New clients land in the guided setup flow first.
+  redirect(`/partner/clients/${clientId}/setup`);
 }
 
 export async function updateClientBusiness(
@@ -299,6 +440,7 @@ export async function updateClientBusiness(
         name: fields.name,
         status: fields.status,
         industry: fields.industry,
+        client_experience_mode: fields.clientExperienceMode,
         crm_operating_mode: fields.crmOperatingMode,
         default_runtime_mode: fields.defaultRuntimeMode,
         website_url: fields.websiteUrl || null,
@@ -322,12 +464,14 @@ export async function updateClientBusiness(
     const summarize = (record: {
       name: string;
       status: string;
+      client_experience_mode: string;
       crm_operating_mode: string;
       default_runtime_mode: string;
       timezone: string;
     }) => ({
       name: record.name,
       status: record.status,
+      client_experience_mode: record.client_experience_mode,
       crm_operating_mode: record.crm_operating_mode,
       default_runtime_mode: record.default_runtime_mode,
       timezone: record.timezone,
@@ -343,6 +487,7 @@ export async function updateClientBusiness(
       afterSnapshot: summarize({
         name: fields.name,
         status: fields.status,
+        client_experience_mode: fields.clientExperienceMode,
         crm_operating_mode: fields.crmOperatingMode,
         default_runtime_mode: fields.defaultRuntimeMode,
         timezone: fields.timezone,

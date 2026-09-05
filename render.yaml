@@ -1,0 +1,146 @@
+services:
+  - type: web
+    name: northstar-app
+    runtime: docker
+    plan: starter
+    region: ohio
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    # Releases are migration-first and are triggered by the guarded workflow.
+    autoDeployTrigger: off
+    envVars:
+      - key: APP_URL
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SECRETS_ENCRYPTION_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: VOICE_PROVIDER
+        value: openai_realtime
+      - key: NORTHSTAR_VOICE_STREAM_URL
+        fromService:
+          type: web
+          name: northstar-voice-stream
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: VOICE_STREAM_SHARED_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: PLATFORM_ALERT_WEBHOOK_URL
+        sync: false
+      - key: PLATFORM_RESEND_API_KEY
+        sync: false
+      - key: PLATFORM_ALERT_FROM_EMAIL
+        sync: false
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: RESEND_INBOUND_DOMAIN
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: JOBBER_OAUTH_CLIENT_ID
+        sync: false
+      - key: JOBBER_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: QUICKBOOKS_OAUTH_CLIENT_ID
+        sync: false
+      - key: QUICKBOOKS_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: SQUARE_OAUTH_CLIENT_ID
+        sync: false
+      - key: SQUARE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: RINGCENTRAL_OAUTH_CLIENT_ID
+        sync: false
+      - key: RINGCENTRAL_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: DIALPAD_OAUTH_CLIENT_ID
+        sync: false
+      - key: DIALPAD_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_ADS_DEVELOPER_TOKEN
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: PODIUM_OAUTH_CLIENT_ID
+        sync: false
+      - key: PODIUM_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: ENABLE_SCENARIO_LAB
+        value: "false"
+      - key: ENABLE_CODEX_CONNECTOR_WORKER
+        value: "false"
+      - key: REQUIRE_PRODUCTION_READINESS
+        value: "true"
+
+  - type: cron
+    name: northstar-jobs
+    runtime: docker
+    plan: starter
+    region: ohio
+    schedule: "*/5 * * * *"
+    dockerfilePath: ./deploy/jobs.Dockerfile
+    dockerContext: .
+    autoDeployTrigger: off
+    envVars:
+      - key: NORTHSTAR_APP_URL
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: CRON_SECRET
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: CRON_SECRET
+
+  - type: web
+    name: northstar-voice-stream
+    runtime: docker
+    plan: starter
+    region: ohio
+    dockerfilePath: ./services/voice-stream/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: NORTHSTAR_APP_URL
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: OPENAI_API_KEY
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: OPENAI_API_KEY
+      - key: VOICE_STREAM_SHARED_SECRET
+        fromService:
+          type: web
+          name: northstar-app
+          envVarKey: VOICE_STREAM_SHARED_SECRET
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: gpt-live-transcribe

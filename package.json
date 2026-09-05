@@ -1,38 +1,127 @@
 {
   "name": "partner-platform",
   "version": "0.1.0",
+  "description": "Northstar white-label automation platform and live phone assistant.",
+  "author": "Northstar",
   "private": true,
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "desktop": "electron desktop/main.cjs",
+    "desktop:dev": "NORTHSTAR_APP_URL=http://localhost:3000 NORTHSTAR_DEV_AUTO_LOGIN=true electron desktop/main.cjs",
+    "desktop:icon": "node desktop/generate-icon.mjs",
+    "desktop:runtime-config": "node desktop/generate-runtime-config.mjs",
+    "desktop:deps": "npm ci --prefix desktop --omit=dev",
+    "desktop:clean": "node scripts/clean-desktop-release.mjs",
+    "desktop:pack": "npm run desktop:clean && npm run desktop:icon && npm run desktop:runtime-config && npm run desktop:deps && electron-builder --dir",
+    "desktop:dist": "npm run desktop:clean && npm run desktop:icon && npm run desktop:runtime-config && npm run desktop:deps && electron-builder --publish never",
+    "desktop:dist:mac": "npm run desktop:clean && npm run desktop:icon && npm run desktop:runtime-config && npm run desktop:deps && electron-builder --mac dmg zip --publish never",
+    "desktop:dist:win": "npm run desktop:clean && npm run desktop:icon && npm run desktop:runtime-config && npm run desktop:deps && electron-builder --win nsis --x64 --publish never",
+    "desktop:release": "npm run desktop:clean && npm run desktop:icon && npm run desktop:runtime-config && npm run desktop:deps && electron-builder --publish always",
+    "verify:desktop-bundle": "node scripts/verify-desktop-bundle.mjs",
+    "voice-stream": "node services/voice-stream/server.cjs",
+    "connector-worker": "node --experimental-strip-types services/connector-worker/worker.ts",
+    "verify:restore": "node scripts/verify-database-restore.mjs",
+    "verify:security": "npm run verify:security:prepare && npm run verify:security:matrix",
+    "verify:connector-writeback": "node --env-file=.env.local --experimental-strip-types scripts/verify-connector-writeback.ts",
+    "verify:native-inbound": "tsx --env-file-if-exists=.env.local scripts/verify-native-inbound-journey.ts",
+    "verify:release-journey": "tsx --env-file-if-exists=.env.local scripts/verify-release-journey.ts",
+    "verify:production-env": "node --experimental-strip-types scripts/verify-production-env.ts",
+    "verify:hosted": "node --experimental-strip-types scripts/verify-hosted-production.ts",
+    "verify:release-topology": "node scripts/verify-release-topology.mjs",
+    "verify:web-image": "node scripts/verify-web-image.mjs",
+    "verify:service-images": "node scripts/verify-service-images.mjs",
+    "verify:release-images": "npm run verify:web-image && npm run verify:service-images",
+    "verify:release": "npm run verify:release-topology && npm run verify:security && npm run verify:restore && npm run verify:release-images",
+    "bootstrap:owner": "tsx --env-file-if-exists=.env.local scripts/bootstrap-platform-owner.ts",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test \"tests/*.test.ts\"",
+    "verify:security:prepare": "node scripts/prepare-beta-test-database.mjs",
+    "verify:security:matrix": "node scripts/verify-database-security.mjs && node scripts/verify-beta-security.mjs && node scripts/verify-voice-beta.mjs && node scripts/verify-beta-concurrency.mjs && node scripts/verify-paid-capacity.mjs && node scripts/verify-embedded-connections.mjs",
+    "eval:ai": "tsx scripts/evaluate-ai.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
+    "@openai/codex-sdk": "^0.147.0",
     "@radix-ui/react-slot": "1.3.0",
     "@supabase/ssr": "0.12.0",
     "@supabase/supabase-js": "2.108.2",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "lucide-react": "1.21.0",
-    "next": "16.2.9",
+    "next": "16.3.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "tailwind-merge": "3.6.0"
+    "stripe": "^22.6.1",
+    "tailwind-merge": "3.6.0",
+    "ws": "^8.21.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.3.1",
+    "@tailwindcss/postcss": "4.3.3",
     "@types/node": "26.0.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
-    "eslint": "9.39.4",
-    "eslint-config-next": "16.2.9",
+    "@types/ws": "^8.18.1",
+    "electron": "43.2.0",
+    "electron-builder": "^26.15.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.0",
+    "sharp": "0.35.3",
     "supabase": "^2.107.0",
-    "tailwindcss": "4.3.1",
+    "tailwindcss": "4.3.3",
+    "tsx": "^4.23.12",
     "typescript": "6.0.3"
   },
   "overrides": {
-    "postcss": "8.5.15"
+    "js-yaml": "5.2.2",
+    "postcss": "8.5.23",
+    "sharp": "0.35.3"
+  },
+  "build": {
+    "appId": "com.businessassistant.desktop",
+    "productName": "Business Assistant",
+    "asar": true,
+    "files": [
+      "**/*"
+    ],
+    "directories": {
+      "app": "desktop",
+      "output": "release"
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "gking432",
+        "repo": "whitelist",
+        "releaseType": "release"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "desktop/build/icon.png",
+      "notarize": true,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "desktop/build/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "desktop/build/icon.png",
+      "category": "Office",
+      "target": [
+        "AppImage"
+      ]
+    }
   }
 }

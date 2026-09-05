@@ -44,5 +44,124 @@ export function getSecretsEncryptionKey(): string | null {
 }
 
 export function getAppUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const vercelHost =
+    process.env.VERCEL_ENV === "production"
+      ? process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
+      : process.env.VERCEL_ENV === "preview"
+        ? process.env.VERCEL_URL
+        : undefined;
+  return (
+    process.env.APP_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (vercelHost ? `https://${vercelHost}` : undefined) ||
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
+}
+
+export function getGoogleOAuthClient() {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getMicrosoftOAuthClient() {
+  const clientId = process.env.MICROSOFT_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.MICROSOFT_OAUTH_CLIENT_SECRET;
+
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getJobberOAuthClient() {
+  const clientId = process.env.JOBBER_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.JOBBER_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getQuickBooksOAuthClient() {
+  const clientId = process.env.QUICKBOOKS_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.QUICKBOOKS_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getSquareOAuthClient() {
+  const clientId = process.env.SQUARE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.SQUARE_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getRingCentralOAuthClient() {
+  const clientId = process.env.RINGCENTRAL_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.RINGCENTRAL_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getDialpadOAuthClient() {
+  const clientId = process.env.DIALPAD_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.DIALPAD_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getMetaOAuthClient() {
+  const clientId = process.env.META_APP_ID;
+  const clientSecret = process.env.META_APP_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getGoogleAdsDeveloperToken() {
+  return process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? null;
+}
+
+export function getMetaWebhookVerifyToken() {
+  return process.env.META_WEBHOOK_VERIFY_TOKEN ?? null;
+}
+
+export function getResendInboundConfig() {
+  const apiKey = process.env.PLATFORM_RESEND_API_KEY;
+  const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+  const domain = process.env.RESEND_INBOUND_DOMAIN;
+  return apiKey && webhookSecret && domain ? { apiKey, webhookSecret, domain } : null;
+}
+
+export function getPodiumOAuthClient() {
+  const clientId = process.env.PODIUM_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.PODIUM_OAUTH_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function isLocalDevAutoLoginEnabled() {
+  const usesLocalSupabase =
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??
+    false;
+  const previewLoginEnabled =
+    process.env.ENABLE_LOCAL_PREVIEW_LOGIN === "true";
+
+  return (
+    usesLocalSupabase &&
+    (process.env.NODE_ENV !== "production" || previewLoginEnabled)
+  );
+}
+
+export function getLocalDevLoginEmail(nextPath = "/partner") {
+  if (process.env.DEV_AUTO_LOGIN_EMAIL) {
+    return process.env.DEV_AUTO_LOGIN_EMAIL;
+  }
+
+  if (
+    nextPath.startsWith("/client") ||
+    nextPath.startsWith("/desktop")
+  ) {
+    return "client@northstar.test";
+  }
+
+  if (nextPath.startsWith("/control")) {
+    return "platform@northstar.test";
+  }
+
+  return "partner@northstar.test";
+}
+
+export function getLocalDevLoginPassword() {
+  return process.env.DEV_AUTO_LOGIN_PASSWORD ?? "local-password-change-me";
 }

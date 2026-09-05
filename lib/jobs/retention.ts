@@ -1,0 +1,69 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export function operationalRetentionPolicy(
+  configuredValue = process.env.OPERATIONAL_RETENTION_DAYS,
+  now = Date.now(),
+) {
+  const configured = Number(configuredValue ?? 90);
+  const retentionDays = Number.isFinite(configured)
+    ? Math.max(30, Math.min(Math.round(configured), 365))
+    : 90;
+
+  return {
+    retentionDays,
+    operationalCutoff: new Date(
+      now - retentionDays * 24 * 60 * 60 * 1000,
+    ).toISOString(),
+    setupCutoff: new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    rateCutoff: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+export async function runOperationalRetention(admin: SupabaseClient) {
+  const policy = operationalRetentionPolicy();
+
+  const [rateLimits, setupSessions, syncJobs, resolvedErrors, inboundPayloads, interactions] = await Promise.all([
+    admin
+      .from("api_rate_limit_windows")
+      .delete({ count: "exact" })
+      .lt("window_started_at", policy.rateCutoff),
+    admin
+      .from("client_connection_setup_sessions")
+      .delete({ count: "exact" })
+      .lt("expires_at", policy.setupCutoff),
+    admin
+      .from("integration_sync_jobs")
+      .delete({ count: "exact" })
+      .in("status", ["succeeded", "cancelled"])
+      .lt("completed_at", policy.operationalCutoff),
+    admin
+      .from("platform_error_events")
+      .delete({ count: "exact" })
+      .not("resolved_at", "is", null)
+      .lt("resolved_at", policy.operationalCutoff),
+    admin.from("inbound_event_jobs").update({ encrypted_payload: null }, { count: "exact" })
+      .in("status", ["succeeded", "cancelled", "dead_letter"]).lt("completed_at", policy.operationalCutoff)
+      .not("encrypted_payload", "is", null),
+    admin.rpc("purge_customer_interaction_content", { p_cutoff: policy.operationalCutoff }),
+  ]);
+
+  const error =
+    rateLimits.error ??
+    setupSessions.error ??
+    syncJobs.error ??
+    resolvedErrors.error ?? inboundPayloads.error ?? interactions.error;
+
+  return {
+    ok: !error,
+    retentionDays: policy.retentionDays,
+    removed: {
+      rateLimitWindows: rateLimits.count ?? 0,
+      expiredSetupSessions: setupSessions.count ?? 0,
+      completedSyncJobs: syncJobs.count ?? 0,
+      resolvedPlatformErrors: resolvedErrors.count ?? 0,
+      expiredInboundPayloads: inboundPayloads.count ?? 0,
+      expiredInteractionContent: interactions.data ?? null,
+    },
+    error: error?.message ?? null,
+  };
+}

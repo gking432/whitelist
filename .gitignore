@@ -8,6 +8,7 @@ out/
 
 # production
 build/
+release/
 
 # local env files
 .env
@@ -21,6 +22,7 @@ pnpm-debug.log*
 
 # system files
 .DS_Store
+.vercel/
 
 # supabase local state
 supabase/.branches/

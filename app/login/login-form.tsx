@@ -53,15 +53,18 @@ export function LoginForm({
       </Button>
 
       {!isSupabaseConfigured ? (
-        <p className="rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm text-foreground">
+        <p className="rounded-lg border border-brand-gold/35 bg-brand-gold/10 px-3 py-2 text-sm text-foreground">
           Authentication is not configured for this environment yet.
         </p>
       ) : null}
 
       {state.message ? (
         <p
-          className="rounded-md border px-3 py-2 text-sm"
-          data-status={state.status}
+          className={
+            state.status === "error"
+              ? "rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              : "rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+          }
         >
           {state.message}
         </p>

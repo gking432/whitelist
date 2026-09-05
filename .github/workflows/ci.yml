@@ -1,0 +1,137 @@
+name: Production gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://build-check.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: build_check_anon_key_longer_than_twenty_characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: npm ci
+      - run: supabase start
+      - name: Export local Supabase environment
+        shell: bash
+        run: |
+          eval "$(supabase status -o env)"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "SECRETS_ENCRYPTION_KEY=$(openssl rand -base64 32)"
+          } >> "$GITHUB_ENV"
+      - name: Verify security against a disposable schema with synthetic fixtures
+        run: npm run verify:security
+      - run: npm run verify:restore
+      - name: Build and verify the complete release journey
+        run: |
+          npm run build
+          npm run verify:release-journey
+          npm run verify:native-inbound
+      - if: always()
+        run: supabase stop --no-backup
+
+  containers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: web
+            dockerfile: Dockerfile
+          - name: jobs
+            dockerfile: deploy/jobs.Dockerfile
+          - name: voice
+            dockerfile: services/voice-stream/Dockerfile
+          - name: connector-worker
+            dockerfile: deploy/connector-worker.Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.name }} image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=https://build-check.supabase.co \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=build_check_anon_key_longer_than_twenty_characters \
+            -f "${{ matrix.dockerfile }}" \
+            -t "northstar-${{ matrix.name }}:${{ github.sha }}" \
+            .
+
+  service-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify connector-worker deployment configuration
+        env:
+          CONNECTOR_WORKER_ENV_FILE: .env.example
+          CONNECTOR_WORKSPACE_PATH: ${{ github.workspace }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          bash -n deploy/release-connector-worker.sh
+          docker compose -f docker-compose.connector-worker.yml config >/dev/null
+      - run: npm run verify:service-images
+
+  desktop-bundles:
+    name: desktop (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-14
+            build: desktop:dist:mac
+          - platform: windows
+            runner: windows-latest
+            build: desktop:dist:win
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      DESKTOP_APP_URL: "https://desktop-build.example.com"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ${{ matrix.build }}
+      - run: npm run verify:desktop-bundle

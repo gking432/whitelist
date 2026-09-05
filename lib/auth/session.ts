@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 
+import { isLocalDevAutoLoginEnabled } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type AuthState = {
@@ -33,6 +34,10 @@ export async function requireAuthenticatedUser(nextPath = "/partner") {
   const authState = await getAuthState();
 
   if (!authState.user) {
+    if (isLocalDevAutoLoginEnabled()) {
+      redirect(`/dev/auto-login?next=${encodeURIComponent(nextPath)}`);
+    }
+
     redirect(`/login?next=${encodeURIComponent(nextPath)}`);
   }
 

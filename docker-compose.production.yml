@@ -1,0 +1,65 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      APP_URL: https://${APP_DOMAIN}
+      NORTHSTAR_VOICE_STREAM_URL: wss://${VOICE_DOMAIN}/twilio
+    expose:
+      - "3000"
+
+  voice-stream:
+    build:
+      context: .
+      dockerfile: services/voice-stream/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NORTHSTAR_APP_URL: https://${APP_DOMAIN}
+      PORT: "8081"
+    expose:
+      - "8081"
+
+  jobs:
+    build:
+      context: .
+      dockerfile: deploy/jobs.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NORTHSTAR_APP_URL: https://${APP_DOMAIN}
+      JOB_RUN_INTERVAL_MS: "300000"
+    command: ["node", "run-jobs-loop.mjs"]
+    depends_on:
+      - app
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+      - voice-stream
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      VOICE_DOMAIN: ${VOICE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

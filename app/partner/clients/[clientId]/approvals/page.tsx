@@ -1,3 +1,4 @@
+import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
 import Link from "next/link";
 import { BellCheck } from "lucide-react";
 
@@ -31,7 +32,7 @@ type ApprovalRow = {
   resolution_note: string | null;
   resolved_at: string | null;
   created_at: string;
-  proposed_payload: { channel?: string; to?: string | null } | null;
+  proposed_payload: ({ channel?: string; to?: string | null } & Record<string, unknown>) | null;
 };
 
 const riskStyles: Record<string, string> = {
@@ -85,8 +86,8 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
       <div>
         <h2 className="font-semibold">Approval queue</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Customer-facing and high-risk actions pause here until a human
-          decides. Every resolution is audited.
+          Read-only support history for customer-facing decisions. Managed
+          client approvals can only be resolved by that client&apos;s authorized staff.
         </p>
       </div>
 
@@ -134,6 +135,7 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
                 </div>
               </div>
 
+              {item.type === "external_action" ? <ExternalActionPreview payload={item.proposed_payload} /> : null}
               <div className="mt-4 border-t pt-4">
                 {access.canResolveApprovals ? (
                   <ApprovalResolutionForm
@@ -144,14 +146,16 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
                     )}
                     editableContent={item.editable_content}
                     consequence={
-                      item.type === "customer_message"
-                        ? "Approving records the final message content. Live delivery to customers requires an outbound integration, which is not enabled in this release."
+                      item.type === "external_action"
+                        ? "Approving submits these exact fields to the connected app when this client and solution are live. Watch Action history for the confirmed result."
+                        : item.type === "customer_message"
+                        ? "Approving locks the final message content and queues delivery through the connected live SMS or email provider."
                         : "Approving completes the paused workflow run; rejecting cancels it."
                     }
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Your role can view this queue but not resolve items.
+                    This decision belongs to the client. You can inspect its context and workflow run for troubleshooting.
                   </p>
                 )}
               </div>

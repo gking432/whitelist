@@ -274,6 +274,296 @@ The partner needs the deeper control plane:
 
 This is where most product complexity belongs.
 
+## Product Decisions To Preserve
+
+### Live Call Assistant UI
+
+The product needs a lightweight real-time UI for staff who are actively on calls.
+
+This is not a full CRM replacement. It is an assistant layer that can appear while the user works in or beside the client's existing CRM/phone system.
+
+For live calls, the UI should eventually show:
+
+- live transcript or running call notes, when provider support allows.
+- caller/customer match.
+- extracted fields.
+- missing intake fields.
+- customer scheduling constraints.
+- valid appointment slot suggestions.
+- next-question suggestions.
+- urgency or risk flags.
+- CRM/calendar sync status.
+
+The live scheduling assistant specifically requires live audio or live transcript access from the phone provider. If a provider only supports post-call recordings/transcripts, the product can still provide post-call notes and follow-up scheduling suggestions, but not the real-time popup assistant.
+
+### AI Activity Visibility
+
+The platform needs a simple way to show what AI assistants are doing.
+
+Visibility can vary by role:
+
+- staff on an active call should see real-time assistance relevant to that call.
+- managers should see active AI work, recent AI actions, failures, approvals, and audit history.
+- client owners may need visibility into AI changes affecting their business records.
+- partners need the deepest monitoring/configuration view across all clients.
+
+When the AI reads, updates, or suggests changes to a client/customer record, the action should be visible in logs and, where appropriate, in the connected CRM as an "AI Assistant" contribution.
+
+### AI As A CRM Contributor
+
+When syncing to a client's existing CRM, AI-generated notes and changes should be attributed to an "AI Assistant" actor rather than hidden as system activity.
+
+Examples:
+
+- AI Assistant summarized a call.
+- AI Assistant extracted missing lead fields.
+- AI Assistant suggested appointment slots.
+- AI Assistant drafted a confirmation message.
+- AI Assistant updated a safe field, if policy allows.
+
+Most CRM changes should start as suggestions or approval-gated actions. If the assistant is allowed to make a direct change, it must leave a note and audit event explaining what changed and why.
+
+### AI Phone Answering Disclosure Modes
+
+AI phone answering and speed-to-lead callback should be configurable per partner/client policy.
+
+Proposed modes:
+
+1. Off.
+2. On with explicit disclosure and opt-out: "Hi, I'm an AI scheduling assistant. I can help book your appointment, but you can press 2 at any time to speak with a human."
+3. On with minimal disclosure, if legally and ethically allowed.
+
+Product default should lean toward explicit disclosure. Before production launch, legal/compliance review should confirm whether AI disclosure is always required for target regions and call types.
+
+### Existing Stack Mode Vs Built-In CRM Mode
+
+The product must support two common client situations.
+
+Some clients already have a real operating stack:
+
+- CRM.
+- phone provider.
+- SMS provider.
+- email provider.
+- calendar.
+- forms/lead sources.
+
+For these clients, the partner platform should act as the AI operations layer on top of their existing systems. The client keeps working in their CRM/tools, while this platform connects, assists, sends/books/syncs where allowed, logs activity, and monitors health.
+
+Other clients do not have a strong operating stack yet. For them, the platform should eventually offer a built-in CRM/client operating mode based on the useful Northstar CRM concepts. In that mode, the AI assistant can work natively against first-party leads, contacts, timeline notes, tasks, appointments, messages, and pipeline records.
+
+Do not force every client into the built-in CRM. Keep CRM operating mode explicit:
+
+- external CRM only.
+- mirror mode.
+- assist mode.
+- primary CRM mode.
+- webhook only.
+
+The partner should choose the mode per client during setup.
+
+### Popup Action Console
+
+The best version of the staff-facing popup is not copy/paste. It is a small action console.
+
+When integrations and permissions allow, the popup should let a user click actions such as:
+
+- send SMS.
+- send email.
+- book appointment.
+- sync to CRM.
+- add CRM note.
+- create task.
+- update safe CRM fields.
+- escalate to manager.
+
+Those actions should call the connected provider APIs, then log/sync the result automatically.
+
+Example:
+
+1. AI drafts appointment confirmation.
+2. User clicks "Send SMS."
+3. Platform sends through the connected SMS provider.
+4. Platform adds a CRM timeline note as "AI Assistant."
+5. Platform records workflow/audit logs.
+6. Popup shows "Sent and synced."
+
+Copy-to-clipboard should exist only as a fallback when provider integrations are missing or unavailable.
+
+### Partner Integration Setup Must Be Simple
+
+Partner setup for a client must be extremely simple.
+
+Target:
+
+- a partner should be able to connect the client's CRM, phone, SMS, email, and calendar APIs in 30 minutes or less for a normal client.
+
+The setup flow should be guided and checklist-based:
+
+1. Add client.
+2. Choose operating mode.
+3. Connect CRM.
+4. Connect phone provider.
+5. Connect SMS/email provider.
+6. Connect calendar.
+7. Map basic fields.
+8. Enable workflow pack.
+9. Set approval/safety rules.
+10. Send a test event/call/message.
+
+Each connection should clearly show:
+
+- connected/not connected.
+- permissions granted.
+- what the AI can do with that provider.
+- what still needs setup.
+- whether live assistance is supported.
+- whether only post-call/post-event processing is supported.
+
+If a native provider adapter is not available, the fallback should be generic webhook/API setup with clear copy/paste instructions and test buttons.
+
+### Partner Package Builder
+
+Partners need to create and sell different packages.
+
+Northstar should support reusable partner-defined packages, plus custom packages per client.
+
+Example package levels:
+
+- basic automations with little or no AI.
+- standard package with some AI assistance.
+- full AI operations package.
+- custom package.
+
+The partner should build these with toggles for capabilities such as:
+
+- CRM sync.
+- lead intake.
+- missed-call rescue.
+- SMS/email drafting.
+- approval-gated sends.
+- AI intake routing.
+- website AI chat assistant.
+- live call assistant.
+- live scheduling assistant.
+- AI phone answering.
+- appointment booking.
+- review requests.
+- quote prep.
+- reporting.
+- client portal.
+
+During client setup, the partner should select the package they sold or create a custom package. That package selection should drive:
+
+- which workflow packs turn on.
+- which integrations are required.
+- which setup steps appear.
+- which AI features are available.
+- which approvals and safety defaults apply.
+- usage/billing expectations.
+
+### Pilot Stack Vs Final Integration UX
+
+The current Pilot Stack is a testing milestone, not the final partner-facing model.
+
+It proves one real path with HubSpot, Twilio, Google Calendar, and Northstar intake.
+
+Long term, this should merge into the normal setup/integration experience:
+
+- Setup should guide the partner based on the selected package.
+- Integrations should manage all provider connections.
+- Required setup should show what is missing before go-live.
+
+Partners should not need to understand the phrase "pilot stack" in the final product. They should see what they sold, what needs connecting, what is live, and what still needs action.
+
+### Lead Source Setup Options
+
+Northstar must give partners multiple easy ways to connect client lead sources.
+
+Partners should not be forced to paste code for everything. The setup flow should recommend the easiest available path for each client:
+
+1. one-click native connection.
+2. platform app/plugin.
+3. Zapier, Make, or n8n bridge.
+4. hosted Northstar form, chat widget, booking page, or tracking link.
+5. copy/paste website snippet.
+6. generic webhook/API setup.
+7. manual entry fallback.
+
+Examples:
+
+- WordPress should eventually have a plugin.
+- Wix may need a Wix app later; early path can use Zapier/Make or embed options.
+- Squarespace/Webflow/custom sites can use embed snippets, form webhooks, or direct API.
+- Google Business Profile should use supported Google connection paths, tracking numbers, booking/contact links, and source attribution rather than website code.
+- Clients without website access should still be supported through hosted Northstar pages, tracking numbers, or manual entry.
+
+The UI should ask plain questions like "What website platform does the client use?" and "Can you edit their website?" before showing technical instructions.
+
+### Universal AI Intake Routing
+
+Every inbound interaction should be classified before workflows run.
+
+This includes:
+
+- phone calls.
+- website chat.
+- website forms.
+- inbound email.
+- inbound SMS.
+- social or paid-ad leads.
+- Google Business Profile messages/calls where supported.
+- manual entries.
+
+The AI should decide whether the interaction belongs in:
+
+- sales.
+- customer service.
+- scheduling.
+- estimate/quote request.
+- urgent/emergency.
+- billing/admin.
+- review/reputation.
+- PR/media/opportunity.
+- spam/vendor/low-value.
+
+That classification should control workflow routing, urgency, CRM notes, approvals, reporting, and which human or team should see it.
+
+### Website AI Chat Assistant
+
+Northstar should include a website AI chat assistant as a major future offer.
+
+It should act as a customer service and sales rep on the client's site:
+
+- answer approved business questions.
+- collect lead/contact details.
+- qualify requests.
+- classify the request type.
+- suggest or book appointments when provider access allows.
+- create CRM leads/tickets.
+- hand off to humans.
+- leave AI Assistant notes and audit events.
+
+It should be installable through platform-specific apps/plugins where possible, snippets/embeds where needed, hosted pages as a fallback, and automation bridges like Zapier/Make/n8n when that is fastest.
+
+### Staff Runtime / App Install
+
+Some AI assistant features may need software on the client's staff computers or browsers.
+
+Possible delivery modes:
+
+- browser extension for CRM overlays.
+- desktop tray app for call popups and notifications.
+- web app popup when staff work inside Northstar.
+- embeddable widget for websites.
+- CRM-native app/extension where supported.
+
+Do not assume every client must install a desktop app. Use the lightest runtime needed for the package and provider stack.
+
+The live call assistant, live scheduling assistant, and cross-CRM popups may require a browser extension, desktop app, or CRM-native extension so the assistant can appear inside the tools staff already use.
+
+The setup flow should explain which staff-side install or permission is required for each enabled package feature.
+
 ## What To Pull From Northstar
 
 Use Northstar as a reference for product behavior and logic.

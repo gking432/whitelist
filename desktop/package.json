@@ -1,0 +1,11 @@
+{
+  "name": "business-assistant",
+  "version": "0.1.0",
+  "description": "White-label live phone and scheduling assistant.",
+  "author": "Business Assistant",
+  "private": true,
+  "main": "main.cjs",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

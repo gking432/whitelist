@@ -1,0 +1,102 @@
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  macos:
+    needs: quality
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify release version and signing secrets
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+          test "$(node -p "require('./desktop/package.json').version")" = "$(node -p "require('./package.json').version")"
+          test -n "$CSC_LINK"
+          test -n "$CSC_KEY_PASSWORD"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+      - run: npm ci
+      - run: npm ci --prefix desktop --omit=dev
+      - name: Build, notarize, and publish universal macOS installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL }}
+          REQUIRE_DESKTOP_APP_URL: "true"
+        run: npm run desktop:icon && npm run desktop:runtime-config && npx electron-builder --mac dmg zip --universal --publish always -c.forceCodeSigning=true
+      - name: Verify signed macOS bundle and updater metadata
+        env:
+          REQUIRE_SIGNED_DESKTOP: "true"
+          DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL }}
+        run: npm run verify:desktop-bundle
+
+  windows:
+    needs: quality
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify release version and signing secrets
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ("v$(node -p "require('./package.json').version")" -ne "$env:GITHUB_REF_NAME") { throw "Tag and package version differ." }
+          if ("$(node -p "require('./desktop/package.json').version")" -ne "$(node -p "require('./package.json').version")") { throw "Web and desktop package versions differ." }
+          if (-not $env:WIN_CSC_LINK) { throw "WIN_CSC_LINK is required." }
+          if (-not $env:WIN_CSC_KEY_PASSWORD) { throw "WIN_CSC_KEY_PASSWORD is required." }
+      - run: npm ci
+      - run: npm ci --prefix desktop --omit=dev
+      - name: Build, sign, and publish Windows installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL }}
+          REQUIRE_DESKTOP_APP_URL: "true"
+        run: npm run desktop:icon && npm run desktop:runtime-config && npx electron-builder --win nsis --x64 --publish always -c.forceCodeSigning=true
+      - name: Verify signed Windows bundle and updater metadata
+        shell: pwsh
+        env:
+          REQUIRE_SIGNED_DESKTOP: "true"
+          DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL }}
+        run: npm run verify:desktop-bundle

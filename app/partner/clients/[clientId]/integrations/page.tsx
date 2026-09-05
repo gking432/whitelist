@@ -1,5 +1,6 @@
+import { ConnectedApps } from "@/components/integrations/connected-apps";
 import Link from "next/link";
-import { PlugZap, Plus } from "lucide-react";
+import { Link2, PlugZap, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,9 +65,9 @@ export default async function ClientIntegrationsPage({ params }: PageProps) {
   if (error) {
     return (
       <section className="rounded-lg border bg-card p-6">
-        <h2 className="font-semibold">Integrations unavailable</h2>
+        <h2 className="font-semibold">Connections unavailable</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Integration connections could not be loaded. Refresh to try again.
+          Connected apps could not be loaded. Refresh to try again.
         </p>
       </section>
     );
@@ -79,34 +80,46 @@ export default async function ClientIntegrationsPage({ params }: PageProps) {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-semibold">Integration connections</h2>
+          <h2 className="font-semibold">Connected apps</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Connections to the systems this client operates with.
           </p>
         </div>
         {access.canManageIntegrations ? (
-          <Button asChild>
-            <Link href={`${base}/new`}>
-              <Plus aria-hidden="true" />
-              Add connection
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/partner/clients/${clientId}/connections`}>
+                <Link2 aria-hidden="true" />
+                Ask client to connect
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href={`/partner/clients/${clientId}/connections`}>
+                <Plus aria-hidden="true" />
+                Add manually
+              </Link>
+            </Button>
+          </div>
         ) : null}
       </div>
 
+      {access.canManageIntegrations ? (
+        <ConnectedApps clientId={clientId} />
+      ) : null}
+
       {connections.length === 0 ? (
         <section className="flex min-h-64 flex-col items-center justify-center rounded-lg border bg-card px-6 py-12 text-center">
-          <div className="flex size-11 items-center justify-center rounded-md bg-secondary text-primary">
+          <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <PlugZap className="size-5" aria-hidden="true" />
           </div>
           <h3 className="mt-4 font-semibold">No connections yet</h3>
           <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-            Add an inbound webhook connection to start receiving events from
-            this client&apos;s systems.
+            Use the connection guide to link this client’s phone, calendar, or
+            customer system.
           </p>
           {access.canManageIntegrations ? (
             <Button asChild className="mt-5">
-              <Link href={`${base}/new`}>
+              <Link href={`/partner/clients/${clientId}/connections`}>
                 <Plus aria-hidden="true" />
                 Add connection
               </Link>
@@ -114,63 +127,89 @@ export default async function ClientIntegrationsPage({ params }: PageProps) {
           ) : null}
         </section>
       ) : (
-        <section className="overflow-hidden rounded-lg border bg-card">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[56rem] text-left text-sm">
-              <thead className="border-b bg-secondary/40 text-xs text-muted-foreground">
-                <tr>
-                  <th className="px-5 py-3 font-medium">Connection</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Runtime mode</th>
-                  <th className="px-4 py-3 font-medium">Credential</th>
-                  <th className="px-4 py-3 font-medium">Last success</th>
-                  <th className="px-4 py-3 font-medium">Last failure</th>
-                  <th className="px-4 py-3 font-medium">Errors</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {connections.map((connection) => (
-                  <tr key={connection.id} className="hover:bg-secondary/30">
-                    <td className="px-5 py-3.5">
-                      <Link
-                        href={`${base}/${connection.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {connection.display_name}
-                      </Link>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {connection.provider?.display_name ?? "Provider"} ·{" "}
-                        {formatEnum(connection.provider?.category ?? "")}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <Badge
-                        variant="outline"
-                        className={statusStyles[connection.status]}
-                      >
-                        {formatEnum(connection.status)}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">
-                      {formatEnum(connection.runtime_mode)}
-                    </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">
-                      {formatEnum(connection.credential_status)}
-                    </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">
-                      {formatDateTime(connection.last_success_at)}
-                    </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">
-                      {formatDateTime(connection.last_failure_at)}
-                    </td>
-                    <td className="px-4 py-3.5 tabular-nums">
-                      {connection.error_count}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <section className="space-y-4">
+          <h3 className="font-semibold">Direct connections</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {connections.map((connection) => (
+              <Link
+                key={connection.id}
+                href={`${base}/${connection.id}`}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-5 hover:border-primary/30"
+              >
+                <div>
+                  <p className="font-medium">{connection.display_name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {connection.provider?.display_name ?? "Connected system"}
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={statusStyles[connection.status]}
+                >
+                  {formatEnum(connection.status)}
+                </Badge>
+              </Link>
+            ))}
           </div>
+          <details className="ns-disclosure rounded-xl border bg-card">
+            <summary>Connection diagnostics</summary>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[56rem] text-left text-sm">
+                <thead className="border-b text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-5 py-3 font-medium">Connection</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Runtime mode</th>
+                    <th className="px-4 py-3 font-medium">Credential</th>
+                    <th className="px-4 py-3 font-medium">Last success</th>
+                    <th className="px-4 py-3 font-medium">Last failure</th>
+                    <th className="px-4 py-3 font-medium">Errors</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {connections.map((connection) => (
+                    <tr key={connection.id} className="hover:bg-secondary/30">
+                      <td className="px-5 py-3.5">
+                        <Link
+                          href={`${base}/${connection.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {connection.display_name}
+                        </Link>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {connection.provider?.display_name ?? "Provider"} ·{" "}
+                          {formatEnum(connection.provider?.category ?? "")}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <Badge
+                          variant="outline"
+                          className={statusStyles[connection.status]}
+                        >
+                          {formatEnum(connection.status)}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3.5 text-muted-foreground">
+                        {formatEnum(connection.runtime_mode)}
+                      </td>
+                      <td className="px-4 py-3.5 text-muted-foreground">
+                        {formatEnum(connection.credential_status)}
+                      </td>
+                      <td className="px-4 py-3.5 text-muted-foreground">
+                        {formatDateTime(connection.last_success_at)}
+                      </td>
+                      <td className="px-4 py-3.5 text-muted-foreground">
+                        {formatDateTime(connection.last_failure_at)}
+                      </td>
+                      <td className="px-4 py-3.5 tabular-nums">
+                        {connection.error_count}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </section>
       )}
     </div>

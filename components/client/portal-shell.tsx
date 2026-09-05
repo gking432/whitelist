@@ -1,96 +1,187 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-import { Badge } from "@/components/ui/badge";
+import { LiveCallOverlay } from "@/components/assistant/live-call-overlay";
+import { WorkspaceChrome } from "@/components/layout/workspace-chrome";
+import type { WorkspaceNavItem } from "@/components/layout/workspace-navigation";
 import type { PortalBranding } from "@/lib/clients/portal";
-import { cn } from "@/lib/utils";
+import { brandStyleVariables } from "@/lib/branding";
+import type { ClientExperienceMode } from "@/lib/clients/constants";
+import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 
-const navigation = [
-  { label: "Overview", href: "/client" },
-  { label: "Approvals", href: "/client/approvals" },
-  { label: "Activity", href: "/client/activity" },
-  { label: "Integrations", href: "/client/integrations" },
-];
-
-type PortalShellProps = {
+type Props = {
   children: React.ReactNode;
+  banner?: React.ReactNode;
   clientName: string;
   branding: PortalBranding;
+  experienceMode: ClientExperienceMode;
   userEmail: string;
+  visibleSections: ClientSectionKey[];
+  unreadNotificationCount: number;
+  canManageConnections?: boolean;
+  canReviewLaunch?: boolean;
 };
-
 export function PortalShell({
   children,
+  banner,
   clientName,
   branding,
+  experienceMode,
   userEmail,
-}: PortalShellProps) {
+  visibleSections,
+  unreadNotificationCount,
+  canManageConnections = false,
+  canReviewLaunch = false,
+}: Props) {
   const pathname = usePathname();
-
+  const crm = experienceMode === "northstar_crm";
+  const navigation: (WorkspaceNavItem & { section: ClientSectionKey })[] = [
+    ...(crm
+      ? [
+          {
+            label: "Customer workspace",
+            href: "/client/crm",
+            section: "overview" as const,
+            icon: "clients" as const,
+            group: "Your business",
+          },
+        ]
+      : []),
+    {
+      label: "Overview",
+      href: crm ? "/client/action-center" : "/client",
+      exact: true,
+      section: "action-center",
+      icon: "home",
+      group: "Your business",
+    },
+    {
+      label: "Approvals",
+      href: "/client/approvals",
+      section: "approvals",
+      icon: "approvals",
+      group: "Your business",
+    },
+    {
+      label: "Assistant",
+      href: "/client/assistant",
+      section: "assistant",
+      icon: "assistant",
+      group: "Your business",
+    },
+    {
+      label: "Activity",
+      href: "/client/activity",
+      section: "activity",
+      icon: "activity",
+      group: "Your business",
+    },
+    {
+      label: "Notifications",
+      href: "/client/notifications",
+      section: "notifications",
+      icon: "notifications",
+      group: "Your business",
+      badge: unreadNotificationCount,
+    },
+    ...(canManageConnections
+      ? [
+          {
+            label: "Apps & automations",
+            href: "/client/integrations",
+            section: "settings" as const,
+            icon: "apps" as const,
+            group: "Manage",
+          },
+        ]
+      : []),
+    ...(canReviewLaunch
+      ? [
+          {
+            label: "Launch checklist",
+            href: "/client/launch",
+            section: "settings" as const,
+            icon: "setup" as const,
+            group: "Manage",
+          },
+        ]
+      : []),
+    {
+      label: "Get help",
+      href: "/client/support",
+      section: "support",
+      icon: "help",
+      group: "Manage",
+    },
+  ];
+  const brand = (
+    <div className="flex min-w-0 items-center gap-3">
+      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/8 text-sm font-semibold text-primary">
+        {branding.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={branding.logoUrl}
+            alt=""
+            className="size-full object-contain"
+          />
+        ) : (
+          branding.productName.slice(0, 1).toUpperCase()
+        )}
+      </span>
+      <span className="truncate text-sm font-semibold">
+        {branding.productName}
+      </span>
+    </div>
+  );
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <header className="border-b bg-card">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold">{clientName}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Operations portal · provided by {branding.partnerName}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Badge variant="outline">Client portal</Badge>
-            <span className="hidden text-xs text-muted-foreground sm:block">
-              {userEmail}
-            </span>
-          </div>
-        </div>
-        <nav
-          aria-label="Portal sections"
-          className="mx-auto flex w-full max-w-6xl gap-1 overflow-x-auto px-5"
+    <div style={brandStyleVariables(branding)}>
+      {pathname.startsWith("/client/crm") ? (
+        <>
+          {banner}
+          {children}
+        </>
+      ) : (
+        <WorkspaceChrome
+          brand={brand}
+          home="/client"
+          workspaceName={clientName}
+          roleLabel="Your business workspace"
+          userEmail={userEmail}
+          navigation={navigation.filter((item) =>
+            visibleSections.includes(item.section),
+          )}
+          banner={banner}
+          footer={
+            <div className="flex flex-wrap justify-between gap-x-6 gap-y-1">
+              <p>
+                {branding.reportFooterText ??
+                  `Managed by ${branding.partnerName}.`}
+              </p>
+              <p>
+                {branding.supportLabel}
+                {branding.supportEmail ? (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <a
+                      href={`mailto:${branding.supportEmail}`}
+                      className="underline"
+                    >
+                      {branding.supportEmail}
+                    </a>
+                  </>
+                ) : null}
+                {branding.supportPhone ? ` · ${branding.supportPhone}` : ""}
+              </p>
+            </div>
+          }
         >
-          {navigation.map((item) => {
-            const isActive =
-              item.href === "/client"
-                ? pathname === "/client"
-                : pathname.startsWith(item.href);
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition",
-                  isActive
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </header>
-
-      <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-6">
-        {children}
-      </main>
-
-      <footer className="border-t bg-card">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-5 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            {branding.reportFooterText ??
-              `Managed by ${branding.partnerName}.`}
-          </p>
-          <p>
-            {branding.supportLabel}
-            {branding.supportEmail ? ` · ${branding.supportEmail}` : ""}
-            {branding.supportPhone ? ` · ${branding.supportPhone}` : ""}
-          </p>
-        </div>
-      </footer>
+          {children}
+        </WorkspaceChrome>
+      )}
+      {visibleSections.includes("assistant") ? (
+        <LiveCallOverlay productName={branding.productName} />
+      ) : null}
     </div>
   );
 }

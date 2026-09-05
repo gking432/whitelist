@@ -1,0 +1,8 @@
+{$APP_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy app:3000
+}
+
+{$VOICE_DOMAIN} {
+  reverse_proxy voice-stream:8081
+}

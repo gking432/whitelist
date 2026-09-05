@@ -1,9 +1,12 @@
 # Partner AI Platform
 
-This folder contains the planning docs and production scaffold for a new partner
-operations platform.
+This folder contains the multi-tenant, white-label Northstar product. It
+combines the partner operations platform with the CRM and AI operating suite
+originally prototyped in `/Users/gkn/new`.
 
-It is intentionally separate from `/Users/gkn/new`, which contains the existing Northstar portfolio demo. Do not modify, migrate, import, or depend on the Northstar app when building this product.
+Northstar is the product partners sell under their own branding. A partner can
+run it for their own agency, offer the built-in CRM to clients that need one,
+or install the AI and automation layer alongside a client's existing CRM.
 
 ## Local Development
 
@@ -18,11 +21,14 @@ local environment values are configured.
 Copy `.env.example` to `.env.local` and set:
 
 ```bash
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+APP_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=   # server-only: webhook intake + run engine
 SECRETS_ENCRYPTION_KEY=      # server-only: openssl rand -base64 32
+ANTHROPIC_API_KEY=           # server-only: AI workflow output (optional —
+                             # workflows fall back to labeled rule-based output)
+AI_MODEL=                    # optional model override (default claude-opus-4-8)
 ```
 
 Supabase migrations and local development seed data:

@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Eye } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { WorkspaceTabs } from "@/components/partner/workspace-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { startClientSupportView } from "@/app/impersonation/actions";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { formatEnum } from "@/lib/format";
 
@@ -64,46 +65,101 @@ export default async function ClientWorkspaceLayout({
   }
 
   const { client, user } = workspace;
+  const isAgencyAccount = client.account_kind === "partner_agency";
+  const hasNorthstarCrm = ["primary_crm", "mirror", "assist"].includes(
+    client.crm_operating_mode,
+  );
 
   return (
     <AppShell
-      organizationName="Partner workspace"
+      organizationName={isAgencyAccount ? client.name : "Partner workspace"}
       userEmail={user.email ?? "Authenticated user"}
-      activeNav="clients"
+      activeNav={isAgencyAccount ? "agency" : "clients"}
     >
-      <div className="space-y-5">
-        <header className="space-y-4 border-b pb-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <Link
-                href="/partner/clients"
-                className="text-xs font-medium text-muted-foreground hover:text-foreground"
-              >
-                Clients
-              </Link>
-              <h1 className="mt-1 text-2xl font-semibold">{client.name}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {client.industry ?? "Industry not set"} · {client.timezone}
-              </p>
+      <div className="space-y-6">
+        <header className="relative rounded-lg border bg-card ns-surface">
+          <div className="flex flex-col gap-4 px-5 pb-0 pt-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 items-start gap-4">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">
+                {client.name.slice(0, 1).toUpperCase()}
+              </span>
+              <div className="min-w-0">
+                <Link
+                  href={
+                    isAgencyAccount ? "/partner/agency" : "/partner/clients"
+                  }
+                  className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                >
+                  {isAgencyAccount ? "Agency home base" : "Clients"}
+                </Link>
+                <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight">
+                  {client.name}
+                </h1>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {isAgencyAccount
+                    ? "Your internal CRM, assistants, and agency automations"
+                    : `${client.industry ?? "Industry not set"} · ${client.timezone}`}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{formatEnum(client.status)}</Badge>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {!isAgencyAccount && hasNorthstarCrm ? (
+                <form
+                  action={startClientSupportView.bind(
+                    null,
+                    client.id,
+                    client.is_test_account ? "sandbox_full" : "read_only",
+                  )}
+                >
+                  <Button type="submit" variant="outline" size="sm">
+                    <Eye aria-hidden="true" />
+                    {client.is_test_account
+                      ? "Test as client"
+                      : "View as client"}
+                  </Button>
+                </form>
+              ) : null}
+              <Badge variant="secondary">{formatEnum(client.status)}</Badge>
               <Badge variant="outline">
-                CRM: {formatEnum(client.crm_operating_mode)}
-              </Badge>
-              <Badge variant="outline">
-                Runtime: {formatEnum(client.default_runtime_mode)}
-              </Badge>
-              <Badge variant="outline">
-                Portal: {client.client_portal_enabled ? "Enabled" : "Off"}
-              </Badge>
-              <Badge variant="outline">
-                Partner edits:{" "}
-                {client.partner_can_edit_client_data ? "Granted" : "Not granted"}
+                {formatEnum(client.default_runtime_mode)}
               </Badge>
             </div>
           </div>
-          <WorkspaceTabs clientId={client.id} />
+          <details className="mx-5 mt-4 text-xs text-muted-foreground">
+            <summary className="w-fit cursor-pointer py-1">
+              Account details & access
+            </summary>
+            <dl className="grid gap-3 py-3 sm:grid-cols-3">
+              <div>
+                <dt>Customer system</dt>
+                <dd className="mt-1 font-medium text-foreground">
+                  {isAgencyAccount
+                    ? "Your agency workspace"
+                    : formatEnum(client.crm_operating_mode)}
+                </dd>
+              </div>
+              <div>
+                <dt>Client portal</dt>
+                <dd className="mt-1 font-medium text-foreground">
+                  {client.client_portal_enabled ? "Enabled" : "Not enabled"}
+                </dd>
+              </div>
+              <div>
+                <dt>Permission to edit client data</dt>
+                <dd className="mt-1 font-medium text-foreground">
+                  {client.partner_can_edit_client_data
+                    ? "Granted"
+                    : "Not granted"}
+                </dd>
+              </div>
+            </dl>
+          </details>
+          <div className="mt-4 border-t px-5">
+            <WorkspaceTabs
+              clientId={client.id}
+              accountKind={client.account_kind}
+            />
+          </div>
         </header>
 
         {children}
