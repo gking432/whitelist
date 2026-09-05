@@ -117,7 +117,7 @@ test("owner bootstrap invites once and creates only a platform membership", asyn
   assert.equal(result.existingUser, false);
   assert.deepEqual(fake.invited, ["owner@example.com"]);
   assert.deepEqual(fake.inviteRedirects, [
-    "https://app.example.com/auth/confirm?next=/control/activation",
+    "https://app.example.com/auth/confirm?next=/",
   ]);
   assert.equal(fake.memberships.length, 1);
   assert.equal(fake.memberships[0]?.role, "platform_owner");

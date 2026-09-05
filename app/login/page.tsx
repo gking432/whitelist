@@ -48,7 +48,7 @@ const pillars = [
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const brand = await publicAgencyBrand(params.agency);
-  const nextPath = toSafeNextPath(params.next);
+  const nextPath = toSafeNextPath(params.next, "/");
   const authState = await getAuthState();
 
   if (authState.user) {

@@ -13,6 +13,7 @@ export async function ImpersonationBanner() {
   if (!session) return null;
 
   const targetName = session.targetClientName ?? session.targetPartnerName;
+  const betaWalkthrough = session.mode === "sandbox_full" && session.returnPath === "/";
   const IsModeIcon = session.mode === "sandbox_full" ? FlaskConical : Eye;
 
   return (
@@ -22,19 +23,19 @@ export async function ImpersonationBanner() {
           <IsModeIcon className="size-4 shrink-0" aria-hidden="true" />
           <div className="min-w-0">
             <p className="truncate text-xs font-semibold sm:text-sm">
-              Viewing as {targetName}
+              {betaWalkthrough ? "Testing" : "Viewing as"} {targetName}
             </p>
             <p className="text-[10px] leading-4 opacity-75 sm:text-xs">
               {session.mode === "read_only"
                 ? "Read-only support session"
-                : "Full sandbox test session"}
+                : "Test account · your changes are saved"}
             </p>
           </div>
         </div>
         <form action={stopImpersonation}>
           <Button type="submit" variant="outline" size="sm" className="h-7 bg-white/70">
             <LogOut aria-hidden="true" />
-            Exit
+            {betaWalkthrough ? "Choose workspace" : "Exit"}
           </Button>
         </form>
       </div>

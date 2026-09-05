@@ -33,6 +33,9 @@ export default async function ProductionActivationPage() {
       <div className="space-y-6">
         <section className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
+            <Button asChild className="mb-5">
+              <Link href="/">Open the three workspaces</Link>
+            </Button>
             <div className="flex items-center gap-2">
               <Rocket className="size-5 text-primary" aria-hidden="true" />
               <h1 className="text-xl font-semibold">Activate production</h1>
