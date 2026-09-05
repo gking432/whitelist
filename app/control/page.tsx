@@ -221,7 +221,7 @@ export default async function ControlRoomPage({
 
         <section
           id="accounts"
-          className="scroll-mt-24 overflow-hidden rounded-xl border bg-card"
+          className="scroll-mt-44 overflow-hidden rounded-xl border bg-card"
         >
           <div className="border-b p-5">
             <h2 className="font-semibold">
