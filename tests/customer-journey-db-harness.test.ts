@@ -50,6 +50,7 @@ test("CLI JSON parsing accepts explicit row envelopes and rejects missing, malfo
 test("read-only preflight and marker/ledger checks cannot infer acceptance from a schema label alone", () => {
   const target = validateTarget(configured());
   assert.match(preflightSql(target.database), /^begin read only;/);
+  assert.ok(preflightSql(target.database).includes(`'${REPORT_PREFIX}'::text || jsonb_build_object`));
   assert.doesNotMatch(preflightSql(target.database), /\b(insert|update|delete|create|alter|drop)\b/i);
   assert.doesNotThrow(() => assertPreflight(report(), target));
   for (const values of [{ nonTestPartners: 1 }, { nonTestClients: 1 }, { database: "postgres" }, { unfilteredRead: false }, { appliedVersions: ["not-a-version"] }])
