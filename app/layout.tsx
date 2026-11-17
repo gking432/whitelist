@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: "%s | Northstar",
   },
   description:
-    "White-label AI operations platform: integrations, AI workflows, approvals, and operational visibility for home service businesses.",
+    "One business workspace for customers, marketing, sourcing, purchasing, operations, and owner approvals.",
 };
 
 export default function RootLayout({

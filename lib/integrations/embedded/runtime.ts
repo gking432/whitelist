@@ -7,6 +7,7 @@ import type { DeliveryOutcome } from "@/lib/delivery/customer-message";
 import type { ActionJobRecord } from "@/lib/jobs/record";
 import { mapFields, type FieldMapping } from "./mapping.ts";
 import { zapierConfiguration, zapierForIdentity } from "./zapier.ts";
+import type { ActionPreflight } from "@/lib/jobs/action-preflight";
 
 export type EmbeddedConnection = {
   id: string;
@@ -258,6 +259,7 @@ export async function queueEmbeddedWorkflowActions(
 export async function executeEmbeddedAction(
   admin: SupabaseClient,
   job: ActionJobRecord,
+  beforeSubmit?: ActionPreflight,
 ): Promise<DeliveryOutcome> {
   const { data } = await admin
     .from("embedded_solution_bindings")
@@ -332,6 +334,27 @@ export async function executeEmbeddedAction(
     authenticationId: connection.authentication_id,
     actionKey: binding.action_key,
     values: job.payload.input as Record<string, unknown>,
+    beforeSubmit: async () => {
+      const ownerBlock = await beforeSubmit?.();
+      if (ownerBlock) return ownerBlock;
+      if (!(await connectionIsLive(admin, connection))) return "The client or app connection is no longer live.";
+      const latestBinding = await admin.from("embedded_solution_bindings")
+        .select("status,verified_at,direction,action_key,connection_id")
+        .eq("id", binding.id).eq("partner_id", job.partner_id).eq("client_id", job.client_id).maybeSingle();
+      if (latestBinding.error) throw new Error("App action settings could not be rechecked.");
+      if (!latestBinding.data || latestBinding.data.status !== "enabled" || !latestBinding.data.verified_at ||
+          latestBinding.data.direction !== "outbound" || latestBinding.data.action_key !== binding.action_key ||
+          latestBinding.data.connection_id !== connection.id) return "This app action changed or was paused before submission.";
+      const latestRun = await admin.from("workflow_runs")
+        .select("status,instance:client_workflow_instances(status,runtime_mode)")
+        .eq("id", job.workflow_run_id!).eq("partner_id", job.partner_id).eq("client_id", job.client_id).maybeSingle();
+      if (latestRun.error) throw new Error("Source workflow could not be rechecked.");
+      const latestInstance = latestRun.data?.instance as unknown as { status: string; runtime_mode: string } | null;
+      if (!latestRun.data || ["failed", "cancelled"].includes(latestRun.data.status) ||
+          latestInstance?.status !== "active" || latestInstance.runtime_mode !== "live")
+        return "The source workflow is no longer active and live.";
+      return null;
+    },
     onRunId: async (id) => {
       await admin
         .from("action_jobs")

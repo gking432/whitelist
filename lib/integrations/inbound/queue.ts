@@ -1,7 +1,10 @@
+import { adoptInboundConversation } from "@/lib/conversations/store";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { redactAuditValue } from "@/lib/audit/redact";
 import { decryptSecret, encryptSecret } from "@/lib/integrations/secrets";
+import { applyOwnerImport, persistOwnerImportRecord } from "@/lib/connections/import-store";
+import type { CanonicalRecord } from "@/lib/integrations/connectors/types";
 
 export type InboundEventInput = {
   partnerId: string;
@@ -10,7 +13,7 @@ export type InboundEventInput = {
   eventType: string;
   idempotencyKey: string;
   data: Record<string, unknown>;
-  handler?: "workflow" | "phone";
+  handler?: "workflow" | "phone" | "records";
 };
 export type InboundReceipt = { eventId: string; duplicate: boolean; status: string };
 
@@ -31,7 +34,7 @@ export async function enqueueInboundEvent(admin: SupabaseClient, input: InboundE
 
 type InboundJob = {
   id: string; event_id: string; partner_id: string; client_id: string; connection_id: string | null;
-  handler: "workflow" | "phone"; encrypted_payload: string; attempts: number; max_attempts: number;
+  handler: "workflow" | "phone" | "records"; encrypted_payload: string; attempts: number; max_attempts: number;
 };
 
 export async function processInboundEventJobs(admin: SupabaseClient, limit = 10, eventId?: string) {
@@ -45,10 +48,15 @@ export async function processInboundEventJobs(admin: SupabaseClient, limit = 10,
     if (!job) break;
     try {
       if (job.connection_id) {
-      const { data: connection } = await admin.from("integration_connections").select("status")
+      const { data: connection } = await admin.from("integration_connections").select("status,runtime_mode")
         .eq("id", job.connection_id).eq("partner_id", job.partner_id).eq("client_id", job.client_id).maybeSingle().throwOnError();
       if (!connection || ["paused", "disabled"].includes(connection.status)) {
         await admin.from("inbound_event_jobs").update({ status: "cancelled", encrypted_payload: null, completed_at: new Date().toISOString(), locked_at: null, worker_id: null, last_error: "Connection was paused or disabled before processing." }).eq("id", job.id).eq("worker_id", workerId).throwOnError();
+        continue;
+      }
+      if (job.handler === "records" && connection.runtime_mode === "paused") {
+        await admin.from("inbound_event_jobs").update({ status: "failed", available_at: new Date(Date.now()+300_000).toISOString(), locked_at: null, worker_id: null, attempts: Math.max(0,job.attempts-1), last_error: "Source import paused; committed event retained until resumed." })
+          .eq("id",job.id).eq("worker_id",workerId).throwOnError();
         continue;
       }
       } else {
@@ -77,7 +85,18 @@ export async function processInboundEventJobs(admin: SupabaseClient, limit = 10,
         }
       }
       let runId: string | null = null;
-      if (job.handler === "phone") {
+      const adopted = job.handler === "records" ? false : await adoptInboundConversation(admin, { partnerId: job.partner_id, clientId: job.client_id, connectionId: job.connection_id, eventId: job.event_id, eventType: event.event_type, data: payload });
+      if (job.handler === "records") {
+        if (!job.connection_id || !Array.isArray(payload.records)) throw new Error("Imported events require a source account and records.");
+        await applyOwnerImport({ persist: (scope, record, version) => persistOwnerImportRecord(admin, scope, record, version) }, {
+          partnerId: job.partner_id, clientId: job.client_id, connectionId: job.connection_id,
+        }, payload.records as CanonicalRecord[], {
+          eventAt: typeof payload.event_at === "string" ? payload.event_at : undefined,
+          eventId: typeof payload.source_event_id === "string" ? payload.source_event_id : job.event_id,
+        });
+      } else if (adopted) {
+        // The conversation queue now owns this interaction; avoid a second reply from legacy workflows.
+      } else if (job.handler === "phone") {
         if (!job.connection_id) throw new Error("Phone event requires a connection.");
         const { processPhoneProviderEvent } = await import("./phone-events");
         runId = await processPhoneProviderEvent(admin, { ...job, connection_id: job.connection_id, data: payload });

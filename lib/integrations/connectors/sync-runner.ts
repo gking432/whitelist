@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { enqueueWorkspaceInquiry } from "../inbound/workspace-inbox";
+import { isWorkspaceViewOnly, allowsConnectorWork, connectorCursorIsPartial } from "./read-only-policy";
+import { persistOwnerImportRecord } from "@/lib/connections/import-store";
 import { supportsImportedLeadAutomation } from "./catalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -64,6 +67,7 @@ async function projectCanonicalRecord(
   job: JobRow,
   record: CanonicalRecord,
 ) {
+  if (isWorkspaceViewOnly(job.connection_config)) return null;
   const { data: client } = await admin
     .from("client_businesses")
     .select("crm_operating_mode")
@@ -381,6 +385,8 @@ async function projectCanonicalRecord(
 function repositoryFor(admin: SupabaseClient, job: JobRow) {
   return {
     async assertCanExecute(context: ConnectorContext) {
+      const { data: activeJob } = await admin.from("integration_sync_jobs").select("id").eq("id",job.id).eq("status","running").maybeSingle().throwOnError();
+      if (!activeJob) throw new ConnectorExecutionCancelledError();
       const { data: current } = await admin.from("integration_connections")
         .select("config,status,runtime_mode,credential_status,provider:integration_providers(provider_key)")
         .eq("id", job.connection_id).eq("partner_id", job.partner_id).eq("client_id", job.client_id).maybeSingle().throwOnError();
@@ -392,8 +398,23 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
       job.connection_config = current.config ?? {};
       job.connection_runtime_mode = current.runtime_mode;
       context.config = job.connection_config;
+      if (!allowsConnectorWork(context.config, job.direction, job.objectType)) throw new ConnectorExecutionCancelledError();
+      if (provider?.provider_key === "stripe" && !["invoice", "payment"].includes(job.objectType))
+        throw new ConnectorExecutionCancelledError();
+      if(job.direction==="pull" && ["google_workspace","microsoft_365"].includes(provider?.provider_key??"") && current.config?.activation_managed===true &&
+        !((job.objectType==="message" && current.config.conversation_intake_enabled===true) || (job.objectType==="appointment" && current.config.activation_calendar_enabled===true))) {
+        throw new ConnectorExecutionCancelledError();
+      }
     },
     async saveCanonicalRecord(record: CanonicalRecord) {
+      if (isWorkspaceViewOnly(job.connection_config) || job.provider?.provider_key === "stripe") {
+        await persistOwnerImportRecord(admin, {
+          partnerId: job.partner_id, clientId: job.client_id, connectionId: job.connection_id,
+        }, record);
+        return;
+      }
+      if (!isWorkspaceViewOnly(job.connection_config)) await enqueueWorkspaceInquiry(admin, {partnerId:job.partner_id,clientId:job.client_id,connectionId:job.connection_id,
+        providerKey:job.provider?.provider_key??"",config:job.connection_config,runtimeMode:job.connection_runtime_mode,record});
       const importEnabledAt = job.connection_config.lead_automation_enabled_at;
       const importKey = job.provider?.provider_key === "meta" ? record.externalId : `import-lead-${createHash("sha256").update(record.externalId).digest("hex")}`;
       let queuedLead = false;
@@ -403,7 +424,7 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
           .eq("idempotency_key", importKey).maybeSingle().throwOnError();
         queuedLead = Boolean(imported);
       }
-      if (!queuedLead && supportsImportedLeadAutomation(job.provider?.provider_key ?? "") && record.objectType === "lead" && !record.deleted && record.data.status === "new" && job.connection_runtime_mode === "live" &&
+      if (!isWorkspaceViewOnly(job.connection_config) && !queuedLead && supportsImportedLeadAutomation(job.provider?.provider_key ?? "") && record.objectType === "lead" && !record.deleted && record.data.status === "new" && job.connection_runtime_mode === "live" &&
           typeof importEnabledAt === "string" && record.updatedAt && Date.parse(record.updatedAt) >= Date.parse(importEnabledAt)) {
         const { data: prior } = await admin.from("integration_canonical_records").select("id")
           .eq("connection_id",job.connection_id).eq("object_type","lead").eq("external_object_id",record.externalId).maybeSingle().throwOnError();
@@ -458,6 +479,19 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
       }
     },
     async saveCursor(cursor: Record<string, unknown> | null) {
+      if (connectorCursorIsPartial(cursor)) {
+        // Insert only if absent, then update only progress. Never overwrite an
+        // unresolved source conflict with the apparent success of one page.
+        await admin.from("integration_sync_states").upsert({
+          partner_id: job.partner_id, client_id: job.client_id,
+          connection_id: job.connection_id, stream_key: job.objectType,
+          cursor_value: cursor,
+        }, { onConflict: "connection_id,stream_key", ignoreDuplicates: true }).throwOnError();
+        await admin.from("integration_sync_states").update({ cursor_value: cursor })
+          .eq("partner_id", job.partner_id).eq("client_id", job.client_id)
+          .eq("connection_id", job.connection_id).eq("stream_key", job.objectType).throwOnError();
+        return;
+      }
       await admin.from("integration_sync_states").upsert(
         {
           partner_id: job.partner_id,
@@ -534,13 +568,21 @@ export async function enqueueInitialConnectorSync(
 ) {
   const adapter = getConnectorAdapter(scope.providerKey);
   if (!adapter) return;
-  const objectTypes = Array.from(
+  let objectTypes = Array.from(
     new Set(
       adapter.manifest.capabilities
         .filter((capability) => capability.endsWith(".read"))
         .map((capability) => capability.split(".")[0]),
     ),
   );
+  if (scope.providerKey === "stripe") objectTypes = ["invoice", "payment"];
+  if(["google_workspace","microsoft_365"].includes(scope.providerKey)) {
+    const {data:connection}=await admin.from("integration_connections").select("config").eq("id",scope.connectionId)
+      .eq("partner_id",scope.partnerId).eq("client_id",scope.clientId).single().throwOnError();
+    if (isWorkspaceViewOnly(connection.config ?? {})) objectTypes = ["message", "appointment"];
+    else if(connection.config?.activation_managed===true) objectTypes=objectTypes.filter(type=>
+      (type==="message" && connection.config.conversation_intake_enabled===true) || (type==="appointment" && connection.config.activation_calendar_enabled===true));
+  }
   for (const objectType of objectTypes) {
     const { data: existing } = await admin
       .from("integration_sync_jobs")
@@ -575,7 +617,7 @@ export async function enqueueInitialConnectorSync(
   }
 }
 
-export async function processConnectorSyncJobs(limit = 20) {
+export async function processConnectorSyncJobs(limit = 20, options: { connectionId?: string; readOnly?: boolean } = {}) {
   const admin = createSupabaseAdminClient();
   if (!admin) {
     return {
@@ -590,12 +632,15 @@ export async function processConnectorSyncJobs(limit = 20) {
 
   // Pulls are safe to retry. A stale push may have reached the vendor before
   // the worker died, so replaying it could duplicate a customer or lead.
-  const { data: stalePulls } = await admin
+  let staleQuery = admin
     .from("integration_sync_jobs")
-    .select("id, attempts, max_attempts")
+    .select("id, attempts, max_attempts, connection:integration_connections!integration_sync_jobs_scope_fk!inner(config)")
     .eq("status", "running")
     .eq("direction", "pull")
-    .or(`locked_at.is.null,locked_at.lt.${staleCutoff}`).throwOnError();
+    .or(`locked_at.is.null,locked_at.lt.${staleCutoff}`);
+  if (options.connectionId) staleQuery = staleQuery.eq("connection_id", options.connectionId);
+  if (options.readOnly) staleQuery = staleQuery.eq("connection.config->>workspace_view_only", "true");
+  const { data: stalePulls } = await staleQuery.throwOnError();
 
   let recoveredPulls = 0;
   for (const stale of stalePulls ?? []) {
@@ -623,7 +668,7 @@ export async function processConnectorSyncJobs(limit = 20) {
     if (recovered) recoveredPulls += 1;
   }
 
-  const { data: uncertainPushes } = await admin
+  const { data: uncertainPushes } = options.readOnly ? { data: [] } : await admin
     .from("integration_sync_jobs")
     .update({
       status: staleConnectorJobDisposition("push"),
@@ -651,15 +696,18 @@ export async function processConnectorSyncJobs(limit = 20) {
       .eq("idempotency_key", String(stale.payload?.idempotencyKey ?? "")).throwOnError();
   }
 
-  const { data } = await admin
+  let pending = admin
     .from("integration_sync_jobs")
     .select(
-      "*, connection:integration_connections!inner(config, status, runtime_mode, provider:integration_providers!inner(provider_key))",
+      "*, connection:integration_connections!integration_sync_jobs_scope_fk!inner(config, status, runtime_mode, provider:integration_providers!inner(provider_key))",
     )
     .in("status", ["queued", "failed"])
     .lte("scheduled_for", new Date().toISOString())
     .order("created_at", { ascending: true })
-    .limit(limit).throwOnError();
+    .limit(limit);
+  if (options.connectionId) pending = pending.eq("connection_id", options.connectionId);
+  if (options.readOnly) pending = pending.eq("connection.config->>workspace_view_only", "true").eq("direction", "pull");
+  const { data } = await pending.throwOnError();
 
   let succeeded = 0;
   let failed = 0;
@@ -705,7 +753,7 @@ export async function processConnectorSyncJobs(limit = 20) {
       failed += 1;
       continue;
     }
-    if (job.connection_status !== "connected" || job.connection_runtime_mode === "paused" ||
+    if (!allowsConnectorWork(job.connection_config, job.direction, job.objectType) || job.connection_status !== "connected" || job.connection_runtime_mode === "paused" ||
       (job.direction === "push" && job.connection_runtime_mode !== "live")) {
       await admin
         .from("integration_sync_jobs")

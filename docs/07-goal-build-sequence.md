@@ -1,6 +1,6 @@
 # Goal Build Sequence
 
-Use this file to drive implementation one `/goal` at a time.
+Historical sequence. The October 2–3, 2026 decisions prioritize the end-business product with Symphony by Wix as the reference; the remaining white-label commercial layer follows. Use the [current blueprint priority](34-client-product-blueprint.md#symphony-reference-and-current-build-priority) and [implementation handoff](10-codex-goal-prompt.md) for new work. The goals below document the original build and must not automatically restart scaffold or partner-dashboard development.
 
 Each goal should produce a working vertical slice. Do not skip verification. Do not move to the next goal if the current goal breaks tenant boundaries, auth, or core navigation.
 
@@ -385,4 +385,3 @@ Stop and ask the user before:
 - changing the Northstar app.
 - making homeowners aware of partner/platform branding.
 - turning the app into a full CRM.
-

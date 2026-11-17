@@ -1,40 +1,16 @@
 import Link from "next/link";
-import { ArrowRight, Building2, ShieldCheck, UsersRound } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Layers3,
+  Megaphone,
+  Search,
+  ShoppingBag,
+  Sparkles,
+} from "lucide-react";
 import { NorthstarMark } from "@/components/brand/northstar-mark";
-import { openTestWorkspace } from "@/app/workspaces/actions";
 import { getAuthState } from "@/lib/auth/session";
 import { isAccessError, requirePlatformRole } from "@/lib/permissions/access";
-
-const workspaces = [
-  {
-    title: "Platform owner",
-    layer: "owner",
-    audience: "Run the platform",
-    description:
-      "See every partner and client, handle escalations, and manage your platform.",
-    href: "/control",
-    icon: ShieldCheck,
-  },
-  {
-    title: "Partner",
-    layer: "partner",
-    audience: "Grow your agency",
-    description:
-      "Set up your brand, add clients, and launch their AI solutions and automations.",
-    href: "/workspaces/partner",
-    icon: UsersRound,
-  },
-  {
-    title: "Client",
-    layer: "client",
-    audience: "Run your business",
-    description:
-      "Work with your customers, review AI activity, and manage everyday tasks.",
-    href: "/workspaces/client",
-    icon: Building2,
-  },
-] as const;
-
 export default async function HomePage() {
   const { user } = await getAuthState();
   let canTest = false;
@@ -47,95 +23,120 @@ export default async function HomePage() {
     }
   }
   return (
-    <main className="min-h-screen bg-brand-deep text-white">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0"
-        style={{
-          background:
-            "radial-gradient(70rem 45rem at 80% -15%, rgba(199,154,59,0.13), transparent 60%), radial-gradient(55rem 40rem at -15% 115%, rgba(44,106,79,0.45), transparent 60%)",
-        }}
-      />
-      <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8 sm:px-10">
-        <header className="flex items-center justify-between gap-4">
-          <NorthstarMark subtitle="AI & automation platform" />
-          <span className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/65">
-            Beta
+    <main className="min-h-screen bg-background">
+      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-10">
+        <header className="flex items-center justify-between">
+          <NorthstarMark
+            surface="light"
+            subtitle="Your business, working together"
+          />
+          <span className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
+            Business workspace · Prototype
           </span>
         </header>
-        <section className="ns-fade-up flex flex-1 flex-col justify-center py-16">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-brand-gold">
-            Your workspace
-          </p>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-            Where would you like to go?
-          </h1>
-          <p className="mt-4 max-w-xl text-base leading-7 text-white/60">
-            {canTest
-              ? "Your beta is ready to explore. Open your owner dashboard, or try the agency and client experiences using your test accounts."
-              : "Choose a workspace to get started. Sign in with the email connected to your account."}
-          </p>
-          <nav
-            aria-label="Choose a workspace"
-            className="mt-10 grid gap-4 md:grid-cols-3"
-          >
-            {workspaces.map(
-              ({ title, layer, audience, description, href, icon: Icon }) => {
-                const className =
-                  "group flex h-full w-full flex-col items-start rounded-2xl border border-white/15 bg-white/5 p-7 text-left transition-colors hover:border-brand-gold/60 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-gold";
-                const content = (
-                  <>
-                    <Icon
-                      aria-hidden="true"
-                      className="size-7 text-brand-gold"
-                    />
-                    <span className="mt-7 text-xs text-white/50">
-                      {audience}
-                    </span>
-                    <span className="mt-1 text-2xl font-semibold">{title}</span>
-                    <span className="mb-8 mt-3 flex-1 text-sm leading-6 text-white/60">
-                      {description}
-                    </span>
-                    {canTest && layer !== "owner" ? (
-                      <span className="mb-4 text-xs text-white/50">
-                        {layer === "partner"
-                          ? "Test agency · start with guided setup"
-                          : "Sample Home Services · sample customers and tasks"}
-                      </span>
-                    ) : null}
-                    <span className="flex w-full items-center justify-between text-sm font-medium text-brand-gold">
-                      {canTest && layer !== "owner"
-                        ? "Open test workspace"
-                        : "Open workspace"}{" "}
-                      <ArrowRight
-                        aria-hidden="true"
-                        className="size-4 transition-transform group-hover:translate-x-1"
-                      />
-                    </span>
-                  </>
-                );
-                return canTest && layer !== "owner" ? (
-                  <form key={href} action={openTestWorkspace.bind(null, layer)}>
-                    <button type="submit" className={className}>
-                      {content}
-                    </button>
-                  </form>
-                ) : (
-                  <Link key={href} href={href} className={className}>
-                    {content}
-                  </Link>
-                );
-              },
-            )}
-          </nav>
-          <p className="mt-6 text-sm leading-6 text-white/45">
-            {canTest
-              ? "Changes in the test workspaces are saved. Use Choose workspace at the top to return here. Live calls, AI providers, and connected apps need setup before you can test them end to end."
-              : "Use the email connected to your account to access your workspace."}
-          </p>
+        <section className="grid min-h-[75vh] items-center gap-12 py-16 lg:grid-cols-[1.1fr_0.9fr]">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+              More time for the business you love
+            </p>
+            <h1 className="mt-5 text-5xl font-semibold leading-[1.1] tracking-tight sm:text-6xl">
+              Your next chapter.
+              <br />
+              <span className="text-primary">A little less busy.</span>
+            </h1>
+            <p className="mt-6 max-w-lg text-base leading-8 text-muted-foreground">
+              One place for your customers, marketing, purchasing, and everyday
+              operations. Choose what gets handled. Stay in charge of the
+              decisions.
+            </p>
+            <div className="mt-8">
+              <Link
+                href={
+                  user
+                    ? "/workspaces/client"
+                    : "/login?next=%2Fworkspaces%2Fclient"
+                }
+                className="inline-flex items-center gap-4 rounded-xl bg-primary px-6 py-3.5 text-sm font-medium text-white"
+              >
+                {user ? "Open your business" : "Sign in to your business"}
+                <ArrowRight className="size-4" />
+              </Link>
+            </div>
+            <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+              {[
+                "Shared business records",
+                "Approvals on your phone",
+                "Your tools, connected",
+              ].map((s) => (
+                <span key={s} className="inline-flex items-center gap-1.5">
+                  <Check className="size-3 text-primary" />
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-3xl border bg-card p-6 shadow-sm sm:p-8">
+            <div className="flex items-center gap-3 border-b pb-6">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Sparkles className="size-5" />
+              </span>
+              <div>
+                <h2 className="font-semibold">Built around your business</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Start with the work that matters to you.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 space-y-5">
+              {[
+                {
+                  name: "Marketing",
+                  text: "Prepare campaigns and useful content.",
+                  icon: Megaphone,
+                },
+                {
+                  name: "Sourcing",
+                  text: "Compare suppliers and buying opportunities.",
+                  icon: Search,
+                },
+                {
+                  name: "Purchasing",
+                  text: "Plan, approve, and track what you buy.",
+                  icon: ShoppingBag,
+                },
+                {
+                  name: "Operations",
+                  text: "Keep jobs, people, and next steps together.",
+                  icon: Layers3,
+                },
+              ].map((item) => (
+                <div key={item.name} className="flex items-center gap-4">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-primary">
+                    <item.icon className="size-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-medium">{item.name}</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {item.text}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-7 border-t pt-5 text-xs leading-6 text-muted-foreground">
+              Describe your business, see your recommended capabilities, and
+              connect the tools you need.
+            </p>
+          </div>
         </section>
-        <footer className="py-4 text-xs text-white/35">
-          One platform. Your agency. Your clients.
+        <footer className="flex flex-wrap justify-between gap-3 border-t py-5 text-xs text-muted-foreground">
+          <span>A single workspace for the work of running a business.</span>
+          {canTest ? (
+            <div className="flex gap-5">
+              <Link href="/control">Account administration</Link>
+              <Link href="/partner">Partner administration</Link>
+            </div>
+          ) : null}
         </footer>
       </div>
     </main>

@@ -12,6 +12,7 @@ const PLANNED_CONNECTORS: readonly (readonly [
 ];
 
 export const CONNECTOR_CATALOG: readonly ConnectorManifest[] = [
+  { key:"instagram_messaging",name:"Instagram messages",category:"messaging",description:"Signed customer DMs and approval-gated text replies. Operator-assisted Meta setup; live verification required.",authStrategy:"api_key",capabilities:["message.create","message.webhook"],verificationStatus:"restricted",requestable:false,docsUrl:"https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api",webhookEvents:["messages"] },
   {
     key: "twilio",
     name: "Twilio",

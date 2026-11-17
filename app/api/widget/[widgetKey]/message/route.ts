@@ -1,4 +1,9 @@
-import { NextResponse, type NextRequest } from "next/server";
+import {
+  conversationTeamEnabled,
+  ingestMessage,
+} from "@/lib/conversations/store";
+import { processAgentWork } from "@/lib/agents/runner";
+import { after, NextResponse, type NextRequest } from "next/server";
 
 import { redactAuditValue } from "@/lib/audit/redact";
 import {
@@ -36,7 +41,7 @@ export async function POST(
 ) {
   const { widgetKey } = await params;
 
-  let body: { session_id?: string; message?: string };
+  let body: { session_id?: string; message?: string; message_id?: string };
 
   try {
     body = (await request.json()) as typeof body;
@@ -44,6 +49,8 @@ export async function POST(
     return json(400, { error: "Send JSON with session_id and message." });
   }
 
+  if (typeof body.session_id !== "string" || typeof body.message !== "string")
+    return json(400, { error: "Session and message required." });
   const sessionId = body.session_id ?? "";
   const message = (body.message ?? "").trim().slice(0, MAX_MESSAGE_CHARS);
 
@@ -78,6 +85,48 @@ export async function POST(
 
   if (!session) {
     return json(404, { error: "Chat session not found." });
+  }
+
+  const scope = {
+    partnerId: connection.partner_id,
+    clientId: connection.client_id,
+  };
+  const existing = await admin
+    .from("business_conversations")
+    .select("id")
+    .eq("connection_id", connection.id)
+    .eq("channel", "website_chat")
+    .eq("external_thread_id", sessionId)
+    .maybeSingle();
+  if (existing.error)
+    return json(503, { error: "Chat is temporarily unavailable." });
+  if (existing.data || (await conversationTeamEnabled(admin, scope))) {
+    if (
+      typeof body.message_id !== "string" ||
+      !/^[0-9a-f-]{36}$/i.test(body.message_id)
+    )
+      return json(400, { error: "Message ID required." });
+    try {
+      await ingestMessage(admin, {
+        ...scope,
+        connectionId: connection.id,
+        channel: "website_chat",
+        thread: sessionId,
+        key: body.message_id,
+        body: message,
+      });
+      after(() => processAgentWork(admin, 2, scope));
+      return json(202, {
+        queued: true,
+        complete: false,
+        reply: "Your message is saved. Replies will appear here after review.",
+      });
+    } catch {
+      return json(503, {
+        error:
+          "Your message could not be saved. Retry with the same message ID.",
+      });
+    }
   }
 
   if (session.status !== "active") {
@@ -115,7 +164,10 @@ export async function POST(
   };
 
   const { data: reply } = await generateChatReply({
-    tenant: { partnerId: connection.partner_id, clientId: connection.client_id },
+    tenant: {
+      partnerId: connection.partner_id,
+      clientId: connection.client_id,
+    },
     clientName: connection.client_name,
     knowledge,
     fields,

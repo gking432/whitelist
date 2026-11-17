@@ -1,6 +1,9 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 
-import { redactAuditValue } from "@/lib/audit/redact";
+import {
+  enqueueInboundEvent,
+  processInboundEventJobs,
+} from "@/lib/integrations/inbound/queue";
 import { getAppUrl } from "@/lib/env";
 import { readProviderCredentials } from "@/lib/integrations/credentials";
 import type { TwilioCredentials } from "@/lib/integrations/providers/twilio";
@@ -8,7 +11,6 @@ import { checkRateLimit } from "@/lib/integrations/rate-limit";
 import { isSecretsEncryptionConfigured } from "@/lib/integrations/secrets";
 import { verifyTwilioSignature } from "@/lib/integrations/twilio-signature";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { runWorkflowsForEvent } from "@/lib/workflows/engine";
 
 export const dynamic = "force-dynamic";
 
@@ -154,96 +156,40 @@ export async function POST(
     return reject(403);
   }
 
+  if (
+    formParams.To !== credentials.fromNumber ||
+    formParams.AccountSid !== credentials.accountSid
+  ) {
+    await logRejected(
+      "account_mismatch",
+      "The signed message belongs to another account or phone number.",
+    );
+    return reject(403);
+  }
   const messageSid = formParams.MessageSid ?? formParams.SmsSid ?? null;
   const from = formParams.From ?? "";
   const body = formParams.Body ?? "";
 
-  if (messageSid) {
-    const { data: existing } = await supabase
-      .from("integration_events")
-      .select("id")
-      .eq("connection_id", connectionId)
-      .eq("idempotency_key", messageSid)
-      .eq("direction", "inbound")
-      .maybeSingle();
-
-    if (existing) {
-      return twiml();
-    }
-  }
-
-  const eventData: Record<string, unknown> = {
-    phone: from,
-    message: body,
-    to_number: formParams.To ?? null,
-    channel: "sms",
-    message_sid: messageSid,
-  };
-
-  const { data: insertedEvent, error: insertError } = await supabase
-    .from("integration_events")
-    .insert({
-      partner_id: connection.partner_id,
-      client_id: connection.client_id,
-      connection_id: connection.id,
-      direction: "inbound",
-      event_type: "sms.received",
-      status: "received",
-      idempotency_key: messageSid,
-      external_object_type: "twilio_message",
-      external_object_id: messageSid,
-      request_payload: redactAuditValue({ event_type: "sms.received", data: eventData }),
-      redacted: true,
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !insertedEvent) {
-    // Unique violation: concurrent duplicate delivery already handled it.
-    if (insertError?.code === "23505") {
-      return twiml();
-    }
-
-    return reject(500);
-  }
-
+  if (!messageSid || !/^\+[1-9]\d{7,14}$/.test(from) || !body.trim())
+    return reject(400);
   try {
-    const engineResult = await runWorkflowsForEvent(supabase, {
-      id: insertedEvent.id,
+    const receipt = await enqueueInboundEvent(supabase, {
       partnerId: connection.partner_id,
       clientId: connection.client_id,
       connectionId: connection.id,
       eventType: "sms.received",
-      data: eventData,
+      idempotencyKey: messageSid,
+      data: {
+        phone: from,
+        message: body,
+        to_number: formParams.To ?? null,
+        channel: "sms",
+        message_sid: messageSid,
+      },
     });
-
-    await supabase
-      .from("integration_events")
-      .update({
-        status: "processed",
-        workflow_run_id: engineResult.runs[0]?.runId ?? null,
-        response_payload: redactAuditValue({
-          matched_instances: engineResult.matchedInstances,
-          runs: engineResult.runs,
-        }),
-      })
-      .eq("id", insertedEvent.id);
-
-    await supabase
-      .from("integration_connections")
-      .update({ last_success_at: new Date().toISOString() })
-      .eq("id", connection.id);
-  } catch (error) {
-    await supabase
-      .from("integration_events")
-      .update({
-        status: "failed",
-        error_code: "engine_failed",
-        error_message:
-          error instanceof Error ? error.message : "Workflow engine failed.",
-      })
-      .eq("id", insertedEvent.id);
+    after(() => processInboundEventJobs(supabase, 1, receipt.eventId));
+    return twiml();
+  } catch {
+    return reject(503); // Provider can safely retry the same message ID.
   }
-
-  return twiml();
 }

@@ -1,6 +1,40 @@
 # Decisions And Open Questions
 
-## Decisions Already Made
+## Current direction recorded October 7 2026
+
+- One company, two offers: the packaged solo-business app and custom "Agents Built In" engagements. Continue the AI implementation job search alongside them.
+- The app handles reusable customer/admin work with shared records and a simple phone experience. It includes background automation, not just chat.
+- Custom implementations follow interviews, data research, and workflow redesign inside the client's existing systems. They are not generic sales/purchasing agents or simply a higher subscription tier of the app.
+- Preserve and reuse the existing application. White-label commercialization and partner/platform-owner CRMs are deferred. Purchasing/sourcing are later specialist capabilities, primarily relevant to resellers, rather than the default product direction.
+- The [revised build plan](38-agent-team-build-plan.md) records current implementation evidence and recommended next steps. Exact first pilot, custom workflow, provider connections, direct-client pricing, and company name remain unselected.
+
+## Earlier clarification from October 3 2026
+
+- The user identified Symphony as the reference product; [Symphony by Wix](https://www.wix.com/symphony) matches the described business setup, coordinated agents, connected tools, and owner approvals.
+- Build that class of business-owner product now in the existing partner-platform application. Add the remaining white-label and agency commercial layer afterward.
+- A shared business coordinator, scoped business context, proactive work, real connected actions, and simple phone decisions are active product requirements.
+- Marketing, sourcing, purchasing, operations, and the other business outcomes in [the capability catalog](37-business-capabilities-and-business-types.md) remain in scope. Website chat is one capability, not the whole assignment.
+- Keep existing useful implementation and foundational permissions/tenant isolation. Do not restart the app or make a fictional business the normal entry point.
+
+The [updated blueprint](34-client-product-blueprint.md#symphony-reference-and-current-build-priority) and [implementation handoff](10-codex-goal-prompt.md) carry this priority. It supersedes the earlier narrow next-task recommendation in the pre-build roadmap.
+
+## Earlier decisions from October 2 2026
+
+- Focus development on the single client-facing product that agencies sell to businesses.
+- Defer the partner CRM and platform-owner CRM.
+- Keep the agency as the commercial buyer and preserve white-label resale as the intended business model.
+- Maintain shared operational customer records for agents regardless of whether the owner opens a CRM interface.
+- Recommend useful agents and ordinary automations from the business description, with guided connections and rules.
+- Support phone-friendly human approvals and optional detailed records.
+- Expand across business areas and operating models; voice is an optional capability.
+
+See the [client product blueprint](34-client-product-blueprint.md) for details, [readiness and build plan](35-client-product-readiness-and-roadmap.md) for implementation scope, and [commercial record](33-business-model-and-pricing.md) for pricing hypotheses. These current decisions supersede conflicting original priorities below. Screen proposals and roadmap details remain recommendations unless explicitly identified as user decisions.
+
+## Historical decisions and questions
+
+The remaining sections preserve the original project discussion. They are not the current prioritized backlog; some original open questions have since gained implementations or changed direction.
+
+## Original decisions
 
 ### Northstar Must Remain Untouched
 
@@ -246,4 +280,3 @@ Do not build:
 - real SMS/email/voice sends.
 - billing automation.
 - Northstar modifications.
-

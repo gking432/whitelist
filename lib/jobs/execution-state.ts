@@ -27,9 +27,21 @@ export function authorizedActionPayload(
   )
     return null;
   const payload = approval.proposed_payload ?? {};
-  if (job.kind === "external.action") return approval.type === "external_action" ? payload : null;
+  if (job.kind === "external.action")
+    return approval.type === "external_action" ? payload : null;
   if (job.kind === "calendar.book")
     return approval.type === "appointment_booking" ? payload : null;
+  if (job.kind === "conversation.send") {
+    if (
+      approval.type !== "customer_message" ||
+      !["website_chat", "instagram"].includes(String(payload.channel)) ||
+      !payload.conversation_id ||
+      !approval.resolved_content?.trim()
+    )
+      return null;
+    return { ...payload, body: approval.resolved_content };
+  }
+  if (!["email.send", "sms.send"].includes(job.kind)) return null;
   const channel = job.kind === "email.send" ? "email" : "sms";
   if (
     approval.type !== "customer_message" ||

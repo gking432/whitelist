@@ -7,6 +7,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 // send. Deterministic template (no AI needed for a confirmation) and
 // best-effort: a failure here never breaks the booking result.
 
+/** @deprecated Completion dispatch uses queueCompletedBookingConfirmation with a pinned receipt. */
 export async function queueBookingConfirmationDraft(input: {
   partnerId: string;
   clientId: string;

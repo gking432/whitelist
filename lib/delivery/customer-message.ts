@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readEffectiveAuthority } from "@/lib/agents/authority";
+import { ActionSuppressedError, runActionPreflight, type ActionPreflight } from "@/lib/jobs/action-preflight";
 
 import { redactAuditValue } from "@/lib/audit/redact";
 import { readProviderCredentials } from "@/lib/integrations/credentials";
@@ -29,7 +31,13 @@ export type DeliveryOutcome = {
   delivered: boolean;
   detail: string;
   // Explicit machine-readable outcome for durable job recording.
-  status: "succeeded" | "dry_run" | "skipped" | "failed" | "uncertain" | "provider_pending";
+  status:
+    | "succeeded"
+    | "dry_run"
+    | "skipped"
+    | "failed"
+    | "uncertain"
+    | "provider_pending";
   // Provider-side reference for the delivered artifact (message SID,
   // calendar event id) when one exists.
   externalRef?: string | null;
@@ -44,6 +52,9 @@ type ApprovedMessage = {
   to: string | null;
   body: string;
   subject?: string | null;
+  connectionId?: string | null;
+  authorityRevision?: number;
+  beforeSend?: ActionPreflight;
 };
 
 type ChannelConfig = {
@@ -64,7 +75,8 @@ const CHANNELS: Record<"sms" | "email", ChannelConfig> = {
     providerKeys: ["google_workspace", "microsoft_365", "resend"],
     providerLabel: "business email",
     eventType: "email.customer_message",
-    connectHint: "connect Google Workspace, Microsoft 365, or Resend in the client's Setup checklist",
+    connectHint:
+      "connect Google Workspace, Microsoft 365, or Resend in the client's Setup checklist",
   },
 };
 
@@ -73,7 +85,7 @@ async function findChannelConnection(
   message: ApprovedMessage,
   providerKeys: string[],
 ) {
-  const { data } = await admin
+  let query = admin
     .from("integration_connections")
     .select(
       "id, runtime_mode, status, error_count, provider:integration_providers!inner(provider_key)",
@@ -81,9 +93,9 @@ async function findChannelConnection(
     .eq("client_id", message.clientId)
     .eq("partner_id", message.partnerId)
     .in("status", ["connected", "needs_attention"])
-    .in("provider.provider_key", providerKeys)
-    .limit(1)
-    .maybeSingle();
+    .in("provider.provider_key", providerKeys);
+  if (message.connectionId) query = query.eq("id", message.connectionId);
+  const { data } = await query.limit(1).maybeSingle();
 
   return data as {
     id: string;
@@ -188,6 +200,21 @@ export async function deliverApprovedCustomerMessage(
     };
   }
 
+  const currentAuthority = async () => readEffectiveAuthority(admin, {
+    partnerId: message.partnerId, clientId: message.clientId,
+  }, message.channel as "email" | "sms", {
+    phase: "execute", approved: true, connectionId: connection.id,
+    expectedRevision: message.authorityRevision,
+  });
+  const authority = await currentAuthority();
+  if (!authority.allowed) return {
+    attempted: false, delivered: false, status: "skipped", detail: authority.reason,
+  };
+  const preflight = async () => {
+    const latest = await currentAuthority();
+    if (!latest.allowed) throw new ActionSuppressedError(latest.reason);
+    await runActionPreflight(message.beforeSend);
+  };
   let providerAttempted = false;
   try {
     if (message.channel === "sms") {
@@ -204,6 +231,9 @@ export async function deliverApprovedCustomerMessage(
         throw new Error("Twilio credentials are incomplete. Reconnect Twilio.");
       }
 
+      const latest = await currentAuthority();
+      if (!latest.allowed) return { attempted: false, delivered: false, status: "skipped", detail: latest.reason };
+      await preflight();
       providerAttempted = true;
       const outcome = await sendSms(credentials, message.to, message.body);
 
@@ -224,17 +254,19 @@ export async function deliverApprovedCustomerMessage(
         attempted: true,
         delivered: true,
         status: "succeeded",
-      externalRef: outcome.messageSid,
-      detail: `SMS sent to ${message.to} via Twilio (${outcome.messageSid}).`,
+        externalRef: outcome.messageSid,
+        detail: `SMS sent to ${message.to} via Twilio (${outcome.messageSid}).`,
       };
     }
 
     const providerKey = connection.provider?.provider_key ?? "resend";
-    const credentials = await readProviderCredentials<EmailCredentials & WorkspaceCredentials>(
-      admin,
-      connection.id,
-    );
-    if (!credentials) throw new Error("Email authorization is incomplete. Reconnect the business email account.");
+    const credentials = await readProviderCredentials<
+      EmailCredentials & WorkspaceCredentials
+    >(admin, connection.id);
+    if (!credentials)
+      throw new Error(
+        "Email authorization is incomplete. Reconnect the business email account.",
+      );
 
     const emailInput = {
       to: message.to,
@@ -242,14 +274,21 @@ export async function deliverApprovedCustomerMessage(
       body: message.body,
       idempotencyKey: message.approvalId,
     };
+    const latest = await currentAuthority();
+    if (!latest.allowed) return { attempted: false, delivered: false, status: "skipped", detail: latest.reason };
     providerAttempted = true;
-    const outcome = providerKey === "google_workspace"
-      ? await sendGoogleWorkspaceEmail(credentials, emailInput)
-      : providerKey === "microsoft_365"
-        ? await sendMicrosoft365Email(credentials, emailInput)
-        : credentials.apiKey && credentials.fromEmail
-          ? await sendEmail(credentials, emailInput)
-          : (() => { throw new Error("Resend credentials are incomplete. Reconnect Resend."); })();
+    const outcome =
+      providerKey === "google_workspace"
+        ? await sendGoogleWorkspaceEmail(credentials, emailInput, preflight)
+        : providerKey === "microsoft_365"
+          ? await sendMicrosoft365Email(credentials, emailInput, preflight)
+          : credentials.apiKey && credentials.fromEmail
+            ? await (async () => { await preflight(); return sendEmail(credentials, emailInput); })()
+            : (() => {
+                throw new Error(
+                  "Resend credentials are incomplete. Reconnect Resend.",
+                );
+              })();
 
     await logEvent("sent", { message_id: outcome.messageId });
 
@@ -261,6 +300,14 @@ export async function deliverApprovedCustomerMessage(
       })
       .eq("id", connection.id);
 
+    if (providerKey === "microsoft_365") return {
+      attempted: true, delivered: false, status: "provider_pending", externalRef: null,
+      detail: "Microsoft accepted the approved email for processing. Delivery is not confirmed; check Sent Items before any resend.",
+    };
+    if (!outcome.messageId) return {
+      attempted: true, delivered: false, status: "uncertain", externalRef: null,
+      detail: "The provider did not return a message receipt. Check the inbox before any resend.",
+    };
     return {
       attempted: true,
       delivered: true,
@@ -269,6 +316,8 @@ export async function deliverApprovedCustomerMessage(
       detail: `Email sent to ${message.to} through the connected business email account (${outcome.messageId}).`,
     };
   } catch (error) {
+    if (error instanceof ActionSuppressedError)
+      return { attempted: false, delivered: false, status: "skipped", detail: error.message };
     const detail =
       error instanceof Error
         ? error.message
@@ -290,7 +339,9 @@ export async function deliverApprovedCustomerMessage(
       attempted: true,
       delivered: false,
       status: providerAttempted ? "uncertain" : "failed",
-      detail: providerAttempted ? "The provider result is uncertain. Check the provider before resending; automatic retry is disabled." : `Approval recorded, but the ${message.channel} failed to send: ${detail}`,
+      detail: providerAttempted
+        ? "The provider result is uncertain. Check the provider before resending; automatic retry is disabled."
+        : `Approval recorded, but the ${message.channel} failed to send: ${detail}`,
     };
   }
 }

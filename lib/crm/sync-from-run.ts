@@ -19,6 +19,7 @@ import { deliverOutboundWebhook } from "@/lib/integrations/providers/outbound-we
 import { decryptSecret } from "@/lib/integrations/secrets";
 import { OUTBOUND_WEBHOOK_PROVIDER_KEY } from "@/lib/integrations/types";
 import type { RunStep } from "@/lib/workflows/handlers";
+import { ActionSuppressedError, runActionPreflight, type ActionPreflight } from "@/lib/jobs/action-preflight";
 
 // CRM sync step for the run engine: after a lead-bearing run, upsert the
 // contact in the client's connected CRM and leave an "AI Assistant" note.
@@ -40,6 +41,7 @@ type CrmSyncInput = {
   eventType: string;
   eventData: Record<string, unknown>;
   runSummary: string;
+  beforeWrite?: ActionPreflight;
 };
 
 export type CrmSyncStepResult = {
@@ -142,7 +144,7 @@ async function runLiveSync(
       throw new Error("HubSpot credentials are missing. Reconnect HubSpot.");
     }
 
-    const outcome = await syncContactWithNote(credentials, fields, noteBody);
+    const outcome = await syncContactWithNote(credentials, fields, noteBody, () => runActionPreflight(input.beforeWrite));
 
     return {
       detail: `HubSpot contact ${outcome.contactAction} (${outcome.contactId})${
@@ -151,7 +153,7 @@ async function runLiveSync(
           : "; the AI Assistant note could not be attached"
       }.`,
       crm: {
-        status: "synced",
+        status: outcome.noteId ? "synced" : "uncertain",
         provider: "hubspot",
         contact_id: outcome.contactId,
         contact_action: outcome.contactAction,
@@ -176,6 +178,7 @@ async function runLiveSync(
       credentials,
       fields,
       noteBody,
+      () => runActionPreflight(input.beforeWrite),
     );
 
     return {
@@ -185,7 +188,7 @@ async function runLiveSync(
           : "; the AI Assistant note could not be attached"
       }.`,
       crm: {
-        status: "synced",
+        status: outcome.noteId ? "synced" : "uncertain",
         provider: "gohighlevel",
         contact_id: outcome.contactId,
         contact_action: outcome.contactAction,
@@ -207,6 +210,7 @@ async function runLiveSync(
       );
     }
 
+    await runActionPreflight(input.beforeWrite);
     const result = await deliverOutboundWebhook({
       destinationUrl,
       signingSecret,
@@ -331,6 +335,15 @@ export async function syncRunToCrm(
       noteBody,
       input,
     );
+    if (outcome.crm.status === "uncertain") {
+      const detail = `${outcome.detail} Reconcile the existing contact and note before any resend.`;
+      await logEvent("failed", "crm.contact_sync_partial", outcome.crm, detail);
+      await admin.from("integration_connections").update({
+        status: "needs_attention", last_failure_at: new Date().toISOString(),
+        error_count: (connection.error_count ?? 0) + 1, health_summary: detail,
+      }).eq("id", connection.id).eq("partner_id", input.partnerId).eq("client_id", input.clientId).throwOnError();
+      return { step: { name: "CRM sync needs reconciliation", detail }, crm: outcome.crm };
+    }
 
     await logEvent("sent", "crm.contact_synced", outcome.crm);
 
@@ -346,7 +359,11 @@ export async function syncRunToCrm(
       step: { name: "CRM synced", detail: outcome.detail },
       crm: outcome.crm,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof ActionSuppressedError) return {
+      step: { name: "CRM sync stopped", detail: error.message },
+      crm: { status: "skipped", provider: providerKey, reason: "owner_policy" },
+    };
     // HubSpot/GHL may have committed a contact or note before a timeout or a
     // persistence failure. No live failure from this multi-step path is safe
     // for automatic replay, including a failure while recording success.

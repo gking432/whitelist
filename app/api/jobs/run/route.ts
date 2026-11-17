@@ -1,5 +1,11 @@
-import { pollEmbeddedInboxes, pollEmbeddedActionResults } from "@/lib/integrations/embedded/runtime";
+import { processBusinessSchedules } from "@/lib/business/scheduler";
+import { processAgentWork, scheduleAgentReviews } from "@/lib/agents/runner";
+import {
+  pollEmbeddedInboxes,
+  pollEmbeddedActionResults,
+} from "@/lib/integrations/embedded/runtime";
 import { produceNativeCrmLifecycleEvents } from "@/lib/crm/lifecycle";
+import { maintainActivationChecks } from "@/lib/activation/service";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { summarizeJobResults } from "@/lib/jobs/health";
@@ -18,6 +24,7 @@ import { renewExpiringConnectionWebhooks } from "@/lib/integrations/connectors/w
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 180;
 
 // Scheduler entry point for the durable-job runner. Guarded by CRON_SECRET
 // (see .env.example): POST with Authorization: Bearer $CRON_SECRET.
@@ -54,6 +61,9 @@ export async function POST(request: NextRequest) {
   const [nativeLifecycle] = await Promise.allSettled([
     produceNativeCrmLifecycleEvents(admin, 50),
   ]);
+  const agentSchedule = await Promise.allSettled([
+    scheduleAgentReviews(admin, 3),
+  ]);
   const batchSize = Math.max(
     1,
     Math.min(5, Number(process.env.JOB_BATCH_SIZE) || 3),
@@ -69,6 +79,9 @@ export async function POST(request: NextRequest) {
     "voiceFinalization",
     "embeddedInboxes",
     "embeddedActions",
+    "businessSchedules",
+    "agentWork",
+    "activationChecks",
   ];
   const results = await Promise.allSettled([
     processPendingActionJobs(batchSize),
@@ -81,9 +94,13 @@ export async function POST(request: NextRequest) {
     drainVoiceFinalizationJobs(admin, batchSize),
     pollEmbeddedInboxes(admin, batchSize),
     pollEmbeddedActionResults(admin, batchSize),
+    processBusinessSchedules(admin, batchSize),
+    processAgentWork(admin, batchSize),
+    maintainActivationChecks(admin, batchSize),
   ]);
   const summary = summarizeJobResults([
     ["nativeLifecycle", nativeLifecycle],
+    ["agentSchedules", agentSchedule[0]],
     ...results.map((result, index): [string, PromiseSettledResult<unknown>] => [
       names[index],
       result,

@@ -19,10 +19,18 @@ import {
   UsersRound,
   Activity,
   Bot,
+  Megaphone,
+  Search,
+  ShoppingBag,
+  ListChecks,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const icons = {
+  marketing: Megaphone,
+  sourcing: Search,
+  purchasing: ShoppingBag,
+  operations: ListChecks,
   home: House,
   clients: UsersRound,
   agency: BriefcaseBusiness,

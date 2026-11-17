@@ -9,6 +9,7 @@ export const CONNECTION_SETUP_PROVIDER_KEYS = [
   "gohighlevel",
   "twilio",
   "resend",
+  "instagram_messaging",
   "google_calendar",
   "google_workspace",
   "microsoft_365",

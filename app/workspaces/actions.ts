@@ -7,6 +7,20 @@ import { requirePlatformRole } from "@/lib/permissions/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function openTestWorkspace(layer: "partner" | "client") {
+  return openNamedTestWorkspace(
+    layer,
+    layer === "client" ? "/client" : "/partner",
+  );
+}
+
+export async function openMobileTestWorkspace() {
+  return openNamedTestWorkspace("client", "/client/mobile");
+}
+
+async function openNamedTestWorkspace(
+  layer: "partner" | "client",
+  destination: "/partner" | "/client" | "/client/mobile",
+) {
   const user = await requireAuthenticatedUser("/");
   await requirePlatformRole(user.id, ["platform_owner", "platform_admin"]);
   if (layer !== "partner" && layer !== "client")
@@ -25,14 +39,16 @@ export async function openTestWorkspace(layer: "partner" | "client") {
 
   let targetId = partner.id;
   if (layer === "client") {
-    const { data: client, error: clientError } = await admin
+    const { data: clients, error: clientError } = await admin
       .from("client_businesses")
-      .select("id")
+      .select("id,slug")
       .eq("partner_id", partner.id)
-      .eq("slug", "sample-home-services")
+      .in("slug", ["sample-golf-shop", "sample-home-services"])
       .eq("is_test_account", true)
-      .maybeSingle();
+      .limit(2);
     if (clientError) throw new Error("The test client could not be loaded.");
+    const client =
+      clients?.find((item) => item.slug === "sample-golf-shop") ?? clients?.[0];
     if (!client) redirect("/control?workspace=client#accounts");
     targetId = client.id;
   }
@@ -41,6 +57,7 @@ export async function openTestWorkspace(layer: "partner" | "client") {
       targetKind: layer,
       targetId,
       requestedMode: "sandbox_full",
+      destination,
       returnPath: "/",
     },
     new FormData(),

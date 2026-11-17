@@ -10,9 +10,10 @@ out/
 build/
 release/
 
-# local env files
+# local env files and credentials
 .env
-.env*.local
+.env.*
+!.env.example
 
 # logs
 npm-debug.log*

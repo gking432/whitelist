@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { DailyBrief } from "@/components/business/daily-brief";
+import { loadDailyBrief } from "@/lib/business/daily-brief-data";
+import { canReadBusinessWorkspace } from "@/lib/business/access";
+
 import { ClientActionCenter } from "@/components/client/action-center";
 import { loadClientPortal } from "@/lib/clients/portal";
 import { clientHomePath } from "@/lib/permissions/client-sections";
@@ -14,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title: {
       absolute:
         portal.kind === "ok"
-          ? `Action Center | ${portal.branding.productName}`
+          ? `Today | ${portal.client.name}`
           : "Action Center",
     },
   };
@@ -25,6 +29,14 @@ export default async function ClientPortalPage() {
 
   if (portal.kind !== "ok") {
     return null;
+  }
+
+  if (canReadBusinessWorkspace(portal.access)) {
+    return <DailyBrief data={await loadDailyBrief(portal)} />;
+  }
+
+  if (portal.access.canViewActionCenter) {
+    return <ClientActionCenter />;
   }
 
   if (portal.client.client_experience_mode === "northstar_crm") {

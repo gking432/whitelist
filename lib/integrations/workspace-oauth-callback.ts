@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { completeReadOnlyOAuth } from "@/lib/connections/oauth";
+import { completeActivationOAuth } from "@/lib/activation/oauth";
 
 import { recordAuditEvent } from "@/lib/audit/audit";
 import { getAuthState } from "@/lib/auth/session";
@@ -56,6 +58,8 @@ export async function completeWorkspaceOAuth(
   if (!state || state.providerKey !== expectedProvider) {
     return redirectAfterOAuth(request, null, "invalid_state");
   }
+  if (state.readOnlyAttemptId) return completeReadOnlyOAuth(request, state);
+  if (state.activationAttemptId) return completeActivationOAuth(request, state);
 
   const admin = createSupabaseAdminClient();
   if (!admin) return redirectAfterOAuth(request, null, "server_not_configured");

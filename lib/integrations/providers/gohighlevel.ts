@@ -4,7 +4,7 @@
 // the HubSpot adapter: additive contact upsert + AI Assistant note.
 
 import type { ContactFields } from "@/lib/crm/contact-fields";
-import { normalizePhone } from "@/lib/phone/normalize";
+import { normalizePhone } from "../../phone/normalize.ts";
 
 const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
@@ -151,6 +151,7 @@ export async function syncGoHighLevelContactWithNote(
   credentials: GoHighLevelCredentials,
   fields: ContactFields,
   noteBody: string,
+  beforeWrite?: () => Promise<void>,
 ): Promise<GoHighLevelSyncOutcome> {
   const body: Record<string, string> = {
     locationId: credentials.locationId,
@@ -162,6 +163,7 @@ export async function syncGoHighLevelContactWithNote(
   if (fields.lastname) body.lastName = fields.lastname;
   if (fields.address) body.address1 = fields.address;
 
+  await beforeWrite?.();
   const upserted = await ghlFetch(credentials, "/contacts/upsert", {
     method: "POST",
     body: JSON.stringify(body),
@@ -183,6 +185,7 @@ export async function syncGoHighLevelContactWithNote(
   let noteId: string | null = null;
 
   try {
+    await beforeWrite?.();
     const note = await ghlFetch(
       credentials,
       `/contacts/${encodeURIComponent(contactId)}/notes`,

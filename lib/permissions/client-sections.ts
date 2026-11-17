@@ -221,6 +221,8 @@ export function clientHomePath(
   sections: readonly ClientSectionKey[],
   experienceMode: "background_only" | "northstar_crm",
 ): string {
+  if (sections.includes("action-center")) return "/client";
+
   if (experienceMode === "northstar_crm") {
     const firstCrmSection = CLIENT_SECTION_KEYS.find(
       (section) =>

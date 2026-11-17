@@ -1,6 +1,37 @@
 # Start Here
 
-For the current implementation, verified beta scope, partner setup and remaining launch checks, start with [the supervised beta launch guide](28-beta-launch-guide.md). Product specifications below describe intent, not proof of real-provider readiness.
+## Current direction
+
+**November 16, 2026 execution priority:** use the [parallel development brief](45-parallel-build-brief.md) and [build progress](46-build-progress.md) to implement the full product. Live database/Google access blocks the affected verification, not all coding. Start with shared source-backed business context, enforced owner authority/manager controls and reviewed onboarding; then continue the workflow/observer/mobile backlog. Delegate bounded coding work when available, integrate and test it, and preserve the current uncommitted implementation. The user removed the local Docker/Colima database to recover disk space; do not recreate it as the default next step.
+
+**November 5, 2026 — corrected full-product scope:** follow the [complete product roadmap](44-nightly-launch-roadmap.md). Hosting and Google setup are one foundation work package. The full plan includes connected applications, shared business records/context, guided onboarding, the single pane, coordinated agents, approvals and verified actions, manager chat, customer/sales/scheduling/marketing/operations work, workflow observation, outcome analytics, business playbooks, web/iPhone/Android delivery and production launch. Agents and workflow improvement are core product work, not an unspecified follow-up after releasing a read-only app. Reuse the existing project and tested execution paths. See [the connected-data handoff](43-connected-data.md) for that foundation's implementation and access blockers. This roadmap supersedes earlier build orders.
+
+**October 7, 2026 background:** one company with two offers: a packaged solo-business app, and custom "Agents Built In" implementations inside established businesses' existing software. The job search continues alongside both. The [revised build plan](38-agent-team-build-plan.md#current-direction--october-7-2026) records the earlier sequence. New partner/platform-owner CRMs and white-label commercialization remain deferred; purchasing/sourcing are optional specialist modules. Existing application code, tenant boundaries, integrations, and approvals remain the foundation.
+
+The October 2–3 discussion established the simple owner experience, shared customer records, and Symphony-inspired coordinated work. Those patterns remain useful, but the broad department/industry catalog is a future opportunity list, not a requirement to finish every department before a pilot. The custom offer starts with workflow discovery and employee efficiency, not prepackaged sales and purchasing agents.
+
+Read these documents first:
+
+- [Shared customer team](39-shared-customer-team.md): October 8 implementation, actual department/channel support, activation steps, verification, and live-launch gaps.
+- [Agent team build plan](38-agent-team-build-plan.md): the current two-offer direction, existing implementation evidence, revised build order, and pilot acceptance checks.
+- [Business capabilities and business types](37-business-capabilities-and-business-types.md): the business problems to solve, current AI/automation implementation, proposed agent responsibilities, limits, and potential client industries.
+- [Business workspace prototype](36-business-workspace-prototype.md): what was built, how to open it, verification, and remaining hosting/provider limitations.
+
+1. [Client product blueprint](34-client-product-blueprint.md): the earlier broad product vision, reusable setup pattern, and catalog of business capabilities.
+2. [Client product readiness and build plan](35-client-product-readiness-and-roadmap.md): the historical assessment of foundations and gaps; document 44 sets the current sequence.
+3. [White label business model and pricing](33-business-model-and-pricing.md): the preserved commercial discussion, including assumptions that remain unvalidated.
+
+These documents supersede conflicting partner-first priorities below and in the original specifications and goal sequence. Existing tenancy, permissions, branding, and support infrastructure remain relevant. The client entry and navigation now prioritize the business workspace; the optional detailed CRM and administrative routes remain available.
+
+For historical beta verification and deployment requirements, consult [the supervised beta launch guide](28-beta-launch-guide.md) and [hosted beta notes](32-vercel-beta-workspaces.md). Product specifications and catalog labels are not proof of real-provider readiness.
+
+## Current implementation handoff
+
+Use [the parallel development brief](45-parallel-build-brief.md) for execution, [build progress](46-build-progress.md) for the current task, [the product roadmap](44-nightly-launch-roadmap.md) for outcomes and [the handoff guidance](10-codex-goal-prompt.md) for the launch prompt. Documents 34–35 preserve the earlier broad vision, phased recommendations, and readiness evidence. Consult existing architecture, schema, and integration documents for the affected area, and read the applicable repository and framework instructions before changing code.
+
+## Historical project brief
+
+The remainder records the original project brief for context. Its partner-first build strategy and home-service-only framing are superseded by the current direction above. The absolute boundaries and tenant/branding protections continue to apply.
 
 ## Purpose
 
@@ -104,11 +135,9 @@ Use a modern production-ready stack unless the user chooses otherwise:
 
 If the chosen stack differs, update these docs before building.
 
-## Suggested Initial Command For A New Codex Thread
+## Original initial command retained for history
 
-```text
-Read every file in /Users/gkn/partner-platform/docs before writing code. Then create the production app described there, following docs/07-goal-build-sequence.md one goal at a time. Do not modify /Users/gkn/new. Do not create demo-only behavior. Ask only for decisions that block architecture or product correctness.
-```
+The original handoff asked a new task to execute the scaffold sequence in document 07. That sequence has been superseded; use document 10 and the current client-product build plan instead.
 
 ## Definition Of A Good First Pass
 
@@ -130,3 +159,6 @@ It does need:
 - no accidental dependence on Northstar.
 
 - [Connected apps beta: setup, verification and activation](30-connected-apps-beta.md)
+- [Owner assistant setup and shared app connections](40-agent-connection-activation.md)
+
+The current Google read-only connection implementation, live-test blockers, and deployment steps are in [Connected data](43-connected-data.md).

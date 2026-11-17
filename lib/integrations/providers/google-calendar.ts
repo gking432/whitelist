@@ -255,8 +255,10 @@ export async function createCalendarEvent(
     startIso: string;
     endIso: string;
   },
+  beforeWrite?: () => Promise<void>,
 ): Promise<{ eventId: string; htmlLink: string | null }> {
   const accessToken = await mintAccessToken(credentials);
+  await beforeWrite?.();
 
   const response = await fetch(
     `${CALENDAR_BASE}/calendars/primary/events`,

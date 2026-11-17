@@ -1,9 +1,11 @@
+import { testInstagramConnection, type InstagramMessagingCredentials } from "@/lib/integrations/providers/instagram-messaging";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getAppUrl } from "@/lib/env";
 import {
   encryptProviderCredentials,
   PROVIDER_CREDENTIALS_KIND,
+  readProviderCredentials,
 } from "@/lib/integrations/credentials";
 import {
   isPilotProviderKey,
@@ -63,14 +65,15 @@ export async function ensureProviderConnection(
 
   if (!provider) throw new Error("This provider is not available.");
 
-  const { data: existing } = await supabase
+  let existingQuery = supabase
     .from("integration_connections")
     .select("id")
     .eq("partner_id", scope.partnerId)
     .eq("client_id", scope.clientId)
-    .eq("provider_id", provider.id)
-    .limit(1)
-    .maybeSingle();
+    .eq("provider_id", provider.id);
+  if (["google_workspace", "microsoft_365"].includes(providerKey))
+    existingQuery = existingQuery.or("config->>workspace_view_only.is.null,config->>workspace_view_only.neq.true");
+  const { data: existing } = await existingQuery.limit(1).maybeSingle();
 
   if (existing) return existing.id as string;
 
@@ -99,6 +102,7 @@ async function verifyProviderCredentials(
   providerKey: CredentialProviderKey,
   credentials: Record<string, string>,
 ) {
+  if (providerKey === "instagram_messaging") return testInstagramConnection(credentials as unknown as InstagramMessagingCredentials);
   if (providerKey === "hubspot") {
     return testHubSpotConnection(credentials as unknown as HubSpotCredentials);
   }
@@ -177,6 +181,7 @@ export async function saveProviderCredentials(
   credentials: Record<string, string>,
   options: { skipVerification?: boolean; healthDetail?: string } = {},
 ) {
+  if (providerKey === "stripe") credentials = { ...credentials, accessMode: "read_only" };
   const test = options.skipVerification
     ? { ok: true as const, detail: options.healthDetail ?? "Connected." }
     : await verifyProviderCredentials(providerKey, credentials);
@@ -189,6 +194,22 @@ export async function saveProviderCredentials(
     providerKey,
   );
   let healthDetail = test.detail;
+  let stripeConfig: Record<string, unknown> | undefined;
+  if (providerKey === "stripe") {
+    const current = await supabase.from("integration_connections").select("config,external_account_id")
+      .eq("id", connectionId).eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).single().throwOnError();
+    const verifiedId = "externalAccountId" in test ? test.externalAccountId : null;
+    if (current.data.external_account_id && verifiedId && current.data.external_account_id !== verifiedId)
+      throw new Error("Reconnect the same Stripe account. Add a separate connection for a different business account.");
+    if (!credentials.webhookSecret) {
+      const previous = await readProviderCredentials<Record<string, string>>(supabase, connectionId);
+      if (previous?.webhookSecret) credentials = { ...credentials, webhookSecret: previous.webhookSecret };
+    }
+    stripeConfig = { ...current.data.config, workspace_view_only: true, owner_workspace_imports: true, conversation_intake_enabled: false };
+    healthDetail += ` Read-only import. Signed-event endpoint: ${getAppUrl()}/api/integrations/inbound/stripe/${connectionId}. ${credentials.webhookSecret ? "Signing secret saved; real event delivery still needs verification." : "Polling only until an event signing secret is configured."}`;
+  }
+  if (providerKey === "instagram_messaging") healthDetail += ` Callback: ${getAppUrl()}/api/integrations/inbound/instagram/${connectionId}`;
+  if (providerKey === "resend") healthDetail += ` Receiving callback (email.received): ${getAppUrl()}/api/integrations/inbound/email/resend/${connectionId}`;
 
   if (providerKey === "twilio" && !options.skipVerification) {
     const appUrl = getAppUrl().replace(/\/$/, "");
@@ -231,8 +252,11 @@ export async function saveProviderCredentials(
       credential_status: "configured",
       health_summary: healthDetail,
       last_success_at: new Date().toISOString(),
+      ...(stripeConfig ? { config: stripeConfig, runtime_mode: "dry_run", ...("externalAccountId" in test ? { external_account_id: test.externalAccountId } : {}), ...("externalAccountName" in test ? { external_account_name: test.externalAccountName } : {}) } : {}),
     })
-    .eq("id", connectionId);
+    .eq("id", connectionId)
+    .eq("partner_id", scope.partnerId)
+    .eq("client_id", scope.clientId).throwOnError();
 
   await refreshPackageDeploymentReadiness(supabase, {
     partnerId: scope.partnerId,

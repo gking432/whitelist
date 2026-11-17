@@ -121,7 +121,9 @@ export function getResendInboundConfig() {
   const apiKey = process.env.PLATFORM_RESEND_API_KEY;
   const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
   const domain = process.env.RESEND_INBOUND_DOMAIN;
-  return apiKey && webhookSecret && domain ? { apiKey, webhookSecret, domain } : null;
+  return apiKey && webhookSecret && domain
+    ? { apiKey, webhookSecret, domain }
+    : null;
 }
 
 export function getPodiumOAuthClient() {
@@ -134,8 +136,7 @@ export function isLocalDevAutoLoginEnabled() {
   const usesLocalSupabase =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.startsWith("http://127.0.0.1:") ??
     false;
-  const previewLoginEnabled =
-    process.env.ENABLE_LOCAL_PREVIEW_LOGIN === "true";
+  const previewLoginEnabled = process.env.ENABLE_LOCAL_PREVIEW_LOGIN === "true";
 
   return (
     usesLocalSupabase &&
@@ -148,14 +149,13 @@ export function getLocalDevLoginEmail(nextPath = "/partner") {
     return process.env.DEV_AUTO_LOGIN_EMAIL;
   }
 
-  if (
-    nextPath.startsWith("/client") ||
-    nextPath.startsWith("/desktop")
-  ) {
+  const pathname = nextPath.split(/[?#]/, 1)[0];
+
+  if (pathname.startsWith("/client") || pathname.startsWith("/desktop")) {
     return "client@northstar.test";
   }
 
-  if (nextPath.startsWith("/control")) {
+  if (pathname.startsWith("/control") || pathname === "/dev/prototype") {
     return "platform@northstar.test";
   }
 

@@ -7,8 +7,8 @@ import type { RunStep } from "@/lib/workflows/handlers";
 // Built-in CRM writer (docs/12 "Built-In CRM Mode"). Fills Northstar's own
 // contacts/leads/timeline/tasks/appointments for clients whose
 // crm_operating_mode uses the built-in CRM (primary_crm), mirrors into it
-// (mirror), or assists alongside an external CRM (assist). External-only
-// and webhook-only clients are untouched. All writes here run through the
+// (mirror), assists alongside an external CRM (assist), or uses the business
+// workspace with its CRM screens hidden. All writes here run through the
 // service role from trusted server paths and attribute AI work as
 // actor_type 'ai_assistant'. Never throws — a CRM bookkeeping failure must
 // not break a run or a delivery.
@@ -25,7 +25,12 @@ async function clientUsesInternalCrm(
     .eq("id", clientId)
     .maybeSingle();
 
-  return INTERNAL_CRM_MODES.has(data?.crm_operating_mode ?? "");
+  if (INTERNAL_CRM_MODES.has(data?.crm_operating_mode ?? "")) return true;
+  // Operational records support the business workspace even when CRM screens
+  // are hidden or an external CRM remains authoritative.
+  const { data: workspace } = await admin.from("business_workspace_profiles")
+    .select("client_id").eq("client_id", clientId).maybeSingle();
+  return Boolean(workspace);
 }
 
 type ContactMatchInput = {
@@ -356,12 +361,14 @@ export async function recordAppointmentBooking(input: {
       return;
     }
 
-    const contactId = await findContactId(admin, {
-      partnerId: input.partnerId,
-      clientId: input.clientId,
-      email: contact.email ?? null,
-      phone: contact.phone ?? null,
-    });
+    let contactId: string | null;
+    if (typeof input.payload.contact_id === "string") {
+      const verified = await admin.from("crm_contacts").select("id").eq("id",input.payload.contact_id).eq("partner_id",input.partnerId).eq("client_id",input.clientId).single();
+      if (verified.error || !verified.data) throw new Error("Approved customer record is unavailable.");
+      contactId = verified.data.id;
+    } else {
+      contactId = await findContactId(admin, {partnerId:input.partnerId,clientId:input.clientId,email:contact.email ?? null,phone:contact.phone ?? null});
+    }
 
     // Internal bookings and their timeline are committed atomically by the
     // booking RPC. Provider bookings need an idempotent local mirror only.

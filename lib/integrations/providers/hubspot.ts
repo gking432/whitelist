@@ -2,7 +2,7 @@
 // decrypted from integration_secrets and never leave the server. Uses plain
 // fetch against the public CRM v3 API; no SDK dependency.
 
-import { phoneSearchVariants } from "@/lib/phone/normalize";
+import { phoneSearchVariants } from "../../phone/normalize.ts";
 
 const HUBSPOT_BASE = "https://api.hubapi.com";
 
@@ -159,6 +159,7 @@ export async function syncContactWithNote(
   credentials: HubSpotCredentials,
   fields: HubSpotContactFields,
   noteBody: string,
+  beforeWrite?: () => Promise<void>,
 ): Promise<HubSpotSyncOutcome> {
   const token = credentials.privateAppToken;
 
@@ -175,6 +176,7 @@ export async function syncContactWithNote(
   let contactId: string;
   let contactAction: "created" | "updated";
 
+  await beforeWrite?.();
   if (existingId) {
     await hubspotFetch(token, `/crm/v3/objects/contacts/${existingId}`, {
       method: "PATCH",
@@ -194,6 +196,7 @@ export async function syncContactWithNote(
   let noteId: string | null = null;
 
   try {
+    await beforeWrite?.();
     const note = await hubspotFetch(token, "/crm/v3/objects/notes", {
       method: "POST",
       body: JSON.stringify({

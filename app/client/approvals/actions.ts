@@ -62,6 +62,7 @@ export async function resolveClientApproval(
 
     if (result.status === "success") {
       revalidatePath("/client/approvals");
+      revalidatePath("/client/mobile");
       revalidatePath("/client");
     }
 

@@ -1,6 +1,8 @@
 import { dispatchActionJob } from "@/lib/jobs/dispatch";
 import { type ActionJobRecord } from "@/lib/jobs/record";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { maintainBookingConfirmations } from "@/lib/scheduling/confirmation-completion";
+import { maintainBookingLifecycle } from "@/lib/scheduling/lifecycle-service";
 
 // Background job runner for durable action jobs. Retries FAILED jobs with
 // exponential backoff (2^attempt minutes, capped) up to MAX_ATTEMPTS.
@@ -14,53 +16,19 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 // call concurrently: a compare-and-swap claim precedes each external effect.
 // Interrupted claims require reconciliation rather than automatic replay.
 
-const MAX_ATTEMPTS = 5;
-const BACKOFF_CAP_MINUTES = 60;
-
-export type RunnerResult = {
-  scanned: number;
-  attempted: number;
-  succeeded: number;
-  failed: number;
-  waiting: number;
-};
-
-function backoffMinutes(attemptCount: number): number {
-  return Math.min(2 ** attemptCount, BACKOFF_CAP_MINUTES);
-}
-
-export function isJobDueForRetry(
-  job: Pick<ActionJobRecord, "status" | "attempt_count" | "last_attempt_at">,
-  now: Date = new Date(),
-): boolean {
-  if (job.status !== "failed" || job.attempt_count >= MAX_ATTEMPTS) {
-    return false;
-  }
-
-  if (!job.last_attempt_at) {
-    return true;
-  }
-
-  const waitMs = backoffMinutes(job.attempt_count) * 60 * 1000;
-
-  return now.getTime() - Date.parse(job.last_attempt_at) >= waitMs;
-}
+import { drainActionJobs, MAX_ACTION_ATTEMPTS } from "./runner-core.ts";
+import type { RunnerResult } from "./runner-core.ts";
+export { isJobDueForRetry } from "./runner-core.ts";
+export type { RunnerResult } from "./runner-core.ts";
 
 export async function processPendingActionJobs(
   limit = 20,
 ): Promise<RunnerResult> {
   const admin = createSupabaseAdminClient();
-  const result: RunnerResult = {
-    scanned: 0,
-    attempted: 0,
-    succeeded: 0,
-    failed: 0,
-    waiting: 0,
+  if (!admin) return {
+    scanned: 0, attempted: 0, succeeded: 0, failed: 0, waiting: 0,
+    skipped: 0, dryRun: 0, uncertain: 0,
   };
-
-  if (!admin) {
-    return result;
-  }
 
   // An expired lease may already have caused an external effect. Never resend it.
   const { error: recoveryError } = await admin
@@ -75,35 +43,23 @@ export async function processPendingActionJobs(
   if (recoveryError)
     throw new Error("Interrupted deliveries could not be checked.");
 
-  const { data, error } = await admin
-    .from("action_jobs")
-    .select("*")
-    .in("status", ["failed", "pending"])
-    .lt("attempt_count", MAX_ATTEMPTS)
-    .order("last_attempt_at", { ascending: true, nullsFirst: true })
-    .limit(limit);
-
-  if (error) throw new Error("Delivery queue is unavailable.");
-
-  const jobs = (data ?? []) as ActionJobRecord[];
-  result.scanned = jobs.length;
-
-  for (const job of jobs) {
-    if (job.status === "failed" && !isJobDueForRetry(job)) {
-      result.waiting += 1;
-      continue;
-    }
-
-    const outcome = await dispatchActionJob(admin, job);
-    if (!outcome) continue;
-    result.attempted += 1;
-
-    if (outcome.status === "failed" || outcome.status === "uncertain") {
-      result.failed += 1;
-    } else {
-      result.succeeded += 1;
-    }
-  }
-
+  const result = await drainActionJobs({
+    now: () => new Date(),
+    page: async (offset, size) => {
+      const { data, error } = await admin
+        .from("action_jobs")
+        .select("*")
+        .in("status", ["failed", "pending"])
+        .lt("attempt_count", MAX_ACTION_ATTEMPTS)
+        .order("last_attempt_at", { ascending: true, nullsFirst: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + size - 1);
+      if (error) throw new Error("Delivery queue is unavailable.");
+      return (data ?? []) as ActionJobRecord[];
+    },
+    dispatch: (job) => dispatchActionJob(admin, job),
+  }, limit);
+  await maintainBookingConfirmations(admin);
+  await maintainBookingLifecycle(admin);
   return result;
 }

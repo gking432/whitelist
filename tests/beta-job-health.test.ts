@@ -23,3 +23,10 @@ test("worker rejection keeps independent results and does not expose raw error d
   assert.deepEqual(result.workers.delivery, { succeeded: 2 });
   assert.equal(JSON.stringify(result).includes("secret diagnostic"), false);
 });
+test("an uncertain provider result cannot produce a healthy scheduler heartbeat", () => {
+  const result = summarizeJobResults([
+    ["delivery", { status: "fulfilled", value: { succeeded: 0, failed: 0, uncertain: 1 } }],
+  ]);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.workers.delivery, { succeeded: 0, failed: 0, uncertain: 1 });
+});

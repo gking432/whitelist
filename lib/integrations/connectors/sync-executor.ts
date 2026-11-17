@@ -15,6 +15,7 @@ import type {
   ConnectorFieldMapping,
   ConnectorPushInput,
 } from "./types.ts";
+import { allowsConnectorWork } from "./read-only-policy.ts";
 import { connectorFailurePolicy, ConnectorExecutionCancelledError } from "./errors.ts";
 
 export type ConnectorSyncJob = {
@@ -83,6 +84,7 @@ export async function executeConnectorSyncJob(input: {
 
   let writeStarted = false;
   try {
+    if (!allowsConnectorWork(context.config, job.direction, job.objectType)) throw new ConnectorExecutionCancelledError();
     if (job.direction === "pull") {
       if (!adapter.pullPage) {
         return { ok: false, retryable: false, error: "Connector cannot pull records." };
@@ -117,9 +119,11 @@ export async function executeConnectorSyncJob(input: {
               .join("; ")}`,
           };
         }
+        await repository.assertCanExecute?.(context);
         await repository.saveCanonicalRecord(record);
       }
 
+      await repository.assertCanExecute?.(context);
       await repository.saveCursor(page.nextCursor);
       const continueImmediately =
         page.continueImmediately ?? page.nextCursor !== null;

@@ -1,4 +1,6 @@
+import { isWorkspaceViewOnly } from "../connectors/read-only-policy.ts";
 import { googleBusyIntervals } from "./calendar-availability.ts";
+import { gmailPlainText, emailAddress, automatedMail, shouldFetchInboxBody } from "./inbox-message.ts";
 import type {
   CanonicalObjectType,
   CanonicalRecord,
@@ -37,8 +39,10 @@ async function googleFetch(
   credentials: WorkspaceCredentials,
   url: string,
   init: RequestInit = {},
+  beforeWrite?: () => Promise<void>,
 ): Promise<Response> {
   const token = await mintWorkspaceAccessToken("google_workspace", credentials);
+  await beforeWrite?.();
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -107,6 +111,7 @@ export function mapGoogleEvent(source: Record<string, unknown>): CanonicalRecord
       end_at: end.dateTime ?? end.date ?? null,
       status: source.status ?? null,
       html_url: source.htmlLink ?? null,
+      all_day: typeof start.date === "string",
     },
     source,
   };
@@ -126,29 +131,39 @@ function cursorToken(
 async function readGmailMessages(
   credentials: WorkspaceCredentials,
   messages: { id: string; threadId?: string }[],
+  config: Record<string,unknown>,
 ): Promise<CanonicalRecord[]> {
   const unique = [...new Map(messages.map((message) => [message.id, message])).values()];
   const details = await Promise.all(unique.map(async (message) => {
     const detailParams = new URLSearchParams({ format: "metadata" });
-    for (const header of ["From", "To", "Subject", "Date"]) {
-      detailParams.append("metadataHeaders", header);
+    for (const header of ["From","To","Subject","Date","Auto-Submitted","Precedence","List-Id","List-Unsubscribe"]) detailParams.append("metadataHeaders",header);
+    let response: Response;
+    try {
+      response = await googleFetch(credentials, `${GMAIL}/users/me/messages/${encodeURIComponent(message.id)}?${detailParams}`, { signal: AbortSignal.timeout(15_000) });
+    } catch (error) {
+      // A message can be deleted between the list/history response and hydration.
+      if (error instanceof GoogleWorkspaceApiError && error.status === 404) return { id:message.id, threadId:message.threadId, deleted:true };
+      throw error;
     }
-    const response = await googleFetch(
-      credentials,
-      `${GMAIL}/users/me/messages/${encodeURIComponent(message.id)}?${detailParams}`,
-      { signal: AbortSignal.timeout(15_000) },
-    );
-    return await response.json() as {
+    const metadata = await response.json() as {
       id: string;
       threadId?: string;
       internalDate?: string;
       snippet?: string;
       labelIds?: string[];
-      payload?: { headers?: { name: string; value: string }[] };
+      payload?: Parameters<typeof gmailPlainText>[0] & { headers?: { name: string; value: string }[] };
     };
+    const headers=Object.fromEntries((metadata.payload?.headers??[]).map(h=>[h.name.toLowerCase(),h.value]));
+    const labels=metadata.labelIds??[];
+    const received=metadata.internalDate ? new Date(Number(metadata.internalDate)).toISOString() : null;
+    if(shouldFetchInboxBody(received,config) && labels.includes("INBOX") && !labels.some(l=>["SENT","DRAFT","SPAM","TRASH"].includes(l)) && !automatedMail(headers,emailAddress(headers.from))) {
+      return await (await googleFetch(credentials,`${GMAIL}/users/me/messages/${encodeURIComponent(message.id)}?format=full`)).json() as typeof metadata;
+    }
+    return metadata;
   }));
 
   return details.map((message) => {
+    if ("deleted" in message) return mapDeletedGmailMessage(message);
     const headers = Object.fromEntries(
       (message.payload?.headers ?? []).map((header) => [header.name.toLowerCase(), header.value]),
     );
@@ -165,7 +180,13 @@ async function readGmailMessages(
         to: headers.to ?? null,
         subject: headers.subject ?? null,
         preview: message.snippet ?? null,
+        sender: emailAddress(headers.from),
+        body: gmailPlainText(message.payload),
+        inbound: (message.labelIds ?? []).includes("INBOX") && !(message.labelIds ?? []).some((label) => ["SENT", "DRAFT", "SPAM", "TRASH"].includes(label)),
+        automated: automatedMail(headers, emailAddress(headers.from)),
+        has_attachments: JSON.stringify(message.payload ?? {}).includes('"attachmentId"'),
         is_read: !(message.labelIds ?? []).includes("UNREAD"),
+        labels: message.labelIds ?? [],
       },
       source: message,
     };
@@ -190,7 +211,9 @@ async function pullGooglePage(
   credentials: WorkspaceCredentials,
   objectType: CanonicalObjectType,
   cursor: Record<string, unknown> | null,
+  config: Record<string,unknown> = {},
 ): Promise<ConnectorPage> {
+  if (isWorkspaceViewOnly(config) && objectType === "appointment" && typeof cursor?.fullSyncAt === "string" && Date.parse(cursor.fullSyncAt) < Date.now() - 86400000) cursor = null;
   const token = pageToken(cursor);
   if (objectType === "customer") {
     const syncToken = cursorToken(cursor, "syncToken");
@@ -210,7 +233,7 @@ async function pullGooglePage(
       body = await (await googleFetch(credentials, `${PEOPLE}/people/me/connections?${params}`)).json() as typeof body;
     } catch (error) {
       if (syncToken && expiredGoogleCursor(error)) {
-        return pullGooglePage(credentials, objectType, null);
+        return pullGooglePage(credentials, objectType, null, config);
       }
       throw error;
     }
@@ -227,12 +250,15 @@ async function pullGooglePage(
   }
   if (objectType === "appointment") {
     const syncToken = cursorToken(cursor, "syncToken");
+    const fullSyncAt = typeof cursor?.fullSyncAt === "string" ? cursor.fullSyncAt : new Date().toISOString();
+    const windowStart = new Date(Date.parse(fullSyncAt) - 31 * 86400000).toISOString();
+    const windowEnd = new Date(Date.parse(fullSyncAt) + 32 * 86400000).toISOString();
     const params = new URLSearchParams({
       singleEvents: "true",
       showDeleted: "true",
       maxResults: "100",
       ...(token ? { pageToken: token } : {}),
-      ...(syncToken ? { syncToken } : {}),
+      ...(syncToken ? { syncToken } : isWorkspaceViewOnly(config) ? { timeMin:windowStart, timeMax:windowEnd } : {}),
     });
     let body: {
       items?: Record<string, unknown>[];
@@ -243,7 +269,7 @@ async function pullGooglePage(
       body = await (await googleFetch(credentials, `${CALENDAR}/calendars/primary/events?${params}`)).json() as typeof body;
     } catch (error) {
       if (syncToken && expiredGoogleCursor(error)) {
-        return pullGooglePage(credentials, objectType, null);
+        return pullGooglePage(credentials, objectType, null, config);
       }
       throw error;
     }
@@ -254,7 +280,7 @@ async function pullGooglePage(
         : null;
     return {
       records: (body.items ?? []).map(mapGoogleEvent),
-      nextCursor,
+      nextCursor: isWorkspaceViewOnly(config) && nextCursor ? { ...nextCursor, fullSyncAt } : nextCursor,
       continueImmediately: Boolean(body.nextPageToken),
     };
   }
@@ -281,7 +307,7 @@ async function pullGooglePage(
         )).json() as typeof body;
       } catch (error) {
         if (error instanceof GoogleWorkspaceApiError && error.status === 404) {
-          return pullGooglePage(credentials, objectType, null);
+          return pullGooglePage(credentials, objectType, null, config);
         }
         throw error;
       }
@@ -299,7 +325,7 @@ async function pullGooglePage(
         ),
       );
       return {
-        records: [...await readGmailMessages(credentials, messages), ...deleted],
+        records: [...await readGmailMessages(credentials, messages, config), ...deleted],
         nextCursor: body.nextPageToken
           ? { historyId, pageToken: body.nextPageToken }
           : { historyId: body.historyId ?? historyId },
@@ -311,7 +337,7 @@ async function pullGooglePage(
         const profile = await (await googleFetch(credentials, `${GMAIL}/users/me/profile`)).json() as { historyId?: string };
         return profile.historyId ?? null;
       })();
-    const params = new URLSearchParams({ maxResults: "25", ...(token ? { pageToken: token } : {}) });
+    const params = new URLSearchParams({ maxResults: "25", ...(token ? { pageToken: token } : {}), ...(isWorkspaceViewOnly(config) ? { q: "newer_than:30d -in:spam -in:trash -in:drafts" } : {}) });
     const body = (await (await googleFetch(credentials, `${GMAIL}/users/me/messages?${params}`)).json()) as {
       messages?: { id: string; threadId?: string }[];
       nextPageToken?: string;
@@ -325,7 +351,7 @@ async function pullGooglePage(
         ? { historyId: fullSyncHistoryId }
         : null;
     return {
-      records: await readGmailMessages(credentials, body.messages ?? []),
+      records: await readGmailMessages(credentials, body.messages ?? [], config),
       nextCursor,
       continueImmediately: Boolean(body.nextPageToken),
     };
@@ -344,7 +370,9 @@ function base64url(value: string): string {
 async function pushGoogleRecord(
   credentials: WorkspaceCredentials,
   input: ConnectorPushInput,
+  beforeWrite?: () => Promise<void>,
 ) {
+  if (credentials.accessMode === "read_only") throw new Error("This Google connection is read-only.");
   if (input.objectType === "customer" && input.operation === "create") {
     const response = await googleFetch(credentials, `${PEOPLE}/people:createContact`, {
       method: "POST",
@@ -353,7 +381,7 @@ async function pushGoogleRecord(
         emailAddresses: text(input.data, "email") ? [{ value: text(input.data, "email") }] : [],
         phoneNumbers: text(input.data, "phone") ? [{ value: text(input.data, "phone") }] : [],
       })),
-    });
+    }, beforeWrite);
     const created = (await response.json()) as { resourceName?: string };
     return { externalObjectId: String(created.resourceName ?? "").replace("people/", ""), source: created };
   }
@@ -361,7 +389,7 @@ async function pushGoogleRecord(
   if (input.objectType === "appointment") {
     const eventId = input.externalObjectId;
     if (input.operation === "delete" && eventId) {
-      await googleFetch(credentials, `${CALENDAR}/calendars/primary/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+      await googleFetch(credentials, `${CALENDAR}/calendars/primary/events/${encodeURIComponent(eventId)}`, { method: "DELETE" }, beforeWrite);
       return { externalObjectId: eventId };
     }
     const response = await googleFetch(
@@ -375,7 +403,7 @@ async function pushGoogleRecord(
           start: { dateTime: text(input.data, "start_at") },
           end: { dateTime: text(input.data, "end_at") },
         })),
-      },
+      }, beforeWrite,
     );
     const created = (await response.json()) as { id?: string; updated?: string };
     return { externalObjectId: created.id ?? eventId ?? "", updatedAt: created.updated ?? null, source: created };
@@ -389,7 +417,7 @@ async function pushGoogleRecord(
     const response = await googleFetch(credentials, `${GMAIL}/users/me/messages/send`, {
       method: "POST",
       body: JSON.stringify(connectorPushPayload(input.externalData, { raw: base64url(raw) })),
-    });
+    }, beforeWrite);
     const sent = (await response.json()) as { id?: string; threadId?: string };
     return { externalObjectId: sent.id ?? "", externalParentId: sent.threadId ?? null, source: sent };
   }
@@ -413,6 +441,7 @@ export async function getGoogleWorkspaceBusyIntervals(
 export async function sendGoogleWorkspaceEmail(
   credentials: WorkspaceCredentials,
   message: { to: string; subject: string; body: string; idempotencyKey: string },
+  beforeWrite?: () => Promise<void>,
 ): Promise<{ messageId: string }> {
   const result = await pushGoogleRecord(credentials, {
     operation: "create",
@@ -420,7 +449,7 @@ export async function sendGoogleWorkspaceEmail(
     nativeObjectId: message.idempotencyKey,
     data: message,
     idempotencyKey: message.idempotencyKey,
-  });
+  }, beforeWrite);
   return { messageId: result.externalObjectId };
 }
 
@@ -454,10 +483,13 @@ export const googleWorkspaceAdapter: ConnectorAdapter<WorkspaceCredentials> = {
       return { ok: false, detail: error instanceof Error ? error.message : "Google Workspace verification failed." };
     }
   },
-  pullPage(context, objectType, cursor) {
-    return pullGooglePage(context.credentials, objectType, cursor);
+  async pullPage(context, objectType, cursor) {
+    const observedAt = new Date().toISOString();
+    const page = await pullGooglePage(context.credentials, objectType, cursor, context.config);
+    return { ...page, records: page.records.map((record) => ({ ...record, data: { ...record.data, observed_at: observedAt } })) };
   },
   pushRecord(context, input) {
+    if (isWorkspaceViewOnly(context.config)) throw new Error("This Google connection is read-only.");
     return pushGoogleRecord(context.credentials, input);
   },
 };

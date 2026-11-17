@@ -1,5 +1,6 @@
 import type { DeliveryOutcome } from "@/lib/delivery/customer-message";
 import type { EmbeddedBinding } from "./runtime.ts";
+import type { ActionPreflight } from "../../jobs/action-preflight.ts";
 import { mapFields, validateInbound, validateFields } from "./mapping.ts";
 import {
   authenticationMatches,
@@ -55,6 +56,7 @@ export async function createApprovedExternalRun(
     actionKey: string;
     values: Record<string, unknown>;
     onRunId: (id: string) => Promise<void>;
+    beforeSubmit?: ActionPreflight;
   },
 ): Promise<DeliveryOutcome> {
   const auths = await api.authentications(input.appId);
@@ -76,6 +78,8 @@ export async function createApprovedExternalRun(
     await api.fields(action.id, input.authenticationId, input.values),
     input.values,
   );
+  const blocked = await input.beforeSubmit?.();
+  if (blocked) return { status: "skipped", attempted: false, delivered: false, detail: blocked };
   let result;
   try {
     result = await api.request<{ data: { id?: string; status?: string } }>(

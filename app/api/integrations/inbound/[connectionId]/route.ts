@@ -10,6 +10,7 @@ import { checkRateLimit } from "@/lib/integrations/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { enqueueInboundEvent, processInboundEventJobs } from "@/lib/integrations/inbound/queue";
 import { createHash } from "node:crypto";
+import { normalizeOwnerIntake } from "@/lib/connections/intake";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,8 @@ type ConnectionRow = {
   display_name: string;
   status: string;
   error_count: number;
+  runtime_mode: string;
+  config: Record<string, unknown>;
   provider: { provider_key: string; supports_inbound: boolean } | null;
 };
 
@@ -91,7 +94,7 @@ export async function POST(
   const { data: connectionData, error: connectionError } = await supabase
     .from("integration_connections")
     .select(
-      "id, partner_id, client_id, display_name, status, error_count, provider:integration_providers(provider_key, supports_inbound)",
+      "id, partner_id, client_id, display_name, status, runtime_mode, config, error_count, provider:integration_providers(provider_key, supports_inbound)",
     )
     .eq("id", connectionId)
     .maybeSingle();
@@ -155,7 +158,7 @@ export async function POST(
     return json(401, { error: "Unauthorized." });
   }
 
-  if (connection.status === "paused" || connection.status === "disabled") {
+  if (connection.status === "paused" || connection.status === "disabled" || connection.runtime_mode === "paused" || connection.status === "not_connected") {
     await logRejectedEvent(
       supabase,
       connection,
@@ -238,9 +241,20 @@ export async function POST(
       : {};
 
   try {
+    const ownerIntake = connection.provider.provider_key === "generic_inbound_webhook" && connection.config.owner_workspace_imports === true;
+    let eventData = data;
+    if (ownerIntake) {
+      try {
+        const record = normalizeOwnerIntake(eventType, data, new Date().toISOString());
+        eventData = { records: [record], event_at: record.updatedAt, source_event_id: idempotencyKey ?? createHash("sha256").update(rawBody).digest("hex") };
+      } catch {
+        return json(400, { error: "Use a supported form envelope with a stable source id, valid fields and source timestamps for updates or deletion." });
+      }
+    }
     const receipt = await enqueueInboundEvent(supabase, {
       partnerId: connection.partner_id, clientId: connection.client_id, connectionId,
-      eventType, idempotencyKey: idempotencyKey ?? createHash("sha256").update(rawBody).digest("hex"), data,
+      eventType, idempotencyKey: idempotencyKey ?? createHash("sha256").update(rawBody).digest("hex"), data: eventData,
+      handler: ownerIntake ? "records" : "workflow",
     });
     after(() => processInboundEventJobs(supabase, 1, receipt.eventId));
     return json(202, { event_id: receipt.eventId, duplicate: receipt.duplicate, status: receipt.status });

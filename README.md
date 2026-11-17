@@ -1,12 +1,32 @@
 # Partner AI Platform
 
-This folder contains the multi-tenant, white-label Northstar product. It
-combines the partner operations platform with the CRM and AI operating suite
-originally prototyped in `/Users/gkn/new`.
+Build handoff: [parallel development brief](docs/45-parallel-build-brief.md), [current progress](docs/46-build-progress.md), and [copyable launch prompt](docs/10-codex-goal-prompt.md). Hosted account access is a scoped live-testing gate; continue independent product implementation while it is unresolved. Preserve the existing uncommitted code and the user's decision to remove local Docker storage.
 
-Northstar is the product partners sell under their own branding. A partner can
-run it for their own agency, offer the built-in CRM to clients that need one,
-or install the AI and automation layer alongside a client's existing CRM.
+Current execution order: [Complete product roadmap](docs/44-nightly-launch-roadmap.md). Hosting and Google setup are one foundation task. The full product includes connected business records, guided setup, the single pane, coordinated agents, manager controls, approved execution, workflow observation/improvement, analytics and web/iPhone/Android delivery. See [the connected-data handoff](docs/43-connected-data.md) for the first connection slice and its live setup blockers.
+
+This repository contains the existing multi-tenant business application and
+the shared execution infrastructure for custom AI implementation work.
+
+The current priority is one client-facing product:
+describe the business, activate useful agents and automations, connect existing
+tools, and oversee results and approvals. Agents use shared customer records;
+the detailed CRM is an optional interface. Development of the partner CRM and
+platform-owner CRM and white-label commercialization is deferred. The company
+has two offers: the packaged solo-business app and custom “Agents Built In”
+implementations inside established businesses' existing software.
+
+Start with the [shared customer team](docs/39-shared-customer-team.md)
+and [complete product roadmap](docs/44-nightly-launch-roadmap.md).
+The [business model and pricing discussion](docs/33-business-model-and-pricing.md)
+is preserved for later. These documents change development priorities; the
+existing account boundaries remain in place.
+
+The existing app now connects the shared CRM, customer conversations,
+department assignments, owner approvals, and checked execution. Use
+`npm run prototype` for local services, then open `http://localhost:3210`
+and select an authorized business workspace. Development fixtures are separate
+from normal onboarding. The current handoff distinguishes implemented paths
+from live-provider and production-readiness checks that remain outstanding.
 
 ## Local Development
 
@@ -26,8 +46,8 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=   # server-only: webhook intake + run engine
 SECRETS_ENCRYPTION_KEY=      # server-only: openssl rand -base64 32
-ANTHROPIC_API_KEY=           # server-only: AI workflow output (optional —
-                             # workflows fall back to labeled rule-based output)
+ANTHROPIC_API_KEY=           # server-only: required for generated agent work;
+                             # missing configuration blocks that assignment
 AI_MODEL=                    # optional model override (default claude-opus-4-8)
 ```
 
@@ -41,7 +61,7 @@ Supabase migrations and local development seed data:
 - `supabase/migrations/20260702100300_goal_10_reports_health.sql`
 - `supabase/seed.sql`
 
-Implemented product surfaces:
+Existing product surfaces, before the planned client-experience simplification:
 
 - `/partner` — dashboard with health rollups and attention queue.
 - `/partner/clients`, `/partner/clients/new` — client business management.
@@ -65,34 +85,35 @@ npm run build
 
 Start here:
 
-1. Read `docs/00-start-here.md`.
-2. Read `docs/01-product-requirements.md`.
-3. Read `docs/02-architecture.md`.
-4. Follow `docs/07-goal-build-sequence.md` one goal at a time.
-
-The desired first product is a production-grade partner/agency platform for managing client business integrations, AI workflow operations, approvals, logs, and health. It is not a demo app and it is not primarily a CRM clone.
+1. Read [Start Here](docs/00-start-here.md) for current priorities and boundaries.
+2. Read the [client product blueprint](docs/34-client-product-blueprint.md).
+3. Read the [readiness assessment and build plan](docs/35-client-product-readiness-and-roadmap.md).
+4. Consult the existing architecture and implementation documents for the area
+   being changed. The original goal sequence is historical, not the current backlog.
 
 ## Docs
 
 - `docs/00-start-here.md`: boundaries, product stance, and how to begin.
-- `docs/01-product-requirements.md`: product requirements and first-pass success criteria.
+- `docs/33-business-model-and-pricing.md`: agency resale strategy, pricing hypotheses, and validation questions.
+- `docs/34-client-product-blueprint.md`: current client experience, business-area catalog, shared records, and guided activation.
+- `docs/35-client-product-readiness-and-roadmap.md`: implementation evidence, gaps, and proposed build sequence.
+- `docs/01-product-requirements.md`: original requirements and first-pass success criteria.
 - `docs/02-architecture.md`: route, tenancy, integration, workflow, audit, and runtime architecture.
 - `docs/03-data-model.md`: proposed tables, enums, and RLS expectations.
 - `docs/04-roles-permissions-tenancy.md`: user roles, permission matrix, and access rules.
 - `docs/05-integrations-workflows-ai.md`: integration, workflow, approval, and AI contracts.
 - `docs/06-ui-screens-flows.md`: required product screens and user flows.
-- `docs/07-goal-build-sequence.md`: step-by-step build plan for `/goal` execution.
+- `docs/07-goal-build-sequence.md`: historical scaffold and partner-platform build sequence.
 - `docs/08-acceptance-verification.md`: acceptance criteria and verification scenarios.
 - `docs/09-decisions-and-open-questions.md`: locked decisions and remaining product questions.
-- `docs/10-codex-goal-prompt.md`: copy/paste prompt for a build thread.
+- `docs/10-codex-goal-prompt.md`: current handoff guidance for an implementation task.
 
 ## Relationship To Earlier White-Label Spec
 
-These docs incorporate the useful parts of the earlier white-label AI integration platform planning, but they supersede any earlier assumptions that conflict with the current direction:
-
-- the app is production-first, not demo-first.
-- Northstar remains untouched.
-- demo mode is out of scope.
-- the buyer is the partner/agency.
-- CRM is optional and not the first center of gravity.
-- integration operations, workflow logs, approvals, and tenant safety come first.
+The client product blueprint supersedes conflicting earlier product priorities.
+White-label resale remains a later option. Tenant isolation, permissions, reliable
+execution, and audit history remain core requirements. Shared operational
+records support agents even when the owner does not use a CRM interface.
+The separate project at `/Users/gkn/new` remains untouched. Development fixtures
+must remain clearly identified test data; production outcomes must come from
+real records.

@@ -12,10 +12,11 @@ export function summarizeJobResults(
       };
     } else {
       workers[name] = result.value;
-      const value = result.value as { ok?: boolean; failed?: number } | null;
+      const value = result.value as { ok?: boolean; failed?: number; uncertain?: number } | null;
       if (
         value?.ok === false ||
-        (typeof value?.failed === "number" && value.failed > 0)
+        (typeof value?.failed === "number" && value.failed > 0) ||
+        (typeof value?.uncertain === "number" && value.uncertain > 0)
       )
         ok = false;
     }

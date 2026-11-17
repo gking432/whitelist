@@ -10,6 +10,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 // never break the action it describes.
 
 export type ActionJobKind =
+  | "conversation.send"
   | "sms.send"
   | "email.send"
   | "calendar.book"
@@ -31,6 +32,10 @@ export type ActionJobRecord = {
   last_error: string | null;
   last_attempt_at: string | null;
   created_at: string;
+  booking_followup_due_at?: string | null;
+  booking_followup_attempts?: number;
+  booking_followup_phase?: "reminder" | "done" | "stopped" | null;
+  booking_followup_reason?: string | null;
 };
 
 export async function recordActionJob(input: {

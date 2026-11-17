@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { isWorkspaceViewOnly } from "../connectors/read-only-policy.ts";
+import { automatedMail, emailAddress, shouldFetchInboxBody } from "./inbox-message.ts";
 import { microsoftBusyIntervals } from "./calendar-availability.ts";
 import type {
   CanonicalObjectType,
@@ -26,12 +28,13 @@ class MicrosoftGraphError extends ConnectorHttpError {
   }
 }
 
-async function graphFetch(credentials: WorkspaceCredentials, path: string, init: RequestInit = {}) {
+async function graphFetch(credentials: WorkspaceCredentials, path: string, init: RequestInit = {}, beforeWrite?: () => Promise<void>) {
   const url = new URL(path.startsWith("http") ? path : `${GRAPH}${path}`);
   if (url.protocol !== "https:" || url.hostname !== "graph.microsoft.com" || url.username || url.password || (url.port && url.port !== "443")) {
     throw new Error("Microsoft returned an invalid pagination destination.");
   }
   const token = await mintWorkspaceAccessToken("microsoft_365", credentials);
+  await beforeWrite?.();
   const response = await fetch(url, {
     ...init,
     redirect: "error",
@@ -72,12 +75,14 @@ export function mapMicrosoftEvent(source: Record<string, unknown>): CanonicalRec
   return {
     objectType: "appointment",
     externalId: String(source.id ?? ""),
+    updatedAt: typeof source.lastModifiedDateTime === "string" ? source.lastModifiedDateTime : null,
     data: {
       title: source.subject ?? null,
       description: body.content ?? null,
-      start_at: start.dateTime ?? null,
-      end_at: end.dateTime ?? null,
+      start_at: microsoftDateTime(start.dateTime, start.timeZone, source.isAllDay === true),
+      end_at: microsoftDateTime(end.dateTime, end.timeZone, source.isAllDay === true),
       timezone: start.timeZone ?? null,
+      all_day: source.isAllDay === true,
       status: source.isCancelled === true ? "cancelled" : "booked",
       html_url: source.webLink ?? null,
     },
@@ -85,9 +90,20 @@ export function mapMicrosoftEvent(source: Record<string, unknown>): CanonicalRec
   };
 }
 
+/** Graph reads request UTC; never interpret an unzoned wall time locally. */
+export function microsoftDateTime(value: unknown, zone: unknown, allDay = false): string | null {
+  if (typeof value !== "string") return null;
+  if (allDay) return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null;
+  const explicit = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
+  if (!explicit && !["UTC", "Etc/UTC"].includes(String(zone))) return null;
+  const date = new Date(explicit ? value : `${value}Z`);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 export function mapMicrosoftDeltaRecord(
   objectType: CanonicalObjectType,
   source: Record<string, unknown>,
+  options: { folder?: "inbox" | "sent" } = {},
 ): CanonicalRecord {
   if ("@removed" in source) {
     return {
@@ -100,15 +116,35 @@ export function mapMicrosoftDeltaRecord(
   }
   if (objectType === "customer") return mapMicrosoftContact(source);
   if (objectType === "appointment") return mapMicrosoftEvent(source);
+  const from = source.from as {emailAddress?: {address?: string}} | undefined;
+  const body = source.body as {contentType?: string;content?: string} | undefined;
+  const headers = Object.fromEntries((Array.isArray(source.internetMessageHeaders) ? source.internetMessageHeaders : [])
+    .map((h: {name:string;value:string}) => [h.name.toLowerCase(), h.value]));
+  const sender = emailAddress(from?.emailAddress?.address);
   return {
     objectType: "message",
     externalId: String(source.id ?? ""),
     externalParentId: typeof source.conversationId === "string" ? source.conversationId : null,
-    updatedAt: typeof source.receivedDateTime === "string" ? source.receivedDateTime : null,
+    updatedAt: typeof source.lastModifiedDateTime === "string" ? source.lastModifiedDateTime
+      : typeof source.receivedDateTime === "string" ? source.receivedDateTime : null,
     data: {
       subject: source.subject ?? null,
       preview: source.bodyPreview ?? null,
       is_read: source.isRead ?? null,
+      sender,
+      from: from?.emailAddress?.address ?? null,
+      to: (Array.isArray(source.toRecipients) ? source.toRecipients : []).map((r) =>
+        emailAddress((r as { emailAddress?: { address?: string } }).emailAddress?.address)).filter(Boolean).join(", "),
+      received_at: typeof source.receivedDateTime === "string" ? source.receivedDateTime : null,
+      sent_at: typeof source.sentDateTime === "string" ? source.sentDateTime : null,
+      folder: options.folder ?? "unknown",
+      direction: options.folder === "inbox" ? "inbound" : options.folder === "sent" ? "outbound" : "unknown",
+      inbox: options.folder === "inbox",
+      html_url: typeof source.webLink === "string" ? source.webLink : null,
+      body: body?.contentType?.toLowerCase() === "text" ? (body.content ?? "").slice(0,6000) : null,
+      inbound: options.folder === "inbox" && source.isDraft !== true && !!sender,
+      automated: automatedMail(headers, sender),
+      has_attachments: source.hasAttachments !== false,
     },
     source,
   };
@@ -118,7 +154,12 @@ function text(data: Record<string, unknown>, key: string): string {
   return typeof data[key] === "string" ? String(data[key]) : "";
 }
 
-async function pullMicrosoftPage(credentials: WorkspaceCredentials, objectType: CanonicalObjectType, cursor: Record<string, unknown> | null): Promise<ConnectorPage> {
+async function pullMicrosoftPage(credentials: WorkspaceCredentials, objectType: CanonicalObjectType, cursor: Record<string, unknown> | null, config:Record<string,unknown> = {}): Promise<ConnectorPage> {
+  if (isWorkspaceViewOnly(config) && objectType === "appointment" && typeof cursor?.fullSyncAt === "string" && Date.parse(cursor.fullSyncAt) < Date.now() - 86400000) cursor = null;
+  const observedAt = new Date().toISOString();
+  const fullSyncAt = typeof cursor?.fullSyncAt === "string" ? cursor.fullSyncAt : observedAt;
+  const calendarStart = new Date(Date.parse(fullSyncAt) - (isWorkspaceViewOnly(config) ? 31 : 365) * 86400000).toISOString();
+  const calendarEnd = new Date(Date.parse(fullSyncAt) + (isWorkspaceViewOnly(config) ? 32 : 2 * 365) * 86400000).toISOString();
   const nextLink = typeof cursor?.nextLink === "string" ? cursor.nextLink : null;
   const deltaLink = typeof cursor?.deltaLink === "string" ? cursor.deltaLink : null;
   let contactFolderId = typeof cursor?.contactFolderId === "string"
@@ -137,33 +178,47 @@ async function pullMicrosoftPage(credentials: WorkspaceCredentials, objectType: 
   const path = nextLink ?? deltaLink ?? (objectType === "customer"
     ? `/me/contactFolders/${encodeURIComponent(contactFolderId!)}/contacts/delta`
     : objectType === "appointment"
-      ? `/me/calendarView/delta?startDateTime=${encodeURIComponent(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString())}&endDateTime=${encodeURIComponent(new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000).toISOString())}`
+      ? `/me/calendarView/delta?startDateTime=${encodeURIComponent(calendarStart)}&endDateTime=${encodeURIComponent(calendarEnd)}`
       : objectType === "message"
-        ? "/me/mailFolders/inbox/messages/delta?$top=100&$select=id,conversationId,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead"
+        ? "/me/mailFolders/inbox/messages/delta?$top=100&$select=id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,lastModifiedDateTime,parentFolderId,bodyPreview,isRead,isDraft,hasAttachments,webLink"
         : null);
   if (!path) throw new Error(`Microsoft 365 cannot pull ${objectType}.`);
   let body: { value?: Record<string, unknown>[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
   try {
-    body = await (await graphFetch(credentials, path)).json() as typeof body;
+    body = await (await graphFetch(credentials, path, { headers: { Prefer: objectType === "message"
+      ? 'outlook.body-content-type="text"' : 'outlook.timezone="UTC"' } })).json() as typeof body;
   } catch (error) {
     if (deltaLink && error instanceof MicrosoftGraphError && [404, 410].includes(error.status)) {
-      return pullMicrosoftPage(credentials, objectType, null);
+      return pullMicrosoftPage(credentials, objectType, null, config);
     }
     throw error;
   }
-  const records = (body.value ?? []).map((item) =>
-    mapMicrosoftDeltaRecord(objectType, item),
+  // Delta cursors preserve their original projection. Hydrate only eligible NEW
+  // inbox messages, including when a connection has a cursor from older releases.
+  const items=await Promise.all((body.value??[]).map(async(item)=>{
+    if(objectType!=="message" || "@removed" in item || !shouldFetchInboxBody(item.receivedDateTime,config)) return item;
+    try {
+      return await (await graphFetch(credentials,`/me/messages/${encodeURIComponent(String(item.id))}?$select=id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,lastModifiedDateTime,parentFolderId,webLink,bodyPreview,isRead,body,isDraft,hasAttachments,internetMessageHeaders`,{headers:{Prefer:'outlook.body-content-type="text"'}})).json() as Record<string,unknown>;
+    } catch(error) {
+      if(error instanceof MicrosoftGraphError && error.status===404) return {id:item.id,"@removed":{reason:"deleted"}};
+      throw error;
+    }
+  }));
+  const records = items.map((item) =>
+    mapMicrosoftDeltaRecord(objectType, item, objectType === "message" ? { folder: "inbox" } : {}),
   );
   return {
-    records,
+    records: records.map((record) => ({ ...record, data: { ...record.data, observed_at: observedAt } })),
     nextCursor: body["@odata.nextLink"]
       ? {
           ...(contactFolderId ? { contactFolderId } : {}),
+          ...(objectType === "appointment" ? { fullSyncAt } : {}),
           nextLink: body["@odata.nextLink"],
         }
       : body["@odata.deltaLink"]
         ? {
             ...(contactFolderId ? { contactFolderId } : {}),
+            ...(objectType === "appointment" ? { fullSyncAt } : {}),
             deltaLink: body["@odata.deltaLink"],
           }
         : null,
@@ -171,11 +226,12 @@ async function pullMicrosoftPage(credentials: WorkspaceCredentials, objectType: 
   };
 }
 
-async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: ConnectorPushInput) {
+async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: ConnectorPushInput, beforeWrite?: () => Promise<void>) {
+  if (credentials.accessMode === "read_only") throw new Error("This Microsoft connection is read-only.");
   if (input.objectType === "customer") {
     const id = input.externalObjectId;
     if (input.operation === "delete" && id) {
-      await graphFetch(credentials, `/me/contacts/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await graphFetch(credentials, `/me/contacts/${encodeURIComponent(id)}`, { method: "DELETE" }, beforeWrite);
       return { externalObjectId: id };
     }
     const response = await graphFetch(credentials, `/me/contacts${id ? `/${encodeURIComponent(id)}` : ""}`, {
@@ -187,14 +243,14 @@ async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: Con
         emailAddresses: text(input.data, "email") ? [{ address: text(input.data, "email"), name: text(input.data, "name") }] : [],
         businessPhones: text(input.data, "phone") ? [text(input.data, "phone")] : [],
       })),
-    });
+    }, beforeWrite);
     const created = response.status === 204 ? { id } : (await response.json()) as { id?: string };
     return { externalObjectId: created.id ?? id ?? "", source: created };
   }
   if (input.objectType === "appointment") {
     const id = input.externalObjectId;
     if (input.operation === "delete" && id) {
-      await graphFetch(credentials, `/me/events/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await graphFetch(credentials, `/me/events/${encodeURIComponent(id)}`, { method: "DELETE" }, beforeWrite);
       return { externalObjectId: id };
     }
     const timeZone = text(input.data, "timezone") || "UTC";
@@ -207,7 +263,7 @@ async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: Con
         start: { dateTime: text(input.data, "start_at"), timeZone },
         end: { dateTime: text(input.data, "end_at"), timeZone },
       })),
-    });
+    }, beforeWrite);
     const created: { id?: string | null; lastModifiedDateTime?: string } =
       response.status === 204
         ? { id }
@@ -222,8 +278,9 @@ async function pushMicrosoftRecord(credentials: WorkspaceCredentials, input: Con
         body: { contentType: "Text", content: text(input.data, "body") },
         toRecipients: [{ emailAddress: { address: text(input.data, "to") } }],
       }, saveToSentItems: true })),
-    });
-    return { externalObjectId: `sent-${input.idempotencyKey}` };
+    }, beforeWrite);
+    // sendMail returns 202 with no message ID or delivery receipt.
+    return { externalObjectId: "", source: { accepted: true, delivery_verified: false } };
   }
   throw new Error(`Microsoft 365 cannot ${input.operation} ${input.objectType}.`);
 }
@@ -243,6 +300,7 @@ export async function getMicrosoftBusyIntervals(credentials: WorkspaceCredential
 export async function createMicrosoftCalendarEvent(
   credentials: WorkspaceCredentials,
   event: { summary: string; description: string; startIso: string; endIso: string; timeZone?: string; idempotencyKey?: string },
+  beforeWrite?: () => Promise<void>,
 ): Promise<{ eventId: string; htmlLink: string | null }> {
   const result = await pushMicrosoftRecord(credentials, {
     operation: "create",
@@ -256,7 +314,7 @@ export async function createMicrosoftCalendarEvent(
       timezone: event.timeZone ?? "UTC",
     },
     idempotencyKey: event.idempotencyKey ?? randomUUID(),
-  });
+  }, beforeWrite);
   const source = (result.source ?? {}) as Record<string, unknown>;
   return {
     eventId: result.externalObjectId,
@@ -267,15 +325,16 @@ export async function createMicrosoftCalendarEvent(
 export async function sendMicrosoft365Email(
   credentials: WorkspaceCredentials,
   message: { to: string; subject: string; body: string; idempotencyKey: string },
-): Promise<{ messageId: string }> {
-  const result = await pushMicrosoftRecord(credentials, {
+  beforeWrite?: () => Promise<void>,
+): Promise<{ messageId: null; providerPending: true }> {
+  await pushMicrosoftRecord(credentials, {
     operation: "create",
     objectType: "message",
     nativeObjectId: message.idempotencyKey,
     data: message,
     idempotencyKey: message.idempotencyKey,
-  });
-  return { messageId: result.externalObjectId };
+  }, beforeWrite);
+  return { messageId: null, providerPending: true };
 }
 
 export const microsoft365Adapter: ConnectorAdapter<WorkspaceCredentials> = {
@@ -303,6 +362,6 @@ export const microsoft365Adapter: ConnectorAdapter<WorkspaceCredentials> = {
       return { ok: false, detail: error instanceof Error ? error.message : "Microsoft 365 verification failed." };
     }
   },
-  pullPage(context, objectType, cursor) { return pullMicrosoftPage(context.credentials, objectType, cursor); },
+  pullPage(context, objectType, cursor) { return pullMicrosoftPage(context.credentials, objectType, cursor, context.config); },
   pushRecord(context, input) { return pushMicrosoftRecord(context.credentials, input); },
 };
