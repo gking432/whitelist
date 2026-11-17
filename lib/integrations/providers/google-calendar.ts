@@ -8,6 +8,7 @@ import { googleBusyIntervals } from "./calendar-availability.ts";
 import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 
 import { getAppUrl, getSecretsEncryptionKey } from "@/lib/env";
+import { googleCalendarMutationSessionWithToken } from "./google-workspace.ts";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -22,6 +23,13 @@ export type GoogleOAuthClient = {
 export type GoogleCalendarCredentials = GoogleOAuthClient & {
   refreshToken: string;
 };
+
+/** Legacy grants contain no OpenID identity. They are eligible only when the
+ * pinned account is the exact primary calendar ID, verified with the same token. */
+export async function createLegacyGoogleCalendarMutationSession(credentials: GoogleCalendarCredentials, binding: { accountId: string; calendarId: string; eventId: string }) {
+  const token = await mintAccessToken(credentials);
+  return googleCalendarMutationSessionWithToken(token, binding, { identityMode: "primary_calendar" });
+}
 
 export function googleRedirectUri(): string {
   return `${getAppUrl()}/api/oauth/google/callback`;

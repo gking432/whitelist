@@ -41,6 +41,7 @@ export type DeliveryOutcome = {
   // Provider-side reference for the delivered artifact (message SID,
   // calendar event id) when one exists.
   externalRef?: string | null;
+  calendarMutationReceipt?: Record<string, unknown>;
 };
 
 type ApprovedMessage = {

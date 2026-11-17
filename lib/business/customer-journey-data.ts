@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CustomerJourney, CustomerJourneyAction, CustomerJourneySnapshot, CustomerJourneyStage, CustomerJourneyState } from "./customer-journey-contract.ts";
 import { sameIntakeRevision } from "../connections/intake-adoption.ts";
 import { customerJourneyTiming } from "./customer-journey-timing.ts";
+import { calendarChangeEvidence } from "./calendar-change-evidence.ts";
+import { loadCurrentBookingReview } from "../scheduling/calendar-change-context.ts";
 
 export type JourneyScope = { partnerId: string; clientId: string };
 export type JourneyRow = Record<string, unknown>;
@@ -105,6 +107,8 @@ export function buildCustomerJourneys(evidence: JourneyEvidence, canWrite: boole
       }
       if (cancellation) stages.push(stage("cancellation", appointment?.status === "cancelled" ? "confirmed" : "requested", appointment?.status === "cancelled" ? "Cancellation recorded; the original booking receipt is retained." : "Cancellation requested. External calendar changes still need a verified result; unsent follow-ups are stopped.", cancellation, "task", "/client/todo"));
       if (rebookingTask) stages.push(stage("rebooking", rebookingTask.status === "done" ? "complete" : "requested", "A rebooking review is saved in the original customer work; no new appointment has been booked.", rebookingTask, "task", "/client/todo"));
+      const changes = calendarChangeEvidence(evidence.approvals.filter((row) => row.type === "appointment_change" && obj(row.proposed_payload).booking_approval_id === booking.id), evidence.jobs, str(appointment?.updated_at) || null, now);
+      stages.push(...changes.stages); warnings.push(...changes.warnings);
     }
     if (Array.isArray(contact.tags) && contact.tags.some((tag) => /^(do_not_contact|opt_out|opted_out|unsubscribed|stop)$/i.test(String(tag).replace(/[\s-]+/g, "_")))) warnings.push("This customer has a contact suppression. Outgoing follow-ups must remain stopped.");
     const actions: CustomerJourneyAction[] = [];
@@ -179,12 +183,40 @@ export async function readCustomerJourneys(admin: SupabaseClient, scope: Journey
   ]);
   const allApprovalIds = [...bookingIds, ...rows(followups.data).map((row) => str(row.id))], appointmentIds = rows(appointments.data).map((row) => str(row.id));
   const [jobs, importedAppointments] = await Promise.all([
-    allApprovalIds.length ? scoped("action_jobs", "id,approval_id,kind,status,external_ref,receipt_recorded_at,outcome_detail,booking_followup_due_at,booking_followup_phase,booking_followup_reason,updated_at,created_at").in("approval_id", allApprovalIds).limit(401) : empty,
+    allApprovalIds.length ? scoped("action_jobs", "id,approval_id,kind,status,external_ref,receipt_recorded_at,provider_receipt,calendar_reconcile_due_at,calendar_reconcile_reason,outcome_detail,booking_followup_due_at,booking_followup_phase,booking_followup_reason,updated_at,created_at").in("approval_id", allApprovalIds).limit(401) : empty,
     appointmentIds.length ? scoped("integration_canonical_records", "id,native_object_id,canonical_data,updated_at").eq("object_type", "appointment").in("native_object_id", appointmentIds).limit(201) : empty,
   ]);
   const results = [contacts, sources, tasks, conversations, work, settings, client, bookings, followups, appointments, lifecycleTasks, jobs, importedAppointments];
   if (results.some((result) => result.error)) throw new Error("The customer journey could not be fully checked. Refresh before making a decision.");
   const generatedAt = new Date().toISOString();
-  return { version: 1, generatedAt, canWrite, limited: rows(leadResult.data).length > 20 || results.some((result) => Array.isArray(result.data) && result.data.length > 200), errors: [],
-    journeys: buildCustomerJourneys({ leads, contacts: rows(contacts.data), sources: rows(sources.data), tasks: [...new Map([...rows(tasks.data), ...rows(lifecycleTasks.data)].map((row) => [row.id, row])).values()], conversations: rows(conversations.data), work: rows(work.data), approvals: [...rows(bookings.data), ...rows(followups.data)], jobs: rows(jobs.data), appointments: rows(appointments.data), importedAppointments: rows(importedAppointments.data), authorityRevision: Number(settings.data?.authority_revision ?? 0), lifecycleEnabledAt: client.data?.native_lifecycle_enabled_at ?? null, selectedConversationId: filters.conversationId, selectedTaskId: filters.taskId }, canWrite, generatedAt) };
+  const journeys = buildCustomerJourneys({ leads, contacts: rows(contacts.data), sources: rows(sources.data), tasks: [...new Map([...rows(tasks.data), ...rows(lifecycleTasks.data)].map((row) => [row.id, row])).values()], conversations: rows(conversations.data), work: rows(work.data), approvals: [...rows(bookings.data), ...rows(followups.data)], jobs: rows(jobs.data), appointments: rows(appointments.data), importedAppointments: rows(importedAppointments.data), authorityRevision: Number(settings.data?.authority_revision ?? 0), lifecycleEnabledAt: client.data?.native_lifecycle_enabled_at ?? null, selectedConversationId: filters.conversationId, selectedTaskId: filters.taskId }, canWrite, generatedAt);
+  await Promise.all(journeys.map(async (journey) => {
+    const bookingId = journey.stages.find((item) => item.key === "approval")?.sources.find((item) => item.kind === "approval")?.id;
+    if (!bookingId || !journey.stages.some((item) => item.key === "booking")) return;
+    // Optional review failure affects only new controls, never recorded history.
+    try {
+      const review = await loadCurrentBookingReview(admin, scope, bookingId, generatedAt);
+      journey.calendarReview = review.review; journey.qualificationReview = review.qualificationReview;
+      const relatedChanges = rows(followups.data).filter((row) => row.type === "appointment_change" && obj(row.proposed_payload).booking_approval_id === bookingId);
+      const changeState = calendarChangeEvidence(relatedChanges, rows(jobs.data), str(review.appointment.updated_at), generatedAt);
+      const actions = (journey.actions ?? []).filter((action) => action.kind !== "command" || !["request_cancellation", "prepare_rebooking"].includes(action.command));
+      if (canWrite && !changeState.active && review.appointment.status === "booked") {
+        if (review.review.writeAllowed) actions.push(
+          { kind: "command", label: "Review cancellation", command: "prepare_cancellation", targetId: bookingId, expectedRevision: review.revision },
+          { kind: "command", label: "Choose a different time", command: "prepare_time_change", targetId: bookingId, expectedRevision: review.revision, requiresSlot: true });
+        else actions.push({ kind: "command", label: "Save a cancellation handoff", command: "request_cancellation", targetId: bookingId, expectedRevision: review.revision });
+      }
+      if (canWrite && (["cancelled", "completed"].includes(str(review.appointment.status)) || journey.stages.some((stage) => stage.key === "booking" && stage.status === "cancelled")) && !changeState.active)
+        actions.push({ kind: "command", label: "Review current instructions for rebooking", command: "qualify_rebooking", targetId: bookingId, expectedRevision: review.revision, requiresQualification: true });
+      journey.actions = actions;
+      const ownerDecision = journey.stages.find((item) => item.status === "needs_owner" && item.href);
+      journey.nextAction = ownerDecision?.href ? { kind: "link", label: "Review the owner decision", href: ownerDecision.href } : actions[0] ?? null;
+    } catch {
+      journey.warnings.push("Current calendar change permissions and instructions could not be checked. Saved history is retained; refresh before preparing another action.");
+      journey.actions = (journey.actions ?? []).filter((action) => action.kind !== "command" || !["request_cancellation", "prepare_rebooking"].includes(action.command));
+      if (journey.nextAction?.kind === "command" && ["request_cancellation", "prepare_rebooking"].includes(journey.nextAction.command))
+        journey.nextAction = { kind: "link", label: "Review current saved work", href: "/client/todo" };
+    }
+  }));
+  return { version: 1, generatedAt, canWrite, limited: rows(leadResult.data).length > 20 || results.some((result) => Array.isArray(result.data) && result.data.length > 200), errors: [], journeys };
 }

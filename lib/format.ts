@@ -53,6 +53,8 @@ const enumLabels: Record<string, string> = {
   "sms.send": "Send text message",
   "email.send": "Send email",
   "calendar.book": "Book appointment",
+  "calendar.cancel": "Cancel appointment",
+  "calendar.reschedule": "Change appointment time",
   "crm.sync": "Update CRM",
   "external.action": "Update connected app",
   crm: "CRM",

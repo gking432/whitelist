@@ -17,6 +17,7 @@ export type BookingLifecyclePin = {
   booking_followup_kind: BookingFollowupKind;
   booking_approval_id: string;
   booking_action_job_id: string;
+  booking_state_job_id?: string | null;
   appointment_id: string;
   appointment_updated_at: string;
   contact_id: string;
@@ -40,6 +41,7 @@ export type LifecycleImport = Scoped & {
 };
 export type BookingLifecycleState = Scoped & {
   bookingApprovalId: string; actionJobId: string; approvalStatus: string; receiptStatus: string;
+  stateJobId?: string | null;
   externalRef: string | null; receiptAt: string; provider: string;
   calendarConnectionId: string | null; calendarAccountId: string | null;
   startAt: string; endAt: string; nativeLifecycleEnabledAt: string | null;
@@ -79,6 +81,7 @@ const waiting = (reason: string): BookingLifecycleDecision => ({ state: "waiting
 function pinBlock(pin: BookingLifecyclePin, state: BookingLifecycleState, source: BookingSourcePin, slot: { startAt: string; endAt: string }): string | null {
   if (!state.native || !state.contact || !state.delivery) return "The exact saved appointment, customer or destination is unavailable.";
   if (pin.booking_lifecycle_version !== 1 || pin.booking_approval_id !== state.bookingApprovalId || pin.booking_action_job_id !== state.actionJobId ||
+      (pin.booking_state_job_id ?? null) !== (state.stateJobId ?? null) ||
       pin.appointment_id !== state.native?.id || pin.contact_id !== state.contact?.id)
     return "The saved follow-up does not match its original booking and customer.";
   if (!sameBookingVersion(pin.appointment_updated_at, state.native.updatedAt) ||
@@ -177,6 +180,7 @@ export function evaluateBookingLifecycle(state: BookingLifecycleState, options: 
     pin: {
       booking_lifecycle_version: 1, booking_followup_kind: kind, booking_approval_id: state.bookingApprovalId,
       booking_action_job_id: state.actionJobId, appointment_id: native.id, appointment_updated_at: native.updatedAt,
+      booking_state_job_id: state.stateJobId ?? null,
       contact_id: contact.id, contact_updated_at: contact.updatedAt, booking_slot: { start_iso: slot.startAt, end_iso: slot.endAt },
       booking_source: source, customer_activity_id: state.latestInbound?.id ?? null, customer_activity_at: state.latestInbound?.at ?? null,
       conversation_id: state.conversation?.id ?? null, conversation_revision: state.conversation?.revision ?? null,
@@ -189,6 +193,7 @@ const version = z.string().min(1).max(100);
 const Pin = z.object({
   booking_lifecycle_version: z.literal(1), booking_followup_kind: z.enum(BOOKING_FOLLOWUP_KINDS),
   booking_approval_id: textId, booking_action_job_id: textId, appointment_id: textId,
+  booking_state_job_id: textId.nullable().optional(),
   appointment_updated_at: version, contact_id: textId, contact_updated_at: version,
   booking_slot: z.object({ start_iso: version, end_iso: version }),
   booking_source: z.object({ provider: textId, connection_id: textId.nullable(), external_account_id: textId.nullable(), external_ref: textId,

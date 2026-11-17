@@ -26,6 +26,7 @@ import { confirmationDeliveryBlock } from "@/lib/scheduling/confirmation-guard";
 import { bookingLifecycleDeliveryBlock } from "@/lib/scheduling/lifecycle-guard";
 import { intakeBookingDeliveryBlock } from "@/lib/scheduling/intake-guard";
 import { bookApprovedAppointment } from "@/lib/scheduling/book-approved";
+import { executeApprovedCalendarMutation } from "@/lib/scheduling/calendar-mutation";
 import type { ActionPreflight } from "./action-preflight";
 
 // Executes one durable action job — the shared dispatch used by manual
@@ -75,14 +76,15 @@ export async function executeActionJob(
       await recordConversationDelivery(admin, job, outcome);
     return outcome;
   }
-  const confirmationBlocked = job.payload.booking_lifecycle_version === 1 ? null : await confirmationDeliveryBlock(admin, job);
+  const calendarMutation = ["calendar.cancel", "calendar.reschedule"].includes(job.kind);
+  const confirmationBlocked = job.payload.booking_lifecycle_version === 1 || calendarMutation ? null : await confirmationDeliveryBlock(admin, job);
   if (confirmationBlocked) return { status: "skipped", attempted: false, delivered: false, detail: confirmationBlocked };
   const lifecycleBlocked = await bookingLifecycleDeliveryBlock(admin, job) ?? await intakeBookingDeliveryBlock(admin, job);
   if (lifecycleBlocked) return { status: "skipped", attempted: false, delivered: false, detail: lifecycleBlocked };
   const finalActionCheck: ActionPreflight = async () => {
     const policy = await authorityDeliveryBlock(admin, job);
     if (policy) return policy;
-    const confirmation = job.payload.booking_lifecycle_version === 1 ? null : await confirmationDeliveryBlock(admin, job);
+    const confirmation = job.payload.booking_lifecycle_version === 1 || calendarMutation ? null : await confirmationDeliveryBlock(admin, job);
     if (confirmation) return confirmation;
     const lifecycle = await bookingLifecycleDeliveryBlock(admin, job) ?? await intakeBookingDeliveryBlock(admin, job);
     if (lifecycle) return lifecycle;
@@ -103,13 +105,17 @@ export async function executeActionJob(
       if (!current.data || current.data.status !== "processing" || current.data.claim_token !== claim)
         return "The delivery claim changed. Nothing was sent; reconcile the saved action.";
     }
-    const conversation = await conversationDeliveryBlock(admin, job);
+    // Appointment changes have their own exact source/customer conversation
+    // pins. Message routing fields (channel/to) do not describe that action.
+    const conversation = calendarMutation || (job.payload.booking_lifecycle_version === 1 && job.payload.conversation_id === null)
+      ? null : await conversationDeliveryBlock(admin, job);
     if (conversation) return conversation;
     if (!job.payload.conversation_id && ["email.send", "sms.send"].includes(job.kind))
       return agentDeliveryBlock(admin, job);
     return null;
   };
-  const conversationBlocked = await conversationDeliveryBlock(admin, job);
+  const conversationBlocked = calendarMutation || (job.payload.booking_lifecycle_version === 1 && job.payload.conversation_id === null)
+    ? null : await conversationDeliveryBlock(admin, job);
   if (conversationBlocked) {
     const outcome: DeliveryOutcome = {
       status: "skipped",
@@ -123,6 +129,7 @@ export async function executeActionJob(
   }
   if (job.kind === "conversation.send") return deliverWebsiteReply(admin, job, finalActionCheck);
   if (job.kind === "external.action") return executeEmbeddedAction(admin, job, finalActionCheck);
+  if (["calendar.cancel", "calendar.reschedule"].includes(job.kind)) return executeApprovedCalendarMutation(admin, job, finalActionCheck);
   const { data: clientRow } = await admin
     .from("client_businesses")
     .select("name")

@@ -1,3 +1,4 @@
+import { CalendarChangePreview } from "@/components/approvals/calendar-change-preview";
 import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
 import { ActionJobsPanel } from "@/components/partner/action-jobs-panel";
 import { isRetryableJobStatus } from "@/lib/jobs/outcome";
@@ -126,6 +127,7 @@ export default async function ClientPortalApprovalsPage() {
                 </Badge>
               </div>
               {item.type === "external_action" ? <ExternalActionPreview payload={item.proposed_payload} /> : null}
+              {item.type === "appointment_change" ? <CalendarChangePreview payload={item.proposed_payload} /> : null}
               <div className="mt-4 border-t pt-4">
                 {access.canResolveApprovals ? (
                   <ApprovalResolutionForm

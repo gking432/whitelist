@@ -3,6 +3,7 @@ import type { WorkItem, WorkStatus } from "@/lib/agents/types";
 import { finishWork } from "@/lib/agents/store";
 import { readEffectiveAuthority } from "@/lib/agents/authority";
 import { checkSelectedSlot, type OfferedSlot } from "./availability";
+import { processCustomerRebooking } from "../agents/inquiry-progression";
 
 async function saveState(
   admin: SupabaseClient,
@@ -74,6 +75,7 @@ export async function processBookingRequest(
 ) {
   if (work.kind !== "booking_request")
     throw new Error("Not a booking assignment.");
+  if (work.input.origin === "owner_conversation") return processCustomerRebooking(admin, work);
   if (work.approval_id) return trackBookingOutcome(admin, work);
   const [check, settings] = await Promise.all([
     admin.rpc("conversation_action_check", {

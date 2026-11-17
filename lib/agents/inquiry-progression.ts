@@ -27,13 +27,13 @@ export type IntakeSchedulingDependencies = {
   finish(work: IntakeSchedulingWork, status: WorkStatus, summary: string, result: Record<string, unknown>): Promise<void>;
 };
 
-export function intakeBookingOutcome(outcome: IntakeBookingOutcome, now: Date): { status: WorkStatus; summary: string; result: Record<string, unknown> } {
+export function intakeBookingOutcome(outcome: IntakeBookingOutcome, now: Date, origin: "owner_intake" | "owner_conversation" = "owner_intake"): { status: WorkStatus; summary: string; result: Record<string, unknown> } {
   const { job, approval } = outcome;
   const result = { booking_outcome: job?.status ?? null, action_id: job?.id ?? null, external_ref: job?.external_ref ?? null };
   // Observe accepted/uncertain operations before considering changed approval
   // or source state. A stopped instruction cannot undo a provider operation.
   if (job?.status === "succeeded") return job.external_ref
-    ? { status: "completed", summary: "Appointment booked with a recorded result. Confirm it with the customer manually; no message was sent from the form.", result: { ...result, booked: true, needs_human_confirmation: true } }
+    ? { status: "completed", summary: origin === "owner_conversation" ? "Appointment booked with a recorded result. Review confirmation in the original customer conversation; this scheduling assignment sent no message." : "Appointment booked with a recorded result. Confirm it with the customer manually; no message was sent from the form.", result: { ...result, booked: true, needs_human_confirmation: true } }
     : { status: "blocked", summary: "The action reports success without a booking receipt. Reconcile that action before any retry or customer confirmation.", result };
   if (job?.status === "uncertain") return { status: "blocked", summary: "The booking outcome is uncertain. Reconcile the existing action before retrying or confirming anything.", result };
   if (job && ["processing", "provider_pending"].includes(job.status)) return { status: "waiting_external", summary: "The existing calendar action is processing. No confirmed booking receipt is available yet.", result };
@@ -60,10 +60,14 @@ function checkedOffer(raw: unknown, now: Date, allowExpired = false): IntakeSche
 /** Model-free scheduling specialist over the existing durable assignment and
  * approval/outbox. Every mutation is claim-bound in the production repository. */
 export async function runIntakeScheduling(work: IntakeSchedulingWork, dependencies: IntakeSchedulingDependencies): Promise<void> {
-  if (work.kind !== "booking_request" || work.conversation_id !== null || work.input.origin !== "owner_intake" || !work.source_lead_id || !work.claim_token)
-    throw new Error("This is not a claimed adopted-inquiry scheduling assignment.");
+  const origin = work.input.origin;
+  if (origin !== "owner_intake" && origin !== "owner_conversation") throw new Error("This is not an owner-reviewed scheduling assignment.");
+  if (work.kind !== "booking_request" || !work.source_lead_id || !work.claim_token ||
+    (origin === "owner_intake" ? work.conversation_id !== null : !work.conversation_id ||
+      work.input.conversation_id !== work.conversation_id || work.input.instructions_reviewed !== true || !work.input.rebooking_origin_approval_id))
+    throw new Error("This is not a claimed owner-reviewed scheduling assignment.");
   if (work.approval_id) {
-    const outcome = intakeBookingOutcome(await dependencies.outcome(work), dependencies.now());
+    const outcome = intakeBookingOutcome(await dependencies.outcome(work), dependencies.now(), origin);
     await dependencies.finish(work, outcome.status, outcome.summary, { ...work.result, ...outcome.result });
     return;
   }
@@ -140,8 +144,13 @@ export async function runIntakeScheduling(work: IntakeSchedulingWork, dependenci
     return;
   }
   await dependencies.propose(work, {
-    origin: "owner_intake", intake_work_id: work.id, intake_record_id: work.input.intake_record_id, intake_connection_id: work.input.intake_connection_id,
-    intake_external_id: work.input.intake_external_id, source_updated_at: work.input.source_updated_at, lead_updated_at: work.input.lead_updated_at,
+    ...(origin === "owner_intake" ? { origin, intake_work_id: work.id, intake_record_id: work.input.intake_record_id, intake_connection_id: work.input.intake_connection_id,
+      intake_external_id: work.input.intake_external_id, source_updated_at: work.input.source_updated_at } : {
+      origin, customer_rebooking_work_id: work.id, conversation_id: work.conversation_id, conversation_revision: work.input.conversation_revision,
+      source_connection_id: work.input.source_connection_id, activity_id: work.input.activity_id, activity_at: work.input.activity_at,
+    }),
+    rebooking_origin_approval_id: work.input.rebooking_origin_approval_id, qualified_at: work.input.qualified_at,
+    instructions_reviewed: work.input.instructions_reviewed, lead_updated_at: work.input.lead_updated_at,
     contact_updated_at: work.input.contact_updated_at, authority_revision: latest.revision,
     contact_id: after.contact.id, lead_id: after.leadId, task_id: after.taskId, contact: after.contact,
     identity_confirmed: true, booking_requested: true, service: work.input.service,
@@ -150,6 +159,18 @@ export async function runIntakeScheduling(work: IntakeSchedulingWork, dependenci
 }
 
 export async function processIntakeBookingRequest(admin: SupabaseClient, work: WorkItem) {
+  if (work.input.origin !== "owner_intake") throw new Error("Not an adopted-inquiry assignment.");
+  return processOwnerScheduling(admin, work, "intake");
+}
+
+/** Owner choices reuse the verified original thread, but do not assert that an
+ * offer was sent to the customer or send a confirmation as a side effect. */
+export async function processCustomerRebooking(admin: SupabaseClient, work: WorkItem) {
+  if (work.input.origin !== "owner_conversation") throw new Error("Not an owner-reviewed conversation rebooking.");
+  return processOwnerScheduling(admin, work, "customer_rebooking");
+}
+
+async function processOwnerScheduling(admin: SupabaseClient, work: WorkItem, path: "intake" | "customer_rebooking") {
   const [{ availableSlots, checkSelectedSlot }, { readEffectiveAuthority }, { finishWork }] = await Promise.all([
     import("../conversations/availability.ts"), import("./authority.ts"), import("./store.ts"),
   ]);
@@ -161,7 +182,7 @@ export async function processIntakeBookingRequest(admin: SupabaseClient, work: W
   await runIntakeScheduling(work, {
     now: () => new Date(),
     check: async (item) => {
-      const data = await rpc("intake_scheduling_check", { p_work: item.id, p_claim: item.claim_token });
+      const data = await rpc(path === "intake" ? "intake_scheduling_check" : "customer_rebooking_scheduling_check", { p_work: item.id, p_claim: item.claim_token });
       if (!data || typeof data.allowed !== "boolean" || typeof data.reason !== "string") throw new Error("Inquiry eligibility could not be confirmed.");
       return data;
     },
@@ -171,8 +192,8 @@ export async function processIntakeBookingRequest(admin: SupabaseClient, work: W
     }),
     availability: (item) => availableSlots(admin, { partnerId: item.partner_id, clientId: item.client_id }, String(item.input.preference ?? "")),
     available: (item, offer, slot) => checkSelectedSlot(admin, { partnerId: item.partner_id, clientId: item.client_id }, { slot, provider: offer.provider, calendarConnectionId: offer.calendar_connection_id }),
-    saveOffer: async (item, offer) => { if (await rpc("save_intake_scheduling_offer", { p_work: item.id, p_claim: item.claim_token, p_offer: offer }) !== true) throw new Error("The availability offer was not committed."); },
-    propose: async (item, metadata) => { if (await rpc("propose_intake_booking", { p_work: item.id, p_claim: item.claim_token, p_metadata: metadata }) !== true) throw new Error("The booking proposal was not committed."); },
+    saveOffer: async (item, offer) => { if (await rpc(path === "intake" ? "save_intake_scheduling_offer" : "save_customer_rebooking_offer", { p_work: item.id, p_claim: item.claim_token, p_offer: offer }) !== true) throw new Error("The availability offer was not committed."); },
+    propose: async (item, metadata) => { if (await rpc(path === "intake" ? "propose_intake_booking" : "propose_customer_rebooking", { p_work: item.id, p_claim: item.claim_token, p_metadata: metadata }) !== true) throw new Error("The booking proposal was not committed."); },
     outcome: async (item) => {
       const [approval, job] = await Promise.all([
         admin.from("approval_items").select("status,expires_at").eq("id", item.approval_id!).eq("partner_id", item.partner_id).eq("client_id", item.client_id).single(),

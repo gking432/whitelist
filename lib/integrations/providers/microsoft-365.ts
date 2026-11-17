@@ -19,6 +19,13 @@ import { ConnectorAuthorizationError, ConnectorHttpError, parseRetryAfter } from
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
+/** Graph exposes event etags/changeKey, but the current event update/delete
+ * documentation does not establish conditional write semantics. Do not route a
+ * pinned owner mutation through the generic unconditional connector writer. */
+export function microsoftCalendarMutationUnavailableReason(): string {
+  return "Microsoft calendar changes require the source app until conditional mutation support has been verified.";
+}
+
 class MicrosoftGraphError extends ConnectorHttpError {
   readonly status: number;
 

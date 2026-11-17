@@ -31,6 +31,8 @@ export function authorizedActionPayload(
     return approval.type === "external_action" ? payload : null;
   if (job.kind === "calendar.book")
     return approval.type === "appointment_booking" ? payload : null;
+  if (["calendar.cancel", "calendar.reschedule"].includes(job.kind))
+    return approval.type === "appointment_change" && payload.calendar_mutation_version === 1 && job.kind === `calendar.${payload.mutation}` ? payload : null;
   if (job.kind === "conversation.send") {
     if (
       approval.type !== "customer_message" ||

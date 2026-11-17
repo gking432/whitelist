@@ -14,6 +14,8 @@ export type ActionJobKind =
   | "sms.send"
   | "email.send"
   | "calendar.book"
+  | "calendar.cancel"
+  | "calendar.reschedule"
   | "crm.sync"
   | "external.action";
 
@@ -36,6 +38,8 @@ export type ActionJobRecord = {
   booking_followup_attempts?: number;
   booking_followup_phase?: "reminder" | "done" | "stopped" | null;
   booking_followup_reason?: string | null;
+  provider_receipt?: Record<string, unknown> | null;
+  calendar_reconcile_due_at?: string | null;
 };
 
 export async function recordActionJob(input: {

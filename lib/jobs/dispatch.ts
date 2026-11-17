@@ -5,6 +5,7 @@ import type { DeliveryOutcome } from "@/lib/delivery/customer-message";
 import { executeActionJob } from "@/lib/jobs/execute";
 import { dispatchClaimedAction } from "./runner-core.ts";
 import type { ActionJobRecord } from "@/lib/jobs/record";
+import { completeCalendarMutation } from "@/lib/scheduling/calendar-mutation-completion";
 import { queueCompletedBookingConfirmation } from "@/lib/scheduling/confirmation-completion";
 
 export async function dispatchActionJob(
@@ -45,6 +46,7 @@ export async function dispatchActionJob(
           ...(outcome.externalRef ? { external_ref: outcome.externalRef } : {}),
           ...(outcome.status === "succeeded" ? { receipt_recorded_at: new Date().toISOString() } : {}),
           ...(job.kind === "calendar.book" && outcome.status === "succeeded" ? { confirmation_due_at: new Date().toISOString() } : {}),
+          ...(["calendar.cancel", "calendar.reschedule"].includes(job.kind) && outcome.status === "succeeded" ? { provider_receipt: outcome.calendarMutationReceipt ?? null, calendar_reconcile_due_at: new Date().toISOString() } : {}),
         })
         .eq("id", id)
         .eq("claim_token", claim)
@@ -55,6 +57,11 @@ export async function dispatchActionJob(
       return !!data;
     },
     afterComplete: async (completed, outcome) => {
+      if (["calendar.cancel", "calendar.reschedule"].includes(completed.kind) && outcome.status === "succeeded") {
+        // Only mirror the durable verified result. Recovery never invokes the provider.
+        try { await completeCalendarMutation(admin, { ...completed, status: "succeeded" }); }
+        catch { /* The due marker remains for bounded local recovery. */ }
+      }
       if (completed.kind === "calendar.book" && outcome.status === "succeeded") {
         try {
           const preparation = await queueCompletedBookingConfirmation(admin, completed);

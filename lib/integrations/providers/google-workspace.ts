@@ -15,10 +15,100 @@ import {
   workspaceApiRequiresReconnect,
 } from "./workspace-oauth.ts";
 import { ConnectorAuthorizationError, ConnectorHttpError, parseRetryAfter } from "../connectors/errors.ts";
+import type { CalendarMutationEvent, CalendarMutationPayload, CalendarMutationSession, CalendarMutationSlot } from "../../scheduling/calendar-mutation-rules.ts";
 
 const PEOPLE = "https://people.googleapis.com/v1";
 const CALENDAR = "https://www.googleapis.com/calendar/v3";
 const GMAIL = "https://gmail.googleapis.com/gmail/v1";
+
+export class GoogleCalendarMutationHttpError extends Error {
+  readonly status: number;
+  constructor(status: number) { super(`Google Calendar mutation request failed (${status}).`); this.status = status; }
+}
+
+type CalendarMutationBinding = { accountId: string; calendarId: string; eventId: string };
+type MutationSessionDependencies = { fetch?: typeof fetch; now?: () => string; identityMode?: "workspace" | "primary_calendar" };
+
+/** A single minted token binds identity, reads, conditional write and readback.
+ * No write retries or token refreshes occur inside this session. */
+export async function googleCalendarMutationSessionWithToken(accessToken: string, binding: CalendarMutationBinding, dependencies: MutationSessionDependencies = {}): Promise<CalendarMutationSession> {
+  const request = dependencies.fetch ?? fetch;
+  const call = async (url: string, init: RequestInit = {}) => request(url, {
+    ...init, redirect: "error", signal: AbortSignal.timeout(15_000),
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", ...init.headers },
+  });
+  if (dependencies.identityMode !== "primary_calendar") {
+    const identity = await call("https://www.googleapis.com/oauth2/v2/userinfo");
+    if (!identity.ok) throw new GoogleCalendarMutationHttpError(identity.status);
+    const account = await identity.json() as { id?: string };
+    if (account.id !== binding.accountId) throw new Error("The Google authorization belongs to another account. Reconnect the exact approved calendar.");
+  }
+  const calendarResponse = await call(`${CALENDAR}/users/me/calendarList/${encodeURIComponent(binding.calendarId)}`);
+  if (!calendarResponse.ok) throw new GoogleCalendarMutationHttpError(calendarResponse.status);
+  const calendar = await calendarResponse.json() as { id?: string; primary?: boolean; accessRole?: string };
+  if (!calendar.id || calendar.accessRole !== "owner" || (binding.calendarId !== "primary" && calendar.id !== binding.calendarId) ||
+      (dependencies.identityMode === "primary_calendar" && (calendar.primary !== true || calendar.id !== binding.accountId)))
+    throw new Error("The approved calendar is not the exact owned Google calendar. Change this event in its source app.");
+  const eventUrl = `${CALENDAR}/calendars/${encodeURIComponent(calendar.id)}/events/${encodeURIComponent(binding.eventId)}`;
+  const eventFrom = (source: Record<string, unknown>): CalendarMutationEvent => {
+    const start = source.start as { dateTime?: string; date?: string } | undefined;
+    const end = source.end as { dateTime?: string; date?: string } | undefined;
+    return { id: String(source.id ?? ""), etag: typeof source.etag === "string" ? source.etag : null,
+      updatedAt: typeof source.updated === "string" ? source.updated : null, status: String(source.status ?? "unknown"),
+      slot: start?.dateTime && end?.dateTime ? { start_iso: start.dateTime, end_iso: end.dateTime } : null,
+      organizerSelf: (source.organizer as { self?: boolean } | undefined)?.self === true,
+      recurring: !!source.recurringEventId || Array.isArray(source.recurrence),
+      attendeeCount: Array.isArray(source.attendees) ? source.attendees.length : 0,
+      eventType: typeof source.eventType === "string" ? source.eventType : "default" };
+  };
+  return {
+    readEvent: async () => {
+      const response = await call(eventUrl);
+      if ([404, 410].includes(response.status)) return null;
+      if (!response.ok) throw new GoogleCalendarMutationHttpError(response.status);
+      return eventFrom(await response.json() as Record<string, unknown>);
+    },
+    busyForSlot: async (selected: CalendarMutationSlot) => {
+      const params = new URLSearchParams({ timeMin: selected.start_iso, timeMax: selected.end_iso, singleEvents: "true", showDeleted: "false", maxResults: "2500" });
+      const response = await call(`${CALENDAR}/calendars/${encodeURIComponent(calendar.id!)}/events?${params}`);
+      if (!response.ok) throw new GoogleCalendarMutationHttpError(response.status);
+      const body = await response.json() as { items?: Record<string, unknown>[]; nextPageToken?: string };
+      if (!Array.isArray(body.items) || body.nextPageToken) throw new Error("The full replacement-slot availability could not be verified. Nothing was changed.");
+      return body.items.flatMap((source) => {
+        if (source.id === binding.eventId || source.status === "cancelled" || source.transparency === "transparent") return [];
+        const parsed = eventFrom(source);
+        // The API time window already intersects an all-day item. Treat it as
+        // occupied rather than interpret a date in the server's local timezone.
+        if (!parsed.slot) return [{ start: selected.start_iso, end: selected.end_iso }];
+        if (!Number.isFinite(Date.parse(parsed.slot.start_iso)) || !Number.isFinite(Date.parse(parsed.slot.end_iso)) || Date.parse(parsed.slot.end_iso) <= Date.parse(parsed.slot.start_iso))
+          throw new Error("Google returned an invalid availability interval.");
+        return [{ start: parsed.slot.start_iso, end: parsed.slot.end_iso }];
+      });
+    },
+    write: async (payload: CalendarMutationPayload) => {
+      if (payload.external_ref !== binding.eventId || payload.calendar_account_id !== binding.accountId || payload.calendar_id !== binding.calendarId ||
+          !["google_workspace", "google_calendar"].includes(payload.provider) || !payload.source_etag || payload.source_etag.startsWith("W/"))
+        throw new Error("The exact strong event version is required for a conditional Google change.");
+      const response = await call(`${eventUrl}?sendUpdates=none`, {
+        method: payload.mutation === "cancel" ? "DELETE" : "PATCH",
+        headers: { "If-Match": payload.source_etag },
+        ...(payload.mutation === "reschedule" ? { body: JSON.stringify({ start: { dateTime: payload.new_slot!.start_iso }, end: { dateTime: payload.new_slot!.end_iso } }) } : {}),
+      });
+      if (!response.ok) throw new GoogleCalendarMutationHttpError(response.status);
+      return { status: response.status, requestId: response.headers.get("x-request-id") ?? response.headers.get("x-guploader-uploadid") };
+    },
+  };
+}
+
+export async function createGoogleWorkspaceCalendarMutationSession(credentials: WorkspaceCredentials, binding: CalendarMutationBinding, dependencies: MutationSessionDependencies & { mintToken?: (credentials: WorkspaceCredentials) => Promise<string> } = {}) {
+  if (credentials.accessMode === "read_only") throw new Error("This Google account is read only. No calendar change was made.");
+  const grants = new Set((credentials.scope ?? "").split(/\s+/));
+  if (!["calendar", "calendar.events", "calendar.events.owned"].some((suffix) => grants.has(`https://www.googleapis.com/auth/${suffix}`)))
+    throw new Error("Google calendar write consent is missing. Reconnect the approved account with write permission.");
+  if (credentials.accountId && credentials.accountId !== binding.accountId) throw new Error("The stored Google account differs from the approved account.");
+  const accessToken = await (dependencies.mintToken ?? ((stored) => mintWorkspaceAccessToken("google_workspace", stored)))(credentials);
+  return googleCalendarMutationSessionWithToken(accessToken, binding, { ...dependencies, identityMode: "workspace" });
+}
 
 class GoogleWorkspaceApiError extends ConnectorHttpError {
   readonly status: number;

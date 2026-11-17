@@ -1,3 +1,4 @@
+import { CalendarChangePreview } from "@/components/approvals/calendar-change-preview";
 import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
 import Link from "next/link";
 import { BellCheck } from "lucide-react";
@@ -136,6 +137,7 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
               </div>
 
               {item.type === "external_action" ? <ExternalActionPreview payload={item.proposed_payload} /> : null}
+              {item.type === "appointment_change" ? <CalendarChangePreview payload={item.proposed_payload} /> : null}
               <div className="mt-4 border-t pt-4">
                 {access.canResolveApprovals ? (
                   <ApprovalResolutionForm

@@ -83,6 +83,10 @@ export async function resolveApprovalItem(
     };
   }
 
+  if (approval.type === "appointment_change" && resolution === "edit_and_approve") {
+    return { status: "error", message: "Reject this appointment change and prepare a new exact proposal to change its time or source." };
+  }
+
   const editedContent = input.editedContent?.trim();
 
   if (resolution === "edit_and_approve" && !editedContent) {

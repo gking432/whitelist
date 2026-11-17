@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildJourneyCommand, customerJourneyHref, formatJourneyElapsed, invalidJourneyFilter, journeyActions, journeyActionNeedsSlot,
-  journeyQuery, JOURNEY_STATE_LABELS, journeyStateDetail, readJourneyReceipt, safeJourneyHref, visibleCustomerJourneys,
+  buildJourneyCommand, calendarReviewMatchesAction, customerJourneyHref, formatJourneyElapsed, invalidJourneyFilter,
+  journeyActions, journeyActionIsCalendarChange, journeyActionIsCurrent, journeyActionNeedsQualification, journeyActionNeedsSlot, journeyAvailabilityQuery,
+  journeyQuery, JOURNEY_STATE_LABELS, journeyStateDetail, readJourneyOffer, readJourneyReceipt, safeJourneyHref, visibleCustomerJourneys,
 } from "../lib/business/customer-journey-presentation.ts";
 import type { CustomerJourney, CustomerJourneyAction, CustomerJourneyOffer, CustomerJourneySnapshot } from "../lib/business/customer-journey-contract.ts";
 
@@ -20,6 +21,13 @@ const offer: CustomerJourneyOffer = {
   slots: [{ start_iso: "2026-11-18T17:00:00Z", end_iso: "2026-11-18T18:00:00Z", label: "Nov 18 at 11 AM" }], detail: "Saved availability offer",
 };
 const now = Date.parse("2026-11-17T16:00:00Z");
+const calendarReview: NonNullable<CustomerJourney["calendarReview"]> = {
+  bookingApprovalId: id(1), revision: "appointment:r2|source:etag-4|contact:r3", provider: "google_calendar", timezone: "America/Chicago",
+  current: { start_iso: "2026-11-18T15:00:00Z", end_iso: "2026-11-18T16:00:00Z", label: "Nov 18 at 9 AM" },
+  status: "booked", writeAllowed: true, writeDetail: "The exact Google account permits a reviewed calendar change.", sources: [{ kind: "appointment", id: id(5), revision: "source:etag-4" }],
+};
+const calendarAction = (command: "prepare_cancellation" | "prepare_time_change") => action({ command, expectedRevision: calendarReview.revision, requiresQualification: false });
+const timeChangeOffer: CustomerJourneyOffer = { ...offer, id: id(11), targetId: calendarReview.bookingApprovalId, revision: calendarReview.revision };
 
 test("journey states distinguish requests, drafts, decisions, pending providers and verified results", () => {
   assert.equal(JOURNEY_STATE_LABELS.requested, "Requested");
@@ -98,6 +106,77 @@ test("initial rebooking and cancellation remain supported review requests withou
     assert.equal("slot" in request, false);
     assert.equal("qualification" in request, false);
   }
+});
+test("calendar changes always require an explicit source review and genuine write permission", () => {
+  for (const command of ["prepare_cancellation", "prepare_time_change"] as const) {
+    const change = calendarAction(command);
+    assert.equal(journeyActionIsCalendarChange(change), true);
+    assert.equal(calendarReviewMatchesAction(calendarReview, change), true);
+    assert.throws(() => buildJourneyCommand(change, id(10), {}, now), /current appointment source/);
+    assert.throws(() => buildJourneyCommand(change, id(10), { calendarReview: { ...calendarReview, revision: "newer" } }, now), /current appointment source/);
+    assert.throws(() => buildJourneyCommand(change, id(10), { calendarReview: { ...calendarReview, writeAllowed: false, writeDetail: "Calendar is read only." } }, now), /read only/);
+  }
+  assert.equal(journeyActionNeedsSlot(calendarAction("prepare_time_change")), true);
+  assert.equal(journeyActionNeedsSlot(calendarAction("prepare_cancellation")), false);
+});
+test("a cancellation proposal carries the exact reviewed revision without claiming a slot or provider result", () => {
+  const request = buildJourneyCommand(calendarAction("prepare_cancellation"), id(10), { calendarReview }, now);
+  assert.deepEqual(request, { action: "prepare_cancellation", key: id(10), targetId: calendarReview.bookingApprovalId, expectedRevision: calendarReview.revision });
+  assert.equal("slot" in request, false);
+  assert.equal("qualification" in request, false);
+});
+test("time-change availability is scoped to the exact booking and source revision, separately from intake offers", () => {
+  const change = calendarAction("prepare_time_change");
+  assert.equal(journeyAvailabilityQuery(id(3), change), `bookingApprovalId=${id(1)}&purpose=time_change`);
+  assert.equal(journeyAvailabilityQuery(id(3), action({ command: "select_intake_slot" })), `leadId=${id(3)}`);
+  assert.equal(readJourneyOffer(timeChangeOffer, change, now).id, id(11));
+  for (const other of [{ ...timeChangeOffer, targetId: id(99) }, { ...timeChangeOffer, revision: "newer" }, { ...offer }])
+    assert.throws(() => readJourneyOffer(other, change, now), /appointment source changed/);
+});
+test("a time change requires an explicit exact offered time and keeps the request unchanged during later edits", () => {
+  const change = calendarAction("prepare_time_change");
+  assert.throws(() => buildJourneyCommand(change, id(10), { calendarReview, offer: timeChangeOffer }, now), /explicitly choose/);
+  assert.throws(() => buildJourneyCommand(change, id(10), { calendarReview, offer: timeChangeOffer, slot: { ...offer.slots[0], label: "Edited time" } }, now), /unchanged future/);
+  const selected = { ...timeChangeOffer.slots[0] };
+  const request = buildJourneyCommand(change, id(10), { calendarReview, offer: timeChangeOffer, slot: selected }, now);
+  selected.label = "Later edit";
+  assert.equal(request.offerId, id(11));
+  assert.equal(request.expectedRevision, calendarReview.revision);
+  assert.equal(request.slot?.label, "Nov 18 at 11 AM");
+  assert.equal(request.key, id(10));
+});
+test("malformed or elapsed availability is never presented as a usable calendar offer", () => {
+  const change = calendarAction("prepare_time_change");
+  for (const invalid of [null, {}, { ...timeChangeOffer, expiresAt: "2026-11-17T15:00:00Z" }, { ...timeChangeOffer, slots: [null] },
+    { ...timeChangeOffer, slots: [{ ...offer.slots[0], start_iso: "2026-11-17T15:00:00Z" }] }])
+    assert.throws(() => readJourneyOffer(invalid, change, now), /current availability/);
+});
+test("fresh rebooking requires the current instructions and all three explicit owner confirmations", () => {
+  const rebook = action({ command: "qualify_rebooking", requiresQualification: false });
+  const qualificationReview = { detail: "A verified customer sent new instructions.", instructions: "Please book next week instead.", sources: [{ kind: "message", id: id(12) }] };
+  const qualification = { service: "Consultation", preference: "Next week", identityConfirmed: true, bookingRequested: true, instructionsReviewed: true };
+  assert.equal(journeyActionNeedsQualification(rebook), true);
+  assert.throws(() => buildJourneyCommand(rebook, id(10), { qualification }, now), /current customer instructions/);
+  for (const checkbox of ["identityConfirmed", "bookingRequested", "instructionsReviewed"] as const)
+    assert.throws(() => buildJourneyCommand(rebook, id(10), { qualificationReview, qualification: { ...qualification, [checkbox]: false } }, now), /explicitly confirm/);
+  const request = buildJourneyCommand(rebook, id(10), { qualificationReview, qualification }, now);
+  qualification.service = "Later edit";
+  assert.deepEqual(request.qualification, { service: "Consultation", preference: "Next week", identityConfirmed: true, bookingRequested: true, instructionsReviewed: true });
+});
+test("unsupported writes retain the truthful cancellation-task fallback and existing decision links", () => {
+  const fallback = action({ command: "request_cancellation", requiresQualification: false });
+  const decision = { kind: "link", label: "Review pending approval", href: "/client/approvals" } as const;
+  const record = journey({ calendarReview: { ...calendarReview, writeAllowed: false }, nextAction: calendarAction("prepare_cancellation"), actions: [calendarAction("prepare_time_change"), fallback, decision] });
+  assert.deepEqual(journeyActions(record, true), [fallback, decision]);
+  assert.deepEqual(journeyActions(record, false), [decision]);
+});
+test("an open review stops accepting a new submission when its projected source revision or permissions change", () => {
+  const current = calendarAction("prepare_cancellation");
+  const record = journey({ calendarReview, nextAction: current });
+  assert.equal(journeyActionIsCurrent(record, current, true), true);
+  assert.equal(journeyActionIsCurrent(record, current, false), false);
+  assert.equal(journeyActionIsCurrent({ ...record, nextAction: { ...current, expectedRevision: "new-source" } }, current, true), false);
+  assert.equal(journeyActionIsCurrent({ ...record, calendarReview: { ...calendarReview, writeAllowed: false } }, current, true), false);
 });
 test("a bare successful response cannot claim a saved result and replay remains historical", () => {
   for (const value of [null, {}, { message: "Saved" }, { id: "receipt", message: "Saved", replayed: "true" }])

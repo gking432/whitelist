@@ -5,7 +5,7 @@ import {
   evaluateBookingLifecycle, readBookingLifecyclePin,
   type BookingFollowupKind, type BookingLifecycleState,
 } from "./lifecycle-rules.ts";
-import { intakeBookingSourceBlock } from "./intake-guard.ts";
+import { verifiedRescheduleLifecycleState } from "./calendar-mutation-rules.ts";
 
 type Scope = { partnerId: string; clientId: string };
 const nullable = (value: unknown) => typeof value === "string" && value ? value : null;
@@ -23,7 +23,7 @@ export async function readBookingLifecycleState(admin: SupabaseClient, scope: Sc
   const [approval, receipt, native, client] = await Promise.all([
     scoped("approval_items", "id,status,proposed_payload").eq("id", origin).eq("type", "appointment_booking").maybeSingle(),
     receiptQuery.maybeSingle(),
-    scoped("crm_appointments", "id,partner_id,client_id,approval_id,contact_id,status,start_at,end_at,updated_at,lifecycle_completed_at")
+    scoped("crm_appointments", "id,partner_id,client_id,approval_id,contact_id,status,start_at,end_at,updated_at,lifecycle_completed_at,calendar_state_job_id,external_ref")
       .eq("approval_id", origin).maybeSingle(),
     admin.from("client_businesses").select("status,native_lifecycle_enabled_at")
       .eq("partner_id", scope.partnerId).eq("id", scope.clientId).maybeSingle(),
@@ -31,13 +31,12 @@ export async function readBookingLifecycleState(admin: SupabaseClient, scope: Sc
   if (approval.error || receipt.error || native.error || client.error) throw new Error("The saved booking lifecycle could not be checked.");
   if (!approval.data || !receipt.data || !native.data) return null;
   const payload = (approval.data.proposed_payload ?? {}) as Record<string, unknown>;
-  const intakeBlock = await intakeBookingSourceBlock(admin, payload, origin, true);
   const slot = (payload.slot ?? {}) as { start_iso?: string; end_iso?: string };
   const contactId = nullable(payload.contact_id) ?? nullable(native.data.contact_id);
   if (!contactId) return null;
   const [contact, activity, conversations, stopTask] = await Promise.all([
     scoped("crm_contacts", "id,partner_id,client_id,updated_at,tags,phone,email,preferred_channel").eq("id", contactId).maybeSingle(),
-    scoped("crm_communications", "id,created_at").eq("contact_id", contactId).eq("direction", "inbound")
+    scoped("crm_communications", "id,created_at").eq("contact_id", contactId).eq("direction", "inbound").eq("status", "received")
       .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1),
     scoped("business_conversations", "id,contact_id,channel,connection_id,external_thread_id,revision,mode,opted_out,state,identity_status")
       .eq("contact_id", contactId).eq("identity_status", "owner_verified").limit(101),
@@ -45,7 +44,36 @@ export async function readBookingLifecycleState(admin: SupabaseClient, scope: Sc
   ]);
   if (contact.error || activity.error || conversations.error || stopTask.error) throw new Error("Current customer activity or booking controls could not be checked.");
   if (!contact.data) return null;
-  let coverageComplete = (conversations.data?.length ?? 0) <= 100;
+  const verifiedThreadIds = (conversations.data ?? []).slice(0, 100).map((row) => row.id);
+  const messages = verifiedThreadIds.length ? await scoped("business_conversation_messages", "id,created_at").in("conversation_id", verifiedThreadIds)
+    .eq("direction", "inbound").eq("status", "received").order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1) : { data: [], error: null };
+  if (messages.error) throw new Error("Verified customer replies could not be checked.");
+  const latestReceived = [...(activity.data ?? []), ...(messages.data ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))[0];
+  let coverageComplete = (conversations.data?.length ?? 0) <= 100 && native.data.external_ref === receipt.data.external_ref;
+  let stateJobId: string | null = null;
+  let effectiveReceiptAt = receipt.data.receipt_recorded_at ?? "";
+  let effectiveSlot = { start_iso: slot.start_iso ?? "", end_iso: slot.end_iso ?? "" };
+  let effectiveAccountId: string | null = null;
+  if (native.data.calendar_state_job_id) {
+    const stateJob = await scoped("action_jobs", "id,partner_id,client_id,approval_id,kind,status,external_ref,provider_receipt")
+      .eq("id", native.data.calendar_state_job_id).maybeSingle();
+    if (stateJob.error) throw new Error("The verified appointment time change could not be checked.");
+    const stateApproval = stateJob.data?.approval_id ? await scoped("approval_items", "id,partner_id,client_id,type,status,proposed_payload")
+      .eq("id", stateJob.data.approval_id).maybeSingle() : { data: null, error: null };
+    if (stateApproval.error) throw new Error("The approved appointment time change could not be checked.");
+    const effective = verifiedRescheduleLifecycleState({ scope,
+      origin: { bookingApprovalId: origin, bookingActionJobId: receipt.data.id, provider: String(payload.provider ?? ""), calendarConnectionId: nullable(payload.calendar_connection_id), externalRef: receipt.data.external_ref ?? "" },
+      native: { id: native.data.id, contactId: native.data.contact_id, slot: { start_iso: native.data.start_at, end_iso: native.data.end_at }, stateJobId: native.data.calendar_state_job_id },
+      job: stateJob.data, approval: stateApproval.data, now: new Date().toISOString() });
+    if (!effective || !receipt.data.receipt_recorded_at || Date.parse(effective.receiptAt) < Date.parse(receipt.data.receipt_recorded_at)) coverageComplete = false;
+    else { stateJobId = effective.stateJobId; effectiveReceiptAt = effective.receiptAt; effectiveSlot = effective.slot; effectiveAccountId = effective.calendarAccountId; }
+  }
+  const sourceCheck = await admin.rpc("booking_lifecycle_source_check", {
+    p_work: nullable(payload.intake_work_id) ?? nullable(payload.customer_rebooking_work_id),
+    p_approval: origin, p_state_job: stateJobId,
+  });
+  if (sourceCheck.error || !sourceCheck.data || typeof sourceCheck.data.allowed !== "boolean") throw new Error("The current receipt-backed booking source could not be checked.");
+  const intakeBlock = sourceCheck.data.allowed ? null : String(sourceCheck.data.reason ?? "The booking source or customer instructions changed.");
   const primaryId = nullable(payload.conversation_id);
   const primary = primaryId ? conversations.data?.find((row) => row.id === primaryId) : null;
   if (primaryId && !primary) coverageComplete = false;
@@ -78,6 +106,7 @@ export async function readBookingLifecycleState(admin: SupabaseClient, scope: Sc
     if (!account.data || !["connected", "needs_attention"].includes(account.data.status) || account.data.runtime_mode === "paused" || accountProvider !== provider) coverageComplete = false;
     else {
       calendarAccountId = nullable(account.data.external_account_id);
+      if (stateJobId && effectiveAccountId !== calendarAccountId) coverageComplete = false;
       const ids = new Map<string, string | null>([[calendarConnectionId, calendarAccountId]]);
       if (calendarAccountId) {
         const peers = await scoped("integration_connections", "id,external_account_id")
@@ -107,13 +136,13 @@ export async function readBookingLifecycleState(admin: SupabaseClient, scope: Sc
   }
   return {
     ...scope, bookingApprovalId: origin, actionJobId: receipt.data.id, approvalStatus: approval.data.status,
-    receiptStatus: receipt.data.status, externalRef: nullable(receipt.data.external_ref), receiptAt: receipt.data.receipt_recorded_at ?? "",
-    provider, calendarConnectionId, calendarAccountId, startAt: slot.start_iso ?? "", endAt: slot.end_iso ?? "",
+    receiptStatus: receipt.data.status, externalRef: nullable(receipt.data.external_ref), receiptAt: effectiveReceiptAt, stateJobId,
+    provider, calendarConnectionId, calendarAccountId, startAt: effectiveSlot.start_iso, endAt: effectiveSlot.end_iso,
     nativeLifecycleEnabledAt: nullable(client.data?.native_lifecycle_enabled_at),
     native: { ...scopedRow(native.data), id: native.data.id, approvalId: native.data.approval_id, contactId: native.data.contact_id,
       status: native.data.status, startAt: native.data.start_at, endAt: native.data.end_at, updatedAt: native.data.updated_at, completedAt: nullable(native.data.lifecycle_completed_at) },
     contact: { ...scopedRow(contact.data), id: contact.data.id, updatedAt: contact.data.updated_at, tags: contact.data.tags },
-    delivery, latestInbound: activity.data?.[0] ? { id: activity.data[0].id, at: activity.data[0].created_at } : null,
+    delivery, latestInbound: latestReceived ? { id: latestReceived.id, at: latestReceived.created_at } : null,
     conversation: primary ? { id: primary.id, revision: primary.revision, mode: primary.mode, optedOut: primary.opted_out, state: primary.state } : null,
     otherHumanTakeover: (conversations.data ?? []).some((row) => row.mode === "human" && row.state !== "closed"),
     cancellationRequested: receipt.data.booking_followup_phase === "stopped" || !!stopTask.data?.length,
@@ -123,6 +152,7 @@ export async function readBookingLifecycleState(admin: SupabaseClient, scope: Sc
 
 /** Used at dispatch start and after token/availability waits, before the write. */
 export async function bookingLifecycleDeliveryBlock(admin: SupabaseClient, job: ActionJobRecord, now = new Date().toISOString()): Promise<string | null> {
+  if (["calendar.cancel", "calendar.reschedule"].includes(job.kind)) return null; // Dedicated approved-mutation source guard owns this path.
   const payload = job.payload;
   const lifecycle = payload.booking_lifecycle_version !== undefined || payload.booking_followup_kind !== undefined;
   if (!lifecycle) {

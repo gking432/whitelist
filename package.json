@@ -49,7 +49,8 @@
     "test": "node --experimental-strip-types --test \"tests/*.test.ts\"",
     "verify:security:prepare": "node scripts/prepare-beta-test-database.mjs",
     "verify:security:matrix": "node scripts/verify-database-security.mjs && node scripts/verify-beta-security.mjs && node scripts/verify-voice-beta.mjs && node scripts/verify-beta-concurrency.mjs && node scripts/verify-paid-capacity.mjs && node scripts/verify-embedded-connections.mjs",
-    "eval:ai": "tsx scripts/evaluate-ai.ts"
+    "eval:ai": "tsx scripts/evaluate-ai.ts",
+    "verify:customer-journey-db": "node scripts/verify-customer-journey-db.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

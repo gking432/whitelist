@@ -10,8 +10,9 @@ import type {
   CustomerJourneySnapshot,
 } from "@/lib/business/customer-journey-contract";
 import {
-  buildJourneyCommand, customerJourneyHref, formatJourneyElapsed, invalidJourneyFilter, journeyActions, journeyActionNeedsSlot, journeyQuery,
-  JOURNEY_STAGE_LABELS, JOURNEY_STATE_LABELS, journeyStateDetail, readJourneyReceipt,
+  buildJourneyCommand, calendarReviewMatchesAction, customerJourneyHref, formatJourneyElapsed, invalidJourneyFilter,
+  journeyActions, journeyActionIsCalendarChange, journeyActionIsCurrent, journeyActionNeedsQualification, journeyActionNeedsSlot, journeyAvailabilityQuery, journeyQuery,
+  JOURNEY_STAGE_LABELS, JOURNEY_STATE_LABELS, journeyStateDetail, readJourneyOffer, readJourneyReceipt,
   safeJourneyHref, visibleCustomerJourneys, type JourneyCommand, type JourneyFilter,
 } from "@/lib/business/customer-journey-presentation";
 import { validTimeZone } from "@/lib/business/daily-brief";
@@ -26,6 +27,8 @@ function JourneyLink({ href, children, className }: { href: string; children: Re
 }
 const when = (value: string | null, zone: string) => value && Number.isFinite(Date.parse(value))
   ? new Intl.DateTimeFormat("en-US", { timeZone: validTimeZone(zone), month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value)) : null;
+const calendarNames: Record<string, string> = { northstar_internal: "Business calendar", google_calendar: "Google Calendar", google_workspace: "Google Calendar", microsoft_365: "Microsoft 365" };
+const calendarName = (provider: string) => calendarNames[provider] || "Connected calendar";
 async function getJourneySnapshot(query: string, signal?: AbortSignal): Promise<CustomerJourneySnapshot> {
   const response = await fetch(`/api/business/customer-journey${query ? `?${query}` : ""}`, { cache: "no-store", signal });
   const data = await response.json();
@@ -46,6 +49,7 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
   const [preference, setPreference] = useState("");
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [bookingRequested, setBookingRequested] = useState(false);
+  const [instructionsReviewed, setInstructionsReviewed] = useState(false);
   const [loadingOffer, setLoadingOffer] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingAttempt, setPendingAttempt] = useState(false);
@@ -55,6 +59,8 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
   const lock = useRef(false);
   const offerGeneration = useRef(0);
   const actions = journeyActions(journey, canWrite);
+  const calendarReview = journey.calendarReview;
+  const qualificationReview = journey.qualificationReview;
   const shownStages = compact ? journey.stages.filter((stage) => stage.status !== "unknown") : journey.stages;
   const observations = (journey.observations ?? []).flatMap((observation) => {
     const elapsed = formatJourneyElapsed(observation.seconds);
@@ -71,7 +77,7 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
     setError("");
     setNotice("");
   }
-  async function getOffer() {
+  async function getOffer(action: CommandAction) {
     if (lock.current) return;
     const version = ++offerGeneration.current;
     setLoadingOffer(true);
@@ -79,12 +85,11 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
     setOffer(null);
     setSlot(null);
     try {
-      const response = await fetch(`/api/business/customer-journey/availability?leadId=${encodeURIComponent(journey.leadId)}`, { cache: "no-store" });
+      const response = await fetch(`/api/business/customer-journey/availability?${journeyAvailabilityQuery(journey.leadId, action)}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "The scheduling offer is not available yet. Refresh progress to check the assigned work.");
-      if (!data.id || !Array.isArray(data.slots) || !Number.isFinite(Date.parse(data.expiresAt)))
-        throw new Error("A saved availability offer could not be confirmed.");
-      if (version === offerGeneration.current) setOffer(data as CustomerJourneyOffer);
+      const savedOffer = readJourneyOffer(data, action);
+      if (version === offerGeneration.current) setOffer(savedOffer);
     } catch (cause) {
       if (version === offerGeneration.current) setError(cause instanceof Error ? cause.message : "The availability offer could not be loaded.");
     } finally {
@@ -124,8 +129,10 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
   }
   function submit(action: CommandAction) {
     try {
+      if (!journeyActionIsCurrent(journey, action, canWrite)) throw new Error("Customer records or permissions changed. Refresh progress and start a new review.");
       const request = buildJourneyCommand(action, crypto.randomUUID(), {
-        qualification: { service, preference, identityConfirmed, bookingRequested }, offer, slot,
+        qualification: { service, preference, identityConfirmed, bookingRequested, instructionsReviewed },
+        qualificationReview, calendarReview, offer, slot,
       });
       void sendRequest(request);
     } catch (cause) {
@@ -135,13 +142,17 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
   function chooseAction(action: CommandAction) {
     if (lock.current) return;
     resetIntent();
-    if (action.requiresQualification || action.command === "progress_inquiry" || journeyActionNeedsSlot(action)) {
+    offerGeneration.current++;
+    if (journeyActionNeedsQualification(action) || journeyActionNeedsSlot(action) || journeyActionIsCalendarChange(action)) {
       setSelectedAction(action);
       setOffer(null);
       setSlot(null);
+      setService("");
+      setPreference("");
       setIdentityConfirmed(false);
       setBookingRequested(false);
-      if (journeyActionNeedsSlot(action)) void getOffer();
+      setInstructionsReviewed(false);
+      if (journeyActionNeedsSlot(action)) void getOffer(action);
     } else submit(action);
   }
   const identity = journey.customer.identity === "owner_verified" ? "Owner-reviewed identity" : "Identity not verified";
@@ -161,6 +172,12 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
         {!compact && stage.sources.length ? <details className="mt-1 text-[11px] leading-6 text-slate-500"><summary className="cursor-pointer">Source evidence · {stage.sources.length}</summary>{stage.sources.map((source) => <p className="break-all" key={`${source.kind}:${source.id}`}>{source.href ? <JourneyLink href={source.href}>Open source record</JourneyLink> : "Source record"} · {source.id}{source.revision ? ` · version ${source.revision}` : ""}</p>)}</details> : null}
       </li>)}
     </ol>
+    {calendarReview ? <section className="mt-4 border-t border-slate-100 pt-4" aria-label="Recorded appointment and calendar permission">
+      <h4 className="text-xs font-medium text-slate-600">Recorded appointment</h4>
+      <p className="mt-1 text-xs leading-6 text-slate-600">{calendarName(calendarReview.provider)} · {calendarReview.current.label || when(calendarReview.current.start_iso, calendarReview.timezone) || "Time unavailable"} · {calendarReview.timezone}</p>
+      <p className="text-[11px] leading-6 text-slate-500">Recorded status: {calendarReview.status}. {calendarReview.writeAllowed ? "Calendar changes can be prepared for approval." : "Calendar write access is unavailable."} {calendarReview.writeDetail}</p>
+      {!compact && calendarReview.sources.length ? <details className="mt-1 text-[11px] leading-6 text-slate-500"><summary className="cursor-pointer">Appointment sources · {calendarReview.sources.length}</summary>{calendarReview.sources.map((source) => <p className="break-all" key={`${source.kind}:${source.id}`}>{source.href ? <JourneyLink href={source.href}>Open source record</JourneyLink> : "Source record"} · {source.id}{source.revision ? ` · version ${source.revision}` : ""}</p>)}</details> : null}
+    </section> : null}
     {observations.length ? <section className="mt-4 border-t border-slate-100 pt-4" aria-label="Recorded timing">
       <h4 className="text-xs font-medium text-slate-600">Recorded timing</h4>
       <dl className="mt-2 space-y-3">{observations.map((observation) => <div key={observation.key}>
@@ -178,23 +195,38 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
     {!pendingAttempt && actions.length ? <div className="mt-4 flex flex-wrap gap-3" aria-label="Available customer work decisions">{actions.map((action, index) => action.kind === "link" ? <JourneyLink key={`link:${action.href}`} href={action.href} className={ownerQuietButton}>{action.label}</JourneyLink> : <button key={`${action.command}:${index}`} type="button" className={index === 0 ? ownerButton : ownerQuietButton} disabled={saving || loadingOffer} onClick={() => chooseAction(action)}>{action.command === "request_cancellation" ? "Request cancellation review" : action.label}</button>)}</div> : null}
     {selectedAction && !pendingAttempt ? <form className="mt-5 space-y-4 rounded-xl bg-slate-50 p-4" onSubmit={(event) => { event.preventDefault(); submit(selectedAction); }}>
       <h4 className="text-sm font-medium">{selectedAction.label}</h4>
-      {selectedAction.requiresQualification || selectedAction.command === "progress_inquiry" ? <>
+      {!journeyActionIsCurrent(journey, selectedAction, canWrite) ? <p role="alert" className="text-xs leading-6 text-amber-800">Customer records or permissions changed. Refresh progress and start a new review.</p> : null}
+      {journeyActionIsCalendarChange(selectedAction) ? <>
+        {calendarReview && calendarReviewMatchesAction(calendarReview, selectedAction) ? <>
+          <dl className="space-y-2 text-xs leading-6"><div><dt className="font-medium">Before</dt><dd>{calendarReview.current.label || when(calendarReview.current.start_iso, calendarReview.timezone)} · {calendarReview.timezone}</dd></div>
+            <div><dt className="font-medium">Proposed change</dt><dd>{selectedAction.command === "prepare_cancellation" ? "Cancel this appointment after approval and a verified calendar result." : slot ? `${slot.label} · ${offer?.timezone || calendarReview.timezone}` : "Choose a new time from the real availability offer below."}</dd></div></dl>
+          <p className="text-xs leading-6 text-slate-600">{calendarReview.writeDetail}</p>
+          {calendarReview.sources.length ? <details className="text-[11px] leading-6 text-slate-500"><summary className="cursor-pointer">Review exact appointment source</summary>{calendarReview.sources.map((source) => <p className="break-all" key={`${source.kind}:${source.id}`}>{source.href ? <JourneyLink href={source.href}>Open source record</JourneyLink> : "Source record"} · {source.id}{source.revision ? ` · version ${source.revision}` : ""}</p>)}</details> : null}
+        </> : <p role="alert" className="text-xs leading-6 text-amber-800">The appointment source changed. Refresh progress and start a new review.</p>}
+        {qualificationReview ? <details className="text-xs leading-6 text-slate-600"><summary className="cursor-pointer">Current customer instructions</summary><p className="whitespace-pre-wrap break-words">{qualificationReview.instructions}</p></details> : null}
+        <p className="text-xs leading-6 text-slate-500">This prepares an approval for the existing decision inbox. The calendar changes only after approval and a verified result. Previously sent messages remain part of the record.</p>
+      </> : null}
+      {journeyActionNeedsQualification(selectedAction) ? <>
         <p className="text-xs leading-6 text-slate-600">Review the selected customer: {journey.customer.name}{journey.customer.email ? ` · ${journey.customer.email}` : ""}{journey.customer.phone ? ` · ${journey.customer.phone}` : ""}. Source claims alone do not verify identity or consent.</p>
+        {selectedAction.command === "qualify_rebooking" ? qualificationReview ? <div className="space-y-2 text-xs leading-6 text-slate-600"><p>{qualificationReview.detail}</p><p className="whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-white p-3">{qualificationReview.instructions || "No additional customer instructions are recorded in this source."}</p>{qualificationReview.sources.length ? <details className="text-[11px] text-slate-500"><summary className="cursor-pointer">Current instruction sources</summary>{qualificationReview.sources.map((source) => <p className="break-all" key={`${source.kind}:${source.id}`}>{source.href ? <JourneyLink href={source.href}>Open source record</JourneyLink> : "Source record"} · {source.id}{source.revision ? ` · version ${source.revision}` : ""}</p>)}</details> : null}</div> : <p role="alert" className="text-xs leading-6 text-amber-800">Current customer instructions are unavailable. Refresh progress before rebooking.</p> : null}
         <label className="block space-y-2 text-xs">Requested service<input required maxLength={200} className={ownerInput} value={service} onChange={(event) => { resetIntent(); setService(event.target.value); }} /></label>
         <label className="block space-y-2 text-xs">Customer’s timing preference (optional)<textarea rows={2} maxLength={500} className={ownerInput} value={preference} onChange={(event) => { resetIntent(); setPreference(event.target.value); }} /></label>
         <label className="flex items-start gap-3 text-xs leading-6"><input type="checkbox" checked={identityConfirmed} onChange={(event) => { resetIntent(); setIdentityConfirmed(event.target.checked); }} className="mt-1" />I checked the customer identity and contact details.</label>
         <label className="flex items-start gap-3 text-xs leading-6"><input type="checkbox" checked={bookingRequested} onChange={(event) => { resetIntent(); setBookingRequested(event.target.checked); }} className="mt-1" />The customer requested booking help for this service.</label>
+        {selectedAction.command === "qualify_rebooking" ? <label className="flex items-start gap-3 text-xs leading-6"><input type="checkbox" checked={instructionsReviewed} onChange={(event) => { resetIntent(); setInstructionsReviewed(event.target.checked); }} className="mt-1" />I reviewed the current customer instructions above for this new booking request.</label> : null}
         <p className="text-xs leading-6 text-slate-500">This saves scheduling work for the specialist. Available times and any booking decision come next.</p>
       </> : null}
       {journeyActionNeedsSlot(selectedAction) ? <>
         {loadingOffer ? <p role="status" className="text-xs">Loading the saved availability offer…</p> : null}
         {offer ? <><p className="text-xs leading-6 text-slate-600">{offer.detail} Offer expires {when(offer.expiresAt, offer.timezone) || "at its recorded expiry"}.</p><fieldset className="space-y-2"><legend className="mb-2 text-xs font-medium">Choose an offered time · {offer.timezone}</legend>{offer.slots.map((item, index) => <label key={`${item.start_iso}:${index}`} className="flex items-start gap-3 rounded-lg border bg-white p-3 text-xs leading-6"><input className="mt-1" type="radio" name={radioName} checked={slot?.start_iso === item.start_iso && slot?.end_iso === item.end_iso && slot?.label === item.label} onChange={() => { resetIntent(); setSlot(item); }} />{item.label}</label>)}</fieldset>{!offer.slots.length ? <p className="text-xs text-slate-500">No offered times are available in this saved result.</p> : null}</> : null}
-        <p className="text-xs leading-6 text-slate-500">An offer is not a reservation. Saving this choice prepares the next supported booking step; confirmation requires the authoritative result.</p>
-        <button type="button" className={ownerQuietButton} disabled={loadingOffer || saving} onClick={() => { resetIntent(); void getOffer(); }}>Reload saved offer</button>
+        <p className="text-xs leading-6 text-slate-500">An offer is not a reservation. {selectedAction.command === "prepare_time_change" ? "Saving this choice prepares a time-change approval; the current appointment remains until the calendar result is verified." : "Saving this choice prepares the next supported booking step; confirmation requires the authoritative result."}</p>
+        <button type="button" className={ownerQuietButton} disabled={loadingOffer || saving} onClick={() => { resetIntent(); void getOffer(selectedAction); }}>Reload saved offer</button>
       </> : null}
-      <button type="submit" className={ownerButton} disabled={saving || loadingOffer || !canWrite ||
-        ((selectedAction.requiresQualification || selectedAction.command === "progress_inquiry") && (!service.trim() || !identityConfirmed || !bookingRequested)) ||
-        (journeyActionNeedsSlot(selectedAction) && (!offer || !slot))}>{saving ? "Saving…" : "Save reviewed request"}</button>
+      <button type="submit" className={ownerButton} disabled={saving || loadingOffer || !canWrite || !journeyActionIsCurrent(journey, selectedAction, canWrite) ||
+        (journeyActionNeedsQualification(selectedAction) && (!service.trim() || !identityConfirmed || !bookingRequested)) ||
+        (selectedAction.command === "qualify_rebooking" && (!qualificationReview || !instructionsReviewed)) ||
+        (journeyActionIsCalendarChange(selectedAction) && (!calendarReviewMatchesAction(calendarReview, selectedAction) || !calendarReview?.writeAllowed)) ||
+        (journeyActionNeedsSlot(selectedAction) && (!offer || !slot))}>{saving ? "Saving…" : journeyActionIsCalendarChange(selectedAction) ? "Prepare calendar approval" : "Save reviewed request"}</button>
     </form> : null}
     {actions.some((action) => action.kind === "command" && action.command === "request_cancellation") ? <p className="mt-3 text-[11px] leading-6 text-slate-500">A cancellation request saves review work. It does not establish that an external calendar appointment has been cancelled.</p> : null}
   </article>;

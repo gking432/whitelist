@@ -2,6 +2,7 @@ import { dispatchActionJob } from "@/lib/jobs/dispatch";
 import { type ActionJobRecord } from "@/lib/jobs/record";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { maintainBookingConfirmations } from "@/lib/scheduling/confirmation-completion";
+import { maintainCalendarMutations } from "@/lib/scheduling/calendar-mutation-completion";
 import { maintainBookingLifecycle } from "@/lib/scheduling/lifecycle-service";
 
 // Background job runner for durable action jobs. Retries FAILED jobs with
@@ -29,6 +30,11 @@ export async function processPendingActionJobs(
     scanned: 0, attempted: 0, succeeded: 0, failed: 0, waiting: 0,
     skipped: 0, dryRun: 0, uncertain: 0,
   };
+
+  // Internal mutation and receipt commit together. Recover that exact proof
+  // before classifying other interrupted effects as uncertain; never mutate again.
+  const { error: internalRecoveryError } = await admin.rpc("recover_internal_calendar_mutations", { p_limit: 3 });
+  if (internalRecoveryError) throw new Error("Committed internal calendar receipts could not be recovered.");
 
   // An expired lease may already have caused an external effect. Never resend it.
   const { error: recoveryError } = await admin
@@ -59,6 +65,7 @@ export async function processPendingActionJobs(
     },
     dispatch: (job) => dispatchActionJob(admin, job),
   }, limit);
+  await maintainCalendarMutations(admin);
   await maintainBookingConfirmations(admin);
   await maintainBookingLifecycle(admin);
   return result;

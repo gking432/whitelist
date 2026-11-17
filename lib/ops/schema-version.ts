@@ -1,4 +1,4 @@
-export const EXPECTED_SCHEMA_VERSION = "20261117133444_customer_journey_lifecycle";
+export const EXPECTED_SCHEMA_VERSION = "20261117214644_approved_calendar_changes";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

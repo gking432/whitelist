@@ -25,6 +25,7 @@ import {
 import { resolveMobileBusinessDecision } from "@/app/client/mobile/actions";
 import { resolveClientApproval } from "@/app/client/approvals/actions";
 import { ApprovalResolutionForm } from "@/components/approvals/approval-resolution-form";
+import { CalendarChangePreview } from "@/components/approvals/calendar-change-preview";
 import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
 import type { PortalBranding } from "@/lib/clients/portal";
 import type {
@@ -844,6 +845,7 @@ function CustomerDecision({
         {approval.type === "external_action" ? (
           <ExternalActionPreview payload={approval.proposed_payload} />
         ) : null}
+        {approval.type === "appointment_change" ? <CalendarChangePreview payload={approval.proposed_payload} /> : null}
         {canDecide ? (
           <ApprovalResolutionForm
             action={resolve}
