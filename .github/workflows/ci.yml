@@ -34,27 +34,22 @@ jobs:
 
   database:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
       - run: npm ci
-      - run: supabase start
-      - name: Export local Supabase environment
-        shell: bash
-        run: |
-          eval "$(supabase status -o env)"
-          {
-            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
-            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
-            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
-            echo "SECRETS_ENCRYPTION_KEY=$(openssl rand -base64 32)"
-          } >> "$GITHUB_ENV"
+      - name: Verify the lockfile Supabase toolchain
+        run: node scripts/ci-bootstrap-customer-journey-db.mjs --check-toolchain
+      - name: Start the pinned Supabase stack with all migrations
+        run: node scripts/ci-bootstrap-customer-journey-db.mjs --start
+      - name: Bootstrap a named disposable customer journey database
+        run: node scripts/ci-bootstrap-customer-journey-db.mjs
+      - name: Verify customer journey rollback and concurrent database behavior
+        run: node scripts/verify-customer-journey-db.mjs --concurrency
       - name: Verify security against a disposable schema with synthetic fixtures
         run: npm run verify:security
       - run: npm run verify:restore
@@ -64,7 +59,7 @@ jobs:
           npm run verify:release-journey
           npm run verify:native-inbound
       - if: always()
-        run: supabase stop --no-backup
+        run: ./node_modules/.bin/supabase stop --no-backup
 
   containers:
     runs-on: ubuntu-latest

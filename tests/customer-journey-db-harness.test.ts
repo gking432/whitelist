@@ -6,6 +6,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 const harnessUrl = new URL("../scripts/verify-customer-journey-db.mjs", import.meta.url);
 const { validateTarget, parseOptions, redact, parseCliRows, readReport, preflightSql, assertPreflight, migrationPlan, CONFIRMATION, EXPECTED_MIGRATION } = await import(harnessUrl.href);
+const bootstrapUrl = new URL("../scripts/ci-bootstrap-customer-journey-db.mjs", import.meta.url);
+const { assertHostedCi, assertToolchain, isolatedUrl, assertBaseline, sanitizeCiFailure, PINNED_CLI_VERSION, ACCEPTANCE_DATABASE, CATALOG_TABLES } = await import(bootstrapUrl.href);
 const configured = (values: Record<string, string> = {}) => ({ ISOLATED_DATABASE_URL: "postgresql://synthetic:secret%40word@127.0.0.1:5432/customer_journey_test", ISOLATED_DATABASE_CONFIRMATION: CONFIRMATION, ...values });
 const report = (values: Record<string, unknown> = {}) => ({ kind: "preflight", database: "customer_journey_test", expectedDatabase: "customer_journey_test", unfilteredRead: true, nonTestPartners: 0, nonTestClients: 0, migration: "20261117133444_customer_journey_lifecycle", appliedVersions: ["20261117030202", "20261117033546", "20261117043720", "20261117133444"], ...values });
 
@@ -71,4 +73,43 @@ test("the actual default command blocks before CLI/database access and plan make
   assert.match(source, /shell: false/);
   assert.match(source, /cwd: work/);
   assert.doesNotMatch(source, /(?:import|require).*dotenv|readFile.*\.env/);
+});
+test("CI bootstrap is restricted to hosted runners and rejects toolchain/config drift", () => {
+  assert.throws(() => assertHostedCi({}), /No tool or database was contacted/);
+  assert.throws(() => assertHostedCi({ CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "self-hosted", GITHUB_ENV: "/tmp/test" }), /restricted/);
+  assert.doesNotThrow(() => assertHostedCi({ CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted", GITHUB_ENV: "/tmp/test" }));
+  const config = 'project_id = "partner-platform"\n[db.seed]\nenabled = false\n[inbucket]\nenabled = true\n';
+  assert.doesNotThrow(() => assertToolchain(PINNED_CLI_VERSION, PINNED_CLI_VERSION, `${PINNED_CLI_VERSION}\n`, config));
+  for (const version of ["latest", "3.0.0", "2.108.0"]) assert.throws(() => assertToolchain(PINNED_CLI_VERSION, version, version, config), /audited/);
+  assert.throws(() => assertToolchain(PINNED_CLI_VERSION, PINNED_CLI_VERSION, PINNED_CLI_VERSION, config.replace("[inbucket]", "[local_smtp]")), /config/);
+});
+test("bootstrap derives only a named disposable loopback target and copies no tenant/auth data", () => {
+  assert.equal(new URL(isolatedUrl("postgresql://postgres:test@127.0.0.1:54322/postgres")).pathname, `/${ACCEPTANCE_DATABASE}`);
+  for (const source of ["postgresql://postgres:test@db.example.invalid/postgres", "postgresql://postgres:test@localhost/production", "postgresql://postgres:test@localhost/postgres?options=anything"])
+    assert.throws(() => isolatedUrl(source));
+  assert.deepEqual(CATALOG_TABLES, ["public.integration_providers", "public.platform_schema_state", "supabase_migrations.schema_migrations"]);
+  const baseline = { database: "postgres", partners: 0, clients: 0, users: 0, authUid: true, authJwt: true, providers: 3, migration: `${EXPECTED_MIGRATION}_reviewed`, versions: [EXPECTED_MIGRATION] };
+  assert.doesNotThrow(() => assertBaseline(baseline, [`${EXPECTED_MIGRATION}_reviewed.sql`]));
+  for (const patch of [{ partners: 1 }, { users: 1 }, { authUid: false }, { versions: [] }, { migration: "unknown" }])
+    assert.throws(() => assertBaseline({ ...baseline, ...patch }, [`${EXPECTED_MIGRATION}_reviewed.sql`]));
+});
+test("actual CI bootstrap command refuses local execution before invoking Docker", async () => {
+  let failure: { status?: number; stderr?: Buffer | string } | undefined;
+  try { execFileSync(process.execPath, [fileURLToPath(bootstrapUrl)], { env: { PATH: process.env.PATH }, stdio: ["ignore", "pipe", "pipe"] }); }
+  catch (error) { failure = error as typeof failure; }
+  assert.equal(failure?.status, 1); assert.match(String(failure?.stderr), /restricted to a disposable GitHub-hosted/);
+  const source = await readFile(bootstrapUrl, "utf8");
+  assert.doesNotMatch(source, /(?:create|replace)\s+function\s+auth\./i);
+  assert.doesNotMatch(source, /drop\s+database/i);
+  assert.match(source, /--schema-only/); assert.match(source, /--exit-on-error/);
+  const workflow = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.doesNotMatch(workflow, /setup-cli|version: latest/);
+  assert.match(workflow, /verify-customer-journey-db\.mjs --concurrency/);
+  for (const required of ["verify:security", "verify:restore", "verify:release-journey", "verify:native-inbound"]) assert.ok(workflow.includes(required));
+});
+test("startup failure diagnostics retain SQL errors while masking generated keys", () => {
+  const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.fake_signature";
+  const output = sanitizeCiFailure(`ERROR: relation public.missing does not exist\nJWT secret: temporary-ephemeral-secret\nSERVICE_ROLE_KEY=${jwt}\nSecret key: sb_secret_temporary_123\npostgresql://postgres:secret@127.0.0.1/postgres`);
+  assert.match(output, /ERROR: relation public\.missing does not exist/);
+  for (const secret of [jwt, "temporary-ephemeral-secret", "sb_secret_temporary_123", "postgresql://postgres:secret"]) assert.equal(output.includes(secret), false);
 });
