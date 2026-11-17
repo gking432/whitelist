@@ -25,6 +25,7 @@ export type ConnectedApp = {
   paused: boolean;
   stale?: boolean;
   readOnly: boolean;
+  writePermissions?: { calendarWrite: boolean; emailSend: boolean };
   lastSyncedAt: string | null;
   syncing: boolean;
   error: string | null;

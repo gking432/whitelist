@@ -8,6 +8,7 @@ import type { ZapierClient } from "../lib/integrations/embedded/zapier.ts";
 import { syncContactWithNote } from "../lib/integrations/providers/hubspot.ts";
 import { syncGoHighLevelContactWithNote } from "../lib/integrations/providers/gohighlevel.ts";
 const credentials = { clientId: "fixture", clientSecret: "fixture", refreshToken: "fixture", scope: "Mail.Send Calendars.ReadWrite" };
+const googleCredentials = { ...credentials, scope: "https://www.googleapis.com/auth/gmail.send" };
 const message = { to: "fixture@example.test", subject: "Approved", body: "Fixture", idempotencyKey: "approval-fixture" };
 
 test("Google email rechecks source after token refresh and suppresses a stale write", async () => {
@@ -23,7 +24,7 @@ test("Google email rechecks source after token refresh and suppresses a stale wr
     return Response.json({ id: "must-not-send" });
   };
   try {
-    await assert.rejects(sendGoogleWorkspaceEmail(credentials, message,
+    await assert.rejects(sendGoogleWorkspaceEmail(googleCredentials, message,
       () => runActionPreflight(async () => stale ? "Customer replied; prepare a fresh response." : null)), ActionSuppressedError);
     assert.equal(calls.length, 1);
     assert.ok(calls[0].includes("oauth2.googleapis.com"));
@@ -58,7 +59,7 @@ test("a permitted final preflight retains the provider receipt", async () => {
     order.push("send"); return Response.json({ id: "actual-provider-fixture" });
   };
   try {
-    const sent = await sendGoogleWorkspaceEmail(credentials, message, async () => { order.push("source-check"); });
+    const sent = await sendGoogleWorkspaceEmail(googleCredentials, message, async () => { order.push("source-check"); });
     assert.deepEqual(order, ["token", "source-check", "send"]);
     assert.equal(sent.messageId, "actual-provider-fixture");
   } finally { globalThis.fetch = original; }

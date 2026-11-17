@@ -16,7 +16,8 @@ import {
   type WorkspaceCredentials,
 } from "@/lib/integrations/providers/workspace-oauth";
 import { enqueueInitialConnectorSync } from "@/lib/integrations/connectors/sync-runner";
-import { activationStatus, freshCheck, workspacePermissions } from "./rules";
+import { activationStatus, freshCheck, probeWorkspaceAccess } from "./rules";
+import { googleAccountCanAct } from "../connections/google-permissions.ts";
 import type {
   ActivationCheck,
   ActivationPlan,
@@ -36,6 +37,7 @@ export const ActivationInput = z
     instagram: z.boolean(),
     sms: z.boolean(),
     workspace_provider: z.enum(["google_workspace", "microsoft_365"]),
+    workspace_connection_id: z.uuid().nullable().optional(),
     booking_start_hour: z.number().int().min(0).max(23),
     booking_end_hour: z.number().int().min(1).max(24),
     booking_minutes: z.number().int().min(15).max(480),
@@ -121,78 +123,11 @@ export async function applyActivation(
   return plan;
 }
 
-/** Read-only provider calls. A send grant is checked without sending a test email. */
-export async function probeWorkspace(
-  provider: WorkspaceProvider,
-  credentials: WorkspaceCredentials,
-) {
-  const granted = workspacePermissions(provider, credentials.scope ?? "");
-  const token = await mintWorkspaceAccessToken(provider, credentials);
-  const get = async (url: string, init: RequestInit = {}) => {
-    const response = await fetch(url, {
-      ...init,
-      redirect: "error",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok)
-      throw new Error(
-        "Access could not be verified. Reconnect the account and approve the requested permissions.",
-      );
-    return response.json();
-  };
-  const account = await get(
-    provider === "google_workspace"
-      ? "https://www.googleapis.com/oauth2/v2/userinfo"
-      : "https://graph.microsoft.com/v1.0/me?$select=id,mail,userPrincipalName",
-  );
-  let email = false,
-    calendar = false;
-  // Independently prove the selected capabilities, not merely the user-info endpoint.
-  if (granted.email) {
-    await get(
-      provider === "google_workspace"
-        ? "https://gmail.googleapis.com/gmail/v1/users/me/profile"
-        : "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=1&$select=id",
-    );
-    email = true;
-  }
-  if (granted.calendar) {
-    if (provider === "google_workspace") {
-      const busy = await get(
-        "https://www.googleapis.com/calendar/v3/freeBusy",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            timeMin: new Date().toISOString(),
-            timeMax: new Date(Date.now() + 86400000).toISOString(),
-            items: [{ id: "primary" }],
-          }),
-        },
-      );
-      if (!busy.calendars?.primary || busy.calendars.primary.errors?.length)
-        throw new Error("Calendar availability access needs attention.");
-    } else {
-      await get(
-        `https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=${encodeURIComponent(new Date().toISOString())}&endDateTime=${encodeURIComponent(new Date(Date.now() + 86400000).toISOString())}&$top=1&$select=id`,
-      );
-    }
-    calendar = true;
-  }
-  return {
-    email,
-    calendar,
-    accountId: String(account.id ?? ""),
-    accountName: String(
-      account.email ??
-        account.mail ??
-        account.userPrincipalName ??
-        "Connected account",
-    ),
-  };
+/** Read-only provider calls. Explicit owner capabilities and the actual same
+ * account are checked without sending an email or creating a test event. */
+export async function probeWorkspace(provider: WorkspaceProvider, credentials: WorkspaceCredentials, config?: Record<string, unknown>, expectedAccountId?: string | null) {
+  return probeWorkspaceAccess(provider, credentials, { config, expectedAccountId,
+    mintToken: () => mintWorkspaceAccessToken(provider, credentials) });
 }
 
 export async function recheckWorkspace(
@@ -202,6 +137,15 @@ export async function recheckWorkspace(
   const plan = await readActivationPlan(admin, scope);
   if (!plan?.workspace_connection_id)
     throw new Error("Connect your Google or Microsoft account first.");
+  const [connection, secret] = await Promise.all([
+    admin.from("integration_connections").select("id,config,status,runtime_mode,external_account_id,updated_at,provider:integration_providers!inner(provider_key)")
+      .eq("id", plan.workspace_connection_id).eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).maybeSingle(),
+    admin.from("integration_secrets").select("updated_at").eq("connection_id", plan.workspace_connection_id)
+      .eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).eq("secret_kind", "provider_credentials").maybeSingle(),
+  ]);
+  const provider = connection.data?.provider as unknown as { provider_key: string } | null;
+  if (connection.error || secret.error || !connection.data || !secret.data || provider?.provider_key !== plan.workspace_provider || !connection.data.external_account_id)
+    throw new Error("The exact selected account is unavailable. Reconnect it before checking access.");
   const credentials = await readProviderCredentials<WorkspaceCredentials>(
     admin,
     plan.workspace_connection_id,
@@ -209,13 +153,15 @@ export async function recheckWorkspace(
   if (!credentials) throw new Error("Reconnect the account to restore access.");
   let check: Awaited<ReturnType<typeof probeWorkspace>> | null = null;
   try {
-    check = await probeWorkspace(plan.workspace_provider, credentials);
+    check = await probeWorkspace(plan.workspace_provider, credentials, connection.data.config, connection.data.external_account_id);
   } finally {
-    const { error } = await admin.rpc("record_activation_workspace_check", {
+    const { error } = await admin.rpc("record_selected_workspace_check", {
       p_partner: scope.partnerId,
       p_client: scope.clientId,
       p_revision: plan.revision,
       p_connection: plan.workspace_connection_id,
+      p_expected_connection_updated_at: connection.data.updated_at, p_expected_secret_updated_at: secret.data.updated_at,
+      p_account_id: connection.data.external_account_id,
       p_email: check?.email ?? false,
       p_calendar: check?.calendar ?? false,
     });
@@ -348,7 +294,8 @@ export async function readActivation(
       check(
         "email",
         "Email access",
-        !!verified && workspace?.config.activation_mail_verified === true,
+        !!verified && workspace?.config.activation_mail_verified === true &&
+          (workspace.key !== "google_workspace" || workspace.config.workspace_view_only !== true || googleAccountCanAct(workspace.config, "email")),
         "Inbox access and approved-reply permission checked. New text emails enter the team; attachments and automated mail stay in your inbox.",
         "Connect or recheck inbox access. Replies start with new mail after activation.",
       );
@@ -370,7 +317,8 @@ export async function readActivation(
       check(
         "calendar",
         "Calendar access",
-        !!verified && workspace?.config.activation_calendar_verified === true,
+        !!verified && workspace?.config.activation_calendar_verified === true &&
+          (workspace.key !== "google_workspace" || workspace.config.workspace_view_only !== true || googleAccountCanAct(workspace.config, "calendar")),
         "Availability access and booking permission checked. You approve bookings.",
         "Connect or recheck your calendar before appointments can be offered.",
       );
@@ -468,6 +416,12 @@ export async function readActivation(
     widgetSnippet: widgetUrl
       ? `<iframe src="${widgetUrl.replaceAll('"', "&quot;")}" title="Chat with our team" width="380" height="600" style="max-width:100%;border:0;border-radius:16px"></iframe>`
       : null,
+    workspaceAccounts: rows.filter((row) => ["google_workspace", "microsoft_365"].includes(row.key)).map((row) => ({
+      id: row.id, provider: row.key as WorkspaceProvider, account: row.external_account_name || (row.key === "google_workspace" ? "Google account" : "Microsoft account"),
+      status: row.status, paused: row.runtime_mode === "paused", importOnly: row.config.workspace_view_only === true,
+      calendarWrite: row.key === "google_workspace" && row.config.workspace_view_only === true ? googleAccountCanAct(row.config, "calendar") : row.config.activation_calendar_verified === true,
+      emailSend: row.key === "google_workspace" && row.config.workspace_view_only === true ? googleAccountCanAct(row.config, "email") : row.config.activation_mail_verified === true,
+    })),
     workspaceAccount: workspace?.external_account_name ?? null,
   };
 }

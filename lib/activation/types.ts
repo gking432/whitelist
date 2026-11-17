@@ -7,6 +7,7 @@ export type ActivationChoices = {
   instagram: boolean;
   sms: boolean;
   workspace_provider: WorkspaceProvider;
+  workspace_connection_id?: string | null;
   booking_start_hour: number;
   booking_end_hour: number;
   booking_minutes: number;
@@ -39,6 +40,7 @@ export type ActivationSnapshot = {
     available: boolean;
     connected: boolean;
   }[];
+  workspaceAccounts?: { id: string; provider: WorkspaceProvider; account: string; status: string; paused: boolean; calendarWrite: boolean; emailSend: boolean; importOnly: boolean }[];
   widgetUrl: string | null;
   widgetSnippet: string | null;
   workspaceAccount: string | null;

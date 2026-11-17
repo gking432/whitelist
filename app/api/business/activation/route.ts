@@ -42,7 +42,7 @@ export async function GET() {
       await readActivation(
         admin,
         { partnerId: portal.client.partner_id, clientId: portal.client.id },
-        canWriteBusinessWorkspace(portal.access),
+        canWriteBusinessWorkspace(portal.access) && !portal.access.isImpersonating,
       ),
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Request too large." }, { status: 413 });
   const portal = await context(),
     admin = createSupabaseAdminClient();
-  if (!portal || !canWriteBusinessWorkspace(portal.access))
+  if (!portal || !canWriteBusinessWorkspace(portal.access) || portal.access.isImpersonating)
     return NextResponse.json(
       { error: "Business owner write access required." },
       { status: 403 },

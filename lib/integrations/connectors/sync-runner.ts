@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { enqueueWorkspaceInquiry } from "../inbound/workspace-inbox";
-import { isWorkspaceViewOnly, allowsConnectorWork, connectorCursorIsPartial } from "./read-only-policy";
+import { isWorkspaceViewOnly, allowsConnectorWork, allowsActivatedGoogleInbox, connectorCursorIsPartial } from "./read-only-policy";
 import { persistOwnerImportRecord } from "@/lib/connections/import-store";
 import { supportsImportedLeadAutomation } from "./catalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -401,7 +401,7 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
       if (!allowsConnectorWork(context.config, job.direction, job.objectType)) throw new ConnectorExecutionCancelledError();
       if (provider?.provider_key === "stripe" && !["invoice", "payment"].includes(job.objectType))
         throw new ConnectorExecutionCancelledError();
-      if(job.direction==="pull" && ["google_workspace","microsoft_365"].includes(provider?.provider_key??"") && current.config?.activation_managed===true &&
+      if(job.direction==="pull" && !isWorkspaceViewOnly(current.config ?? {}) && ["google_workspace","microsoft_365"].includes(provider?.provider_key??"") && current.config?.activation_managed===true &&
         !((job.objectType==="message" && current.config.conversation_intake_enabled===true) || (job.objectType==="appointment" && current.config.activation_calendar_enabled===true))) {
         throw new ConnectorExecutionCancelledError();
       }
@@ -411,6 +411,9 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
         await persistOwnerImportRecord(admin, {
           partnerId: job.partner_id, clientId: job.client_id, connectionId: job.connection_id,
         }, record);
+        if (allowsActivatedGoogleInbox(job.connection_config, job.connection_runtime_mode, job.provider?.provider_key ?? ""))
+          await enqueueWorkspaceInquiry(admin, { partnerId: job.partner_id, clientId: job.client_id, connectionId: job.connection_id,
+            providerKey: job.provider?.provider_key ?? "", config: job.connection_config, runtimeMode: job.connection_runtime_mode, record });
         return;
       }
       if (!isWorkspaceViewOnly(job.connection_config)) await enqueueWorkspaceInquiry(admin, {partnerId:job.partner_id,clientId:job.client_id,connectionId:job.connection_id,

@@ -1,3 +1,4 @@
+import { reconcileCalendarChange, CalendarReconciliationError } from "../scheduling/calendar-reconciliation.ts";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { intakeJourneyRevision, type JourneyScope } from "./customer-journey-data.ts";
@@ -6,10 +7,10 @@ import { prepareCalendarChange, CalendarChangeError } from "../scheduling/calend
 
 const Slot = z.object({ start_iso: z.iso.datetime({ offset: true }), end_iso: z.iso.datetime({ offset: true }), label: z.string().min(1).max(500) }).strict();
 export const JourneyCommand = z.object({
-  action: z.enum(["progress_inquiry", "select_intake_slot", "recover_confirmation", "prepare_reminder", "request_cancellation", "prepare_cancellation", "prepare_time_change", "prepare_rebooking", "qualify_rebooking"]),
+  action: z.enum(["progress_inquiry", "select_intake_slot", "recover_confirmation", "prepare_reminder", "request_cancellation", "prepare_cancellation", "prepare_time_change", "prepare_rebooking", "qualify_rebooking", "reconcile_calendar_change"]),
   key: z.uuid(), targetId: z.uuid(), expectedRevision: z.string().min(1).max(1500),
   qualification: z.object({ service: z.string().trim().min(1).max(200), preference: z.string().trim().max(500).optional(), identityConfirmed: z.literal(true), bookingRequested: z.literal(true), instructionsReviewed: z.literal(true).optional() }).strict().optional(),
-  offerId: z.uuid().optional(), slot: Slot.optional(),
+  offerId: z.uuid().optional(), slot: Slot.optional(), acceptReviewedSource: z.literal(true).optional(),
 }).strict();
 export class JourneyCommandError extends Error {
   readonly status: number;
@@ -35,17 +36,23 @@ export async function executeJourneyCommand(admin: SupabaseClient, actor: Journe
   const parsed = JourneyCommand.safeParse(raw);
   if (!parsed.success) throw new JourneyCommandError("Review the current customer work and request.", 400);
   const command = parsed.data;
+  if (command.action !== "reconcile_calendar_change" && command.acceptReviewedSource !== undefined) throw new JourneyCommandError("Fresh source review belongs only to the saved uncertain calendar result.", 400);
   const scoped = <Columns extends string>(table: string, columns: Columns) => admin.from(table).select(columns).eq("partner_id", actor.partnerId).eq("client_id", actor.clientId);
   let rpc = "apply_booking_lifecycle_command";
   let payload: Record<string, unknown> = command;
-  if (["prepare_cancellation", "prepare_time_change", "qualify_rebooking", "request_cancellation"].includes(command.action)) {
+  if (["prepare_cancellation", "prepare_time_change", "qualify_rebooking", "request_cancellation", "reconcile_calendar_change"].includes(command.action)) {
     const prior = await scoped("business_owner_commands", "actor_id,command,result").eq("request_key", command.key).maybeSingle();
     if (prior.error) throw new JourneyCommandError("Saved decisions could not be checked. Retry unchanged.", 503);
     if (prior.data) {
       const stored = object(prior.data.command);
       if (prior.data.actor_id !== actor.actorId || !sameJourneyRequest(stored.owner_request ?? stored, command)) throw new JourneyCommandError("This request key belongs to a different decision.");
-      return confirmResult({ ...object(prior.data.result), replayed: true }, "bookingApprovalId", command.targetId);
+      return confirmResult({ ...object(prior.data.result), replayed: true }, command.action === "reconcile_calendar_change" ? "actionJobId" : "bookingApprovalId", command.targetId);
     }
+  }
+  if (command.action === "reconcile_calendar_change") {
+    if (command.qualification || command.offerId || command.slot) throw new JourneyCommandError("Source review uses the exact saved calendar action.", 400);
+    try { return await reconcileCalendarChange(admin, actor, { ...command, action: command.action }); }
+    catch (error) { if (error instanceof CalendarReconciliationError) throw new JourneyCommandError(error.message, error.status); throw error; }
   }
   if (command.action === "prepare_cancellation" || command.action === "prepare_time_change") {
     if (command.qualification) throw new JourneyCommandError("Calendar changes use their exact reviewed appointment and offer.", 400);

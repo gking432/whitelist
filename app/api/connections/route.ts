@@ -2,7 +2,7 @@ import { NextResponse, after, type NextRequest } from "next/server";
 import { z } from "zod";
 import { connectionsContext } from "@/lib/connections/context";
 import { readConnectedData } from "@/lib/connections/data";
-import { startReadOnlyOAuth } from "@/lib/connections/oauth";
+import { startGooglePermissionUpgrade, startReadOnlyOAuth } from "@/lib/connections/oauth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { canWriteBusinessWorkspace } from "@/lib/business/access";
 import { OWNER_PROVIDERS } from "@/lib/connections/types";
@@ -16,6 +16,7 @@ import {
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 const Input = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("upgrade_google_permissions"), connectionId: z.uuid(), permissions: z.array(z.enum(["calendar.write", "email.send"])).min(1).max(2).refine((items) => new Set(items).size === items.length) }).strict(),
   z.object({ action: z.literal("connect"), provider: z.enum(OWNER_PROVIDERS).default("google_workspace"), connectionId: z.uuid().optional() }).strict(),
   z.object({ action: z.literal("prepare_intake"), key: z.uuid() }).strict(),
   z
@@ -79,6 +80,14 @@ export async function POST(request: NextRequest) {
     );
   const input = parsed.data;
   try {
+    if (input.action === "upgrade_google_permissions") {
+      const auth = await startGooglePermissionUpgrade(admin, ctx.scope, ctx.user.id, input.connectionId, input.permissions);
+      const response = NextResponse.json({ url: auth.url }, { headers: { "Cache-Control": "no-store" } });
+      response.cookies.set(auth.cookieName, auth.cookie, {
+        httpOnly: true, secure: request.nextUrl.protocol === "https:", sameSite: "lax", path: "/", maxAge: 900,
+      });
+      return response;
+    }
     if (input.action === "prepare_intake") {
       const intake = readOwnerProviderOptions().find((provider) => provider.key === "generic_inbound_webhook");
       if (!intake?.available) return NextResponse.json({ error: intake?.detail ?? "Secure intake setup is unavailable." }, { status: 503 });

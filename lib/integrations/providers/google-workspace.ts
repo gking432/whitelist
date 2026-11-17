@@ -16,6 +16,7 @@ import {
 } from "./workspace-oauth.ts";
 import { ConnectorAuthorizationError, ConnectorHttpError, parseRetryAfter } from "../connectors/errors.ts";
 import type { CalendarMutationEvent, CalendarMutationPayload, CalendarMutationSession, CalendarMutationSlot } from "../../scheduling/calendar-mutation-rules.ts";
+import { googleCredentialsCanAct } from "../../connections/google-permissions.ts";
 
 const PEOPLE = "https://people.googleapis.com/v1";
 const CALENDAR = "https://www.googleapis.com/calendar/v3";
@@ -102,8 +103,7 @@ export async function googleCalendarMutationSessionWithToken(accessToken: string
 
 export async function createGoogleWorkspaceCalendarMutationSession(credentials: WorkspaceCredentials, binding: CalendarMutationBinding, dependencies: MutationSessionDependencies & { mintToken?: (credentials: WorkspaceCredentials) => Promise<string> } = {}) {
   if (credentials.accessMode === "read_only") throw new Error("This Google account is read only. No calendar change was made.");
-  const grants = new Set((credentials.scope ?? "").split(/\s+/));
-  if (!["calendar", "calendar.events", "calendar.events.owned"].some((suffix) => grants.has(`https://www.googleapis.com/auth/${suffix}`)))
+  if (!googleCredentialsCanAct(credentials, "calendar.write"))
     throw new Error("Google calendar write consent is missing. Reconnect the approved account with write permission.");
   if (credentials.accountId && credentials.accountId !== binding.accountId) throw new Error("The stored Google account differs from the approved account.");
   const accessToken = await (dependencies.mintToken ?? ((stored) => mintWorkspaceAccessToken("google_workspace", stored)))(credentials);
@@ -520,6 +520,30 @@ export async function getGoogleWorkspaceBusyIntervals(
   timeMin: string,
   timeMax: string,
 ): Promise<{ start: string; end: string }[]> {
+  if (credentials.accessMode === "owner_selected") {
+    if (!googleCredentialsCanAct(credentials, "calendar.write") || !credentials.accountId) throw new Error("Explicit calendar permission for the selected Google account is required.");
+    if (!Number.isFinite(Date.parse(timeMin)) || !Number.isFinite(Date.parse(timeMax)) || Date.parse(timeMax) <= Date.parse(timeMin)) throw new Error("A valid calendar availability window is required.");
+    const token = await mintWorkspaceAccessToken("google_workspace", credentials);
+    const get = async (url: string) => {
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect: "error", signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error("The selected Google calendar availability could not be verified.");
+      return await response.json() as Record<string, unknown>;
+    };
+    const identity = await get("https://www.googleapis.com/oauth2/v2/userinfo");
+    if (identity.id !== credentials.accountId) throw new Error("The Google calendar authorization belongs to another account.");
+    const calendar = await get(`${CALENDAR}/users/me/calendarList/primary`);
+    if (typeof calendar.id !== "string" || calendar.primary !== true || calendar.accessRole !== "owner") throw new Error("The exact owned primary calendar is unavailable.");
+    const params = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", showDeleted: "false", maxResults: "2500" });
+    const page = await get(`${CALENDAR}/calendars/${encodeURIComponent(calendar.id)}/events?${params}`);
+    if (!Array.isArray(page.items) || page.nextPageToken) throw new Error("The complete selected calendar availability could not be verified.");
+    return page.items.flatMap((raw: Record<string, unknown>) => {
+      if (raw.status === "cancelled" || raw.transparency === "transparent") return [];
+      const start = (raw.start as { dateTime?: string } | undefined)?.dateTime, end = (raw.end as { dateTime?: string } | undefined)?.dateTime;
+      if (!start || !end) return [{ start: timeMin, end: timeMax }];
+      if (!Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end)) || Date.parse(end) <= Date.parse(start)) throw new Error("The calendar returned an invalid busy interval.");
+      return [{ start, end }];
+    });
+  }
   const response = await googleFetch(credentials, `${CALENDAR}/freeBusy`, {
     method: "POST",
     body: JSON.stringify({ timeMin, timeMax, items: [{ id: "primary" }] }),
@@ -533,6 +557,8 @@ export async function sendGoogleWorkspaceEmail(
   message: { to: string; subject: string; body: string; idempotencyKey: string },
   beforeWrite?: () => Promise<void>,
 ): Promise<{ messageId: string }> {
+  if (credentials.accessMode === "read_only") throw new Error("This Google account is read-only; explicit email-send permission is required. No message was sent.");
+  if (!googleCredentialsCanAct(credentials, "email.send")) throw new Error("Explicit Google email-send permission is required. No message was sent.");
   const result = await pushGoogleRecord(credentials, {
     operation: "create",
     objectType: "message",

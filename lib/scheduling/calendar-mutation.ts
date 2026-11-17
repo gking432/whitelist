@@ -1,3 +1,4 @@
+import { googleAccountCanAct } from "../connections/google-permissions.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ActionJobRecord } from "../jobs/record.ts";
 import type { DeliveryOutcome } from "../delivery/customer-message.ts";
@@ -137,7 +138,7 @@ export async function executeApprovedCalendarMutation(admin: SupabaseClient, job
   if (account.error) throw new Error("The exact approved calendar account could not be verified.");
   const provider = (account.data?.provider as unknown as { provider_key?: string } | null)?.provider_key;
   if (!account.data || provider !== payload.provider || account.data.external_account_id !== payload.calendar_account_id || account.data.status !== "connected" ||
-      account.data.runtime_mode !== "live" || account.data.config?.workspace_view_only === true)
+      account.data.runtime_mode !== "live" || (account.data.config?.workspace_view_only === true && !(provider === "google_workspace" && googleAccountCanAct(account.data.config, "calendar"))))
     return stopped("The exact approved calendar account is disconnected, paused or read only.");
   const { readProviderCredentials } = await import("../integrations/credentials.ts");
   const credentials = await readProviderCredentials<WorkspaceCredentials>(admin, account.data.id);

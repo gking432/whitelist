@@ -1,4 +1,5 @@
 import type { CanonicalRecord } from "../connectors/types.ts";
+import { allowsActivatedGoogleInbox } from "../connectors/read-only-policy.ts";
 
 type MimePart = {
   mimeType?: string;
@@ -65,6 +66,7 @@ export function inboxInquiry(
   config: Record<string, unknown>,
   runtimeMode: string,
   now = Date.now(),
+  providerKey = "",
 ) {
   const enabledAt =
     typeof config.conversation_intake_enabled_at === "string"
@@ -73,7 +75,7 @@ export function inboxInquiry(
   const receivedAt = record.updatedAt ? Date.parse(record.updatedAt) : NaN;
   if (
     record.objectType !== "message" ||
-    config.workspace_view_only === true ||
+    (config.workspace_view_only === true && !allowsActivatedGoogleInbox(config, runtimeMode, providerKey, now)) ||
     record.deleted ||
     config.conversation_intake_enabled !== true ||
     runtimeMode !== "live" ||

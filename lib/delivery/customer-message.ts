@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { readEffectiveAuthority } from "@/lib/agents/authority";
 import { ActionSuppressedError, runActionPreflight, type ActionPreflight } from "@/lib/jobs/action-preflight";
 
@@ -16,6 +15,7 @@ import {
   type TwilioCredentials,
 } from "@/lib/integrations/providers/twilio";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { loadDeliveryAccount } from "./channel-selection.ts";
 
 // Delivery of an approved customer message (SMS via Twilio, email via
 // Resend). Hard rules (docs/13):
@@ -81,32 +81,6 @@ const CHANNELS: Record<"sms" | "email", ChannelConfig> = {
   },
 };
 
-async function findChannelConnection(
-  admin: SupabaseClient,
-  message: ApprovedMessage,
-  providerKeys: string[],
-) {
-  let query = admin
-    .from("integration_connections")
-    .select(
-      "id, runtime_mode, status, error_count, provider:integration_providers!inner(provider_key)",
-    )
-    .eq("client_id", message.clientId)
-    .eq("partner_id", message.partnerId)
-    .in("status", ["connected", "needs_attention"])
-    .in("provider.provider_key", providerKeys);
-  if (message.connectionId) query = query.eq("id", message.connectionId);
-  const { data } = await query.limit(1).maybeSingle();
-
-  return data as {
-    id: string;
-    runtime_mode: string;
-    status: string;
-    error_count: number | null;
-    provider: { provider_key: string } | null;
-  } | null;
-}
-
 export async function deliverApprovedCustomerMessage(
   message: ApprovedMessage,
 ): Promise<DeliveryOutcome> {
@@ -144,11 +118,9 @@ export async function deliverApprovedCustomerMessage(
   }
 
   const channel = CHANNELS[message.channel];
-  const connection = await findChannelConnection(
-    admin,
-    message,
-    channel.providerKeys,
-  );
+  const selection = await loadDeliveryAccount(admin, { partnerId: message.partnerId, clientId: message.clientId,
+    channel: message.channel, connectionId: message.connectionId });
+  const connection = selection.connection;
 
   const logEvent = async (
     status: "sent" | "dry_run" | "failed" | "skipped",
@@ -177,14 +149,14 @@ export async function deliverApprovedCustomerMessage(
 
   if (!connection) {
     await logEvent("skipped", {
-      note: `No connected ${channel.providerLabel} connection for this client.`,
+      note: selection.reason,
     });
 
     return {
       attempted: false,
       delivered: false,
       status: "skipped",
-      detail: `Approved and recorded. No ${channel.providerLabel} connection is set up for this client, so nothing was sent — ${channel.connectHint}.`,
+      detail: selection.reason,
     };
   }
 

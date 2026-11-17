@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { googleAccountCanAct } from "../connections/google-permissions.ts";
 import {
   AUTHORITY_CHANNELS,
   AUTHORITY_MODES,
@@ -42,6 +43,12 @@ const PROVIDERS: Record<AuthorityChannel, string[]> = {
 export function authorityChannel(value: unknown): AuthorityChannel | null {
   if (value === "website_chat") return "website";
   return AUTHORITY_CHANNELS.includes(value as AuthorityChannel) ? value as AuthorityChannel : null;
+}
+/** Import access stays read-only; an explicitly verified Google permission is
+ * an exception only for its exact supported action channel. */
+export function accountIsReadOnlyFor(connection: AuthorityConnection, channel: AuthorityChannel, activation?: AuthorityActivation | null): boolean {
+  return connection.config?.workspace_view_only === true &&
+    !(connection.provider_key === "google_workspace" && (channel === "calendar" || channel === "email") && googleAccountCanAct(connection.config, channel) && activation?.status === "active" && activation.workspace_connection_id === connection.id && (channel === "calendar" ? activation.bookings : activation.email));
 }
 const cap = (mode: AuthorityMode, maximum: AuthorityMode): AuthorityMode =>
   AUTHORITY_MODES[Math.min(AUTHORITY_MODES.indexOf(mode), AUTHORITY_MODES.indexOf(maximum))];
@@ -98,7 +105,7 @@ export function effectiveAuthoritySnapshot(
     const accounts = connections.filter((c) => PROVIDERS[channel].includes(c.provider_key ?? ""));
     const internalCalendar = channel === "calendar" && options.internalCalendarEnabled;
     if (!internalCalendar && !accounts.some((c) => c.status === "connected" && c.runtime_mode === "live")) mode = cap(mode, "draft");
-    if (!internalCalendar && accounts.length && accounts.every((c) => c.config?.workspace_view_only === true)) mode = cap(mode, "observe");
+    if (!internalCalendar && accounts.length && accounts.every((c) => accountIsReadOnlyFor(c, channel, activation))) mode = cap(mode, "observe");
     channels[channel] = mode;
   }
   return { revision: settings?.authority_revision ?? 0, status: settings?.status === "active" ? "active" : "paused", channels };
@@ -167,6 +174,7 @@ export function evaluateAuthority(input: {
   expectedRevision?: number;
   approved?: boolean;
   connection?: AuthorityConnection | null;
+  activation?: AuthorityActivation | null;
 }): { allowed: boolean; reason: string; revision: number } {
   const reject = (reason: string) => ({ allowed: false, reason, revision: input.authority.revision });
   if (input.expectedRevision !== undefined && input.expectedRevision !== input.authority.revision)
@@ -174,7 +182,7 @@ export function evaluateAuthority(input: {
   const mode = input.authority.channels[input.channel];
   if (mode === "off") return reject("The owner stopped this channel. Nothing was sent.");
   if (input.phase !== "observe" && input.authority.status !== "active") return reject("The team is paused.");
-  if (input.phase !== "observe" && input.connection?.config?.workspace_view_only === true)
+  if (input.phase !== "observe" && input.connection && accountIsReadOnlyFor(input.connection, input.channel, input.activation))
     return reject("This account is read only. Reauthorization is required for agent work.");
   if (input.phase === "draft" && !["draft", "require_approval"].includes(mode))
     return reject("This channel is limited to observation.");
@@ -182,8 +190,14 @@ export function evaluateAuthority(input: {
     if (mode !== "require_approval" || !input.approved) return reject("This channel does not authorize approved external actions.");
     if (!input.connection || input.connection.status !== "connected" || input.connection.runtime_mode !== "live")
       return reject("This account is unavailable or is not live.");
-    if (input.connection.config?.workspace_view_only === true)
+    if (accountIsReadOnlyFor(input.connection, input.channel, input.activation))
       return reject("This account is read only. Reauthorization is required for external actions.");
+    if (input.connection.config?.workspace_view_only === true) {
+      const verified = input.channel === "calendar" ? input.connection.config.activation_calendar_verified : input.connection.config.activation_mail_verified;
+      const checked = Date.parse(String(input.connection.config.activation_checked_at ?? ""));
+      if (verified !== true || !Number.isFinite(checked) || checked > Date.now() + 60_000 || Date.now() - checked > 24 * 60 * 60_000)
+        return reject("Recheck the selected Google account permission before this approved action.");
+    }
   }
   return { allowed: true, reason: "Current owner authority permits this step.", revision: input.authority.revision };
 }
@@ -213,10 +227,14 @@ export async function readEffectiveAuthority(
   }));
   const candidates = connections.filter((c) => PROVIDERS[channel].includes(c.provider_key ?? ""));
   // Explicit account bindings must never silently fall back to another account.
-  const connection = options.connectionId ? candidates.find((c) => c.id === options.connectionId) : candidates.find((c) => c.status === "connected" && c.runtime_mode === "live");
-  return evaluateAuthority({
+  const selectedId = activation.data?.status === "active" && ((channel === "email" && activation.data.email) || (channel === "calendar" && activation.data.bookings))
+    ? activation.data.workspace_connection_id : null;
+  const eligible = candidates.filter((c) => c.status === "connected" && c.runtime_mode === "live" && !accountIsReadOnlyFor(c, channel, activation.data));
+  const connection = options.connectionId ? candidates.find((c) => c.id === options.connectionId)
+    : selectedId ? candidates.find((c) => c.id === selectedId) : eligible.length === 1 ? eligible[0] : undefined;
+  return { ...evaluateAuthority({
     authority: effectiveAuthoritySnapshot(settings.data ? { ...settings.data, context_reviewed: contextReviewed } : null, activation.data, connections,
       { internalCalendarEnabled: internalCalendarEnabled(internalClient.data) }),
-    channel, ...options, connection,
-  });
+    channel, ...options, connection, activation: activation.data,
+  }), connectionId: connection?.id ?? null };
 }

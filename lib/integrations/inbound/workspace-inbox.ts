@@ -18,7 +18,7 @@ export async function enqueueWorkspaceInquiry(
 ) {
   if (!["google_workspace", "microsoft_365"].includes(input.providerKey))
     return null;
-  const inquiry = inboxInquiry(input.record, input.config, input.runtimeMode);
+  const inquiry = inboxInquiry(input.record, input.config, input.runtimeMode, Date.now(), input.providerKey);
   if (!inquiry) return null;
   return enqueueInboundEvent(admin, {
     partnerId: input.partnerId,

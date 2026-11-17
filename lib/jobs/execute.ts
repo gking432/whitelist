@@ -164,9 +164,7 @@ export async function executeActionJob(
       authorityRevision: typeof job.payload.authority_revision === "number"
         ? job.payload.authority_revision : undefined,
       beforeSend: finalActionCheck,
-      connectionId: job.payload.conversation_id
-        ? asString(job.payload.connection_id)
-        : null,
+      connectionId: asString(job.payload.connection_id),
     });
     await recordConversationDelivery(admin, job, outcome);
     if (!job.payload.conversation_id) await recordTimelineMessage({

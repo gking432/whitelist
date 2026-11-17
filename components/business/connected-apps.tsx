@@ -9,6 +9,11 @@ import { OnboardingProgress } from "./onboarding-progress";
 import { connectionControls, providerConnectLabel } from "./connection-controls";
 
 const outcomes: Record<string, string> = {
+  permissions_updated: "Google verified the selected permissions. Review team setup before enabling work; existing pauses and stopped channels remain in force.",
+  permissions_denied: "Google permission setup was cancelled. Your previous read access and controls were kept.",
+  permissions_changed: "This account or its setup changed during authorization. Existing access was kept; refresh and review it again.",
+  permissions_failed: "The selected Google permissions could not be verified. Existing read access was kept.",
+
   connected: "Account connected. The first import is queued.",
   sync_pending: "Account connected. Select Refresh to start the first import.",
   denied: "Account access was cancelled. Your previous connection is unchanged.",
@@ -44,7 +49,7 @@ export function ConnectedApps({ snapshot, outcome, timeZone }: {
     return () => clearInterval(id);
   }, [router]);
 
-  async function act(action: string, provider?: OwnerProvider, connectionId?: string) {
+  async function act(action: string, provider?: OwnerProvider, connectionId?: string, permissions?: ("calendar.write" | "email.send")[]) {
     if (lock.current || !snapshot.canWrite) return;
     lock.current = true;
     setBusy(true);
@@ -57,11 +62,11 @@ export function ConnectedApps({ snapshot, outcome, timeZone }: {
     try {
       const response = await fetch("/api/connections", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...(provider ? { provider } : {}), ...(connectionId ? { connectionId } : {}), ...(action === "prepare_intake" ? { key: intakeKey.current } : {}) }),
+        body: JSON.stringify({ action, ...(provider ? { provider } : {}), ...(connectionId ? { connectionId } : {}), ...(permissions ? { permissions } : {}), ...(action === "prepare_intake" ? { key: intakeKey.current } : {}) }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "The connection could not be updated.");
-      if (action === "connect") {
+      if (action === "connect" || action === "upgrade_google_permissions") {
         if (!data.url) throw new Error("The provider did not return an authorization link. Try again.");
         window.location.assign(data.url);
         return;
@@ -92,7 +97,19 @@ export function ConnectedApps({ snapshot, outcome, timeZone }: {
     const controls = connectionControls(app, option);
     return <article key={app.id} className="mt-5 border-t border-slate-100 pt-5">
       <p className="break-words text-sm">{app.account || app.name}</p>
-      <p className="mt-1 text-xs leading-6 text-slate-500">{app.status.replaceAll("_", " ")} · {app.readOnly ? "Read only" : "Uses existing action permissions"}{app.paused ? " · Updates paused" : app.syncing ? " · Importing" : date(app.lastSyncedAt) ? ` · Updated ${date(app.lastSyncedAt)}` : " · No completed import yet"}</p>
+      <p className="mt-1 text-xs leading-6 text-slate-500">{app.status.replaceAll("_", " ")} · {app.readOnly ? app.writePermissions?.calendarWrite || app.writePermissions?.emailSend ? "Imports are read only" : "Read only" : "Uses existing action permissions"}{app.paused ? " · Updates paused" : app.syncing ? " · Importing" : date(app.lastSyncedAt) ? ` · Updated ${date(app.lastSyncedAt)}` : " · No completed import yet"}</p>
+      {app.provider === "google_workspace" ? <div className="mt-3 space-y-2 text-xs leading-6 text-slate-500">
+        <p>Verified action permissions: {app.writePermissions?.calendarWrite ? "calendar changes" : "calendar changes not granted"} · {app.writePermissions?.emailSend ? "email sending" : "email sending not granted"}.</p>
+        {app.writePermissions?.calendarWrite || app.writePermissions?.emailSend ? <p><Link href="/client/activate" className="underline">Review team setup and choose this account</Link> before starting approved work.</p> : null}
+        {snapshot.canWrite && option?.available && !["disconnected", "revoked"].includes(app.status) ? <details className="rounded-lg border border-slate-200 p-3">
+          <summary className="cursor-pointer font-medium text-slate-700">Review permissions for approved work</summary>
+          <p className="mt-2">Google will ask for the selected permission on this exact account. Calendar permission can create, move or cancel appointments; email permission can send mail. Existing imports, stopped channels and paused work keep their saved controls. Granting access does not activate the team or approve an action.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {!app.writePermissions?.calendarWrite ? <button type="button" className={button} disabled={busy} onClick={() => void act("upgrade_google_permissions", undefined, app.id, ["calendar.write"])}>Continue to Google for calendar changes</button> : null}
+            {!app.writePermissions?.emailSend ? <button type="button" className={button} disabled={busy} onClick={() => void act("upgrade_google_permissions", undefined, app.id, ["email.send"])}>Continue to Google for email sending</button> : null}
+          </div>
+        </details> : null}
+      </div> : null}
       {app.streams?.length ? <ul className="mt-3 space-y-2">{app.streams.map((stream) => <li key={stream.key} className="text-xs leading-6 text-slate-500"><span className="font-medium capitalize">{stream.key.replaceAll("_", " ")}</span> · {stream.status}{stream.partial ? " · Partial import" : ""}{date(stream.lastSyncedAt) ? ` · ${date(stream.lastSyncedAt)}` : ""}<span className="block">{stream.detail}</span></li>)}</ul> : null}
       {app.stale ? <p className="mt-2 text-xs text-amber-800">Updates are delayed. Refresh this account to check for new records.</p> : null}
       {app.error ? <p className="mt-2 text-xs text-amber-800">{app.error}</p> : null}
@@ -100,7 +117,7 @@ export function ConnectedApps({ snapshot, outcome, timeZone }: {
         {controls.managed && option ? <>
           {controls.canPause ? <button type="button" className={button} disabled={busy || !snapshot.canWrite} onClick={() => void act(app.paused ? "resume" : "pause", undefined, app.id)}>{app.paused ? controls.intake ? "Resume intake" : "Resume updates" : controls.intake ? "Pause intake" : "Pause updates"}</button> : null}
           {controls.canRefresh ? <button type="button" className={button} disabled={busy || app.paused || !snapshot.canWrite} onClick={() => void act("refresh", undefined, app.id)}>Refresh</button> : null}
-          {controls.reconnect ? <button type="button" className={button} disabled={busy || !snapshot.canWrite || !option.available} onClick={() => void act("connect", option.key, app.id)}>{app.account ? "Reconnect" : `Connect ${option.label}`}</button> : null}
+          {controls.reconnect ? <button type="button" className={button} disabled={busy || !snapshot.canWrite || !option.available} onClick={() => void act("connect", option.key, app.id)}>{app.account ? app.writePermissions?.calendarWrite || app.writePermissions?.emailSend ? "Reconnect selected permissions" : "Reconnect" : `Connect ${option.label}`}</button> : null}
           {controls.secureSetup ? <button type="button" className={button} disabled={busy || !snapshot.canWrite || !option.available} onClick={() => void act("connect", "stripe")}>Open secure Stripe setup</button> : null}
           {controls.disconnect ? <button type="button" className={button} disabled={busy || !snapshot.canWrite} onClick={() => void act("disconnect", undefined, app.id)}>Disconnect</button> : null}
         </> : <Link href={option?.category === "mail_calendar" ? "/client/activate" : "/client/integrations"} className={`${button} inline-flex items-center`}>Manage setup</Link>}

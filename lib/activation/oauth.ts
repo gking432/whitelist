@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { startGooglePermissionUpgrade } from "@/lib/connections/oauth";
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentScope } from "@/lib/agents/types";
@@ -30,6 +31,15 @@ export async function startActivationOAuth(
   const plan = await readActivationPlan(admin, scope);
   if (!plan || plan.status !== "active" || (!plan.email && !plan.bookings))
     throw new Error("Save your assistant setup before connecting an account.");
+  if (plan.workspace_provider === "google_workspace") {
+    if (!plan.workspace_connection_id) throw new Error("Choose your exact Google account in Apps and grant the selected permissions before connecting team work.");
+    const source = await admin.from("integration_connections").select("id,config,provider:integration_providers!inner(provider_key)")
+      .eq("id", plan.workspace_connection_id).eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).maybeSingle();
+    if (source.error || !source.data || (source.data.provider as unknown as { provider_key: string })?.provider_key !== "google_workspace")
+      throw new Error("The exact selected Google account is unavailable.");
+    if (source.data.config?.workspace_view_only === true)
+      return startGooglePermissionUpgrade(admin, scope, actorId, source.data.id, [...(plan.bookings ? ["calendar.write" as const] : []), ...(plan.email ? ["email.send" as const] : [])]);
+  }
   const client =
     plan.workspace_provider === "google_workspace"
       ? getGoogleOAuthClient()

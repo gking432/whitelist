@@ -100,3 +100,22 @@ test("internal calendar uses the actual business capability and selected approve
     { client: { ...client, crm_operating_mode: "external_only" } },
   ]) assert.equal(evaluateInternalBookingAuthority({ ...input, ...change }).allowed, false);
 });
+
+
+test("an owner-selected Google permission lifts only its verified channel while import and pause controls remain", () => {
+  const config = { workspace_view_only: true, activation_calendar_verified: true, activation_checked_at: new Date().toISOString(), google_action_permissions: { calendar_write: true, email_send: false }, google_verified_scopes: ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.calendarlist.readonly"] };
+  const account: AuthorityConnection = { id: "google", provider_key: "google_workspace", status: "connected", runtime_mode: "live", config };
+  const enabled = { ...settings, channel_authority: { calendar: "require_approval" as const, email: "require_approval" as const } };
+  const active = { status: "active", bookings: true, email: true, workspace_connection_id: "google" };
+  const authority = effectiveAuthoritySnapshot(enabled, active, [account]);
+  assert.equal(authority.channels.calendar, "require_approval");
+  assert.equal(authority.channels.email, "observe");
+  assert.equal(evaluateAuthority({ authority, channel: "calendar", phase: "execute", approved: true, connection: account, activation: active, expectedRevision: 4 }).allowed, true);
+  assert.equal(evaluateAuthority({ authority, channel: "email", phase: "execute", approved: true, connection: account, activation: active }).allowed, false);
+  assert.equal(evaluateAuthority({ authority, channel: "calendar", phase: "execute", approved: true, connection: { ...account, id: "different" }, activation: active }).allowed, false);
+  assert.equal(evaluateAuthority({ authority: effectiveAuthoritySnapshot({ ...enabled, status: "paused" }, active, [account]), channel: "calendar", phase: "execute", approved: true, connection: account }).allowed, false);
+  assert.equal(evaluateAuthority({ authority: effectiveAuthoritySnapshot({ ...enabled, channel_authority: { calendar: "off" } }, active, [account]), channel: "calendar", phase: "execute", approved: true, connection: account }).allowed, false);
+  assert.equal(evaluateAuthority({ authority, channel: "calendar", phase: "execute", approved: true, connection: { ...account, config: { ...config, activation_checked_at: "2000-01-01T00:00:00Z" } }, activation: active }).allowed, false);
+  for (const damaged of [{ ...config, google_verified_scopes: [] }, { ...config, google_action_permissions: { calendar_write: false, email_send: false } }])
+    assert.equal(effectiveAuthoritySnapshot(enabled, active, [{ ...account, config: damaged }]).channels.calendar, "observe");
+});

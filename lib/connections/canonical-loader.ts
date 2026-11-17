@@ -1,3 +1,4 @@
+import { googleAccountCanAct } from "./google-permissions.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { latestImportedRows, mapConnectedData, type ImportedRow } from "./records.ts";
 import { OWNER_PROVIDERS, type ConnectedApp, type ConnectedStream } from "./types.ts";
@@ -85,6 +86,7 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
     const completed = times.length === streams.length && streams.length ? times.sort()[0] : null;
     return { id: c.id, name: c.display_name || provider, provider, account: c.external_account_name ?? null,
       status: c.status, paused: c.runtime_mode === "paused", readOnly: c.config?.workspace_view_only === true || ["stripe", "generic_inbound_webhook"].includes(provider),
+      ...(provider === "google_workspace" ? { writePermissions: { calendarWrite: googleAccountCanAct(c.config ?? {}, "calendar"), emailSend: googleAccountCanAct(c.config ?? {}, "email") } } : {}),
       lastSyncedAt: completed, stale: streams.some((s) => ["stale", "missing", "error", "paused"].includes(s.status)),
       syncing: streams.some((s) => s.partial && !eventBased) || jobs.some((j) => j.connection_id === c.id && j.status === "running"),
       error: streams.some((s) => s.status === "error") ? "A connection stream needs attention. Refresh or reconnect the account." : null,

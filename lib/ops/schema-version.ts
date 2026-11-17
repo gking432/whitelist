@@ -1,4 +1,4 @@
-export const EXPECTED_SCHEMA_VERSION = "20261117214644_approved_calendar_changes";
+export const EXPECTED_SCHEMA_VERSION = "20261117225829_google_permissions_calendar_reconciliation";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

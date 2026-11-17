@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildJourneyCommand, calendarReviewMatchesAction, customerJourneyHref, formatJourneyElapsed, invalidJourneyFilter,
-  journeyActions, journeyActionIsCalendarChange, journeyActionIsCurrent, journeyActionNeedsQualification, journeyActionNeedsSlot, journeyAvailabilityQuery,
+  journeyActions, journeyActionIsCalendarChange, journeyActionIsCurrent, journeyActionNeedsQualification, journeyActionNeedsReconciliation, journeyActionNeedsSlot, journeyAvailabilityQuery,
   journeyQuery, JOURNEY_STATE_LABELS, journeyStateDetail, readJourneyOffer, readJourneyReceipt, safeJourneyHref, visibleCustomerJourneys,
 } from "../lib/business/customer-journey-presentation.ts";
 import type { CustomerJourney, CustomerJourneyAction, CustomerJourneyOffer, CustomerJourneySnapshot } from "../lib/business/customer-journey-contract.ts";
@@ -177,6 +177,33 @@ test("an open review stops accepting a new submission when its projected source 
   assert.equal(journeyActionIsCurrent(record, current, false), false);
   assert.equal(journeyActionIsCurrent({ ...record, nextAction: { ...current, expectedRevision: "new-source" } }, current, true), false);
   assert.equal(journeyActionIsCurrent({ ...record, calendarReview: { ...calendarReview, writeAllowed: false } }, current, true), false);
+});
+test("source reconciliation requires the exact saved action review and never includes mutation or qualification inputs", () => {
+  const reconcile = action({ command: "reconcile_calendar_change", requiresQualification: true, requiresSlot: true });
+  const reconciliationReview: NonNullable<CustomerJourney["reconciliationReview"]> = { jobId: reconcile.targetId, revision: reconcile.expectedRevision, provider: "google_workspace", operation: "reschedule", status: "uncertain", detail: "Read-only exact source check.", sources: [] };
+  assert.equal(journeyActionNeedsReconciliation(reconcile), true); assert.equal(journeyActionNeedsSlot(reconcile), false); assert.equal(journeyActionNeedsQualification(reconcile), false);
+  assert.throws(() => buildJourneyCommand(reconcile, id(10)), /exact saved calendar result/);
+  assert.throws(() => buildJourneyCommand(reconcile, id(10), { reconciliationReview: { ...reconciliationReview, jobId: id(99) } }), /exact saved calendar result/);
+  const request = buildJourneyCommand(reconcile, id(10), { reconciliationReview, offer, slot: offer.slots[0], qualification: { service: "Old review", identityConfirmed: true, bookingRequested: true } });
+  reconciliationReview.revision = "newer";
+  assert.deepEqual(request, { action: "reconcile_calendar_change", key: id(10), targetId: reconcile.targetId, expectedRevision: reconcile.expectedRevision });
+});
+test("reconciliation cannot be offered for another source version or a read-only owner session", () => {
+  const reconcile = action({ command: "reconcile_calendar_change", requiresQualification: false });
+  const reconciliationReview: NonNullable<CustomerJourney["reconciliationReview"]> = { jobId: reconcile.targetId, revision: reconcile.expectedRevision, provider: "google_workspace", operation: "cancel", status: "provider_pending", detail: "The final result is not established by acceptance.", sources: [] };
+  const record = journey({ reconciliationReview, nextAction: reconcile });
+  assert.equal(journeyActions(record, true).length, 1); assert.equal(journeyActions(record, false).length, 0);
+  assert.equal(journeyActions({ ...record, reconciliationReview: { ...reconciliationReview, revision: "new-source" } }, true).length, 0);
+});
+test("changed local appointment acceptance is explicit, scoped and frozen into the pending source-review request", () => {
+  const reconcile = action({ command: "reconcile_calendar_change", requiresQualification: false });
+  const reconciliationReview: NonNullable<CustomerJourney["reconciliationReview"]> = { jobId: reconcile.targetId, revision: reconcile.expectedRevision, provider: "google_workspace", operation: "reschedule", status: "uncertain", detail: "Compare the current and approved times.", sources: [], requiresFreshReview: true,
+    current: { ...offer.slots[0], label: "Current edited appointment UTC" }, proposed: { ...offer.slots[0], label: "Approved source outcome UTC" }, currentStatus: "booked" };
+  assert.throws(() => buildJourneyCommand(reconcile, id(10), { reconciliationReview }), /Explicitly review the current local appointment/);
+  const request = buildJourneyCommand(reconcile, id(10), { reconciliationReview, acceptReviewedSource: true });
+  reconciliationReview.current!.label = "A later local edit";
+  assert.deepEqual(request, { action: "reconcile_calendar_change", key: id(10), targetId: reconcile.targetId, expectedRevision: reconcile.expectedRevision, acceptReviewedSource: true });
+  assert.throws(() => buildJourneyCommand(action({ command: "prepare_reminder", requiresQualification: false }), id(10), { acceptReviewedSource: true }), /only for the exact calendar reconciliation/);
 });
 test("a bare successful response cannot claim a saved result and replay remains historical", () => {
   for (const value of [null, {}, { message: "Saved" }, { id: "receipt", message: "Saved", replayed: "true" }])

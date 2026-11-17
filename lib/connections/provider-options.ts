@@ -8,7 +8,7 @@ export function ownerProviderOptions(configuration: {
   return [
     { key: "google_workspace", label: "Gmail & Google Calendar", category: "mail_calendar", setup: "oauth",
       available: ready && configuration.google,
-      detail: ready && configuration.google ? "Authorize read-only email and calendar access. Importing never activates assistants."
+      detail: ready && configuration.google ? "Connect read-only email and calendar first. You can separately authorize calendar changes or email sending for this same account; assistants and paused actions keep their own controls."
         : "Your operator needs to finish Google connection setup.",
       capabilities: ["message.read", "appointment.read"] },
     { key: "microsoft_365", label: "Outlook & Microsoft Calendar", category: "mail_calendar", setup: "oauth",

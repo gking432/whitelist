@@ -29,6 +29,7 @@ export type BookingLifecyclePin = {
   conversation_id: string | null;
   conversation_revision: number | null;
   authority_revision: number;
+  connection_id?: string | null;
   channel: "sms" | "email" | "website_chat" | "instagram";
   to: string;
 };
@@ -48,7 +49,7 @@ export type BookingLifecycleState = Scoped & {
   native: (Scoped & { id: string; approvalId: string | null; updatedAt: string; contactId: string | null;
     status: string; startAt: string; endAt: string; completedAt: string | null }) | null;
   contact: (Scoped & { id: string; updatedAt: string; tags: unknown }) | null;
-  delivery: { channel: BookingLifecyclePin["channel"]; to: string } | null;
+  delivery: { channel: BookingLifecyclePin["channel"]; to: string; connectionId?: string | null } | null;
   latestInbound: { id: string; at: string } | null;
   conversation: { id: string; revision: number; mode: string; optedOut: boolean; state: string } | null;
   otherHumanTakeover: boolean;
@@ -102,6 +103,7 @@ function pinBlock(pin: BookingLifecyclePin, state: BookingLifecycleState, source
     return "The customer conversation changed. Review a fresh follow-up.";
   if (pin.authority_revision !== state.authority.revision)
     return "Owner authority changed. Review a fresh follow-up.";
+  if (pin.connection_id !== undefined && pin.connection_id !== (state.delivery?.connectionId ?? null)) return "The exact approved delivery account changed. Prepare a fresh follow-up.";
   if (pin.channel !== state.delivery?.channel || pin.to !== state.delivery.to)
     return "The approved customer destination changed. Nothing was sent.";
   return null;
@@ -184,7 +186,7 @@ export function evaluateBookingLifecycle(state: BookingLifecycleState, options: 
       contact_id: contact.id, contact_updated_at: contact.updatedAt, booking_slot: { start_iso: slot.startAt, end_iso: slot.endAt },
       booking_source: source, customer_activity_id: state.latestInbound?.id ?? null, customer_activity_at: state.latestInbound?.at ?? null,
       conversation_id: state.conversation?.id ?? null, conversation_revision: state.conversation?.revision ?? null,
-      authority_revision: state.authority.revision, channel: state.delivery.channel, to: state.delivery.to,
+      authority_revision: state.authority.revision, connection_id: state.delivery.connectionId ?? null, channel: state.delivery.channel, to: state.delivery.to,
     } };
 }
 
@@ -200,7 +202,7 @@ const Pin = z.object({
     canonical_record_id: textId.nullable(), source_updated_at: version.nullable(), source_event_at: version.nullable() }),
   customer_activity_id: textId.nullable(), customer_activity_at: version.nullable(),
   conversation_id: textId.nullable(), conversation_revision: z.number().int().positive().nullable(),
-  authority_revision: z.number().int().nonnegative(), channel: z.enum(["sms", "email", "website_chat", "instagram"]), to: textId,
+  authority_revision: z.number().int().nonnegative(), connection_id: textId.nullable().optional(), channel: z.enum(["sms", "email", "website_chat", "instagram"]), to: textId,
 });
 export function readBookingLifecyclePin(raw: unknown): BookingLifecyclePin | null {
   const result = Pin.safeParse(raw);

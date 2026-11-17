@@ -66,6 +66,7 @@ export function ActivationSetup({
           instagram: plan.instagram,
           sms: plan.sms,
           workspace_provider: plan.workspace_provider,
+          workspace_connection_id: plan.workspace_connection_id,
           booking_start_hour: plan.booking_start_hour,
           booking_end_hour: plan.booking_end_hour,
           booking_minutes: plan.booking_minutes,
@@ -80,6 +81,7 @@ export function ActivationSetup({
           instagram: false,
           sms: false,
           workspace_provider: "google_workspace",
+          workspace_connection_id: null,
           booking_start_hour: 9,
           booking_end_hour: 17,
           booking_minutes: 60,
@@ -444,7 +446,7 @@ export function ActivationSetup({
                     disabled={disabled}
                     checked={choices.workspace_provider === a.provider}
                     onChange={() =>
-                      setChoices({ ...choices, workspace_provider: a.provider })
+                      setChoices({ ...choices, workspace_provider: a.provider, workspace_connection_id: null })
                     }
                   />
                   {a.name}
@@ -453,9 +455,19 @@ export function ActivationSetup({
               ))}
             </div>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              One authorization gives the team email, calendar and contacts
-              access. No separate account for each assistant.
+              Choose the exact account and grant only the permissions needed for
+              the selected work. Your saved channel stops and approvals still apply.
             </p>
+            {snapshot.workspaceAccounts?.some((item) => item.provider === choices.workspace_provider) ? <label className="mt-4 block text-xs font-medium">
+              Account for this team&apos;s work
+              <select className="mt-2 min-h-11 w-full rounded-lg border bg-background px-3" disabled={disabled} value={choices.workspace_connection_id ?? ""} onChange={(event) => setChoices({ ...choices, workspace_connection_id: event.target.value || null })}>
+                <option value="">Choose an account explicitly</option>
+                {snapshot.workspaceAccounts.filter((item) => item.provider === choices.workspace_provider).map((item) => <option key={item.id} value={item.id}>
+                  {item.account} · {item.status.replaceAll("_", " ")}{item.paused ? " · paused" : ""}{choices.bookings && !item.calendarWrite ? " · calendar permission needed" : ""}{choices.email && !item.emailSend ? " · email permission needed" : ""}
+                </option>)}
+              </select>
+            </label> : null}
+            <p className="mt-3 text-xs leading-6 text-muted-foreground">Calendar work needs permission to create and change appointments. Email replies need permission to send mail. <Link href="/client/apps" className="underline">Review or grant the selected account permissions in Apps</Link>, then return here and explicitly save the work you want enabled.</p>
           </fieldset>
         ) : null}
         <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -511,20 +523,15 @@ export function ActivationSetup({
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
+                {snapshot.plan.workspace_provider === "google_workspace" && !snapshot.plan.workspace_connection_id ? <Link href="/client/apps" className={buttonClass}>Choose Google account and permissions in Apps<ArrowRight className="size-4" /></Link> : <button
                   className={buttonClass}
-                  disabled={
-                    disabled ||
-                    dirty ||
-                    !account.available ||
-                    snapshot.plan.status !== "active"
-                  }
+                  disabled={disabled || dirty || !account.available || snapshot.plan.status !== "active"}
                   onClick={() => void request({ action: "connect" })}
                 >
                   {snapshot.workspaceAccount ? "Reconnect" : "Connect"}{" "}
                   {account.name}
                   <ArrowRight className="size-4" />
-                </button>
+                </button>}
                 {snapshot.workspaceAccount ? (
                   <button
                     className={secondaryClass}

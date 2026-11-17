@@ -1,3 +1,4 @@
+import { googleAccountCanAct } from "../connections/google-permissions.ts";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readEffectiveAuthority } from "../agents/authority.ts";
@@ -30,7 +31,7 @@ export async function loadCurrentBookingReview(admin: SupabaseClient, scope: Cal
   const [bookingResult, receiptResult, nativeResult, clientResult, settingsResult] = await Promise.all([
     scoped("approval_items", "id,type,status,proposed_payload,created_at").eq("id", bookingId).eq("type", "appointment_booking").maybeSingle(),
     scoped("action_jobs", "id,status,external_ref,receipt_recorded_at").eq("approval_id", bookingId).eq("kind", "calendar.book").maybeSingle(),
-    scoped("crm_appointments", "id,lead_id,contact_id,approval_id,status,start_at,end_at,updated_at,calendar_state_job_id,external_ref").eq("approval_id", bookingId).maybeSingle(),
+    scoped("crm_appointments", "id,lead_id,contact_id,approval_id,status,start_at,end_at,updated_at,calendar_state_job_id,calendar_reconciliation_job_id,external_ref").eq("approval_id", bookingId).maybeSingle(),
     admin.from("client_businesses").select("timezone,status,crm_operating_mode,default_runtime_mode").eq("partner_id", scope.partnerId).eq("id", scope.clientId).maybeSingle(),
     scoped("agent_team_settings", "authority_revision").maybeSingle(),
   ]);
@@ -38,8 +39,16 @@ export async function loadCurrentBookingReview(admin: SupabaseClient, scope: Cal
     throw new Error("The original booking and its saved result could not be checked.");
   const booking: Row = bookingResult.data, receipt: Row = receiptResult.data, appointment: Row = nativeResult.data;
   const original = changeObject(booking.proposed_payload);
-  let effectiveReceiptAt = nullable(receipt.receipt_recorded_at), invalidState = !appointment.calendar_state_job_id && !sameMutationSlot({ start_iso: text(appointment.start_at), end_iso: text(appointment.end_at) }, { start_iso: text(changeObject(original.slot).start_iso), end_iso: text(changeObject(original.slot).end_iso) });
-  if (appointment.calendar_state_job_id && appointment.status === "booked") {
+  let effectiveReceiptAt = nullable(receipt.receipt_recorded_at), invalidState = !appointment.calendar_state_job_id && !appointment.calendar_reconciliation_job_id && !sameMutationSlot({ start_iso: text(appointment.start_at), end_iso: text(appointment.end_at) }, { start_iso: text(changeObject(original.slot).start_iso), end_iso: text(changeObject(original.slot).end_iso) });
+  if (appointment.calendar_reconciliation_job_id && appointment.status === "booked") {
+    const proof = await admin.rpc("calendar_reconciled_state", { p_partner: scope.partnerId, p_client: scope.clientId, p_booking: bookingId, p_native: appointment.id });
+    if (proof.error) throw new Error("The separately verified source state could not be checked.");
+    const state = changeObject(proof.data);
+    if (state.state !== "source_state_verified" || state.operation !== "reschedule" || state.jobId !== appointment.calendar_reconciliation_job_id ||
+        state.bookingApprovalId !== bookingId || state.appointmentId !== appointment.id || state.externalRef !== receipt.external_ref ||
+        !effectiveReceiptAt || !Number.isFinite(Date.parse(text(state.verifiedAt))) || Date.parse(text(state.verifiedAt)) < Date.parse(effectiveReceiptAt)) invalidState = true;
+    else effectiveReceiptAt = text(state.verifiedAt);
+  } else if (appointment.calendar_state_job_id && appointment.status === "booked") {
     const stateJob = await scoped("action_jobs", "id,partner_id,client_id,approval_id,kind,status,external_ref,provider_receipt").eq("id", text(appointment.calendar_state_job_id)).maybeSingle();
     const stateApproval = stateJob.data?.approval_id ? await scoped("approval_items", "id,partner_id,client_id,type,status,proposed_payload").eq("id", stateJob.data.approval_id).maybeSingle() : { data: null, error: null };
     if (stateJob.error || stateApproval.error) throw new Error("The current calendar change receipt could not be verified.");
@@ -98,7 +107,7 @@ export async function loadCurrentBookingReview(admin: SupabaseClient, scope: Cal
     appointment: { id: text(appointment.id), updatedAt: text(appointment.updated_at), contactId: text(contact.id), status: text(appointment.status), slot: { start_iso: text(appointment.start_at), end_iso: text(appointment.end_at) }, externalRef: text(appointment.external_ref) },
     contact: { id: text(contact.id), updatedAt: text(contact.updated_at), tags: contact.tags },
     receipt: { id: text(receipt.id), status: text(receipt.status), externalRef: text(receipt.external_ref), recordedAt: effectiveReceiptAt },
-    connection: account ? { id: text(account.id), accountId: nullable(account.external_account_id), provider: text(changeObject(account.provider).provider_key), status: text(account.status), runtimeMode: text(account.runtime_mode), readOnly: changeObject(account.config).workspace_view_only === true } : null,
+    connection: account ? { id: text(account.id), accountId: nullable(account.external_account_id), provider: text(changeObject(account.provider).provider_key), status: text(account.status), runtimeMode: text(account.runtime_mode), readOnly: changeObject(account.config).workspace_view_only === true && !(provider === "google_workspace" && googleAccountCanAct(changeObject(account.config), "calendar")) } : null,
     source: source ? { id: text(source.id), updatedAt: text(source.external_updated_at ?? sourceRaw.updated), etag: nullable(sourceRaw.etag ?? sourceRaw["@odata.etag"]), externalRef: text(receipt.external_ref), status: text(sourceData.status), deleted: sourceData.deleted === true, observedAt: text(source.snapshot_observed_at), slot: { start_iso: text(sourceData.start_at), end_iso: text(sourceData.end_at) } } : null,
     authority, latestInbound: activity ? { id: text(activity.id), at: text(activity.created_at) } : null,
     humanTakeover: (threads.data ?? []).some((row) => row.opted_out || (row.mode === "human" && row.state !== "closed")),
@@ -125,7 +134,7 @@ export async function loadCurrentBookingReview(admin: SupabaseClient, scope: Cal
     inquiry = inquiryResult.data;
   }
   const lead: Row = leadResult.data ?? {};
-  const versionFacts = { bookingId, appointment: appointment.updated_at, stateJob: appointment.calendar_state_job_id, contact: contact.updated_at, lead: lead.updated_at,
+  const versionFacts = { bookingId, appointment: appointment.updated_at, stateJob: appointment.calendar_state_job_id, reconciliationJob: appointment.calendar_reconciliation_job_id, contact: contact.updated_at, lead: lead.updated_at,
     source: source?.id, sourceModified: source?.external_updated_at, sourceEtag: sourceRaw.etag ?? sourceRaw["@odata.etag"], inquiry: inquiry?.id, inquiryUpdated: inquiry?.updated_at,
     conversationId: conversation?.id, conversationRevision: conversation?.revision, activityId: activity?.id, activityAt: activity?.created_at, authority: authority.revision };
   const revision = calendarChangeRevision(versionFacts);

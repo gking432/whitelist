@@ -1,3 +1,4 @@
+import { readCalendarReconciliationReview } from "../scheduling/calendar-reconciliation.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CustomerJourney, CustomerJourneyAction, CustomerJourneySnapshot, CustomerJourneyStage, CustomerJourneyState } from "./customer-journey-contract.ts";
 import { sameIntakeRevision } from "../connections/intake-adoption.ts";
@@ -183,7 +184,7 @@ export async function readCustomerJourneys(admin: SupabaseClient, scope: Journey
   ]);
   const allApprovalIds = [...bookingIds, ...rows(followups.data).map((row) => str(row.id))], appointmentIds = rows(appointments.data).map((row) => str(row.id));
   const [jobs, importedAppointments] = await Promise.all([
-    allApprovalIds.length ? scoped("action_jobs", "id,approval_id,kind,status,external_ref,receipt_recorded_at,provider_receipt,calendar_reconcile_due_at,calendar_reconcile_reason,outcome_detail,booking_followup_due_at,booking_followup_phase,booking_followup_reason,updated_at,created_at").in("approval_id", allApprovalIds).limit(401) : empty,
+    allApprovalIds.length ? scoped("action_jobs", "id,approval_id,kind,status,external_ref,receipt_recorded_at,provider_receipt,calendar_reconciliation,calendar_reconciled_at,last_attempt_at,claimed_at,calendar_reconcile_due_at,calendar_reconcile_reason,outcome_detail,booking_followup_due_at,booking_followup_phase,booking_followup_reason,updated_at,created_at").in("approval_id", allApprovalIds).limit(401) : empty,
     appointmentIds.length ? scoped("integration_canonical_records", "id,native_object_id,canonical_data,updated_at").eq("object_type", "appointment").in("native_object_id", appointmentIds).limit(201) : empty,
   ]);
   const results = [contacts, sources, tasks, conversations, work, settings, client, bookings, followups, appointments, lifecycleTasks, jobs, importedAppointments];
@@ -208,6 +209,14 @@ export async function readCustomerJourneys(admin: SupabaseClient, scope: Journey
       }
       if (canWrite && (["cancelled", "completed"].includes(str(review.appointment.status)) || journey.stages.some((stage) => stage.key === "booking" && stage.status === "cancelled")) && !changeState.active)
         actions.push({ kind: "command", label: "Review current instructions for rebooking", command: "qualify_rebooking", targetId: bookingId, expectedRevision: review.revision, requiresQualification: true });
+      const unresolved = rows(jobs.data).find((job) => ["uncertain", "provider_pending"].includes(str(job.status)) && relatedChanges.some((change) => change.id === job.approval_id));
+      if (unresolved && canWrite) {
+        const recovery = await readCalendarReconciliationReview(admin, scope, str(unresolved.id), generatedAt);
+        if (recovery) {
+          journey.reconciliationReview = recovery;
+          actions.unshift({ kind: "command", label: "Check saved calendar result", command: "reconcile_calendar_change", targetId: recovery.jobId, expectedRevision: recovery.revision });
+        }
+      }
       journey.actions = actions;
       const ownerDecision = journey.stages.find((item) => item.status === "needs_owner" && item.href);
       journey.nextAction = ownerDecision?.href ? { kind: "link", label: "Review the owner decision", href: ownerDecision.href } : actions[0] ?? null;

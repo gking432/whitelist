@@ -11,9 +11,9 @@ import type {
 } from "@/lib/business/customer-journey-contract";
 import {
   buildJourneyCommand, calendarReviewMatchesAction, customerJourneyHref, formatJourneyElapsed, invalidJourneyFilter,
-  journeyActions, journeyActionIsCalendarChange, journeyActionIsCurrent, journeyActionNeedsQualification, journeyActionNeedsSlot, journeyAvailabilityQuery, journeyQuery,
+  journeyActions, journeyActionIsCalendarChange, journeyActionIsCurrent, journeyActionNeedsQualification, journeyActionNeedsReconciliation, journeyActionNeedsSlot, journeyAvailabilityQuery, journeyQuery,
   JOURNEY_STAGE_LABELS, JOURNEY_STATE_LABELS, journeyStateDetail, readJourneyOffer, readJourneyReceipt,
-  safeJourneyHref, visibleCustomerJourneys, type JourneyCommand, type JourneyFilter,
+  reconciliationReviewMatchesAction, safeJourneyHref, visibleCustomerJourneys, type JourneyCommand, type JourneyFilter,
 } from "@/lib/business/customer-journey-presentation";
 import { validTimeZone } from "@/lib/business/daily-brief";
 import { ownerButton, ownerInput, ownerQuietButton } from "./owner-ui";
@@ -50,6 +50,7 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [bookingRequested, setBookingRequested] = useState(false);
   const [instructionsReviewed, setInstructionsReviewed] = useState(false);
+  const [acceptReviewedSource, setAcceptReviewedSource] = useState(false);
   const [loadingOffer, setLoadingOffer] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingAttempt, setPendingAttempt] = useState(false);
@@ -61,6 +62,7 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
   const actions = journeyActions(journey, canWrite);
   const calendarReview = journey.calendarReview;
   const qualificationReview = journey.qualificationReview;
+  const reconciliationReview = journey.reconciliationReview;
   const shownStages = compact ? journey.stages.filter((stage) => stage.status !== "unknown") : journey.stages;
   const observations = (journey.observations ?? []).flatMap((observation) => {
     const elapsed = formatJourneyElapsed(observation.seconds);
@@ -132,7 +134,7 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
       if (!journeyActionIsCurrent(journey, action, canWrite)) throw new Error("Customer records or permissions changed. Refresh progress and start a new review.");
       const request = buildJourneyCommand(action, crypto.randomUUID(), {
         qualification: { service, preference, identityConfirmed, bookingRequested, instructionsReviewed },
-        qualificationReview, calendarReview, offer, slot,
+        qualificationReview, calendarReview, reconciliationReview, acceptReviewedSource: journeyActionNeedsReconciliation(action) && acceptReviewedSource, offer, slot,
       });
       void sendRequest(request);
     } catch (cause) {
@@ -143,7 +145,7 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
     if (lock.current) return;
     resetIntent();
     offerGeneration.current++;
-    if (journeyActionNeedsQualification(action) || journeyActionNeedsSlot(action) || journeyActionIsCalendarChange(action)) {
+    if (journeyActionNeedsQualification(action) || journeyActionNeedsSlot(action) || journeyActionIsCalendarChange(action) || journeyActionNeedsReconciliation(action)) {
       setSelectedAction(action);
       setOffer(null);
       setSlot(null);
@@ -152,6 +154,7 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
       setIdentityConfirmed(false);
       setBookingRequested(false);
       setInstructionsReviewed(false);
+      setAcceptReviewedSource(false);
       if (journeyActionNeedsSlot(action)) void getOffer(action);
     } else submit(action);
   }
@@ -178,6 +181,11 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
       <p className="text-[11px] leading-6 text-slate-500">Recorded status: {calendarReview.status}. {calendarReview.writeAllowed ? "Calendar changes can be prepared for approval." : "Calendar write access is unavailable."} {calendarReview.writeDetail}</p>
       {!compact && calendarReview.sources.length ? <details className="mt-1 text-[11px] leading-6 text-slate-500"><summary className="cursor-pointer">Appointment sources · {calendarReview.sources.length}</summary>{calendarReview.sources.map((source) => <p className="break-all" key={`${source.kind}:${source.id}`}>{source.href ? <JourneyLink href={source.href}>Open source record</JourneyLink> : "Source record"} · {source.id}{source.revision ? ` · version ${source.revision}` : ""}</p>)}</details> : null}
     </section> : null}
+    {reconciliationReview ? <section className="mt-4 border-t border-slate-100 pt-4" aria-label="Unresolved calendar result">
+      <h4 className="text-xs font-medium text-amber-800">Unresolved calendar result</h4>
+      <p className="mt-1 text-xs leading-6 text-slate-600">{calendarName(reconciliationReview.provider)} · {reconciliationReview.operation === "cancel" ? "Cancellation" : "Time change"}. {reconciliationReview.status === "provider_pending" ? "The provider accepted a request; its final source state still needs verification." : "The saved request has an uncertain result."}</p>
+      <p className="text-[11px] leading-6 text-slate-500">{reconciliationReview.detail}</p>
+    </section> : null}
     {observations.length ? <section className="mt-4 border-t border-slate-100 pt-4" aria-label="Recorded timing">
       <h4 className="text-xs font-medium text-slate-600">Recorded timing</h4>
       <dl className="mt-2 space-y-3">{observations.map((observation) => <div key={observation.key}>
@@ -196,6 +204,17 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
     {selectedAction && !pendingAttempt ? <form className="mt-5 space-y-4 rounded-xl bg-slate-50 p-4" onSubmit={(event) => { event.preventDefault(); submit(selectedAction); }}>
       <h4 className="text-sm font-medium">{selectedAction.label}</h4>
       {!journeyActionIsCurrent(journey, selectedAction, canWrite) ? <p role="alert" className="text-xs leading-6 text-amber-800">Customer records or permissions changed. Refresh progress and start a new review.</p> : null}
+      {journeyActionNeedsReconciliation(selectedAction) ? <>
+        <p className="text-xs leading-6 text-slate-600">This checks the exact connected calendar without sending another cancellation or time change. Two matching source observations are needed; a missing event or an accepted request alone is insufficient.</p>
+        <p className="text-xs leading-6 text-slate-500">The original uncertain provider result stays recorded. Verified source state does not establish who changed the calendar. Ambiguous evidence stays in review.</p>
+        {reconciliationReview && reconciliationReviewMatchesAction(reconciliationReview, selectedAction) ? <>
+          <p className="text-xs leading-6 text-slate-600">{reconciliationReview.detail}</p>
+          <dl className="space-y-2 text-xs leading-6"><div><dt className="font-medium">Current local appointment</dt><dd>{reconciliationReview.current?.label || "Current time unavailable"}{reconciliationReview.currentStatus ? ` · ${reconciliationReview.currentStatus}` : ""}</dd></div>
+            <div><dt className="font-medium">Approved source outcome to verify</dt><dd>{reconciliationReview.operation === "cancel" ? "Cancellation of this exact source appointment." : reconciliationReview.proposed?.label || "The exact approved replacement time must be verified from the saved decision."}</dd></div></dl>
+          {reconciliationReview.requiresFreshReview ? <label className="flex items-start gap-3 text-xs leading-6"><input type="checkbox" checked={acceptReviewedSource} disabled={!reconciliationReview.current} onChange={(event) => { resetIntent(); setAcceptReviewedSource(event.target.checked); }} className="mt-1" />I reviewed the current local appointment and agree to record the approved source outcome if the calendar evidence verifies it. This will not send another calendar change.</label> : null}
+          {reconciliationReview.sources.length ? <details className="text-[11px] leading-6 text-slate-500"><summary className="cursor-pointer">Review saved action sources</summary>{reconciliationReview.sources.map((source) => <p className="break-all" key={`${source.kind}:${source.id}`}>{source.href ? <JourneyLink href={source.href}>Open source record</JourneyLink> : "Source record"} · {source.id}{source.revision ? ` · version ${source.revision}` : ""}</p>)}</details> : null}
+        </> : <p role="alert" className="text-xs leading-6 text-amber-800">The saved action changed. Refresh progress and start a new source review.</p>}
+      </> : null}
       {journeyActionIsCalendarChange(selectedAction) ? <>
         {calendarReview && calendarReviewMatchesAction(calendarReview, selectedAction) ? <>
           <dl className="space-y-2 text-xs leading-6"><div><dt className="font-medium">Before</dt><dd>{calendarReview.current.label || when(calendarReview.current.start_iso, calendarReview.timezone)} · {calendarReview.timezone}</dd></div>
@@ -226,7 +245,9 @@ function JourneyCard({ journey, canWrite, compact, timeZone, onSaved, onPending 
         (journeyActionNeedsQualification(selectedAction) && (!service.trim() || !identityConfirmed || !bookingRequested)) ||
         (selectedAction.command === "qualify_rebooking" && (!qualificationReview || !instructionsReviewed)) ||
         (journeyActionIsCalendarChange(selectedAction) && (!calendarReviewMatchesAction(calendarReview, selectedAction) || !calendarReview?.writeAllowed)) ||
-        (journeyActionNeedsSlot(selectedAction) && (!offer || !slot))}>{saving ? "Saving…" : journeyActionIsCalendarChange(selectedAction) ? "Prepare calendar approval" : "Save reviewed request"}</button>
+        (journeyActionNeedsReconciliation(selectedAction) && !reconciliationReviewMatchesAction(reconciliationReview, selectedAction)) ||
+        (journeyActionNeedsReconciliation(selectedAction) && reconciliationReview?.requiresFreshReview && (!reconciliationReview.current || !acceptReviewedSource)) ||
+        (journeyActionNeedsSlot(selectedAction) && (!offer || !slot))}>{saving ? journeyActionNeedsReconciliation(selectedAction) ? "Checking…" : "Saving…" : journeyActionNeedsReconciliation(selectedAction) ? "Check source result" : journeyActionIsCalendarChange(selectedAction) ? "Prepare calendar approval" : "Save reviewed request"}</button>
     </form> : null}
     {actions.some((action) => action.kind === "command" && action.command === "request_cancellation") ? <p className="mt-3 text-[11px] leading-6 text-slate-500">A cancellation request saves review work. It does not establish that an external calendar appointment has been cancelled.</p> : null}
   </article>;

@@ -13,7 +13,7 @@ export type JourneyFilter = { leadId?: string; conversationId?: string; taskId?:
 export type JourneyQualification = { service: string; preference?: string; identityConfirmed: boolean; bookingRequested: boolean; instructionsReviewed?: boolean };
 export type JourneyCommand = {
   action: CustomerJourneyCommandName; key: string; targetId: string; expectedRevision: string;
-  offerId?: string; slot?: CustomerJourneySlot; qualification?: JourneyQualification;
+  offerId?: string; slot?: CustomerJourneySlot; qualification?: JourneyQualification; acceptReviewedSource?: true;
 };
 export type JourneyReceipt = { id: string; message: string; replayed: boolean };
 
@@ -21,6 +21,7 @@ const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const commands = new Set<CustomerJourneyCommandName>([
   "progress_inquiry", "select_intake_slot", "recover_confirmation", "prepare_reminder", "request_cancellation", "prepare_rebooking",
   "prepare_cancellation", "prepare_time_change", "qualify_rebooking",
+  "reconcile_calendar_change",
 ]);
 export const JOURNEY_STAGE_LABELS: Record<CustomerJourneyStage["key"], string> = {
   inquiry: "Inquiry", lead: "Shared lead", assignment: "Assigned work", approval: "Owner decision",
@@ -97,6 +98,7 @@ export function journeyActions(journey: CustomerJourney, canWrite: boolean): Cus
     if (action.kind === "command" && journeyActionIsCalendarChange(action) &&
       (!calendarReviewMatchesAction(journey.calendarReview, action) || !journey.calendarReview?.writeAllowed)) return false;
     if (action.kind === "command" && action.command === "qualify_rebooking" && !journey.qualificationReview) return false;
+    if (action.kind === "command" && journeyActionNeedsReconciliation(action) && !reconciliationReviewMatchesAction(journey.reconciliationReview, action)) return false;
     const key = action.kind === "link" ? `link:${action.href}` : `${action.command}:${action.targetId}:${action.expectedRevision}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -104,14 +106,20 @@ export function journeyActions(journey: CustomerJourney, canWrite: boolean): Cus
   });
 }
 export function journeyActionNeedsSlot(action: Extract<CustomerJourneyAction, { kind: "command" }>): boolean {
-  return action.requiresSlot === true || action.command === "select_intake_slot" || action.command === "prepare_time_change";
+  return action.command !== "reconcile_calendar_change" && (action.requiresSlot === true || action.command === "select_intake_slot" || action.command === "prepare_time_change");
 }
 export function journeyActionIsCurrent(journey: CustomerJourney, action: Extract<CustomerJourneyAction, { kind: "command" }>, canWrite: boolean): boolean {
   return journeyActions(journey, canWrite).some((current) => current.kind === "command" && current.command === action.command &&
     current.targetId === action.targetId && current.expectedRevision === action.expectedRevision);
 }
 export function journeyActionNeedsQualification(action: Extract<CustomerJourneyAction, { kind: "command" }>): boolean {
-  return action.requiresQualification === true || action.command === "progress_inquiry" || action.command === "qualify_rebooking";
+  return action.command !== "reconcile_calendar_change" && (action.requiresQualification === true || action.command === "progress_inquiry" || action.command === "qualify_rebooking");
+}
+export function journeyActionNeedsReconciliation(action: Extract<CustomerJourneyAction, { kind: "command" }>): boolean {
+  return action.command === "reconcile_calendar_change";
+}
+export function reconciliationReviewMatchesAction(review: CustomerJourney["reconciliationReview"], action: Extract<CustomerJourneyAction, { kind: "command" }>): boolean {
+  return !!review && review.jobId === action.targetId && review.revision === action.expectedRevision;
 }
 export function journeyActionIsCalendarChange(action: Extract<CustomerJourneyAction, { kind: "command" }>): boolean {
   return action.command === "prepare_cancellation" || action.command === "prepare_time_change";
@@ -142,12 +150,23 @@ export function readJourneyOffer(value: unknown, action: Extract<CustomerJourney
 }
 export function buildJourneyCommand(
   action: Extract<CustomerJourneyAction, { kind: "command" }>, key: string,
-  values: { qualification?: JourneyQualification; qualificationReview?: CustomerJourney["qualificationReview"]; calendarReview?: CustomerJourney["calendarReview"]; offer?: CustomerJourneyOffer | null; slot?: CustomerJourneySlot | null } = {},
+  values: { qualification?: JourneyQualification; qualificationReview?: CustomerJourney["qualificationReview"]; calendarReview?: CustomerJourney["calendarReview"]; reconciliationReview?: CustomerJourney["reconciliationReview"]; acceptReviewedSource?: boolean; offer?: CustomerJourneyOffer | null; slot?: CustomerJourneySlot | null } = {},
   now = Date.now(),
 ): JourneyCommand {
   if (!commands.has(action.command) || !uuid.test(key) || !uuid.test(action.targetId) || !action.expectedRevision)
     throw new Error("Refresh the customer journey before choosing this action.");
   const request: JourneyCommand = { action: action.command, key, targetId: action.targetId, expectedRevision: action.expectedRevision };
+  if (journeyActionNeedsReconciliation(action) && !reconciliationReviewMatchesAction(values.reconciliationReview, action))
+    throw new Error("Refresh and review the exact saved calendar result before checking its source.");
+  if (values.acceptReviewedSource && !journeyActionNeedsReconciliation(action)) throw new Error("Fresh source acceptance is supported only for the exact calendar reconciliation review.");
+  if (journeyActionNeedsReconciliation(action)) {
+    if (values.reconciliationReview?.requiresFreshReview && (!values.reconciliationReview.current || !values.acceptReviewedSource))
+      throw new Error("Explicitly review the current local appointment and approved source outcome before accepting this changed record.");
+    if (values.acceptReviewedSource) {
+      if (!values.reconciliationReview?.requiresFreshReview) throw new Error("Fresh source acceptance requires the displayed changed local appointment.");
+      request.acceptReviewedSource = true;
+    }
+  }
   if (journeyActionIsCalendarChange(action)) {
     if (!calendarReviewMatchesAction(values.calendarReview, action))
       throw new Error("Refresh and review the current appointment source before preparing a change.");

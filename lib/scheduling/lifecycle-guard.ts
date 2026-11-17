@@ -92,6 +92,7 @@ export async function readBookingLifecycleState(admin: SupabaseClient, scope: Sc
   const authority = channel ? await readEffectiveAuthority(admin, scope, channel, {
     phase: options.phase, approved: options.phase === "execute", expectedRevision: options.expectedRevision, connectionId: sendConnection,
   }) : { allowed: false, reason: "No supported customer destination is available.", revision: 0 };
+  if (delivery) delivery.connectionId = sendConnection ?? ("connectionId" in authority ? String(authority.connectionId ?? "") || null : null);
   if (intakeBlock) { authority.allowed = false; authority.reason = intakeBlock; }
   if (client.data?.status !== "active") { authority.allowed = false; authority.reason = "The business is inactive. No follow-up was sent."; }
   const provider = String(payload.provider ?? "");

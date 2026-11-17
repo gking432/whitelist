@@ -5,7 +5,7 @@ export type CustomerJourneyStage = {
   status: CustomerJourneyState; summary: string; updatedAt: string | null;
   sources: CustomerJourneySource[]; href?: string;
 };
-export type CustomerJourneyCommandName = "progress_inquiry" | "select_intake_slot" | "recover_confirmation" | "prepare_reminder" | "request_cancellation" | "prepare_cancellation" | "prepare_time_change" | "prepare_rebooking" | "qualify_rebooking";
+export type CustomerJourneyCommandName = "progress_inquiry" | "select_intake_slot" | "recover_confirmation" | "prepare_reminder" | "request_cancellation" | "prepare_cancellation" | "prepare_time_change" | "prepare_rebooking" | "qualify_rebooking" | "reconcile_calendar_change";
 export type CustomerJourneyAction =
   | { kind: "link"; label: string; href: string }
   | { kind: "command"; label: string; command: CustomerJourneyCommandName; targetId: string; expectedRevision: string; requiresSlot?: boolean; requiresQualification?: boolean };
@@ -18,6 +18,7 @@ export type CustomerJourney = {
     bookingApprovalId: string; revision: string; provider: string; timezone: string;
     current: CustomerJourneySlot; status: string; writeAllowed: boolean; writeDetail: string; sources: CustomerJourneySource[];
   };
+  reconciliationReview?: { jobId: string; revision: string; provider: string; operation: "cancel" | "reschedule"; status: string; detail: string; sources: CustomerJourneySource[]; current?: CustomerJourneySlot; proposed?: CustomerJourneySlot | null; currentStatus?: string; requiresFreshReview?: boolean };
   qualificationReview?: { detail: string; instructions: string; sources: CustomerJourneySource[] };
 };
 export type CustomerJourneySnapshot = {

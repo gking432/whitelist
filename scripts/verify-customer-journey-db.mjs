@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261117214644";
+export const EXPECTED_MIGRATION = "20261117225829";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -17,6 +17,7 @@ export const COVERAGE = [
   "rollback: one approved booking/outbox, immutable resolution, internal booking replay and overlap rollback",
   "rollback: source-bound replacement offer, approved internal cancellation/time change, exact receipt recovery and review dedupe",
   "rollback: received customer body/status immutability while scoped identity linking remains possible",
+  "rollback: selected Google grants, preserved stops, exact activation, paused inbound collection and uncertain-source reconciliation",
   "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim and adoption dedupe",
 ];
 export class Blocked extends Error {}
@@ -183,13 +184,13 @@ async function applyMigrations(target, missing) {
   const result = readReport(await query(target, body), "migration_apply");
   if (result.committed !== true) throw new Error("Migration commit was not confirmed.");
 }
-async function rollbackAcceptance(target) {
+async function rollbackAcceptance(target, asset = "customer-journey-acceptance.sql", kind = "acceptance") {
   const run = randomUUID();
-  const source = await readFile(join(root, "scripts/sql/customer-journey-acceptance.sql"), "utf8");
+  const source = await readFile(join(root, "scripts/sql", asset), "utf8");
   const sql = source.replaceAll("__RUN_ID__", run).replace("-- __ISOLATION_ASSERTION__", isolationAssertion(target.database));
-  const report = readReport(await query(target, sql), "acceptance");
+  const report = readReport(await query(target, sql), kind);
   if (report.rolledBack !== true || report.remainingFixtures !== 0 || !Array.isArray(report.checks) || !report.checks.length) throw new Error("Rollback acceptance did not return complete evidence.");
-  console.log(`PASS: ${report.checks.length} rollback SQL acceptance groups; synthetic fixtures rolled back.`);
+  console.log(`PASS: ${report.checks.length} ${kind} rollback SQL assertion groups; synthetic fixtures rolled back.`);
 }
 async function concurrencyAcceptance(target) {
   const ids = Object.fromEntries(["run", "partner", "client", "owner", "approval", "work", "connection", "request"].map((key) => [key, randomUUID()]));
@@ -242,6 +243,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   if (options.apply && missing.length) { await applyMigrations(target, missing); report = await preflight(target); missing = migrationPlan(files, report); }
   requireLatest(report, missing);
   await rollbackAcceptance(target);
+  await rollbackAcceptance(target, "google-calendar-acceptance.sql", "google_calendar_acceptance");
   if (options.concurrency) await concurrencyAcceptance(target);
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }

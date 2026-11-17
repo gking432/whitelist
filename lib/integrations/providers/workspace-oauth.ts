@@ -17,6 +17,7 @@ export type WorkspaceOAuthState = {
   setupSessionId: string | null;
   activationAttemptId?: string;
   readOnlyAttemptId?: string;
+  permissionAttemptId?: string;
 };
 
 export type WorkspaceOAuthClient = {
@@ -29,7 +30,8 @@ export type WorkspaceCredentials = WorkspaceOAuthClient & {
   scope?: string;
   accountId?: string;
   accountName?: string;
-  accessMode?: "read_only";
+  accessMode?: "read_only" | "owner_selected";
+  googlePermissions?: ("calendar.write" | "email.send")[];
 };
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -110,6 +112,7 @@ export function buildWorkspaceOAuthState(
   setupSessionId?: string,
   activationAttemptId?: string,
   readOnlyAttemptId?: string,
+  permissionAttemptId?: string,
 ): string {
   const key = getSecretsEncryptionKey();
   if (!key) throw new Error("SECRETS_ENCRYPTION_KEY is required for OAuth state.");
@@ -121,6 +124,7 @@ export function buildWorkspaceOAuthState(
       setupSessionId: setupSessionId ?? null,
       ...(activationAttemptId ? { activationAttemptId } : {}),
       ...(readOnlyAttemptId ? { readOnlyAttemptId } : {}),
+      ...(permissionAttemptId ? { permissionAttemptId } : {}),
       expiresAt: Date.now() + 15 * 60 * 1000,
     }),
   ).toString("base64url");
@@ -156,13 +160,16 @@ export function verifyWorkspaceOAuthState(
       setupSessionId?: string | null;
       activationAttemptId?: string;
       readOnlyAttemptId?: string;
+      permissionAttemptId?: string;
       expiresAt?: number;
     };
     if (
       !WORKSPACE_PROVIDER_KEYS.includes(parsed.providerKey as WorkspaceProviderKey) ||
       !parsed.connectionId ||
       !parsed.expiresAt ||
-      parsed.expiresAt < Date.now() || (parsed.activationAttemptId && parsed.readOnlyAttemptId)
+      [parsed.activationAttemptId, parsed.readOnlyAttemptId, parsed.permissionAttemptId].some((attempt) => attempt !== undefined && (typeof attempt !== "string" || !attempt)) ||
+      parsed.expiresAt < Date.now() || [parsed.activationAttemptId, parsed.readOnlyAttemptId, parsed.permissionAttemptId].filter(Boolean).length > 1 ||
+      (parsed.permissionAttemptId && (parsed.providerKey !== "google_workspace" || parsed.setupSessionId))
     ) {
       return null;
     }
@@ -172,6 +179,7 @@ export function verifyWorkspaceOAuthState(
       setupSessionId: parsed.setupSessionId ?? null,
       ...(typeof parsed.activationAttemptId === "string" ? { activationAttemptId: parsed.activationAttemptId } : {}),
       ...(typeof parsed.readOnlyAttemptId === "string" ? { readOnlyAttemptId: parsed.readOnlyAttemptId } : {}),
+      ...(typeof parsed.permissionAttemptId === "string" ? { permissionAttemptId: parsed.permissionAttemptId } : {}),
     };
   } catch {
     return null;
@@ -184,22 +192,25 @@ export function buildWorkspaceAuthorizationUrl(
   connectionId: string,
   setupSessionId?: string,
   activation?: { attemptId: string; challenge: string; readOnly?: boolean },
+  permission?: { attemptId: string; challenge: string; scopes: readonly string[]; loginHint: string },
 ): string {
+  if (permission && (providerKey !== "google_workspace" || activation || setupSessionId)) throw new Error("Permission upgrades require their own existing Google account attempt.");
   const common = {
     client_id: client.clientId,
     redirect_uri: workspaceRedirectUri(providerKey),
     response_type: "code",
-    state: buildWorkspaceOAuthState(providerKey, connectionId, setupSessionId, activation?.readOnly ? undefined : activation?.attemptId, activation?.readOnly ? activation.attemptId : undefined),
-    ...(activation ? { code_challenge: activation.challenge, code_challenge_method: "S256" } : {}),
+    state: buildWorkspaceOAuthState(providerKey, connectionId, setupSessionId, activation?.readOnly ? undefined : activation?.attemptId, activation?.readOnly ? activation.attemptId : undefined, permission?.attemptId),
+    ...(activation || permission ? { code_challenge: (activation ?? permission)!.challenge, code_challenge_method: "S256" } : {}),
   };
 
   if (providerKey === "google_workspace") {
     return `${GOOGLE_AUTH_URL}?${new URLSearchParams({
       ...common,
-      scope: (activation?.readOnly ? GOOGLE_WORKSPACE_READ_SCOPES : GOOGLE_WORKSPACE_SCOPES).join(" "),
+      scope: (permission?.scopes ?? (activation?.readOnly ? GOOGLE_WORKSPACE_READ_SCOPES : GOOGLE_WORKSPACE_SCOPES)).join(" "),
       access_type: "offline",
       include_granted_scopes: activation?.readOnly ? "false" : "true",
       prompt: "consent",
+      ...(permission ? { login_hint: permission.loginHint } : {}),
     })}`;
   }
 

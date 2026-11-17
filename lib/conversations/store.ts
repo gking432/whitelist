@@ -5,6 +5,7 @@ import type {
   ConversationMessage,
   ConversationSnapshot,
 } from "./types";
+import { collectActivatedGoogleInbox, suppressManagedWorkspaceIngress } from "../integrations/connectors/read-only-policy";
 
 export async function conversationTeamEnabled(
   admin: SupabaseClient,
@@ -145,22 +146,23 @@ export async function adoptInboundConversation(
     )
   )
     return false;
-  if (!(await conversationTeamEnabled(admin, input))) return false;
   const { data: connection, error: connectionError } = await admin
     .from("integration_connections")
-    .select("config")
+    .select("config,status,runtime_mode,provider:integration_providers!inner(provider_key)")
     .eq("id", input.connectionId)
     .eq("partner_id", input.partnerId)
     .eq("client_id", input.clientId)
     .maybeSingle();
   if (connectionError || !connection)
     throw new Error("Conversation connection unavailable.");
-  // A managed channel that was deselected must not fall through to legacy automations.
-  if (
-    connection.config?.activation_managed === true &&
-    connection.config?.conversation_intake_enabled !== true
-  )
-    return true;
+  const teamEnabled = await conversationTeamEnabled(admin, input);
+  const provider = connection.provider as unknown as { provider_key: string };
+  // A delayed managed/imported message remains consumed during a pause. It
+  // cannot fall through into generic automation or customer identity matching.
+  if (suppressManagedWorkspaceIngress({ config: connection.config ?? {}, providerKey: provider.provider_key,
+    status: connection.status, runtimeMode: connection.runtime_mode, eventType: input.eventType, teamEnabled })) return true;
+  if (!teamEnabled && !collectActivatedGoogleInbox({ config: connection.config ?? {}, providerKey: provider.provider_key,
+    status: connection.status, runtimeMode: connection.runtime_mode, eventType: input.eventType })) return false;
   const channel =
     input.eventType === "sms.received"
       ? "sms"
