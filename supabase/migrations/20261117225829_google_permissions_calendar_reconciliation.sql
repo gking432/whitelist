@@ -1,6 +1,5 @@
 -- Explicit Google action grants and owner source reconciliation.
 -- Actual migration/role/transaction acceptance is required in hosted CI.
--- DRAFT for root integration only. Not database executed.
 -- Owner imports stay workspace_view_only=true. Provider grants never activate
 -- assistants, change channel modes, unpause a connection or resume action jobs.
 alter table public.business_connection_oauth_attempts
@@ -462,64 +461,64 @@ create trigger guard_calendar_reconciliation_marker before insert or update of c
 -- status is invented and the original provider job status remains unchanged.
 create function public.calendar_reconciliation_valid(p_partner uuid,p_client uuid,p_job uuid,p_evidence jsonb,p_at timestamptz default now())
 returns boolean language plpgsql stable security invoker set search_path='' as $$
-declare j public.action_jobs; a public.approval_items; original public.action_jobs; original_approval public.approval_items; payload jsonb; observed jsonb; event jsonb;
+declare j public.action_jobs; a public.approval_items; original public.action_jobs; original_approval public.approval_items; proposed jsonb; observed jsonb; event jsonb;
  verified timestamptz; attempted timestamptz; seen timestamptz; changed timestamptz; first_seen timestamptz; first_changed timestamptz; first_etag text; first_calendar text; read_index integer:=0;
 begin
  select * into j from public.action_jobs where id=p_job and partner_id=p_partner and client_id=p_client;
- select * into a from public.approval_items where id=j.approval_id and partner_id=p_partner and client_id=p_client and type='appointment_change'; payload:=a.proposed_payload;
- select * into original_approval from public.approval_items where id=(payload->>'booking_approval_id')::uuid and partner_id=p_partner and client_id=p_client and type='appointment_booking';
- select * into original from public.action_jobs where id=(payload->>'booking_action_job_id')::uuid and approval_id=(payload->>'booking_approval_id')::uuid and partner_id=p_partner and client_id=p_client and kind='calendar.book';
+ select * into a from public.approval_items where id=j.approval_id and partner_id=p_partner and client_id=p_client and type='appointment_change'; proposed:=a.proposed_payload;
+ select * into original_approval from public.approval_items where id=(proposed->>'booking_approval_id')::uuid and partner_id=p_partner and client_id=p_client and type='appointment_booking';
+ select * into original from public.action_jobs where id=(proposed->>'booking_action_job_id')::uuid and approval_id=(proposed->>'booking_approval_id')::uuid and partner_id=p_partner and client_id=p_client and kind='calendar.book';
  if j.id is null or j.status not in ('uncertain','provider_pending') or a.id is null or a.status not in ('approved','edited_and_approved')
-  or j.kind is distinct from 'calendar.'||(payload->>'mutation') or j.payload is distinct from payload or payload->'calendar_mutation_version' is distinct from '1'::jsonb or coalesce(payload->>'provider','') not in ('google_workspace','google_calendar')
+  or j.kind is distinct from 'calendar.'||(proposed->>'mutation') or j.payload is distinct from proposed or proposed->'calendar_mutation_version' is distinct from '1'::jsonb or coalesce(proposed->>'provider','') not in ('google_workspace','google_calendar')
   or original_approval.id is null or original_approval.status not in ('approved','edited_and_approved')
-  or original_approval.proposed_payload->>'provider' is distinct from payload->>'provider' or original_approval.proposed_payload->>'calendar_connection_id' is distinct from payload->>'calendar_connection_id'
-  or (original_approval.proposed_payload->>'contact_id' is not null and original_approval.proposed_payload->>'contact_id' is distinct from payload->>'contact_id')
-  or original.status is distinct from 'succeeded' or original.receipt_recorded_at is null or nullif(original.external_ref,'') is null or original.external_ref is distinct from payload->>'external_ref'
+  or original_approval.proposed_payload->>'provider' is distinct from proposed->>'provider' or original_approval.proposed_payload->>'calendar_connection_id' is distinct from proposed->>'calendar_connection_id'
+  or (original_approval.proposed_payload->>'contact_id' is not null and original_approval.proposed_payload->>'contact_id' is distinct from proposed->>'contact_id')
+  or original.status is distinct from 'succeeded' or original.receipt_recorded_at is null or nullif(original.external_ref,'') is null or original.external_ref is distinct from proposed->>'external_ref'
   or jsonb_typeof(p_evidence) is distinct from 'object' or p_evidence->'version' is distinct from '1'::jsonb or p_evidence->>'state' is distinct from 'source_state_verified'
   or p_evidence->>'previous_status' is distinct from j.status or p_evidence->>'action_job_id' is distinct from j.id::text or p_evidence->>'approval_id' is distinct from a.id::text
-  or p_evidence->>'booking_approval_id' is distinct from payload->>'booking_approval_id' or p_evidence->>'booking_action_job_id' is distinct from original.id::text
-  or p_evidence->>'provider' is distinct from payload->>'provider' or p_evidence->>'operation' is distinct from payload->>'mutation'
-  or p_evidence->>'calendar_connection_id' is distinct from payload->>'calendar_connection_id' or nullif(payload->>'calendar_connection_id','') is null
-  or p_evidence->>'calendar_account_id' is distinct from payload->>'calendar_account_id' or nullif(payload->>'calendar_account_id','') is null
-  or p_evidence->>'calendar_id' is distinct from payload->>'calendar_id' or nullif(payload->>'calendar_id','') is null or p_evidence->>'external_ref' is distinct from original.external_ref
-  or p_evidence->'old_slot' is distinct from payload->'old_slot' or coalesce(p_evidence->'new_slot','null'::jsonb) is distinct from coalesce(payload->'new_slot','null'::jsonb)
+  or p_evidence->>'booking_approval_id' is distinct from proposed->>'booking_approval_id' or p_evidence->>'booking_action_job_id' is distinct from original.id::text
+  or p_evidence->>'provider' is distinct from proposed->>'provider' or p_evidence->>'operation' is distinct from proposed->>'mutation'
+  or p_evidence->>'calendar_connection_id' is distinct from proposed->>'calendar_connection_id' or nullif(proposed->>'calendar_connection_id','') is null
+  or p_evidence->>'calendar_account_id' is distinct from proposed->>'calendar_account_id' or nullif(proposed->>'calendar_account_id','') is null
+  or p_evidence->>'calendar_id' is distinct from proposed->>'calendar_id' or nullif(proposed->>'calendar_id','') is null or p_evidence->>'external_ref' is distinct from original.external_ref
+  or p_evidence->'old_slot' is distinct from proposed->'old_slot' or coalesce(p_evidence->'new_slot','null'::jsonb) is distinct from coalesce(proposed->'new_slot','null'::jsonb)
   or jsonb_typeof(p_evidence->'observations') is distinct from 'array' or jsonb_array_length(p_evidence->'observations')<>2
   or coalesce(p_evidence->>'attempted_at','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' or coalesce(p_evidence->>'verified_at','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$'
-  or coalesce(payload->>'source_etag','') collate "C" !~ '^"[\x21\x23-\x7e]+"$' then return false; end if;
- if jsonb_typeof(payload->'old_slot') is distinct from 'object' or coalesce(payload->'old_slot'->>'start_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$'
-  or coalesce(payload->'old_slot'->>'end_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' or (payload->'old_slot'->>'end_iso')::timestamptz<=(payload->'old_slot'->>'start_iso')::timestamptz then return false; end if;
- if payload->>'mutation'='reschedule' and (jsonb_typeof(payload->'new_slot') is distinct from 'object' or coalesce(payload->'new_slot'->>'start_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$'
-  or coalesce(payload->'new_slot'->>'end_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' or (payload->'new_slot'->>'end_iso')::timestamptz<=(payload->'new_slot'->>'start_iso')::timestamptz
-  or (payload->'new_slot'->>'start_iso')::timestamptz=(payload->'old_slot'->>'start_iso')::timestamptz
-  or (payload->'new_slot'->>'end_iso')::timestamptz-(payload->'new_slot'->>'start_iso')::timestamptz<>(payload->'old_slot'->>'end_iso')::timestamptz-(payload->'old_slot'->>'start_iso')::timestamptz) then return false; end if;
- if payload->>'mutation'='cancel' and coalesce(payload->'new_slot','null'::jsonb)<>'null'::jsonb then return false; end if;
+  or coalesce(proposed->>'source_etag','') collate "C" !~ '^"[\x21\x23-\x7e]+"$' then return false; end if;
+ if jsonb_typeof(proposed->'old_slot') is distinct from 'object' or coalesce(proposed->'old_slot'->>'start_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$'
+  or coalesce(proposed->'old_slot'->>'end_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' or (proposed->'old_slot'->>'end_iso')::timestamptz<=(proposed->'old_slot'->>'start_iso')::timestamptz then return false; end if;
+ if proposed->>'mutation'='reschedule' and (jsonb_typeof(proposed->'new_slot') is distinct from 'object' or coalesce(proposed->'new_slot'->>'start_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$'
+  or coalesce(proposed->'new_slot'->>'end_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' or (proposed->'new_slot'->>'end_iso')::timestamptz<=(proposed->'new_slot'->>'start_iso')::timestamptz
+  or (proposed->'new_slot'->>'start_iso')::timestamptz=(proposed->'old_slot'->>'start_iso')::timestamptz
+  or (proposed->'new_slot'->>'end_iso')::timestamptz-(proposed->'new_slot'->>'start_iso')::timestamptz<>(proposed->'old_slot'->>'end_iso')::timestamptz-(proposed->'old_slot'->>'start_iso')::timestamptz) then return false; end if;
+ if proposed->>'mutation'='cancel' and coalesce(proposed->'new_slot','null'::jsonb)<>'null'::jsonb then return false; end if;
  verified:=(p_evidence->>'verified_at')::timestamptz; attempted:=coalesce(j.last_attempt_at,j.claimed_at);
  if p_at is null or attempted is null or attempted is distinct from (p_evidence->>'attempted_at')::timestamptz or attempted<original.receipt_recorded_at or verified<attempted or verified>p_at then return false; end if;
  for observed in select value from jsonb_array_elements(p_evidence->'observations') loop
   read_index:=read_index+1;
   if jsonb_typeof(observed) is distinct from 'object' or observed->>'calendar_access_role' is distinct from 'owner'
-   or observed->>'account_id' is distinct from payload->>'calendar_account_id' or observed->>'requested_calendar_id' is distinct from payload->>'calendar_id'
+   or observed->>'account_id' is distinct from proposed->>'calendar_account_id' or observed->>'requested_calendar_id' is distinct from proposed->>'calendar_id'
    or observed->>'event_id' is distinct from original.external_ref or nullif(observed->>'resolved_calendar_id','') is null
-   or (payload->>'calendar_id'<>'primary' and observed->>'resolved_calendar_id' is distinct from payload->>'calendar_id')
-   or (payload->>'provider'='google_calendar' and observed->>'resolved_calendar_id' is distinct from payload->>'calendar_account_id')
+   or (proposed->>'calendar_id'<>'primary' and observed->>'resolved_calendar_id' is distinct from proposed->>'calendar_id')
+   or (proposed->>'provider'='google_calendar' and observed->>'resolved_calendar_id' is distinct from proposed->>'calendar_account_id')
    or coalesce(observed->>'observed_at','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' then return false; end if;
   seen:=(observed->>'observed_at')::timestamptz;
   if seen<attempted or seen>verified or seen<verified-interval '5 minutes' then return false; end if;
-  if payload->>'mutation'='cancel' then
+  if proposed->>'mutation'='cancel' then
    if observed->'http_status'='200'::jsonb then event:=observed->'event';
    elsif observed->'http_status' in ('404'::jsonb,'410'::jsonb) and observed->'event'='null'::jsonb and observed->'tombstone_complete'='true'::jsonb then event:=observed->'tombstone';
    else return false; end if;
    if event->>'status' is distinct from 'cancelled' then return false; end if;
-  elsif payload->>'mutation'='reschedule' then
+  elsif proposed->>'mutation'='reschedule' then
    event:=observed->'event';
    if observed->'http_status' is distinct from '200'::jsonb or event->>'status' is distinct from 'confirmed'
     or event->'organizer_self' is distinct from 'true'::jsonb or event->'recurring' is distinct from 'false'::jsonb or event->'attendee_count' is distinct from '0'::jsonb or event->>'event_type' is distinct from 'default'
     or jsonb_typeof(event->'slot') is distinct from 'object' or coalesce(event->'slot'->>'start_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' or coalesce(event->'slot'->>'end_iso','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$'
-    or (event->'slot'->>'start_iso')::timestamptz is distinct from (payload->'new_slot'->>'start_iso')::timestamptz
-    or (event->'slot'->>'end_iso')::timestamptz is distinct from (payload->'new_slot'->>'end_iso')::timestamptz then return false; end if;
+    or (event->'slot'->>'start_iso')::timestamptz is distinct from (proposed->'new_slot'->>'start_iso')::timestamptz
+    or (event->'slot'->>'end_iso')::timestamptz is distinct from (proposed->'new_slot'->>'end_iso')::timestamptz then return false; end if;
   else return false; end if;
   if jsonb_typeof(event) is distinct from 'object' or event->>'id' is distinct from original.external_ref or coalesce(event->>'etag','') collate "C" !~ '^"[\x21\x23-\x7e]+"$'
-   or event->>'etag' is not distinct from payload->>'source_etag' or coalesce(event->>'updated_at','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' then return false; end if;
+   or event->>'etag' is not distinct from proposed->>'source_etag' or coalesce(event->>'updated_at','') !~ '(Z|[+-][0-9]{2}:[0-9]{2})$' then return false; end if;
   changed:=(event->>'updated_at')::timestamptz;
   if changed<attempted or changed>seen then return false; end if;
   if read_index=1 then first_seen:=seen; first_changed:=changed; first_etag:=event->>'etag'; first_calendar:=observed->>'resolved_calendar_id';

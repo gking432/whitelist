@@ -86,16 +86,57 @@ begin
   or before_settings is distinct from (select to_jsonb(snapshot) from public.agent_team_settings snapshot where partner_id=p and client_id=c) then raise exception 'Rejected permission callback changed saved access, pause or authority'; end if;
 end $upgrade_denial$;
 
--- Group 2: consent is not activation; calendar selection cannot grant email.
+-- Group 2: consent is not activation or a replay of saved actions. A stale
+-- read-only callback cannot downgrade an explicitly upgraded account.
 do $upgrade_preservation$
-declare c uuid:=(select id from ga_fixture where key='client-a'); conn uuid:=(select id from ga_fixture where key='google-a'); attempt uuid; account text; before_revision integer; scopes text[]:=array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/calendar.events','https://www.googleapis.com/auth/calendar.calendarlist.readonly'];
+declare p uuid:=(select id from ga_fixture where key='partner-a'); c uuid:=(select id from ga_fixture where key='client-a'); conn uuid:=(select id from ga_fixture where key='google-a'); actor uuid:=(select id from ga_fixture where key='owner-a');
+ attempt uuid; readonly_attempt uuid; account text; before_revision integer; saved_status text; proposal uuid; job_id uuid; denied boolean;
+ before_jobs jsonb; before_approvals jsonb; upgraded_connection jsonb; upgraded_secret jsonb; upgraded_settings jsonb;
+ scopes text[]:=array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/calendar.events','https://www.googleapis.com/auth/calendar.calendarlist.readonly'];
 begin
  select authority_revision into before_revision from public.agent_team_settings where client_id=c;
  select external_account_id into account from public.integration_connections where id=conn;
+ -- Historical synthetic effects exercise preservation, not provider delivery.
+ foreach saved_status in array array['pending','processing','provider_pending','uncertain','succeeded','failed','dry_run','skipped','cancelled'] loop
+  insert into public.approval_items(partner_id,client_id,type,status,title,resolved_by,resolved_at,resolved_content,proposed_payload)
+  values(p,c,'customer_message','approved','Synthetic saved grant-history '||saved_status,actor,now()-interval '1 hour','Synthetic historical email',
+   jsonb_build_object('channel','email','to','nobody@synthetic.invalid','connection_id',conn,'authority_revision',before_revision)) returning id into proposal;
+  insert into public.action_jobs(partner_id,client_id,connection_id,approval_id,kind,status,payload,claim_token,claimed_at,last_attempt_at,attempt_count,external_ref,provider_receipt,receipt_recorded_at)
+  select p,c,conn,proposal,'email.send',saved_status,a.proposed_payload,
+   case when saved_status='processing' then extensions.gen_random_uuid() else null end,
+   case when saved_status='processing' then now()-interval '1 minute' else null end,
+   case when saved_status<>'pending' then now()-interval '1 minute' else null end,case when saved_status='pending' then 0 else 1 end,
+   case when saved_status='succeeded' then 'ga-__RUN_ID__-saved-email' else null end,
+   case when saved_status='succeeded' then '{"fixture":"synthetic historical receipt, no provider call"}'::jsonb else null end,
+   case when saved_status='succeeded' then now()-interval '1 minute' else null end
+  from public.approval_items a where a.id=proposal returning id into job_id;
+  insert into ga_fixture(key,id,data) values('grant-history-'||saved_status,job_id,jsonb_build_object('approvalId',proposal));
+ end loop;
+ select jsonb_agg(to_jsonb(j) order by j.id) into before_jobs from public.action_jobs j where j.id in(select id from ga_fixture where key like 'grant-history-%');
+ select jsonb_agg(to_jsonb(a) order by a.id) into before_approvals from public.approval_items a where a.id in(select (data->>'approvalId')::uuid from ga_fixture where key like 'grant-history-%');
+ readonly_attempt:=pg_temp.ga_attempt(array['calendar.write']);
+ update public.business_connection_oauth_attempts set purpose='read_only',requested_permissions=null where id=readonly_attempt;
  attempt:=pg_temp.ga_attempt(array['calendar.write']);
  perform public.finish_google_permission_upgrade(attempt,'synthetic-calendar-only-envelope','test',account,'Synthetic calendar-only account',scopes,array['calendar.write']);
  if not exists(select 1 from public.integration_connections where id=conn and runtime_mode='paused' and config->'workspace_view_only'='true'::jsonb and config->'google_action_permissions'='{"calendar_write":true,"email_send":false}'::jsonb) then raise exception 'Grant changed pause/view-only flags or selected unrelated email permission'; end if;
  if not exists(select 1 from public.agent_team_settings where client_id=c and status='paused' and channel_authority->>'calendar'='off' and channel_authority->>'email'='off' and authority_revision=before_revision+1) then raise exception 'Grant changed manager controls or did not advance authority exactly once'; end if;
+ if before_jobs is distinct from (select jsonb_agg(to_jsonb(j) order by j.id) from public.action_jobs j where j.id in(select id from ga_fixture where key like 'grant-history-%'))
+  or before_approvals is distinct from (select jsonb_agg(to_jsonb(a) order by a.id) from public.approval_items a where a.id in(select (data->>'approvalId')::uuid from ga_fixture where key like 'grant-history-%')) then raise exception 'Permission upgrade changed saved action status, claims, receipt or approval history'; end if;
+ select to_jsonb(cn) into upgraded_connection from public.integration_connections cn where id=conn;
+ select to_jsonb(s) into upgraded_secret from public.integration_secrets s where connection_id=conn and secret_kind='provider_credentials';
+ select to_jsonb(s) into upgraded_settings from public.agent_team_settings s where partner_id=p and client_id=c;
+ denied:=false;
+ begin perform public.finish_readonly_workspace_oauth(readonly_attempt,'synthetic-forbidden-downgrade','test',account,'Synthetic read-only callback'); exception when sqlstate '40001' then denied:=true; end;
+ if not denied then raise exception 'A pre-upgrade read-only callback downgraded selected Google permissions'; end if;
+ -- now() is stable in this outer transaction. Pin CURRENT timestamps as a
+ -- separate control so rejection must also enforce the upgraded-map guard.
+ update public.business_connection_oauth_attempts set expected_connection_updated_at=(upgraded_connection->>'updated_at')::timestamptz,expected_secret_updated_at=(upgraded_secret->>'updated_at')::timestamptz where id=readonly_attempt;
+ denied:=false;
+ begin perform public.finish_readonly_workspace_oauth(readonly_attempt,'synthetic-forbidden-downgrade','test',account,'Synthetic read-only callback');
+ exception when sqlstate '40001' then if sqlerrm not like '%Reconnect the existing selected Google permissions%' then raise; end if; denied:=true; end;
+ if not denied or upgraded_connection is distinct from (select to_jsonb(cn) from public.integration_connections cn where id=conn)
+  or upgraded_secret is distinct from (select to_jsonb(s) from public.integration_secrets s where connection_id=conn and secret_kind='provider_credentials')
+  or upgraded_settings is distinct from (select to_jsonb(s) from public.agent_team_settings s where partner_id=p and client_id=c) then raise exception 'Rejected read-only downgrade changed credentials, config, pause or authority'; end if;
  attempt:=pg_temp.ga_attempt(array['calendar.write']);
  perform public.finish_google_permission_upgrade(attempt,'synthetic-calendar-only-envelope','test',account,'Synthetic calendar-only account',scopes,array['calendar.write']);
  if (select authority_revision from public.agent_team_settings where client_id=c)<>before_revision+1 then raise exception 'Unchanged selected grant renewed authority revision'; end if;
@@ -104,7 +145,7 @@ end $upgrade_preservation$;
 
 -- Group 3: explicit activation checks scope and required selected capabilities.
 do $activation$
-declare p uuid:=(select id from ga_fixture where key='partner-a'); c uuid:=(select id from ga_fixture where key='client-a'); actor uuid:=(select id from ga_fixture where key='owner-a'); conn uuid:=(select id from ga_fixture where key='google-a'); revision integer; denied boolean; before_plan jsonb; profile_time timestamptz;
+declare p uuid:=(select id from ga_fixture where key='partner-a'); c uuid:=(select id from ga_fixture where key='client-a'); actor uuid:=(select id from ga_fixture where key='owner-a'); conn uuid:=(select id from ga_fixture where key='google-a'); peer uuid; revision integer; denied boolean; before_plan jsonb; profile_time timestamptz;
 begin
  select to_jsonb(snapshot) into before_plan from public.business_agent_activation snapshot where client_id=c;
  select plan.revision into revision from public.business_agent_activation plan where client_id=c;
@@ -123,12 +164,40 @@ begin
  perform public.apply_business_context_command(p,c,actor,jsonb_build_object('action','set_authority','key',extensions.gen_random_uuid(),'expectedRevision',revision,'channel','email','mode','require_approval'));
  if not public.business_channel_can_draft(p,c,'calendar',conn) or public.business_channel_can_draft(p,c,'email',conn) or public.selected_google_inbox_allowed(p,c,conn,now()) then raise exception 'Calendar-only explicit activation leaked email authority or did not enable its selected calendar'; end if;
  if not exists(select 1 from public.integration_connections where id=conn and runtime_mode='live' and config->'workspace_view_only'='true'::jsonb) then raise exception 'Explicit selection lost view-only isolation'; end if;
+ -- A second eligible account belongs to this SAME business. Cross-tenant
+ -- rejection alone cannot prove that selection never falls back to a peer.
+ insert into public.integration_connections(partner_id,client_id,provider_id,display_name,status,runtime_mode,credential_status,external_account_id,external_account_name,config)
+ select p,c,provider_id,'Synthetic same-business Google peer','connected','dry_run','configured','ga-__RUN_ID__-same-business-peer','synthetic-peer-__RUN_ID__@invalid',
+  config-array['activation_managed','activation_selected','activation_calendar_enabled','conversation_intake_enabled','conversation_intake_enabled_at']
+ from public.integration_connections where id=conn returning id into peer;
+ insert into ga_fixture(key,id) values('google-peer',peer);
+ insert into public.integration_secrets(partner_id,client_id,connection_id,secret_kind,encrypted_value,last_four)
+ values(p,c,peer,'provider_credentials','synthetic-not-an-encrypted-peer-credential','test');
+ select plan.revision into revision from public.business_agent_activation plan where client_id=c;
+ perform public.apply_business_activation(p,c,revision,pg_temp.ga_choices(false,true,peer),'wk_synthetic_acceptance_public_key_123456');
+ if not public.business_channel_can_draft(p,c,'calendar',peer) or public.business_channel_can_draft(p,c,'calendar',conn)
+  or not exists(select 1 from public.business_agent_activation where client_id=c and workspace_connection_id=peer)
+  or not exists(select 1 from public.integration_connections where id=conn and runtime_mode='dry_run' and config->'activation_selected'='false'::jsonb and config->'activation_calendar_enabled'='false'::jsonb and config->'conversation_intake_enabled'='false'::jsonb)
+  or not exists(select 1 from public.integration_connections where id=peer and runtime_mode='live' and config->'activation_selected'='true'::jsonb) then raise exception 'Same-business account switch retained old authority or selected a fallback'; end if;
+ -- Apps pause is a normal connection state, independent of assistant choice.
+ update public.integration_connections set runtime_mode='paused' where id=peer;
+ select plan.revision into revision from public.business_agent_activation plan where client_id=c;
+ perform public.apply_business_activation(p,c,revision,pg_temp.ga_choices(false,true,conn),'wk_synthetic_acceptance_public_key_123456');
+ select plan.revision into revision from public.business_agent_activation plan where client_id=c;
+ perform public.apply_business_activation(p,c,revision,pg_temp.ga_choices(false,false,null),'wk_synthetic_acceptance_public_key_123456');
+ if exists(select 1 from public.business_agent_activation where client_id=c and workspace_connection_id is not null)
+  or public.business_channel_can_draft(p,c,'calendar',conn) or public.business_channel_can_draft(p,c,'calendar',peer)
+  or not exists(select 1 from public.integration_connections where id=conn and runtime_mode='dry_run')
+  or not exists(select 1 from public.integration_connections where id=peer and runtime_mode='paused')
+  or exists(select 1 from public.integration_connections where id in(conn,peer) and (config->'activation_selected' is distinct from 'false'::jsonb or config->'activation_calendar_enabled' is distinct from 'false'::jsonb or config->'conversation_intake_enabled' is distinct from 'false'::jsonb)) then raise exception 'Deselecting accounts lost import reads, cleared Apps pause, or retained channel authority'; end if;
+ select plan.revision into revision from public.business_agent_activation plan where client_id=c;
+ perform public.apply_business_activation(p,c,revision,pg_temp.ga_choices(false,true,conn),'wk_synthetic_acceptance_public_key_123456');
 end $activation$;
 
 -- Group 4: manager pause stops outgoing work, not already-selected inbound evidence.
 do $paused_inbound$
 declare p uuid:=(select id from ga_fixture where key='partner-a'); c uuid:=(select id from ga_fixture where key='client-a'); actor uuid:=(select id from ga_fixture where key='owner-a'); conn uuid:=(select id from ga_fixture where key='google-a');
- attempt uuid; account text; plan_revision integer; authority integer; connection_time timestamptz; secret_time timestamptz; received jsonb; again jsonb;
+ attempt uuid; account text; plan_revision integer; authority integer; connection_time timestamptz; secret_time timestamptz; received jsonb; again jsonb; jobs_before bigint;
  scopes text[]:=array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.send','https://www.googleapis.com/auth/calendar.events','https://www.googleapis.com/auth/calendar.calendarlist.readonly'];
 begin
  select external_account_id into account from public.integration_connections where id=conn;
@@ -143,12 +212,13 @@ begin
  select authority_revision into authority from public.agent_team_settings where client_id=c;
  perform public.apply_business_context_command(p,c,actor,jsonb_build_object('action','manager_control','key',extensions.gen_random_uuid(),'expectedRevision',authority,'operation','pause'));
  if not public.selected_google_inbox_allowed(p,c,conn,now()) then raise exception 'Team pause discarded already-authorized selected inbound collection'; end if;
+ select count(*) into jobs_before from public.action_jobs where partner_id=p and client_id=c;
  received:=public.ingest_business_message(p,c,conn,'email','synthetic-__RUN_ID__@invalid','ga-__RUN_ID__-inbound','Synthetic selected inbound evidence',now());
  again:=public.ingest_business_message(p,c,conn,'email','synthetic-__RUN_ID__@invalid','ga-__RUN_ID__-inbound','Synthetic selected inbound evidence',now());
  if received->>'id' is null or received->>'workId' is not null or again->>'duplicate' is distinct from 'true'
   or (select count(*) from public.business_conversation_messages where partner_id=p and client_id=c and external_key='ga-__RUN_ID__-inbound' and direction='inbound' and status='received')<>1
   or (select count(*) from public.crm_communications where partner_id=p and client_id=c and body='Synthetic selected inbound evidence' and direction='inbound' and status='received')<>1
-  or exists(select 1 from public.agent_work_items where partner_id=p and client_id=c) or exists(select 1 from public.action_jobs where partner_id=p and client_id=c) then raise exception 'Selected paused inbox lost evidence, duplicated it, or queued outgoing work'; end if;
+  or exists(select 1 from public.agent_work_items where partner_id=p and client_id=c) or (select count(*) from public.action_jobs where partner_id=p and client_id=c)<>jobs_before then raise exception 'Selected paused inbox lost evidence, duplicated it, or queued outgoing work'; end if;
 end $paused_inbound$;
 
 -- Seed synthetic historical provider rows for reconciliation policy acceptance.
@@ -211,6 +281,43 @@ set local role service_role;
 -- Group 5: absence/original-chain/scope cannot become proof; one review task.
 -- Alternate immutable historical chains isolate each original-approval check.
 -- No resolved approval is updated and no trigger is disabled.
+do $stale_action_authority$
+declare p uuid:=(select id from ga_fixture where key='partner-a'); c uuid:=(select id from ga_fixture where key='client-a'); actor uuid:=(select id from ga_fixture where key='owner-a'); peer uuid:=(select id from ga_fixture where key='google-peer');
+ before_revision integer; after_revision integer; attempt uuid; pending_proposal uuid; proposed jsonb; check_result jsonb; denied boolean; before_jobs jsonb; before_approvals jsonb; peer_account text;
+ scopes text[]:=array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.send','https://www.googleapis.com/auth/calendar.events','https://www.googleapis.com/auth/calendar.calendarlist.readonly'];
+begin
+ select authority_revision into before_revision from public.agent_team_settings where partner_id=p and client_id=c;
+ perform public.apply_business_context_command(p,c,actor,jsonb_build_object('action','manager_control','key',extensions.gen_random_uuid(),'expectedRevision',before_revision,'operation','resume'));
+ select authority_revision into before_revision from public.agent_team_settings where partner_id=p and client_id=c;
+ select j.payload||jsonb_build_object('mutation','cancel','new_slot',null,'authority_revision',before_revision) into proposed
+  from public.action_jobs j where j.id=(select id from ga_fixture where key='change-job');
+ check_result:=public.calendar_mutation_source_check(p,c,proposed,true);
+ if check_result->>'allowed' is distinct from 'true' then raise exception 'Stale-authority positive control is not currently eligible: %',check_result->>'reason'; end if;
+ insert into public.approval_items(partner_id,client_id,type,status,title,proposed_payload,expires_at)
+ values(p,c,'appointment_change','pending','Synthetic pre-grant pending calendar decision',proposed,now()+interval '15 minutes') returning id into pending_proposal;
+ select jsonb_agg(to_jsonb(j) order by j.id) into before_jobs from public.action_jobs j where j.partner_id=p and j.client_id=c;
+ select jsonb_agg(to_jsonb(a) order by a.id) into before_approvals from public.approval_items a where a.partner_id=p and a.client_id=c;
+ -- A real explicit permission change on the paused same-business peer bumps
+ -- business authority without selecting it or changing accepted action history.
+ insert into public.business_connection_oauth_attempts(partner_id,client_id,connection_id,actor_id,cookie_hash,encrypted_verifier,expires_at,consumed_at,provider_key,purpose,requested_permissions,expected_account_id,expected_connection_updated_at,expected_secret_updated_at)
+ select p,c,peer,actor,repeat('b',64),'synthetic-not-an-oauth-peer-verifier',now()+interval '10 minutes',now(),'google_workspace','permission_upgrade',array['email.send'],cn.external_account_id,cn.updated_at,s.updated_at
+ from public.integration_connections cn join public.integration_secrets s on s.connection_id=cn.id and s.partner_id=cn.partner_id and s.client_id=cn.client_id and s.secret_kind='provider_credentials' where cn.id=peer returning id into attempt;
+ select external_account_id into peer_account from public.integration_connections where id=peer;
+ perform public.finish_google_permission_upgrade(attempt,'synthetic-peer-selected-upgrade-envelope','test',peer_account,'Synthetic peer retained calendar and selected email',scopes,array['calendar.write','email.send']);
+ select authority_revision into after_revision from public.agent_team_settings where partner_id=p and client_id=c;
+ if after_revision is distinct from before_revision+1 or not exists(select 1 from public.integration_connections where id=peer and runtime_mode='paused' and config->'activation_selected'='false'::jsonb)
+  or before_jobs is distinct from (select jsonb_agg(to_jsonb(j) order by j.id) from public.action_jobs j where j.partner_id=p and j.client_id=c)
+  or before_approvals is distinct from (select jsonb_agg(to_jsonb(a) order by a.id) from public.approval_items a where a.partner_id=p and a.client_id=c) then raise exception 'Grant resumed a peer, rewrote saved actions/claims/receipts, or did not invalidate old authority exactly once'; end if;
+ check_result:=public.calendar_mutation_source_check(p,c,proposed,true);
+ if check_result->>'allowed' is distinct from 'false' or check_result->>'reason' is distinct from 'Current reviewed business context and selected calendar authority do not permit this step.' then raise exception 'The old calendar action authority remained executable after a selected grant change'; end if;
+ denied:=false;
+ begin update public.approval_items set status='approved',resolved_by=actor where id=pending_proposal;
+ exception when sqlstate '40001' then if sqlerrm not like '%Current reviewed business context and selected calendar authority%' then raise; end if; denied:=true; end;
+ if not denied or not exists(select 1 from public.approval_items where id=pending_proposal and status='pending' and proposed_payload=proposed)
+  or exists(select 1 from public.action_jobs where approval_id=pending_proposal) then raise exception 'Stale calendar approval resolved or enqueued after the grant revision changed'; end if;
+ check_result:=public.calendar_mutation_source_check(p,c,proposed||jsonb_build_object('authority_revision',after_revision),true);
+ if check_result->>'allowed' is distinct from 'true' then raise exception 'Refreshing only the reviewed authority pin did not restore the otherwise-valid control: %',check_result->>'reason'; end if;
+end $stale_action_authority$;
 do $original_chain$
 declare p uuid:=(select id from ga_fixture where key='partner-a'); c uuid:=(select id from ga_fixture where key='client-a'); actor uuid:=(select id from ga_fixture where key='owner-a');
  base_payload jsonb; base_evidence jsonb; case_key text; case_index integer:=0; alternate_connection uuid; original_id uuid; original_job uuid; native_id uuid; change_id uuid; change_job uuid; source_id uuid;
@@ -316,7 +423,89 @@ begin
   or exists(select 1 from public.action_jobs where id=(select id from ga_fixture where key='booking-job') and (confirmation_due_at is not null or booking_followup_due_at is not null)) then raise exception 'Fresh source review lost original outcome or automatically renewed old follow-ups'; end if;
 end $fresh_review$;
 
--- Group 8: actual browser roles cannot call privileged RPCs or clear provenance.
+-- Group 8: exact positive cancellation tombstones, preserved history and handoff closure.
+do $positive_cancellation_tombstones$
+declare
+ p uuid:=(select id from ga_fixture where key='partner-a');
+ c uuid:=(select id from ga_fixture where key='client-a');
+ actor uuid:=(select id from ga_fixture where key='owner-a');
+ customer public.crm_contacts; account public.integration_connections; native public.crm_appointments; saved_job public.action_jobs;
+ original_id uuid:=extensions.gen_random_uuid(); original_job uuid:=extensions.gen_random_uuid(); native_id uuid:=extensions.gen_random_uuid();
+ change_id uuid:=extensions.gen_random_uuid(); change_job uuid:=extensions.gen_random_uuid(); source_id uuid:=extensions.gen_random_uuid(); cancellation_task uuid:=extensions.gen_random_uuid();
+ lead_id uuid:=(select id from ga_fixture where key='lead'); authority integer; old_start timestamptz:=now()+interval '40 days';
+ event_ref text:='ga-__RUN_ID__-positive-cancellation'; payload jsonb; tombstone jsonb; first_read jsonb; second_read jsonb;
+ evidence jsonb; bad_evidence jsonb; public_request jsonb; request jsonb; result jsonb; replay jsonb;
+ original_result jsonb:='{"fixture":"uncertain-cancellation-transport-no-ack"}'::jsonb;
+begin
+ select * into customer from public.crm_contacts where id=(select id from ga_fixture where key='customer') and partner_id=p and client_id=c;
+ select * into account from public.integration_connections where id=(select id from ga_fixture where key='google-a') and partner_id=p and client_id=c;
+ select authority_revision into authority from public.agent_team_settings where partner_id=p and client_id=c;
+
+ insert into public.approval_items(id,partner_id,client_id,type,status,title,resolved_by,created_at,resolved_at,proposed_payload)
+ values(original_id,p,c,'appointment_booking','approved','Synthetic cancellation original booking',actor,now()-interval '61 minutes',now()-interval '1 hour',
+  jsonb_build_object('provider','google_workspace','calendar_connection_id',account.id,'contact_id',customer.id,'lead_id',lead_id,
+   'slot',jsonb_build_object('start_iso',old_start,'end_iso',old_start+interval '1 hour')));
+ insert into public.action_jobs(id,partner_id,client_id,approval_id,kind,status,payload,external_ref,receipt_recorded_at)
+ values(original_job,p,c,original_id,'calendar.book','succeeded',(select proposed_payload from public.approval_items where id=original_id),event_ref,now()-interval '1 hour');
+ insert into public.crm_appointments(id,partner_id,client_id,contact_id,lead_id,approval_id,title,status,start_at,end_at,external_ref,created_at,updated_at)
+ values(native_id,p,c,customer.id,lead_id,original_id,'Synthetic cancellation native appointment','booked',old_start,old_start+interval '1 hour',event_ref,now()-interval '1 hour',now()-interval '1 hour');
+ select * into native from public.crm_appointments where id=native_id;
+ insert into public.integration_canonical_records(id,partner_id,client_id,connection_id,object_type,external_object_id,native_object_id,canonical_data,source_payload,external_updated_at,snapshot_observed_at,projection_status)
+ values(source_id,p,c,account.id,'appointment',event_ref,native_id::text,
+  jsonb_build_object('provider','google_workspace','status','confirmed','start_at',native.start_at,'end_at',native.end_at),
+  jsonb_build_object('id',event_ref,'etag','"cancel-before"','updated',now()-interval '1 hour','organizer',jsonb_build_object('self',true)),
+  now()-interval '1 hour',now()-interval '11 minutes','skipped');
+ payload:=jsonb_build_object('calendar_mutation_version',1,'mutation','cancel','booking_approval_id',original_id,'booking_action_job_id',original_job,
+  'appointment_id',native.id,'appointment_updated_at',native.updated_at,'contact_id',customer.id,'contact_updated_at',customer.updated_at,
+  'provider','google_workspace','calendar_connection_id',account.id,'calendar_account_id',account.external_account_id,'calendar_id','primary','external_ref',event_ref,
+  'source_record_id',source_id,'source_updated_at',now()-interval '1 hour','source_etag','"cancel-before"',
+  'old_slot',jsonb_build_object('start_iso',native.start_at,'end_iso',native.end_at),'authority_revision',authority,
+  'customer_activity_id',null,'customer_activity_at',null,'conversation_id',null,'conversation_revision',null);
+ insert into public.approval_items(id,partner_id,client_id,type,status,title,resolved_by,created_at,resolved_at,proposed_payload)
+ values(change_id,p,c,'appointment_change','approved','Synthetic uncertain cancellation',actor,now()-interval '11 minutes',now()-interval '10 minutes',payload);
+ insert into public.action_jobs(id,partner_id,client_id,approval_id,kind,status,payload,last_attempt_at,claimed_at,provider_receipt)
+ values(change_job,p,c,change_id,'calendar.cancel','uncertain',(select proposed_payload from public.approval_items where id=change_id),now()-interval '10 minutes',now()-interval '10 minutes',original_result);
+ select * into saved_job from public.action_jobs where id=change_job;
+ payload:=saved_job.payload;
+ insert into public.crm_tasks(id,partner_id,client_id,contact_id,lead_id,booking_approval_id,title,description,status,priority,task_type,created_by)
+ values(cancellation_task,p,c,customer.id,lead_id,original_id,'Synthetic pending cancellation handoff','Await exact positive source-state evidence.','open','high','booking_cancellation_request',actor);
+
+ tombstone:=jsonb_build_object('id',event_ref,'status','cancelled','etag','"cancel-after"','updated_at',now()-interval '2 minutes',
+  'slot',null,'organizer_self',true,'recurring',false,'attendee_count',0,'event_type','default');
+ first_read:=jsonb_build_object('observed_at',now()-interval '90 seconds','account_id',account.external_account_id,'requested_calendar_id','primary',
+  'resolved_calendar_id','synthetic-calendar-__RUN_ID__@invalid','calendar_access_role','owner','event_id',event_ref,
+  'http_status',410,'event',null,'tombstone',tombstone,'tombstone_complete',true);
+ second_read:=first_read||jsonb_build_object('observed_at',now()-interval '1 minute');
+ evidence:=jsonb_build_object('version',1,'state','source_state_verified','previous_status',saved_job.status,'action_job_id',change_job,'approval_id',change_id,
+  'booking_approval_id',original_id,'booking_action_job_id',original_job,'provider','google_workspace','operation','cancel',
+  'calendar_connection_id',account.id,'calendar_account_id',account.external_account_id,'calendar_id','primary','external_ref',event_ref,
+  'attempted_at',saved_job.last_attempt_at,'verified_at',now(),'old_slot',payload->'old_slot','new_slot',null,
+  'observations',jsonb_build_array(first_read,second_read),'reason','Two matching positive exact cancellation tombstones; no attribution to the uncertain write.');
+ if public.calendar_reconciliation_valid(p,c,change_job,evidence) is distinct from true then raise exception 'Positive exact two-tombstone cancellation proof was rejected'; end if;
+ bad_evidence:=evidence||jsonb_build_object('observations',jsonb_build_array(first_read));
+ if public.calendar_reconciliation_valid(p,c,change_job,bad_evidence) is distinct from false then raise exception 'One positive tombstone was enough to prove cancellation'; end if;
+ bad_evidence:=evidence||jsonb_build_object('observations',jsonb_build_array(first_read||jsonb_build_object('tombstone',null),second_read||jsonb_build_object('tombstone',null)));
+ if public.calendar_reconciliation_valid(p,c,change_job,bad_evidence) is distinct from false then raise exception 'Repeated absence without positive tombstones proved cancellation'; end if;
+ bad_evidence:=evidence||jsonb_build_object('observations',jsonb_build_array(first_read,second_read||jsonb_build_object('tombstone',tombstone||jsonb_build_object('etag','"cancel-disagrees"'))));
+ if public.calendar_reconciliation_valid(p,c,change_job,bad_evidence) is distinct from false then raise exception 'Disagreeing cancellation source versions were accepted'; end if;
+
+ public_request:=jsonb_build_object('action','reconcile_calendar_change','key',extensions.gen_random_uuid(),'targetId',change_job,'expectedRevision','synthetic-cancellation-current-cas-pins');
+ request:=public_request||jsonb_build_object('owner_request',public_request,'expectedJobUpdatedAt',saved_job.updated_at,'expectedAppointmentUpdatedAt',native.updated_at,
+  'expectedContactUpdatedAt',customer.updated_at,'expectedConnectionUpdatedAt',account.updated_at,'evidence',evidence);
+ result:=public.reconcile_calendar_change(p,c,actor,request);
+ if result->>'state' is distinct from 'source_state_verified' or result->>'actionJobId' is distinct from change_job::text
+  or result->>'bookingApprovalId' is distinct from original_id::text
+  or not exists(select 1 from public.crm_appointments where id=native_id and status='cancelled' and start_at=native.start_at and end_at=native.end_at and calendar_reconciliation_job_id=change_job)
+  or not exists(select 1 from public.action_jobs j where j.id=change_job and j.status='uncertain' and j.provider_receipt=original_result and j.payload=saved_job.payload)
+  or not exists(select 1 from public.action_jobs where id=original_job and status='succeeded' and external_ref=event_ref and receipt_recorded_at=now()-interval '1 hour' and booking_followup_phase='stopped' and confirmation_due_at is null and booking_followup_due_at is null)
+  or not exists(select 1 from public.crm_tasks where id=cancellation_task and status='done' and completed_at is not null)
+  or public.calendar_reconciled_state(p,c,original_id,native_id) is null then raise exception 'Positive cancellation did not preserve the original results, cancel exact native state, close handoff and stop old follow-ups'; end if;
+ replay:=public.reconcile_calendar_change(p,c,actor,request);
+ if replay->>'id' is distinct from result->>'id' or replay->>'replayed' is distinct from 'true'
+  or not exists(select 1 from public.action_jobs where id=change_job and status='uncertain' and provider_receipt=original_result) then raise exception 'Positive cancellation exact receipt replay changed its original uncertain write result'; end if;
+end $positive_cancellation_tombstones$;
+
+-- Group 9: actual browser roles cannot call privileged RPCs or clear provenance.
 do $grants$ declare signature text; begin
  foreach signature in array array['finish_google_permission_upgrade(uuid,text,text,text,text,text[],text[])','record_selected_workspace_check(uuid,uuid,integer,uuid,timestamptz,timestamptz,text,boolean,boolean)','reconcile_calendar_change(uuid,uuid,uuid,jsonb)','calendar_reconciled_state(uuid,uuid,uuid,uuid)'] loop
   if has_function_privilege('anon','public.'||signature,'EXECUTE') or has_function_privilege('authenticated','public.'||signature,'EXECUTE') or not has_function_privilege('service_role','public.'||signature,'EXECUTE') then raise exception 'Google/reconciliation RPC execute grants are incorrect: %',signature; end if;
@@ -347,5 +536,5 @@ reset role;
 rollback;
 select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','google_calendar_acceptance','rolledBack',true,'remainingFixtures',
  (select count(*) from public.partners where slug like 'cj-acceptance-__RUN_ID__-google-%')+(select count(*) from auth.users where email like 'cj-acceptance-__RUN_ID__-google-%@synthetic.invalid'),
- 'checks',jsonb_build_array('selected_grant_denial_atomicity','grant_preserves_pause_viewonly_modes_revision_once','explicit_activation_scope_and_channel_isolation','selected_paused_inbound_persists_without_queue',
- 'reconciliation_absence_scope_review_dedupe','strong_source_proof_preserves_original_outcome_and_replays','fresh_native_acceptance_and_source_cas','actual_privileged_role_and_marker_denial'))::text as cj_report;
+ 'checks',jsonb_build_array('selected_grant_denial_atomicity','grant_preserves_history_pause_and_rejects_readonly_downgrade','explicit_same_business_selection_deselection_and_channel_isolation','selected_paused_inbound_persists_without_queue',
+ 'stale_action_authority_and_reconciliation_absence_original_chain_scope_review_dedupe','strong_source_proof_preserves_original_outcome_and_replays','fresh_native_acceptance_and_source_cas','positive_cancellation_tombstones_preserved_history_and_replay','actual_privileged_role_and_marker_denial'))::text as cj_report;
