@@ -359,7 +359,7 @@ begin
 end $cj_received_evidence$;
 reset role;
 rollback;
-select jsonb_build_object('kind','acceptance','rolledBack',true,
+select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','acceptance','rolledBack',true,
  'remainingFixtures',(select count(*) from public.partners where slug like 'cj-acceptance-__RUN_ID__-%')+(select count(*) from auth.users where email like 'cj-acceptance-__RUN_ID__-%@synthetic.invalid'),
  'checks',jsonb_build_array('context_authority','canonical_import_dedupe','adoption_replay_identity_and_cas','actual_rpc_role_denial','cross_business_rls','privileged_execute_grants','approval_outbox_resolution','outbox_claim_cas_and_assignment_lease','internal_booking_replay','overlap_preserves_old_slot',
  'actor_bound_offer_and_change_approval','internal_reschedule_atomic_receipt_and_restart','internal_cancellation_stops_followups','late_overlap_preserves_old_appointment','invalid_completion_receipt_creates_one_review','received_instruction_immutability_and_identity_linking')) as cj_report;

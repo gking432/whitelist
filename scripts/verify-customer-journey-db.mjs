@@ -81,6 +81,24 @@ export function parseCliRows(text) {
   if (result.some((row) => !row || typeof row !== "object" || Array.isArray(row) || row.error || row.errors)) throw new Error("The CLI returned malformed result rows or a database error.");
   return result;
 }
+export const REPORT_PREFIX = "__CUSTOMER_JOURNEY_REPORT__";
+export function parsePsqlRows(output) {
+  const rows = [];
+  for (const line of String(output).split(/\r?\n/)) {
+    if (!line.startsWith(REPORT_PREFIX)) continue;
+    let report;
+    try { report = JSON.parse(line.slice(REPORT_PREFIX.length)); } catch { throw new Error("psql returned a malformed tagged report; no database proof was accepted."); }
+    if (!report || typeof report !== "object" || Array.isArray(report) || typeof report.kind !== "string" || report.error || report.errors)
+      throw new Error("psql returned an invalid tagged report; no database proof was accepted.");
+    rows.push({ cj_report: report });
+  }
+  if (!rows.length) throw new Error("psql returned no tagged report; no database proof was accepted.");
+  return rows;
+}
+export function parsePsqlExecution({ code, signal, exceeded, stdout, stderr }, targetUrl) {
+  if (code !== 0 || exceeded) throw new Error(redact(`Database script failed${signal ? ` (${signal})` : ""}: ${String(stderr).slice(-6000) || "No SQL proof returned."}`, targetUrl));
+  return JSON.stringify(parsePsqlRows(stdout));
+}
 export function readReport(output, kind) {
   const reports = parseCliRows(output).flatMap((row) => {
     if (!row.cj_report) return [];
@@ -109,7 +127,7 @@ do $cj_isolation$ begin
 end $cj_isolation$;`;
 export function preflightSql(database) {
   return `begin read only; set local statement_timeout='20s'; set local lock_timeout='3s';
-select jsonb_build_object('kind','preflight','database',current_database(),
+select '${REPORT_PREFIX}' || jsonb_build_object('kind','preflight','database',current_database(),
  'unfilteredRead',(select rolsuper or rolbypassrls from pg_catalog.pg_roles where rolname=current_user),
  'nonTestPartners',(select count(*) from public.partners where slug not like 'cj-acceptance-%' or name not like 'Synthetic customer journey acceptance%'),
  'nonTestClients',(select count(*) from public.client_businesses c left join public.partners p on p.id=c.partner_id where p.id is null or c.slug not like 'cj-acceptance-%' or c.name not like 'Synthetic customer journey acceptance%' or p.slug not like 'cj-acceptance-%'),
@@ -129,7 +147,9 @@ async function query(target, sql) {
   try {
     await writeFile(file, sql, { mode: 0o600 });
     return await new Promise((resolveQuery, reject) => {
-      const child = spawn(join(root, "node_modules/.bin/supabase"), ["db", "query", "--db-url", target.url, "--file", file, "--output", "json", "--agent", "no", "--yes"], {
+      // psql file execution supports real multi-statement transactions. The
+      // pinned CLI's db query uses prepared execution and rejects this script.
+      const child = spawn("psql", ["--dbname", target.url, "--no-psqlrc", "--no-password", "--quiet", "--tuples-only", "--no-align", "--set", "ON_ERROR_STOP=1", "--file", file], {
         cwd: work, shell: false, stdio: ["ignore", "pipe", "pipe"],
         env: Object.fromEntries(["PATH", "HOME", "TMPDIR", "SYSTEMROOT"].filter((key) => process.env[key]).map((key) => [key, process.env[key]])),
       });
@@ -137,11 +157,11 @@ async function query(target, sql) {
       const timer = setTimeout(() => child.kill("SIGKILL"), 45000);
       child.stdout.on("data", (chunk) => { stdout += chunk; if (stdout.length > 2_000_000) { exceeded = true; child.kill("SIGKILL"); } });
       child.stderr.on("data", (chunk) => { stderr += chunk; if (stderr.length > 2_000_000) { exceeded = true; child.kill("SIGKILL"); } });
-      child.on("error", () => { clearTimeout(timer); reject(new Error("The installed Supabase CLI could not be started.")); });
+      child.on("error", () => { clearTimeout(timer); reject(new Blocked("The psql client could not be started. Install/enable the PostgreSQL client separately; no database proof was accepted.")); });
       child.on("close", (code, signal) => {
         clearTimeout(timer);
-        if (code !== 0 || exceeded) reject(new Error(redact(`Database CLI failed${signal ? ` (${signal})` : ""}: ${stderr.slice(-6000) || "No SQL proof returned."}`, target.url)));
-        else resolveQuery(stdout);
+        try { resolveQuery(parsePsqlExecution({ code, signal, exceeded, stdout, stderr }, target.url)); }
+        catch (error) { reject(error); }
       });
     });
   } finally { await rm(work, { recursive: true, force: true }); }
@@ -159,7 +179,7 @@ async function applyMigrations(target, missing) {
     const version = name.slice(0, 14);
     body += `do $cj_migration$ begin if exists(select 1 from supabase_migrations.schema_migrations where version=${literal(version)}) then raise exception 'Migration ledger changed; repeat preflight'; end if; end $cj_migration$;\n${sql}\ninsert into supabase_migrations.schema_migrations(version,name) values(${literal(version)},${literal(name.slice(15, -4))});\n`;
   }
-  body += "commit; select jsonb_build_object('kind','migration_apply','committed',true) as cj_report;";
+  body += "commit; select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','migration_apply','committed',true) as cj_report;";
   const result = readReport(await query(target, body), "migration_apply");
   if (result.committed !== true) throw new Error("Migration commit was not confirmed.");
 }
@@ -174,7 +194,7 @@ async function rollbackAcceptance(target) {
 async function concurrencyAcceptance(target) {
   const ids = Object.fromEntries(["run", "partner", "client", "owner", "approval", "work", "connection", "request"].map((key) => [key, randomUUID()]));
   const prefix = `cj-acceptance-${ids.run}`;
-  const cleanup = `begin; set local lock_timeout='5s'; delete from public.partners where id='${ids.partner}' and slug='${prefix}'; delete from auth.users where id='${ids.owner}' and email='${prefix}@synthetic.invalid'; commit; select jsonb_build_object('kind','cleanup','remaining',(select count(*) from public.partners where id='${ids.partner}')+(select count(*) from auth.users where id='${ids.owner}')) as cj_report;`;
+  const cleanup = `begin; set local lock_timeout='5s'; delete from public.partners where id='${ids.partner}' and slug='${prefix}'; delete from auth.users where id='${ids.owner}' and email='${prefix}@synthetic.invalid'; commit; select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','cleanup','remaining',(select count(*) from public.partners where id='${ids.partner}')+(select count(*) from auth.users where id='${ids.owner}')) as cj_report;`;
   let testError;
   try {
     const fixture = readReport(await query(target, `begin; ${isolationAssertion(target.database)}
@@ -189,19 +209,19 @@ insert into public.agent_work_items(id,partner_id,client_id,kind,agent_key,title
 insert into public.integration_connections(id,partner_id,client_id,provider_id,display_name,status,runtime_mode,credential_status,config) select '${ids.connection}','${ids.partner}','${ids.client}',id,'Synthetic acceptance intake','connected','dry_run','configured','{"workspace_view_only":true}' from public.integration_providers where provider_key='generic_inbound_webhook';
 set local role service_role;
 select public.persist_owner_import_record('${ids.partner}','${ids.client}','${ids.connection}','lead','${prefix}',null,'{"provider":"generic_inbound_webhook","status":"new","title":"Synthetic inquiry","name":"Synthetic acceptance customer"}','{}',now(),now(),now(),'${prefix}');
-commit; select jsonb_build_object('kind','fixture','recordId',id,'updatedAt',updated_at) as cj_report from public.integration_canonical_records where connection_id='${ids.connection}' and external_object_id='${prefix}';`), "fixture");
+commit; select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','fixture','recordId',id,'updatedAt',updated_at) as cj_report from public.integration_canonical_records where connection_id='${ids.connection}' and external_object_id='${prefix}';`), "fixture");
     if (!/^[0-9a-f-]{36}$/i.test(fixture.recordId) || !Number.isFinite(Date.parse(fixture.updatedAt))) throw new Error("Committed concurrency fixture could not be verified.");
     const pair = async (sqlFor) => Promise.all(["a", "b"].map(async (worker) => readReport(await query(target, sqlFor(worker)), "worker")));
-    const resolutions = await pair((worker) => `begin; create temp table cj_worker_result(won boolean); grant insert,select on cj_worker_result to authenticated; set local role authenticated; select set_config('request.jwt.claim.role','authenticated',true); select set_config('request.jwt.claim.sub','${ids.owner}',true); with resolved as(update public.approval_items set status='approved',resolved_by='${ids.owner}',resolution_note='${worker}' where id='${ids.approval}' and status='pending' returning id) insert into cj_worker_result select count(*)=1 from resolved; select pg_sleep(0.2); commit; select jsonb_build_object('kind','worker','won',(select won from cj_worker_result)) as cj_report;`);
+    const resolutions = await pair((worker) => `begin; create temp table cj_worker_result(won boolean); grant insert,select on cj_worker_result to authenticated; set local role authenticated; select set_config('request.jwt.claim.role','authenticated',true); select set_config('request.jwt.claim.sub','${ids.owner}',true); with resolved as(update public.approval_items set status='approved',resolved_by='${ids.owner}',resolution_note='${worker}' where id='${ids.approval}' and status='pending' returning id) insert into cj_worker_result select count(*)=1 from resolved; select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','worker','won',(select won from cj_worker_result)) as cj_report;`);
     if (resolutions.filter((result) => result.won === true).length !== 1) throw new Error("Concurrent resolution did not have exactly one winner.");
-    const claims = await pair((worker) => `begin; create temp table cj_worker_result(won boolean); grant insert,select on cj_worker_result to service_role; set local role service_role; with claimed as(update public.action_jobs set status='processing',claim_token='${worker === "a" ? ids.request : ids.run}',claimed_at=now() where approval_id='${ids.approval}' and status='pending' returning id) insert into cj_worker_result select count(*)=1 from claimed; select pg_sleep(0.2); commit; select jsonb_build_object('kind','worker','won',(select won from cj_worker_result)) as cj_report;`);
+    const claims = await pair((worker) => `begin; create temp table cj_worker_result(won boolean); grant insert,select on cj_worker_result to service_role; set local role service_role; with claimed as(update public.action_jobs set status='processing',claim_token='${worker === "a" ? ids.request : ids.run}',claimed_at=now() where approval_id='${ids.approval}' and status='pending' returning id) insert into cj_worker_result select count(*)=1 from claimed; select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','worker','won',(select won from cj_worker_result)) as cj_report;`);
     if (claims.filter((result) => result.won === true).length !== 1) throw new Error("Concurrent action claim did not have exactly one winner.");
-    const assignments = await pair(() => `begin; create temp table cj_worker_result(won boolean); grant insert,select on cj_worker_result to service_role; set local role service_role; insert into cj_worker_result select count(*)=1 from public.claim_agent_work('${ids.partner}','${ids.client}'); select pg_sleep(0.2); commit; select jsonb_build_object('kind','worker','won',(select won from cj_worker_result)) as cj_report;`);
+    const assignments = await pair(() => `begin; create temp table cj_worker_result(won boolean); grant insert,select on cj_worker_result to service_role; set local role service_role; insert into cj_worker_result select count(*)=1 from public.claim_agent_work('${ids.partner}','${ids.client}'); select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','worker','won',(select won from cj_worker_result)) as cj_report;`);
     if (assignments.filter((result) => result.won === true).length !== 1) throw new Error("Concurrent leased assignment claim did not have exactly one winner.");
     const command = literal(JSON.stringify({ action: "adopt_intake", key: ids.request, connectionId: ids.connection, recordId: fixture.recordId, externalId: prefix, expectedUpdatedAt: fixture.updatedAt, contact: { mode: "create" } }));
-    const adoptions = await pair(() => `begin; create temp table cj_worker_result(result jsonb); grant insert,select on cj_worker_result to service_role; set local role service_role; insert into cj_worker_result select public.adopt_owner_intake_record('${ids.partner}','${ids.client}','${ids.owner}',${command}::jsonb); select pg_sleep(0.2); commit; select jsonb_build_object('kind','worker','receipt',(select result->>'id' from cj_worker_result),'replayed',(select result->'replayed' from cj_worker_result)) as cj_report;`);
+    const adoptions = await pair(() => `begin; create temp table cj_worker_result(result jsonb); grant insert,select on cj_worker_result to service_role; set local role service_role; insert into cj_worker_result select public.adopt_owner_intake_record('${ids.partner}','${ids.client}','${ids.owner}',${command}::jsonb); select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','worker','receipt',(select result->>'id' from cj_worker_result),'replayed',(select result->'replayed' from cj_worker_result)) as cj_report;`);
     if (!adoptions[0].receipt || adoptions[0].receipt !== adoptions[1].receipt || adoptions.filter((result) => result.replayed === true).length !== 1) throw new Error("Concurrent intake adoption did not replay one durable receipt.");
-    const counts = readReport(await query(target, `select jsonb_build_object('kind','counts','outbox',(select count(*) from public.action_jobs where approval_id='${ids.approval}'),'leads',(select count(*) from public.crm_leads where partner_id='${ids.partner}' and client_id='${ids.client}'),'receipts',(select count(*) from public.business_owner_commands where client_id='${ids.client}' and request_key='${ids.request}')) as cj_report;`), "counts");
+    const counts = readReport(await query(target, `select '__CUSTOMER_JOURNEY_REPORT__' || jsonb_build_object('kind','counts','outbox',(select count(*) from public.action_jobs where approval_id='${ids.approval}'),'leads',(select count(*) from public.crm_leads where partner_id='${ids.partner}' and client_id='${ids.client}'),'receipts',(select count(*) from public.business_owner_commands where client_id='${ids.client}' and request_key='${ids.request}')) as cj_report;`), "counts");
     if (counts.outbox !== 1 || counts.leads !== 1 || counts.receipts !== 1) throw new Error("Concurrent operations created duplicate durable rows.");
   } catch (error) { testError = error; }
   finally {

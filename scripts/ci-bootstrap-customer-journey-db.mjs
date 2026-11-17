@@ -57,6 +57,7 @@ async function toolchain() {
     readFile(join(root, "package-lock.json"), "utf8"), readFile(join(root, "node_modules/supabase/package.json"), "utf8"), readFile(join(root, "supabase/config.toml"), "utf8"),
   ]);
   assertToolchain(JSON.parse(lock).packages["node_modules/supabase"].version, JSON.parse(installed).version, run(cli, ["--version"]).toString(), config);
+  run("psql", ["--version"]); // File execution is required by the real transaction/concurrency harness.
 }
 export async function main(args = process.argv.slice(2), env = process.env) {
   if (args.length && (args.length !== 1 || !["--check-toolchain", "--start"].includes(args[0]))) throw new Error("Use no arguments, --check-toolchain, or --start.");
@@ -64,7 +65,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await toolchain();
   if (args[0] === "--check-toolchain") { console.log(`Pinned Supabase CLI ${PINNED_CLI_VERSION} and config agree.`); return; }
   if (args[0] === "--start") {
-    try { run(cli, ["start"]); }
+    try { run(cli, ["start"], { timeout: 10 * 60_000 }); }
     catch (error) {
       const diagnostic = `${error.stdout?.toString() ?? ""}\n${error.stderr?.toString() ?? error.message}`;
       throw new Error(`Pinned Supabase startup failed:\n${sanitizeCiFailure(diagnostic).slice(-18000)}`);

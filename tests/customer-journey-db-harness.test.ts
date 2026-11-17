@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 const harnessUrl = new URL("../scripts/verify-customer-journey-db.mjs", import.meta.url);
-const { validateTarget, parseOptions, redact, parseCliRows, readReport, preflightSql, assertPreflight, migrationPlan, CONFIRMATION, EXPECTED_MIGRATION } = await import(harnessUrl.href);
+const { validateTarget, parseOptions, redact, parseCliRows, parsePsqlRows, parsePsqlExecution, REPORT_PREFIX, readReport, preflightSql, assertPreflight, migrationPlan, CONFIRMATION, EXPECTED_MIGRATION } = await import(harnessUrl.href);
 const bootstrapUrl = new URL("../scripts/ci-bootstrap-customer-journey-db.mjs", import.meta.url);
 const { assertHostedCi, assertToolchain, isolatedUrl, assertBaseline, sanitizeCiFailure, PINNED_CLI_VERSION, ACCEPTANCE_DATABASE, CATALOG_TABLES } = await import(bootstrapUrl.href);
 const configured = (values: Record<string, string> = {}) => ({ ISOLATED_DATABASE_URL: "postgresql://synthetic:secret%40word@127.0.0.1:5432/customer_journey_test", ISOLATED_DATABASE_CONFIRMATION: CONFIRMATION, ...values });
@@ -69,10 +69,24 @@ test("the actual default command blocks before CLI/database access and plan make
   assert.match(plan, /PLAN ONLY.*SQL not executed/);
   assert.doesNotMatch(plan, /\bPASS\b/);
   const source = await readFile(harnessUrl, "utf8");
-  assert.doesNotMatch(source, /spawn\(\s*["'](?:docker|psql|npx)["']/);
+  assert.doesNotMatch(source, /spawn\(\s*["'](?:docker|npx)["']/);
+  assert.match(source, /spawn\("psql", \["--dbname", target\.url, "--no-psqlrc"/);
+  assert.match(source, /ON_ERROR_STOP=1/);
   assert.match(source, /shell: false/);
   assert.match(source, /cwd: work/);
   assert.doesNotMatch(source, /(?:import|require).*dotenv|readFile.*\.env/);
+});
+test("psql parsing accepts only tagged complete JSON reports, preserving strict duplicate checks", () => {
+  const report = { kind: "acceptance", rolledBack: true, remainingFixtures: 0 };
+  const output = `service_role\n{"kind":"acceptance","rolledBack":false}\n${REPORT_PREFIX}${JSON.stringify(report)}\n`;
+  const rows = parsePsqlRows(output);
+  assert.deepEqual(rows, [{ cj_report: report }]);
+  assert.deepEqual(readReport(JSON.stringify(rows), "acceptance"), report);
+  for (const invalid of ["", '{"kind":"acceptance"}', `${REPORT_PREFIX}{broken`, `${REPORT_PREFIX}null`, `${REPORT_PREFIX}{"error":"denied","kind":"acceptance"}`])
+    assert.throws(() => parsePsqlRows(invalid));
+  assert.throws(() => readReport(JSON.stringify(parsePsqlRows(`${output}${REPORT_PREFIX}${JSON.stringify(report)}\n`)), "acceptance"), /missing or duplicated/);
+  for (const patch of [{ code: 3 }, { code: null, signal: "SIGKILL" }, { exceeded: true }])
+    assert.throws(() => parsePsqlExecution({ code: 0, signal: null, exceeded: false, stdout: output, stderr: "ERROR: synthetic SQL assertion failed", ...patch }, configured().ISOLATED_DATABASE_URL), /Database script failed/);
 });
 test("CI bootstrap is restricted to hosted runners and rejects toolchain/config drift", () => {
   assert.throws(() => assertHostedCi({}), /No tool or database was contacted/);
@@ -95,7 +109,7 @@ test("bootstrap derives only a named disposable loopback target and copies no te
 });
 test("actual CI bootstrap command refuses local execution before invoking Docker", async () => {
   let failure: { status?: number; stderr?: Buffer | string } | undefined;
-  try { execFileSync(process.execPath, [fileURLToPath(bootstrapUrl)], { env: { PATH: process.env.PATH }, stdio: ["ignore", "pipe", "pipe"] }); }
+  try { execFileSync(process.execPath, [fileURLToPath(bootstrapUrl)], { env: { PATH: process.env.PATH, NODE_ENV: "test" }, stdio: ["ignore", "pipe", "pipe"] }); }
   catch (error) { failure = error as typeof failure; }
   assert.equal(failure?.status, 1); assert.match(String(failure?.stderr), /restricted to a disposable GitHub-hosted/);
   const source = await readFile(bootstrapUrl, "utf8");

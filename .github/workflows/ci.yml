@@ -113,7 +113,7 @@ jobs:
       matrix:
         include:
           - platform: macos
-            runner: macos-14
+            runner: macos-15
             build: desktop:dist:mac
           - platform: windows
             runner: windows-latest
