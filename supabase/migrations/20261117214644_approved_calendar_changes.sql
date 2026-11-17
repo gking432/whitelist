@@ -233,7 +233,7 @@ begin
  if provider='northstar_internal' then
   if p_receipt->>'http_status' is distinct from '0' or p_receipt->>'event_etag' is not null or (p_receipt->>'event_updated_at')::timestamptz is null then return false; end if;
  elsif provider in ('google_workspace','google_calendar') then
-  if p_receipt->>'http_status' is distinct from case when op='cancel' then '204' else '200' end then return false; end if;
+  if p_receipt->>'http_status' is distinct from (case when op='cancel' then '204' else '200' end) then return false; end if;
   if op='reschedule' and (coalesce(p_receipt->>'event_etag','') !~ '^"[^"\r\n]+"$' or p_receipt->>'event_etag' is not distinct from p_payload->>'source_etag' or (p_receipt->>'event_updated_at')::timestamptz is null) then return false; end if;
  else return false;
  end if;
