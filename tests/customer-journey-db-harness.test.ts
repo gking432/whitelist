@@ -128,3 +128,11 @@ test("startup failure diagnostics retain SQL errors while masking generated keys
   assert.match(output, /ERROR: relation public\.missing does not exist/);
   for (const secret of [jwt, "temporary-ephemeral-secret", "sb_secret_temporary_123", "postgresql://postgres:secret"]) assert.equal(output.includes(secret), false);
 });
+test("live SQL fixtures follow owner acceptance without disabling the launch guard", async () => {
+  const source = await readFile(new URL("../scripts/sql/customer-journey-acceptance.sql", import.meta.url), "utf8");
+  assert.match(source, /'primary_crm','sandbox'/);
+  assert.ok(source.indexOf("insert into public.memberships") < source.indexOf("insert into public.client_beta_acceptances"));
+  assert.ok(source.indexOf("insert into public.client_beta_acceptances") < source.indexOf("update public.client_businesses set default_runtime_mode='live' where id in"));
+  assert.match(source, /Live fixture mode bypassed the required business-owner acceptance/);
+  assert.doesNotMatch(source, /disable\s+trigger|session_replication_role|is_test_account\s*=\s*true/i);
+});

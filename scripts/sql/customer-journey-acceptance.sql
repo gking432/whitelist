@@ -6,19 +6,39 @@ set local statement_timeout='35s';
 set local lock_timeout='5s';
 -- __ISOLATION_ASSERTION__
 create temporary table cj_fixture(key text primary key,id uuid not null default extensions.gen_random_uuid());
-insert into cj_fixture(key) values ('partner-a'),('partner-b'),('client-a'),('client-b'),('owner-a'),('owner-b'),('connection'),('adoption-key'),('approval'),('booking-approval');
+insert into cj_fixture(key) values ('partner-a'),('partner-b'),('package-a'),('package-b'),('client-a'),('client-b'),('owner-a'),('owner-b'),('connection'),('adoption-key'),('approval'),('booking-approval');
 grant select,insert,update on cj_fixture to service_role,authenticated,anon;
 insert into auth.users(id,email) select id,'cj-acceptance-__RUN_ID__-'||key||'@synthetic.invalid' from cj_fixture where key in ('owner-a','owner-b');
 insert into public.profiles(id,email) select id,'cj-acceptance-__RUN_ID__-'||key||'@synthetic.invalid' from cj_fixture where key in ('owner-a','owner-b') on conflict(id) do nothing;
 insert into public.partners(id,name,slug) select id,'Synthetic customer journey acceptance '||key,'cj-acceptance-__RUN_ID__-'||key from cj_fixture where key in ('partner-a','partner-b');
-insert into public.client_businesses(id,partner_id,name,slug,status,client_portal_enabled,crm_operating_mode,default_runtime_mode,native_lifecycle_enabled_at)
+insert into public.partner_packages(id,partner_id,name)
+ select id,(select id from cj_fixture where key=case when f.key='package-a' then 'partner-a' else 'partner-b' end),
+ 'Synthetic customer journey acceptance '||key from cj_fixture f where key in ('package-a','package-b');
+insert into public.client_businesses(id,partner_id,package_id,name,slug,status,client_portal_enabled,crm_operating_mode,default_runtime_mode,native_lifecycle_enabled_at)
  select id,(select id from cj_fixture where key=case when f.key='client-a' then 'partner-a' else 'partner-b' end),
- 'Synthetic customer journey acceptance '||key,'cj-acceptance-__RUN_ID__-'||key,'active',true,'primary_crm','live',now()-interval '1 minute'
+ (select id from cj_fixture where key=case when f.key='client-a' then 'package-a' else 'package-b' end),
+ 'Synthetic customer journey acceptance '||key,'cj-acceptance-__RUN_ID__-'||key,'active',true,'primary_crm','sandbox',now()-interval '1 minute'
  from cj_fixture f where key in ('client-a','client-b');
 insert into public.memberships(user_id,partner_id,client_id,role)
  select id,(select id from cj_fixture where key=case when f.key='owner-a' then 'partner-a' else 'partner-b' end),
  (select id from cj_fixture where key=case when f.key='owner-a' then 'client-a' else 'client-b' end),'client_owner'
  from cj_fixture f where key in ('owner-a','owner-b');
+-- Use the actual owner/package acceptance gate. Synthetic business fixtures
+-- follow the same supervised-live precondition; no test-account exemption.
+do $cj_live_acceptance$
+declare denied boolean:=false;
+begin
+ begin update public.client_businesses set default_runtime_mode='live' where id=(select id from cj_fixture where key='client-a');
+ exception when raise_exception then denied:=true; end;
+ if not denied then raise exception 'Live fixture mode bypassed the required business-owner acceptance'; end if;
+end $cj_live_acceptance$;
+insert into public.client_beta_acceptances(client_id,partner_id,package_id,accepted_by,provider_test_notes,fallback_contact)
+ select id,(select id from cj_fixture where key=case when f.key='client-a' then 'partner-a' else 'partner-b' end),
+ (select id from cj_fixture where key=case when f.key='client-a' then 'package-a' else 'package-b' end),
+ (select id from cj_fixture where key=case when f.key='client-a' then 'owner-a' else 'owner-b' end),
+ 'Synthetic isolated SQL acceptance only. Internal calendar fixtures, no provider credentials, external delivery, or live-provider proof.',
+ 'nobody@synthetic.invalid' from cj_fixture f where key in ('client-a','client-b');
+update public.client_businesses set default_runtime_mode='live' where id in (select id from cj_fixture where key in ('client-a','client-b'));
 insert into public.crm_contacts(partner_id,client_id,first_name,source)
  values((select id from cj_fixture where key='partner-b'),(select id from cj_fixture where key='client-b'),'Synthetic other-business customer','cj_acceptance');
 insert into public.business_workspace_profiles(partner_id,client_id,profile)
@@ -361,5 +381,5 @@ reset role;
 rollback;
 select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','acceptance','rolledBack',true,
  'remainingFixtures',(select count(*) from public.partners where slug like 'cj-acceptance-__RUN_ID__-%')+(select count(*) from auth.users where email like 'cj-acceptance-__RUN_ID__-%@synthetic.invalid'),
- 'checks',jsonb_build_array('context_authority','canonical_import_dedupe','adoption_replay_identity_and_cas','actual_rpc_role_denial','cross_business_rls','privileged_execute_grants','approval_outbox_resolution','outbox_claim_cas_and_assignment_lease','internal_booking_replay','overlap_preserves_old_slot',
+ 'checks',jsonb_build_array('owner_accepted_live_fixture','context_authority','canonical_import_dedupe','adoption_replay_identity_and_cas','actual_rpc_role_denial','cross_business_rls','privileged_execute_grants','approval_outbox_resolution','outbox_claim_cas_and_assignment_lease','internal_booking_replay','overlap_preserves_old_slot',
  'actor_bound_offer_and_change_approval','internal_reschedule_atomic_receipt_and_restart','internal_cancellation_stops_followups','late_overlap_preserves_old_appointment','invalid_completion_receipt_creates_one_review','received_instruction_immutability_and_identity_linking')) as cj_report;
