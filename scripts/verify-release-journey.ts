@@ -427,6 +427,7 @@ async function main() {
     assert.ifError(chatConnectionError);
     assert.ok(chatConnection);
 
+    const twilioAccountSid = `AC${"1".repeat(32)}`;
     const twilioAuthToken = `release-${randomUUID()}`;
     const { data: twilioConnection, error: twilioConnectionError } = await admin
       .from("integration_connections")
@@ -447,7 +448,7 @@ async function main() {
     assert.ifError(twilioConnectionError);
     assert.ok(twilioConnection);
     const encryptedTwilio = encryptProviderCredentials({
-      accountSid: `AC${"1".repeat(32)}`,
+      accountSid: twilioAccountSid,
       authToken: twilioAuthToken,
       fromNumber: "+13125550100",
     });
@@ -555,12 +556,39 @@ async function main() {
     assert.ok(emailResult.runs_started >= 2);
 
     const smsParams = {
+      AccountSid: twilioAccountSid,
       MessageSid: `SM${runKey.padEnd(32, "0")}`,
       From: "+13125550203",
       To: "+13125550100",
       Body: "I need an estimate for electrical panel service.",
     };
     const twilioWebhookUrl = `${appUrl}/api/integrations/inbound/twilio/${twilioConnection.id}`;
+    const wrongAccountParams = {
+      ...smsParams,
+      AccountSid: `AC${"2".repeat(32)}`,
+    };
+    const wrongAccountResponse = await fetch(twilioWebhookUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-twilio-signature": computeTwilioSignature(
+          twilioAuthToken,
+          twilioWebhookUrl,
+          wrongAccountParams,
+        ),
+      },
+      body: new URLSearchParams(wrongAccountParams),
+    });
+    assert.equal(wrongAccountResponse.status, 403, await wrongAccountResponse.text());
+    const rejectedSms = await admin.from("integration_events").select("id", { count: "exact", head: true })
+      .eq("partner_id", ids.partner).eq("client_id", ids.client).eq("connection_id", twilioConnection.id)
+      .eq("error_code", "account_mismatch").eq("status", "rejected");
+    assert.ifError(rejectedSms.error);
+    assert.equal(rejectedSms.count, 1, "The signed wrong-account SMS must be rejected by its account binding.");
+    const rejectedSmsJobs = await admin.from("inbound_event_jobs").select("id", { count: "exact", head: true })
+      .eq("partner_id", ids.partner).eq("client_id", ids.client).eq("connection_id", twilioConnection.id);
+    assert.ifError(rejectedSmsJobs.error);
+    assert.equal(rejectedSmsJobs.count, 0, "A rejected signed SMS must not enqueue work or consume the MessageSid.");
     const smsResponse = await fetch(twilioWebhookUrl, {
       method: "POST",
       headers: {
