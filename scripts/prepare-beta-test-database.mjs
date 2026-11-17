@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 
-// Isolated LOCAL schema clone. Never loads an environment file or copies rows.
+// Isolated LOCAL schema clone. Never loads an environment file or copies
+// auth/business rows. Static provider catalog rows are part of the baseline.
 const container = "supabase_db_partner-platform";
 const database = "beta_security_test";
 const run = (args, input) => execFileSync("docker", ["exec", "-i", container, ...args], {
@@ -17,6 +18,10 @@ try {
   run(["psql", "-U", "supabase_admin", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", `CREATE DATABASE ${database}`]);
   const schema = run(["pg_dump", "-U", "supabase_admin", "-d", "postgres", "--schema-only"]);
   run(["psql", "-U", "supabase_admin", "-d", database, "-v", "ON_ERROR_STOP=1"], schema);
+  // Real functions such as finish_embedded_connection resolve their provider
+  // from the migration-installed catalog. Schema-only cloning omits those rows.
+  const providers = run(["pg_dump", "-U", "supabase_admin", "-d", "postgres", "--data-only", "--table=public.integration_providers"]);
+  run(["psql", "-U", "supabase_admin", "-d", database, "-v", "ON_ERROR_STOP=1"], providers);
   for (const file of readdirSync("supabase/migrations").filter((name) => name.startsWith("20260904") && name.endsWith(".sql")).sort()) {
     if (applied.has(file.split("_")[0])) continue;
     run(["psql", "-U", "supabase_admin", "-d", database, "-v", "ON_ERROR_STOP=1"], `begin;\n${readFileSync(`supabase/migrations/${file}`, "utf8")}\ncommit;`);

@@ -136,3 +136,10 @@ test("live SQL fixtures follow owner acceptance without disabling the launch gua
   assert.match(source, /Live fixture mode bypassed the required business-owner acceptance/);
   assert.doesNotMatch(source, /disable\s+trigger|session_replication_role|is_test_account\s*=\s*true/i);
 });
+test("the broader security schema clone includes only its real static provider catalog", async () => {
+  const source = await readFile(new URL("../scripts/prepare-beta-test-database.mjs", import.meta.url), "utf8");
+  assert.match(source, /const database = "beta_security_test"/);
+  assert.match(source, /"--data-only", "--table=public\.integration_providers"/);
+  assert.match(source, /"ON_ERROR_STOP=1"\], providers/);
+  assert.doesNotMatch(source, /--table=(?:auth\.|public\.(?:partners|client_businesses|profiles|memberships))/);
+});
