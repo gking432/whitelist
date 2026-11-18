@@ -164,30 +164,48 @@ export function observedOwnerSessionIdentity(value) {
 export function observeOwnerLoginSession(page, supabaseUrl, { expectedUserId, previousSessionId, timeoutMs = 10000 } = {}) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10000) throw new Error("Use a bounded current-login observation.");
   const requests = new WeakSet(); let active = true, captured = false, resolveToken;
+  const counts = { user_get: 0, token_post: 0, authorization_missing: 0, header_read_failed: 0, token_response_200: 0, token_body_failed: 0, malformed_token: 0, wrong_subject: 0, prior_session: 0 };
   const available = new Promise((resolve) => { resolveToken = resolve; });
   const capture = (value) => {
     if (!active || captured) return;
     const identity = observedOwnerSessionIdentity(value);
-    if (!identity || expectedUserId && identity.userId !== expectedUserId || previousSessionId && identity.sessionId === previousSessionId) return;
+    if (!identity) { counts.malformed_token++; return; }
+    if (expectedUserId && identity.userId !== expectedUserId) { counts.wrong_subject++; return; }
+    if (previousSessionId && identity.sessionId === previousSessionId) { counts.prior_session++; return; }
     captured = true; resolveToken(value);
   };
   const onRequest = (request) => {
     try {
       const url = new URL(request.url()); if (url.origin !== supabaseUrl) return;
-      if (url.pathname === "/auth/v1/user" && request.method() === "GET") { requests.add(request); capture((request.headers().authorization || "").replace(/^Bearer /i, "")); }
-      else if (url.pathname === "/auth/v1/token" && request.method() === "POST") requests.add(request);
+      if (url.pathname === "/auth/v1/user" && request.method() === "GET") {
+        requests.add(request); counts.user_get++;
+        // headers() is provisional and may omit security-related headers. Read
+        // only Authorization from this exact observed request, never cookies.
+        void withOwnerBrowserDeadline("observe current-login Authorization header", () => request.headerValue("authorization"), 5000).then((authorization) => {
+          if (!active || !requests.has(request)) return;
+          if (!authorization) { counts.authorization_missing++; return; }
+          capture(authorization.replace(/^Bearer /i, ""));
+        }).catch(() => { if (active) counts.header_read_failed++; });
+      } else if (url.pathname === "/auth/v1/token" && request.method() === "POST") { requests.add(request); counts.token_post++; }
     } catch { /* Only actual GoTrue requests initiated during this login count. */ }
   };
   const onResponse = (response) => {
     if (!active || !requests.has(response.request())) return;
     try {
       const url = new URL(response.url()); if (url.origin !== supabaseUrl || url.pathname !== "/auth/v1/token" || response.status() !== 200) return;
-      void withOwnerBrowserDeadline("observe current-login token response", () => response.json(), 5000).then((data) => { if (active) capture(data?.access_token); }).catch(() => {});
+      counts.token_response_200++;
+      void withOwnerBrowserDeadline("observe current-login token response", () => response.json(), 5000).then((data) => { if (active) capture(data?.access_token); }).catch(() => { if (active) counts.token_body_failed++; });
     } catch { /* A response from a closed prior document is not session proof. */ }
   };
   page.on("request", onRequest); page.on("response", onResponse);
   const stop = () => { active = false; page.off("request", onRequest); page.off("response", onResponse); };
-  return { stop, async wait() { try { return await withOwnerBrowserDeadline("capture an eligible token for this login", () => available, timeoutMs); } finally { stop(); } } };
+  return { stop, async wait() {
+    try { return await withOwnerBrowserDeadline("capture an eligible token for this login", () => available, timeoutMs); }
+    catch (error) {
+      const categories = `GET /auth/v1/user=${counts.user_get}; POST /auth/v1/token=${counts.token_post}; ${Object.entries(counts).filter(([key]) => !["user_get", "token_post"].includes(key)).map(([key, value]) => `${key}=${value}`).join("; ")}`;
+      throw new Error(`${error.message} Observer categories: ${categories}`);
+    } finally { stop(); }
+  } };
 }
 export async function verifyObservedOwnerSession(target, token, expectedUserId, previousToken, request = fetch) {
   const identity = observedOwnerSessionIdentity(token), previous = previousToken ? observedOwnerSessionIdentity(previousToken) : null;

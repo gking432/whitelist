@@ -209,7 +209,7 @@ function sessionToken(userId: string, sessionId: string) {
   return `${Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")}.${Buffer.from(JSON.stringify({ role: "authenticated", sub: userId, session_id: sessionId })).toString("base64url")}.synthetic-signature`;
 }
 function sessionRequest(path: string, token?: string): ObservedOwnerSessionRequest {
-  return { url: () => `http://127.0.0.1:54321${path}`, method: () => path === "/auth/v1/user" ? "GET" : "POST", headers: (): Record<string, string> => token ? { authorization: `Bearer ${token}` } : {} };
+  return { url: () => `http://127.0.0.1:54321${path}`, method: () => path === "/auth/v1/user" ? "GET" : "POST", headers: (): Record<string, string> => token ? { authorization: `Bearer ${token}` } : {}, headerValue: async (name) => name.toLowerCase() === "authorization" && token ? `Bearer ${token}` : null };
 }
 test("a delayed prior-login response cannot overwrite a fresh login-scoped token capture", async () => {
   const events = new EventEmitter(), old = sessionToken(sessionUser, oldSessionId), fresh = sessionToken(sessionUser, freshSessionId);
@@ -261,4 +261,34 @@ test("fresh-session proof requires a live RPC actor matching the captured subjec
   await assert.rejects(verifyObservedOwnerSession(target, fresh, sessionUser, old, async () => Response.json(otherSessionUser)), /live session actor/);
   await assert.rejects(verifyObservedOwnerSession(target, fresh, sessionUser, old, async () => new Response(null, { status: 403 })), /actual current GoTrue session/);
   assert.equal(observedOwnerSessionIdentity("invalid"), null);
+});
+test("current-login capture reads the actual Authorization header when provisional headers are empty", async () => {
+  const events = new EventEmitter(), fresh = sessionToken(sessionUser, freshSessionId), names: string[] = [];
+  const observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId });
+  events.emit("request", { ...sessionRequest("/auth/v1/user"), headers: () => ({}), headerValue: async (name: string) => { names.push(name); return `Bearer ${fresh}`; } });
+  assert.equal(await observation.wait(), fresh); assert.deepEqual(names, ["authorization"]); assert.equal(events.listenerCount("request"), 0);
+});
+test("a late actual-header lookup after disposal cannot capture into either login", async () => {
+  const events = new EventEmitter(), fresh = sessionToken(sessionUser, freshSessionId);
+  let finishHeader: (value: string) => void = () => {};
+  const header = new Promise<string>((resolve) => { finishHeader = resolve; });
+  const prior = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { timeoutMs: 10 });
+  events.emit("request", { ...sessionRequest("/auth/v1/user"), headers: () => ({}), headerValue: () => header }); prior.stop();
+  const absent = assert.rejects(prior.wait(), /capture an eligible token/);
+  const current = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId });
+  events.emit("request", sessionRequest("/auth/v1/user", fresh)); finishHeader(`Bearer ${sessionToken(sessionUser, oldSessionId)}`);
+  assert.equal(await current.wait(), fresh); await absent;
+  assert.equal(events.listenerCount("request"), 0); assert.equal(events.listenerCount("response"), 0);
+});
+test("missing current-login evidence reports only categorical counts, never identity or token values", async () => {
+  const events = new EventEmitter(), old = sessionToken(sessionUser, oldSessionId), wrong = sessionToken(otherSessionUser, freshSessionId);
+  const observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId, timeoutMs: 10 });
+  for (const token of [old, wrong, "invalid-token", undefined]) events.emit("request", sessionRequest("/auth/v1/user", token));
+  await assert.rejects(observation.wait(), (error) => {
+    assert.ok(error instanceof Error); const message = error.message;
+    for (const category of ["GET /auth/v1/user=4", "authorization_missing=1", "malformed_token=1", "wrong_subject=1", "prior_session=1"]) assert.ok(message.includes(category));
+    for (const sensitive of [old, wrong, sessionUser, otherSessionUser, oldSessionId, freshSessionId]) assert.equal(message.includes(sensitive), false);
+    return true;
+  });
+  assert.equal(events.listenerCount("request"), 0);
 });

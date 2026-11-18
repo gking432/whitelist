@@ -20,7 +20,7 @@ export function mailpitMailboxEntries(response: unknown, email: string): { id: s
 export function assertMailpitContainer(inspection: unknown, mailboxUrl: string): void;
 export function cleanupMailbox(target: { inbucketUrl: string }, email: string, request?: typeof fetch): Promise<void>;
 export type ObservedOwnerSessionIdentity = { userId: string; sessionId: string };
-export type ObservedOwnerSessionRequest = { url(): string; method(): string; headers(): Record<string, string> };
+export type ObservedOwnerSessionRequest = { url(): string; method(): string; headers(): Record<string, string>; headerValue(name: string): Promise<string | null> };
 export type ObservedOwnerSessionResponse = { url(): string; status(): number; request(): ObservedOwnerSessionRequest; json(): Promise<unknown> };
 export function observedOwnerSessionIdentity(value: unknown): ObservedOwnerSessionIdentity | null;
 export function observeOwnerLoginSession(page: {
