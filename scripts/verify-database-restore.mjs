@@ -148,6 +148,11 @@ const schemaGrantsSql = `select coalesce(string_agg(grant_row,E'\n' order by gra
  where n.nspname in ('public','owner_onboarding') and (a.grantee=0 or r.rolname in ('anon','authenticated','service_role'))
 ) grants`;
 
+const functionOwnersSql = `select coalesce(string_agg(owner_row,E'\n' order by owner_row),'') from (
+ select n.nspname||'.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||'):'||pg_get_userbyid(p.proowner)||':'||p.prosecdef::text as owner_row
+ from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','owner_onboarding')
+) owners`;
+
 function sourcePostgresImage() {
   const configured = process.env.RESTORE_POSTGRES_IMAGE?.trim();
   if (configured) return configured;
@@ -206,6 +211,7 @@ try {
   let sourcePrivateFunctionCount;
   let sourceFunctionGrants;
   let sourceSchemaGrants;
+  let sourceFunctionOwners;
   let authUsers;
   try {
     console.log(`Creating application-data backup from ${sourceContainer}...`);
@@ -218,7 +224,6 @@ try {
       "--format=custom",
       "--schema=public",
       "--schema=owner_onboarding",
-      "--no-owner",
       `--snapshot=${sourceSnapshot.snapshotId}`,
     ], { encoding: null });
     writeFileSync(dumpPath, dump);
@@ -245,6 +250,7 @@ try {
     sourcePrivateFunctionCount = await sourceSnapshot.scalar("select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='owner_onboarding'");
     sourceFunctionGrants = await sourceSnapshot.scalar(functionGrantsSql);
     sourceSchemaGrants = await sourceSnapshot.scalar(schemaGrantsSql);
+    sourceFunctionOwners = await sourceSnapshot.scalar(functionOwnersSql);
 
     // Public profile and membership rows reference auth.users. A disposable
     // drill only needs stable identities; managed Supabase restores the complete
@@ -288,6 +294,12 @@ try {
     postgresImage,
   ]);
   waitForDatabase();
+  // The same pinned Supabase image already provides this cluster restore role.
+  // Do not elevate postgres or any application role to restore default ACLs.
+  const restoreIdentity = dockerExec(targetContainer, ["psql", "-U", "supabase_admin", "-d", "postgres", "-Atc",
+    "select current_user||':'||rolsuper::text||':'||rolcanlogin::text from pg_roles where rolname=current_user"]);
+  assertEqual("existing cluster restore identity", "supabase_admin:true:true", restoreIdentity.trim());
+
 
   run("docker", ["cp", dumpPath, `${targetContainer}:/tmp/public.dump`]);
   run("docker", ["cp", authUsersPath, `${targetContainer}:/tmp/auth-users.sql`]);
@@ -321,12 +333,11 @@ try {
     dockerExec(targetContainer, [
       "pg_restore",
       "-U",
-      "postgres",
+      "supabase_admin",
       "-d",
       "postgres",
       "--section",
       section,
-      "--no-owner",
       "--exit-on-error",
       "/tmp/public.dump",
     ]);
@@ -362,6 +373,7 @@ try {
     query(targetContainer, "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='owner_onboarding'"));
   assertEqual("application API function execution grants", sourceFunctionGrants, query(targetContainer, functionGrantsSql));
   assertEqual("application API schema grants", sourceSchemaGrants, query(targetContainer, schemaGrantsSql));
+  assertEqual("application function owners and definer modes", sourceFunctionOwners, query(targetContainer, functionOwnersSql));
 
   console.log(
     `Restore verified: ${sourceTables.length} tables, all row counts, RLS policies, and functions match.`,

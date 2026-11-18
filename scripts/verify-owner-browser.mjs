@@ -234,7 +234,9 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       });
       let created;
       await step(`${owner.label}: visible create once`, async () => {
-        await page.getByLabel("Business name", { exact: true }).fill(owner.name); await page.getByLabel("Business description", { exact: true }).fill("Synthetic browser acceptance business: project planning and customer coordination."); await page.getByLabel("Timezone", { exact: true }).fill("America/Chicago"); await page.getByRole("button", { name: "Create my business", exact: true }).click(); await page.waitForURL((url) => url.pathname === "/client/onboarding");
+        await page.getByLabel("Business name", { exact: true }).fill(owner.name); await page.getByLabel("Business description", { exact: true }).fill("Synthetic browser acceptance business: project planning and customer coordination."); await page.getByLabel("Timezone", { exact: true }).fill("America/Chicago");
+        await screenshot(page, target, `${owner.label}-filled-create-form`);
+        await page.getByRole("button", { name: "Create my business", exact: true }).click(); await page.waitForURL((url) => url.pathname === "/client/onboarding");
         created = await readCreatedOwner(admin, fixture, owner); await page.goto(`${target.appUrl}/start`); await page.waitForURL((url) => url.pathname === "/client"); assert.equal((await readCreatedOwner(admin, fixture, owner)).clientId, created.clientId);
       });
       await step(`${owner.label}: empty Today and Apps reload`, async () => {
