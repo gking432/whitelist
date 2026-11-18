@@ -163,6 +163,7 @@ export async function verifyOwnerConnectedData(args = process.argv.slice(2)) {
     assert.equal(imported.data.messages[0].unread, false); assert.equal(imported.data.appointments[0].title, expected.appointmentTitle);
     assert.equal(imported.data.customers?.find((r) => r.externalId === "1001")?.name, expected.customerName);
     assert.equal(imported.data.customers?.find((r) => r.externalId === "1002")?.archived, true);
+    assert.equal(imported.data.crmDeals?.[0].stage, "qualified", "Owner deal context must retain the provider's actual stage");
     assert.equal(imported.data.invoices?.[0].amountDueMinor, 1000); assert.equal(imported.data.payments?.[0].amountRefundedMinor, 100);
     // A real conflicting canonical write is refused by SQL, marks its stream
     // failing, and cannot erase the prior successful completion or target facts.

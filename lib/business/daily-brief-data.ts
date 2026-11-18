@@ -127,7 +127,7 @@ export async function loadDailyBrief(
         !connectedData.appointments.some(e=>e.nativeId===a.id) &&
         !sharedContext.data?.records.some(r=>r.table==="integration_canonical_records" && r.kind==="appointment" && ["deleted","cancelled","canceled"].includes(r.status) && r.sources.some(s=>s.table==="crm_appointments" && s.id===a.id))),
       ...connectedData.appointments.map(a=>({ id:`imported:${a.id}`, title:a.title, start_at:a.startAt, end_at:a.endAt,
-        status:"booked", sourceHref:a.href || "/client/calendar", sourceAccount:a.account, allDay:a.allDay })),
+        status:a.status ?? "unknown", sourceHref:a.href || "/client/calendar", sourceAccount:a.account, allDay:a.allDay })),
     ],
     approvals: (approvals.data as unknown as DailyBriefData["approvals"]) || [],
     conversations:

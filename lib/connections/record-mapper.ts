@@ -53,7 +53,7 @@ export function mapConnectedData(apps: ConnectedApp[], rows: ImportedRow[], gene
         email: str(d.email).slice(0, 254) || null, phone: str(d.phone).slice(0, 50) || null, lifecycleStage: str(d.lifecycle_stage).slice(0, 100) || null,
         revision: row.updated_at || "", href: `https://app.hubspot.com/contacts/${app.sourceAccountId}/contact/${row.external_object_id}` });
       if (row.object_type === "lead") crmDeals.push({ ...base, name: (str(d.title) || str(d.name)).slice(0, 250) || "Unnamed HubSpot deal",
-        stage: str(d.stage) || null, pipeline: str(d.pipeline) || null, amount: str(d.amount) || null, currency: str(d.currency) || null,
+        stage: str(d.status) || str(d.stage) || null, pipeline: str(d.pipeline) || null, amount: str(d.amount) || null, currency: str(d.currency) || null,
         contactIds: Array.isArray(d.associated_contact_ids) ? d.associated_contact_ids.filter((id): id is string => typeof id === "string" && /^[0-9]+$/.test(id)).slice(0, 100) : [],
         associationsPartial: d.associations_partial !== false, href: `https://app.hubspot.com/contacts/${app.sourceAccountId}/deal/${row.external_object_id}` });
     }

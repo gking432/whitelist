@@ -1,3 +1,5 @@
+import { isSameOrigin } from "@/lib/auth/same-origin";
+import { getAppUrl } from "@/lib/env";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthState } from "@/lib/auth/session";
@@ -28,7 +30,7 @@ export async function GET() {
   }
 }
 export async function POST(request: NextRequest) {
-  if (request.headers.get("origin") !== request.nextUrl.origin)
+  if (!isSameOrigin(request.headers.get("origin"), getAppUrl()))
     return NextResponse.json({ error: "Invalid request origin." }, { status: 403, headers });
   if (Number(request.headers.get("content-length") ?? 0) > 16000)
     return NextResponse.json({ error: "Request too large." }, { status: 413, headers });

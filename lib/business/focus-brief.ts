@@ -33,9 +33,19 @@ export type FocusBrief = {
   remaining: number;
   state: "attention" | "planned" | "quiet" | "unconnected" | "incomplete";
   footer: string;
+  upcomingAppointment: { title: string; when: string; account: string | null; href: string } | null;
   link: { label: string; href: string } | null;
   sections: DailyWorkSection[];
 };
+
+function appointmentDay(value: string, allDay: boolean, timeZone: string): string | null {
+  if (!Number.isFinite(Date.parse(value))) return null;
+  const calendarDate = /^(\d{4}-\d{2}-\d{2})(?:T| |$)/.exec(value)?.[1];
+  if (!calendarDate) return null;
+  const checked = new Date(`${calendarDate}T12:00:00Z`);
+  if (!Number.isFinite(checked.getTime()) || checked.toISOString().slice(0, 10) !== calendarDate) return null;
+  return allDay && /^\d{4}-\d{2}-\d{2}$/.test(value) ? calendarDate : localDate(value, timeZone) || null;
+}
 
 export function buildFocusBrief(data: DailyBriefData): FocusBrief {
   const brief = buildDailyBrief(data);
@@ -54,18 +64,23 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
       hour: "numeric",
       minute: "2-digit",
     }).format(new Date(value));
-  const appointments = data.appointments
-    .filter(
-      (appointment) =>
-        appointment.status === "booked" &&
-        (appointment.allDay
-          ? appointment.start_at === brief.today
-          : localDate(appointment.start_at, data.timeZone) === brief.today) &&
-        (appointment.allDay
-          ? appointment.end_at > brief.today
-          : Date.parse(appointment.end_at) > Date.parse(data.generatedAt)),
-    )
-    .sort((a, b) => a.start_at.localeCompare(b.start_at));
+  const validAppointments = data.appointments.filter((appointment) => {
+    const start = appointmentDay(appointment.start_at, Boolean(appointment.allDay), timeZone);
+    const end = appointmentDay(appointment.end_at, Boolean(appointment.allDay), timeZone);
+    return start && end && (appointment.allDay ? end > start : Date.parse(appointment.end_at) >= Date.parse(appointment.start_at));
+  });
+  const compareAppointments = (a: DailyBriefData["appointments"][number], b: DailyBriefData["appointments"][number]) => {
+    const dayA = appointmentDay(a.start_at, Boolean(a.allDay), timeZone)!;
+    const dayB = appointmentDay(b.start_at, Boolean(b.allDay), timeZone)!;
+    return dayA.localeCompare(dayB) || (a.allDay ? b.allDay ? 0 : -1 : b.allDay ? 1 : Date.parse(a.start_at) - Date.parse(b.start_at));
+  };
+  const appointments = validAppointments.filter((appointment) => {
+    const start = appointmentDay(appointment.start_at, Boolean(appointment.allDay), timeZone)!;
+    const end = appointmentDay(appointment.end_at, Boolean(appointment.allDay), timeZone)!;
+    return appointment.status === "booked" && (appointment.allDay
+      ? start <= brief.today && end > brief.today
+      : start === brief.today && Date.parse(appointment.end_at) > Date.parse(data.generatedAt));
+  }).sort(compareAppointments);
   const rows: FocusRow[] = [
     ...brief.attention.map((item) => ({
       key: item.id,
@@ -200,18 +215,30 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
     title = `${unread.length} unread ${unread.length === 1 ? "conversation" : "conversations"}.`;
     description = "Your recent email is below.";
   }
-  const next = brief.upcoming.find(
-    (item) =>
-      item.time && item.date > brief.today && item.label === "Appointment",
-  );
-  const footer =
-    next && !appointments.length
-      ? `Next appointment: ${new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(next.time!))}`
-      : connected
-        ? "From your connected apps and saved work"
-        : rows.length
-          ? "From your saved work · Apps aren’t connected yet"
-          : "Your connected work will appear here";
+  // Future bookings remain visible even when none fall on today's date. Only
+  // recorded booked events qualify; generic upcoming work also contains
+  // proposals/cancellations and cannot establish a confirmed appointment.
+  const next = validAppointments.filter((appointment) => appointment.status === "booked" &&
+    appointmentDay(appointment.start_at, Boolean(appointment.allDay), timeZone)! > brief.today)
+    .sort(compareAppointments)[0];
+  const upcomingAppointment = next ? {
+    title: next.title,
+    when: next.allDay
+      ? `${new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(new Date(`${appointmentDay(next.start_at, true, timeZone)}T12:00:00Z`))} · All day`
+      : new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(next.start_at)),
+    account: next.sourceAccount || null,
+    href: safeSourceUrl(next.sourceHref) || (next.sourceAccount ? "/client/calendar" : "/client/crm?view=schedule"),
+  } : null;
+  if (upcomingAppointment && !rows.length && (state === "quiet" || state === "unconnected")) {
+    state = "planned";
+    title = "An appointment is coming up.";
+    description = "Your next saved appointment is below.";
+  }
+  const footer = upcomingAppointment
+    ? `Next appointment: ${upcomingAppointment.when}`
+    : connected ? "From your connected apps and saved work"
+      : rows.length ? "From your saved work · Apps aren’t connected yet"
+        : "Your connected work will appear here";
   const link =
     brief.decisions > 0
       ? { label: "Review decisions", href: "/client/business/approvals" }
@@ -385,6 +412,7 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
     rows: rows.slice(0, 5),
     remaining: Math.max(0, rows.length - 5),
     footer,
+    upcomingAppointment,
     link,
     sections,
   };

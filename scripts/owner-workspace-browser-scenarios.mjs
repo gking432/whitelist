@@ -104,7 +104,9 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
       const activityResponse = page.waitForResponse((response) => {
         try { return new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON()?.action === "activity" && response.request().postDataJSON()?.module === "messages"; } catch { return false; }
       });
-      await page.goto(`${target.appUrl}/client/messages`); assert.equal((await activityResponse).status(), 200);
+      await page.goto(`${target.appUrl}/client/messages`);
+      const activityResult = await activityResponse, activityBody = await activityResult.json().catch(() => null);
+      assert.equal(activityResult.status(), 200, `Real navigation activity was rejected${typeof activityBody?.error === "string" ? `: ${activityBody.error.slice(0, 300)}` : "."}`);
       const once = await admin.from("owner_workspace_activity").select("activity_date").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).eq("module", "messages"); assert.equal(once.error, null);
       await page.goto(`${target.appUrl}/client`); await page.goto(`${target.appUrl}/client/messages`);
       const twice = await admin.from("owner_workspace_activity").select("activity_date").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).eq("module", "messages"); assert.equal(twice.error, null); assert.deepEqual(twice.data, once.data, "Repeated real opens record one enum per business day.");
@@ -157,6 +159,8 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
       assert.equal(ordinary[0], "connected-invoices", "A saved Money pin moves actual money rows first after reload.");
       assert.ok(ordinary.includes("appointments") && ordinary.includes("intake"));
       assert.equal(ordinary.indexOf("appointments") < ordinary.indexOf("intake"), owner.label === "desktop", "The remaining actual work follows each owner's saved manual order.");
+      const savedControls = await panel(page); await savedControls.getByLabel("Preferred name", { exact: true }).waitFor({ state: "visible" });
+      await screenshot(page, target, `${owner.label}-workspace-preferences-open`);
       const id = randomUUID(), title = `${owner.marker} synthetic owner decision`;
       const approval = await admin.from("approval_items").insert({ id, partner_id: fixture.partnerId, client_id: owner.clientId, type: "content_draft", status: "pending", title, summary: "Synthetic disposable presentation review. No customer message or action is authorized.", proposed_payload: {} }); assert.equal(approval.error, null);
       try {

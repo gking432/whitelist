@@ -1,3 +1,5 @@
+import { isSameOrigin } from "@/lib/auth/same-origin";
+import { getAppUrl } from "@/lib/env";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { connectionsContext } from "@/lib/connections/context";
@@ -31,7 +33,7 @@ export async function GET() {
   return snapshot.available ? NextResponse.json(snapshot, { headers }) : error("Your preferences could not be loaded. Try again.", 503);
 }
 export async function POST(request: NextRequest) {
-  if (request.headers.get("origin") !== request.nextUrl.origin) return error("Invalid request origin.", 403);
+  if (!isSameOrigin(request.headers.get("origin"), getAppUrl())) return error("Invalid request origin.", 403);
   if (Number(request.headers.get("content-length") ?? 0) > 4096) return error("Request too large.", 413);
   const ctx = await context();
   if (!ctx) return error("Business workspace access is required.", 403);

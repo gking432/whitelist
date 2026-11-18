@@ -173,7 +173,7 @@ export function ConnectedApps({ snapshot, outcome, timeZone, sourceRunId, invali
     return <article key={app.id} className="min-w-0 rounded-xl border border-slate-200 bg-white" aria-label={`${option?.label || app.name} account ${app.account || app.name}`}>
       <div className="space-y-3 p-4">
         <div className="flex flex-wrap items-start justify-between gap-2"><p className="min-w-0 break-all text-sm font-medium text-slate-800">{app.account || app.name}</p><span className={`rounded-full px-2.5 py-1 text-xs ${app.error || app.status === "needs_attention" ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600"}`}>{connectionCardStatus(app)}</span></div>
-        <p className="text-xs leading-6 text-slate-500">{date(app.lastSyncedAt) ? `Last import ${date(app.lastSyncedAt)}` : "No completed import yet"}</p>
+        <p className="text-xs leading-6 text-slate-500">{app.readOnly ? "Read-only imports · " : ""}{date(app.lastSyncedAt) ? `Last import ${date(app.lastSyncedAt)}` : "No completed import yet"}</p>
         {app.error || app.status === "needs_attention" ? <p className="text-xs leading-6 text-amber-800">{controls.intake && !app.lastSyncedAt && !app.error ? "Waiting for the first form inquiry." : "This account needs attention to keep records current."}</p> : app.paused ? <p className="text-xs leading-6 text-slate-500">Updates are paused. Saved records stay visible.</p> : app.stale && !app.syncing ? <p className="text-xs leading-6 text-amber-800">Some records may be out of date.</p> : null}
         <div>{control(primary)}</div>
       </div>
@@ -207,7 +207,7 @@ export function ConnectedApps({ snapshot, outcome, timeZone, sourceRunId, invali
     {notice ? <p role="status" className="mt-5 text-sm text-slate-600">{notice}</p> : null}
     {error || snapshot.errors.length ? <p role="alert" className="mt-5 text-sm text-red-700">{[error, ...snapshot.errors].filter(Boolean).join(" ")}</p> : null}
     {!snapshot.canWrite ? <p className="mt-5 text-xs leading-6 text-slate-500">View-only access. An owner with connection access can change setup.</p> : null}
-    {unavailable.length ? <aside className="mt-5 rounded-xl border border-amber-100 bg-amber-50/50 p-4 text-sm leading-6 text-amber-900" aria-label="Platform connection setup"><p className="font-medium">Some connections need platform setup</p><p className="mt-1">Ask your administrator to enable {unavailable.map((provider) => provider.label).join(", ")}. Saved accounts and records stay visible here.</p></aside> : null}
+    {unavailable.length ? <aside className="mt-5 rounded-xl border border-amber-100 bg-amber-50/50 p-4 text-sm leading-6 text-amber-900" aria-label="Platform connection setup"><p className="font-medium">Connection setup needs attention</p><p className="mt-1">Ask your administrator to finish setup for {unavailable.map((provider) => provider.label).join(", ")}. New connections and reconnects are unavailable; saved accounts and records stay visible.</p></aside> : null}
     <div className="mt-6 space-y-6">
       {providers.map((provider) => {
         const accounts = snapshot.apps.filter((app) => app.provider === provider.key);

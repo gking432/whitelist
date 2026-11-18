@@ -32,6 +32,11 @@ export function FocusBriefCard({
           </Link>
         ) : null}
       </div>
+      {brief.upcomingAppointment ? <div data-upcoming-appointment className="mt-3 border-t border-[#d7e5ff] pt-3">
+        <p className="text-xs leading-5 text-[#516c94]">Coming up · {brief.upcomingAppointment.when}</p>
+        {!brief.upcomingAppointment.href.startsWith("/") ? <a href={brief.upcomingAppointment.href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 break-words text-sm font-medium text-[#244c86] hover:underline">{brief.upcomingAppointment.title}<ArrowUpRight aria-hidden="true" className="size-3 shrink-0" /></a> : <Link href={brief.upcomingAppointment.href} className="inline-flex min-h-11 items-center gap-2 break-words text-sm font-medium text-[#244c86] hover:underline">{brief.upcomingAppointment.title}<ArrowUpRight aria-hidden="true" className="size-3 shrink-0" /></Link>}
+        {brief.upcomingAppointment.account ? <p className="break-words text-xs leading-5 text-[#516c94]">{brief.upcomingAppointment.account}</p> : null}
+      </div> : null}
     </section>
   );
 }

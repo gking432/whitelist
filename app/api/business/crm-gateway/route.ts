@@ -1,3 +1,5 @@
+import { isSameOrigin } from "@/lib/auth/same-origin";
+import { getAppUrl } from "@/lib/env";
 import { NextResponse, type NextRequest } from "next/server";
 import { connectionsContext } from "@/lib/connections/context";
 import { canWriteBusinessWorkspace } from "@/lib/business/access";
@@ -10,7 +12,7 @@ export async function GET(request:NextRequest){
  try{return NextResponse.json(await readCrmGatewayReview(admin,ctx.scope,canWriteBusinessWorkspace(ctx.portal.access)&&!ctx.portal.access.isImpersonating,Object.fromEntries(request.nextUrl.searchParams)),{headers:{"Cache-Control":"private, no-store"}});}catch(e){return NextResponse.json({error:e instanceof CrmGatewayError?e.message:"CRM review unavailable."},{status:e instanceof CrmGatewayError?e.status:503});}
 }
 export async function POST(request:NextRequest){
- if(request.headers.get("origin")!==request.nextUrl.origin)return NextResponse.json({error:"Invalid request origin."},{status:403});
+ if(!isSameOrigin(request.headers.get("origin"), getAppUrl()))return NextResponse.json({error:"Invalid request origin."},{status:403});
  const ctx=await connectionsContext(true);if(!ctx)return NextResponse.json({error:"Sign in with owner access."},{status:403});
  const admin=createSupabaseAdminClient();if(!admin)return NextResponse.json({error:"Data service unavailable."},{status:503});
  const raw=await request.text();if(raw.length>9000)return NextResponse.json({error:"Request too large."},{status:413});

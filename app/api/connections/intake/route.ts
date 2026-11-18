@@ -1,3 +1,5 @@
+import { isSameOrigin } from "@/lib/auth/same-origin";
+import { getAppUrl } from "@/lib/env";
 import { NextResponse, type NextRequest } from "next/server";
 import { connectionsContext } from "@/lib/connections/context";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (request.headers.get("origin") !== request.nextUrl.origin)
+  if (!isSameOrigin(request.headers.get("origin"), getAppUrl()))
     return NextResponse.json({ error: "Invalid request origin." }, { status: 403, headers: privateHeaders });
   const context = await connectionsContext(true);
   if (!context) return NextResponse.json({ error: "Business owner write access is required." }, { status: 403, headers: privateHeaders });

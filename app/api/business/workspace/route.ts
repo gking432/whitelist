@@ -1,3 +1,5 @@
+import { isSameOrigin } from "@/lib/auth/same-origin";
+import { getAppUrl } from "@/lib/env";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthState } from "@/lib/auth/session";
@@ -29,7 +31,7 @@ export async function GET() {
 }
 export async function POST(request: NextRequest) {
   const origin = request.headers.get("origin");
-  if (!origin || origin !== request.nextUrl.origin)
+  if (!isSameOrigin(origin, getAppUrl()))
     return NextResponse.json(
       { error: "Invalid request origin." },
       { status: 403 },

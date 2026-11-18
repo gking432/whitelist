@@ -186,6 +186,35 @@ async function revealCustomerContext(page) {
   const summary = page.locator("summary").filter({ hasText: /^\s*Customer context\s*$/ });
   if (await summary.count() && !(await summary.evaluate((node) => node.parentElement.open))) await summary.click();
 }
+async function verifyIntakePauseResume(page, target, admin, fixture, owner) {
+  const current = await page.request.get(`${target.appUrl}/api/connections`); assert.equal(current.status(), 200);
+  const intake = (await current.json()).apps.filter((app) => app.provider === "generic_inbound_webhook");
+  assert.equal(intake.length, 1); const account = intake[0]; assert.equal(account.paused, false); assert.ok(account.account?.includes(owner.marker));
+  const card = page.getByRole("article", { name: `Website intake form account ${account.account || account.name}`, exact: true });
+  const jobs = async () => {
+    const result = await admin.from("integration_sync_jobs").select("id", { count: "exact", head: true }).eq("partner_id", fixture.partnerId).eq("client_id", owner.clientId);
+    assert.equal(result.error, null); return result.count;
+  };
+  const jobsBefore = await jobs();
+  // Only inbound intake is safe here: its resume returns before any provider pull.
+  for (const [action, label, paused] of [["pause", "Pause intake", true], ["resume", "Resume intake", false]]) {
+    const pending = page.waitForResponse((response) => {
+      try { const body = response.request().postDataJSON(); return new URL(response.url()).pathname === "/api/connections" && response.request().method() === "POST" && body?.action === action && body.connectionId === account.id; } catch { return false; }
+    });
+    await card.getByRole("button", { name: label, exact: true }).click();
+    const response = await pending, body = await response.json().catch(() => null);
+    assert.equal(response.status(), 200, `The exact intake ${action} must succeed${typeof body?.error === "string" ? `: ${body.error.slice(0, 300)}` : "."}`);
+    const read = await page.request.get(`${target.appUrl}/api/connections`); assert.equal(read.status(), 200);
+    const updated = (await read.json()).apps.find((app) => app.id === account.id); assert.ok(updated); assert.equal(updated.provider, "generic_inbound_webhook"); assert.equal(updated.paused, paused);
+  }
+  assert.equal(await jobs(), jobsBefore, "Intake controls must not enqueue any provider imports.");
+  const team = await admin.from("agent_team_settings").select("status,channel_authority").eq("partner_id", fixture.partnerId).eq("client_id", owner.clientId).single();
+  assert.equal(team.error, null); assert.equal(team.data.status, "paused"); assert.ok(Object.values(team.data.channel_authority).every((value) => value === "off"));
+  for (const table of ["action_jobs", "agent_work_items"]) {
+    const result = await admin.from(table).select("id", { count: "exact", head: true }).eq("partner_id", fixture.partnerId).eq("client_id", owner.clientId);
+    assert.equal(result.error, null); assert.equal(result.count, 0, "Changing intake imports must not activate the team or enqueue an action.");
+  }
+}
 async function screenshot(page, target, name) {
   assert.ok(["/client", "/start", "/login"].some((prefix) => new URL(page.url()).pathname.startsWith(prefix)));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2), false, "Owner content must fit the actual desktop/phone viewport.");
@@ -268,6 +297,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         assert.equal(await page.getByRole("button", { name: "Pause updates", exact: true }).first().isEnabled(), true);
         await visible(page, "Partial coverage");
         await revealCustomerContext(page); await visible(page, sources.expected.customerName); await screenshot(page, target, `${owner.label}-source-apps`); assert.equal((await page.locator("body").innerText()).includes(other.marker), false);
+        await verifyIntakePauseResume(page, target, admin, fixture, owner);
         await page.goto(`${target.appUrl}/client/money`); await visible(page, sources.expected.invoiceNumber); await screenshot(page, target, `${owner.label}-source-money`); assert.equal((await page.locator("body").innerText()).includes(other.marker), false);
         await page.goto(`${target.appUrl}/client/messages`); await visible(page, sources.expected.inquiryTitle); assert.equal((await page.locator("body").innerText()).includes(other.marker), false);
         if (sources.expected.appointmentTitle) { await page.goto(`${target.appUrl}/client/calendar`); await visible(page, sources.expected.appointmentTitle); }

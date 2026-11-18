@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import {
   addDays,
   buildDailyBrief,
@@ -372,4 +374,71 @@ test("an available owner decision stays prominent when another source errors or 
   assert.match(focus.description, /couldn’t be checked/);
   assert.equal(focus.link?.href, "/client/business/approvals");
   assert.equal(focus.sections[0].rows[0].key, "approval:decision");
+});
+
+test("future-only booked appointments are represented without inventing cancelled or proposed bookings", () => {
+  const snapshot = data();
+  const future = { id: "future", title: "Recorded consultation", start_at: "2026-11-02T20:30:00Z", end_at: "2026-11-02T21:30:00Z", status: "booked", sourceAccount: "Exact calendar", sourceHref: "https://calendar.google.com/calendar/event?eid=fixture" };
+  snapshot.appointments = [{ ...future, id: "cancelled", title: "Cancelled appointment", status: "cancelled", start_at: "2026-11-01T18:00:00Z" }, { ...future, id: "proposal", status: "proposed", start_at: "2026-11-01T19:00:00Z" }, future];
+  const focus = buildFocusBrief(snapshot);
+  assert.equal(focus.state, "planned");
+  assert.equal(focus.upcomingAppointment?.title, future.title);
+  assert.match(focus.upcomingAppointment?.when ?? "", /Mon, Nov 2.*2:30 PM/);
+  assert.equal(focus.upcomingAppointment?.account, "Exact calendar");
+  assert.equal(focus.upcomingAppointment?.href, future.sourceHref);
+  assert.equal(focus.sections.some((section) => section.key === "appointments"), false);
+  snapshot.appointments = snapshot.appointments.filter((appointment) => appointment.status !== "booked");
+  assert.equal(buildFocusBrief(snapshot).upcomingAppointment, null);
+  snapshot.appointments = [
+    { ...future, title: "Later instant", start_at: "2026-11-02T11:00:00-06:00", end_at: "2026-11-02T12:00:00-06:00" },
+    { ...future, title: "Earlier instant", start_at: "2026-11-02T16:00:00Z", end_at: "2026-11-02T17:00:00Z" },
+  ];
+  assert.equal(buildFocusBrief(snapshot).upcomingAppointment?.title, "Earlier instant");
+});
+test("future all-day dates remain date-only and upcoming context does not replace today's decisions", () => {
+  const snapshot = data();
+  snapshot.appointments = [{ id: "all-day", title: "Recorded all-day visit", start_at: "2026-11-02", end_at: "2026-11-03", allDay: true, status: "booked" }];
+  snapshot.approvals = [{ id: "urgent", title: "Current decision", summary: "Needs owner review", created_at: snapshot.generatedAt }];
+  snapshot.counts.approvals = 1;
+  const focus = buildFocusBrief(snapshot);
+  assert.equal(focus.state, "attention"); assert.equal(focus.title, "1 decision needs you.");
+  assert.equal(focus.upcomingAppointment?.when, "Mon, Nov 2 · All day");
+  assert.equal(focus.sections[0].rows[0].key, "approval:urgent");
+});
+test("the rendered calm brief shows a real upcoming booking and omits empty or generic footer decoration", () => {
+  const snapshot = data();
+  snapshot.appointments = [{ id: "future", title: "Future booking shown", start_at: "2026-11-02T20:30:00Z", end_at: "2026-11-02T21:30:00Z", status: "booked" }];
+  const full = buildFocusBrief(snapshot), empty = buildFocusBrief(data());
+  const code = `const React=require('react');const {renderToStaticMarkup}=require('react-dom/server');const {FocusBriefCard}=require('./components/business/focus-brief-card.tsx');console.log(JSON.stringify([${JSON.stringify(full)},${JSON.stringify(empty)}].map(brief=>renderToStaticMarkup(React.createElement(FocusBriefCard,{brief,greeting:'Good morning.'})))));`;
+  const html = JSON.parse(execFileSync(resolve("node_modules/.bin/tsx"), ["-e", code], { encoding: "utf8", timeout: 15000 })) as string[];
+  assert.match(html[0], /data-upcoming-appointment/); assert.match(html[0], /Future booking shown/); assert.match(html[0], /Mon, Nov 2.*2:30 PM/);
+  assert.doesNotMatch(html[1], /data-upcoming-appointment|Coming up|Your connected work will appear here/);
+});
+
+test("ISO all-day events use business-local dates for both today's list and future context", () => {
+  const snapshot = data();
+  snapshot.appointments = [
+    { id: "iso-today", title: "All day today", start_at: "2026-10-31T05:00:00Z", end_at: "2026-11-01T05:00:00Z", allDay: true, status: "booked" },
+    { id: "iso-future", title: "ISO future all day", start_at: "2026-11-02T06:00:00Z", end_at: "2026-11-03T06:00:00Z", allDay: true, status: "booked" },
+  ];
+  const focus = buildFocusBrief(snapshot);
+  assert.equal(focus.title, "An all-day event is on your calendar.");
+  assert.deepEqual(focus.sections.find((section) => section.key === "appointments")?.rows.map((row) => [row.key, row.label]), [["appointment:iso-today", "All day"]]);
+  assert.equal(focus.upcomingAppointment?.title, "ISO future all day");
+  assert.equal(focus.upcomingAppointment?.when, "Mon, Nov 2 · All day");
+  snapshot.appointments = snapshot.appointments.slice(0, 1);
+  assert.equal(buildFocusBrief(snapshot).upcomingAppointment, null);
+});
+test("invalid all-day and timed dates are skipped without crashing or inventing upcoming work", () => {
+  const snapshot = data();
+  snapshot.appointments = [
+    { id: "bad-date", title: "Invalid calendar date", start_at: "2027-02-30", end_at: "2027-03-03", allDay: true, status: "booked" },
+    { id: "bad-iso", title: "Invalid ISO date", start_at: "2027-02-30T06:00:00Z", end_at: "2027-03-03T06:00:00Z", allDay: true, status: "booked" },
+    { id: "bad-time", title: "Invalid time", start_at: "not-a-date", end_at: "2027-03-03T06:00:00Z", status: "booked" },
+    { id: "bad-end", title: "Invalid ending", start_at: "2027-03-02T06:00:00Z", end_at: "not-a-date", allDay: true, status: "booked" },
+  ];
+  const focus = buildFocusBrief(snapshot);
+  assert.equal(focus.upcomingAppointment, null);
+  assert.equal(focus.rows.length, 0);
+  assert.equal(focus.sections.some((section) => section.key === "appointments"), false);
 });

@@ -22,6 +22,4 @@ export function parseFirstOwnerRequest(value: unknown): FirstOwnerRequest {
   return { key: request!.key as string, business: { name, description, timezone } };
 }
 
-export function firstOwnerSameOrigin(origin: string | null, appUrl: string): boolean {
-  try { return origin !== null && origin === new URL(appUrl).origin; } catch { return false; }
-}
+export { isSameOrigin as firstOwnerSameOrigin } from "./same-origin.ts";

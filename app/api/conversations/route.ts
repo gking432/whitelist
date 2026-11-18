@@ -1,3 +1,5 @@
+import { isSameOrigin } from "@/lib/auth/same-origin";
+import { getAppUrl } from "@/lib/env";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthState } from "@/lib/auth/session";
@@ -84,7 +86,7 @@ export async function GET(request: NextRequest) {
   }
 }
 export async function POST(request: NextRequest) {
-  if (request.headers.get("origin") !== request.nextUrl.origin)
+  if (!isSameOrigin(request.headers.get("origin"), getAppUrl()))
     return NextResponse.json({ error: "Invalid origin." }, { status: 403 });
   const ctx = await context();
   if (!ctx || !canWriteBusinessWorkspace(ctx.portal.access))
