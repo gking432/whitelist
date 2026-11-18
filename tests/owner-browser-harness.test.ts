@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { EventEmitter } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
-import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, observeOwnerLoginSession, observedOwnerSessionIdentity, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage, verifyObservedOwnerSession, type ObservedOwnerSessionRequest } from "../scripts/verify-owner-browser.mjs";
+import { createChunks, stringToBase64URL } from "@supabase/ssr";
+import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, ownerSessionTokenFromCookies, readOwnerBrowserSession, observedOwnerSessionIdentity, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage, verifyObservedOwnerSession, type OwnerBrowserSessionCookie } from "../scripts/verify-owner-browser.mjs";
 import { browserFixtureIdentity } from "../scripts/owner-browser-fixtures.mjs";
 import { collectWorkspacePreferencePosts, observeNewWorkspaceActivity, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture, type WorkspaceActivityRequest, type WorkspaceActivityResponse } from "../scripts/owner-workspace-browser-scenarios.mjs";
 
@@ -208,44 +208,66 @@ const oldSessionId = "33333333-3333-4333-8333-333333333333", freshSessionId = "4
 function sessionToken(userId: string, sessionId: string) {
   return `${Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")}.${Buffer.from(JSON.stringify({ role: "authenticated", sub: userId, session_id: sessionId })).toString("base64url")}.synthetic-signature`;
 }
-function sessionRequest(path: string, token?: string): ObservedOwnerSessionRequest {
-  return { url: () => `http://127.0.0.1:54321${path}`, method: () => path === "/auth/v1/user" ? "GET" : "POST", headers: (): Record<string, string> => token ? { authorization: `Bearer ${token}` } : {}, headerValue: async (name) => name.toLowerCase() === "authorization" && token ? `Bearer ${token}` : null };
+const cookieTarget = { appUrl: "http://127.0.0.1:3000", supabaseUrl: "http://127.0.0.1:54321" }, cookieKey = "sb-127-auth-token";
+function sessionCookie(token = sessionToken(sessionUser, freshSessionId), changes: Partial<OwnerBrowserSessionCookie> = {}): OwnerBrowserSessionCookie {
+  const identity = observedOwnerSessionIdentity(token);
+  return { name: cookieKey, value: `base64-${stringToBase64URL(JSON.stringify({ access_token: token, refresh_token: "synthetic-refresh-value", user: { id: identity?.userId } }))}`, domain: "127.0.0.1", path: "/", secure: false, httpOnly: false, sameSite: "Lax", expires: -1, ...changes };
 }
-test("a delayed prior-login response cannot overwrite a fresh login-scoped token capture", async () => {
-  const events = new EventEmitter(), old = sessionToken(sessionUser, oldSessionId), fresh = sessionToken(sessionUser, freshSessionId);
-  let finishOld: (value: unknown) => void = () => {};
-  const oldBody = new Promise<unknown>((resolve) => { finishOld = resolve; }), request = sessionRequest("/auth/v1/token");
-  const oldObserver = observeOwnerLoginSession(events, "http://127.0.0.1:54321");
-  events.emit("request", request); events.emit("response", { request: () => request, url: request.url, status: () => 200, json: () => oldBody }); oldObserver.stop();
-  const current = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId });
-  events.emit("request", sessionRequest("/auth/v1/user", fresh));
-  finishOld({ access_token: old }); await oldBody; await Promise.resolve();
-  assert.equal(await current.wait(), fresh); assert.equal(await current.wait(), fresh, "The first eligible capture is immutable.");
-  assert.equal(events.listenerCount("request"), 0); assert.equal(events.listenerCount("response"), 0);
+test("normal-browser session proof reads only the application's cookies and the exact SDK project key", async () => {
+  const token = sessionToken(sessionUser, freshSessionId), cookie = sessionCookie(token), reads: string[] = [];
+  const context = { async cookies(url: string) { reads.push(url); return [sessionCookie(sessionToken(otherSessionUser, oldSessionId), { name: "sb-other-project-auth-token" }), cookie]; } };
+  assert.equal(await readOwnerBrowserSession(context, cookieTarget), token);
+  assert.deepEqual(reads, [cookieTarget.appUrl]);
+  await assert.rejects(ownerSessionTokenFromCookies([cookie], { ...cookieTarget, supabaseUrl: "https://other-project.supabase.co" }), /project's applicable session cookie/);
 });
-test("a current login ignores old request identities, wrong subjects and the prior session", async () => {
-  const events = new EventEmitter(), priorRequest = sessionRequest("/auth/v1/token"); events.emit("request", priorRequest);
-  const observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId });
-  events.emit("response", { request: () => priorRequest, url: priorRequest.url, status: () => 200, json: async () => ({ access_token: sessionToken(sessionUser, "55555555-5555-4555-8555-555555555555") }) });
-  events.emit("request", sessionRequest("/auth/v1/user", sessionToken(sessionUser, oldSessionId)));
-  events.emit("request", sessionRequest("/auth/v1/user", sessionToken(otherSessionUser, freshSessionId)));
-  events.emit("request", sessionRequest("/auth/v1/user", "invalid-token"));
-  const fresh = sessionToken(sessionUser, freshSessionId); events.emit("request", sessionRequest("/auth/v1/user", fresh));
-  assert.equal(await observation.wait(), fresh); assert.equal(events.listenerCount("request"), 0);
+test("the installed SSR full and contiguous chunk encodings preserve the same current session", async () => {
+  const cookie = sessionCookie(), chunks = createChunks(cookie.name, cookie.value, 80).map((chunk, index) => ({ ...cookie, ...chunk, expires: 10000 + index / 1000 }));
+  assert.ok(chunks.length > 1);
+  assert.equal(await ownerSessionTokenFromCookies(chunks.reverse(), cookieTarget, 1000), await ownerSessionTokenFromCookies([cookie], cookieTarget, 1000));
+  const old = sessionCookie(sessionToken(sessionUser, oldSessionId));
+  let current = [old]; const context = { async cookies() { return current; } };
+  assert.equal(await readOwnerBrowserSession(context, cookieTarget), sessionToken(sessionUser, oldSessionId));
+  current = [cookie]; assert.equal(await readOwnerBrowserSession(context, cookieTarget), sessionToken(sessionUser, freshSessionId), "Each normal redirect reads the current browser cookie; no prior login token cache or delayed event can overwrite it.");
 });
-test("current-login missing evidence fails within its wait budget, which starts after login", async () => {
-  const events = new EventEmitter(), observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { timeoutMs: 10 });
-  await delay(20); assert.equal(events.listenerCount("request"), 1, "No rejection timer runs while the normal email/login flow is still progressing.");
-  await assert.rejects(observation.wait(), /capture an eligible token for this login/);
-  assert.equal(events.listenerCount("request"), 0); assert.equal(events.listenerCount("response"), 0);
-  const neverWaited = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { timeoutMs: 10 }); neverWaited.stop(); await delay(15);
-  assert.equal(events.listenerCount("request"), 0, "A failed login can dispose its unused observer without an unhandled rejection.");
+test("session cookie selection excludes other host, path, secure-only and expired cookies", async () => {
+  const token = sessionToken(sessionUser, freshSessionId), actual = sessionCookie(token);
+  const unrelated = [sessionCookie(undefined, { domain: "evil127.0.0.1" }), sessionCookie(undefined, { domain: "localhost" }), sessionCookie(undefined, { path: "/client" }), sessionCookie(undefined, { path: "" }), sessionCookie(undefined, { secure: true }), sessionCookie(undefined, { expires: 1000 }), sessionCookie(undefined, { expires: 0 }), sessionCookie(undefined, { name: `${cookieKey}-code-verifier` })];
+  assert.equal(await ownerSessionTokenFromCookies([...unrelated, actual], cookieTarget, 1000), token);
+  await assert.rejects(ownerSessionTokenFromCookies(unrelated, cookieTarget, 1000), /project's applicable session cookie/);
+  const target = { appUrl: "https://owner.example.test/client/today", supabaseUrl: "https://project.supabase.co" };
+  const domainCookie = sessionCookie(token, { name: "sb-project-auth-token", domain: ".example.test", path: "/client", secure: true });
+  assert.equal(await ownerSessionTokenFromCookies([domainCookie], target), token);
+  await assert.rejects(ownerSessionTokenFromCookies([{ ...domainCookie, path: "/client/to" }], target), /project's applicable session cookie/);
+  await assert.rejects(ownerSessionTokenFromCookies([{ ...domainCookie, domain: ".ample.test" }], target), /project's applicable session cookie/);
 });
-test("a fresh token-response capture is scoped and disposed after the real response body completes", async () => {
-  const events = new EventEmitter(), fresh = sessionToken(sessionUser, freshSessionId), request = sessionRequest("/auth/v1/token");
-  const observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser });
-  events.emit("request", request); events.emit("response", { request: () => request, url: request.url, status: () => 200, json: async () => ({ access_token: fresh }) });
-  assert.equal(await observation.wait(), fresh); assert.equal(events.listenerCount("response"), 0);
+test("duplicate applicable cookies and full-plus-chunk generations are ambiguous and cannot supply proof", async () => {
+  const cookie = sessionCookie(), chunks = createChunks(cookie.name, cookie.value, 80).map((chunk) => ({ ...cookie, ...chunk }));
+  for (const values of [[cookie, cookie], [cookie, { ...cookie, domain: ".127.0.0.1" }], [cookie, ...chunks], [...chunks, chunks[0]], [...chunks.slice(0, -1), { ...chunks.at(-1)!, sameSite: "Strict" as const }]])
+    await assert.rejects(ownerSessionTokenFromCookies(values, cookieTarget), /duplicated|ambiguous/);
+});
+test("missing, noncanonical and extra chunks fail closed instead of using an available prefix", async () => {
+  const cookie = sessionCookie(), chunks = createChunks(cookie.name, cookie.value, 80).map((chunk) => ({ ...cookie, ...chunk }));
+  for (const values of [[], chunks.slice(1), chunks.filter((_, index) => index !== 1), [...chunks, { ...cookie, name: `${cookieKey}.99` }], [...chunks, { ...cookie, name: `${cookieKey}.01` }], [...chunks, { ...cookie, name: `${cookieKey}.unknown` }], chunks.slice(0, -1)])
+    await assert.rejects(ownerSessionTokenFromCookies(values, cookieTarget), /applicable|chunks/);
+});
+test("malformed and mismatched session carriers fail with generic errors containing no cookie values", async () => {
+  const token = sessionToken(sessionUser, freshSessionId), cookie = sessionCookie(token);
+  const badValues = ["", "base64-%%%synthetic-sensitive-carrier", "base64-abc=", "base64-Zh", "base64-" + stringToBase64URL("not JSON synthetic-sensitive-carrier"), JSON.stringify({ access_token: token }), "base64-" + stringToBase64URL(JSON.stringify({ access_token: token, user: { id: otherSessionUser } })), "base64-" + stringToBase64URL(JSON.stringify({ access_token: "invalid-jwt", user: { id: sessionUser } })), "base64-" + stringToBase64URL("[]")];
+  for (const value of badValues) await assert.rejects(ownerSessionTokenFromCookies([{ ...cookie, value }], cookieTarget), (error) => {
+    assert.ok(error instanceof Error);
+    for (const secret of [token, sessionUser, otherSessionUser, freshSessionId, "synthetic-sensitive-carrier"]) assert.equal(error.message.includes(secret), false);
+    return true;
+  });
+});
+test("browser cookie acquisition has a fixed five-second bound and does not disclose transport errors", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    let calls = 0;
+    const pending = readOwnerBrowserSession({ cookies: async () => { calls++; return new Promise<OwnerBrowserSessionCookie[]>(() => {}); } }, cookieTarget);
+    const rejected = assert.rejects(pending, /normal owner login \(5000ms\)/);
+    await Promise.resolve(); t.mock.timers.tick(5000); await rejected; assert.equal(calls, 1);
+  } finally { t.mock.timers.reset(); }
+  await assert.rejects(readOwnerBrowserSession({ cookies: async () => { throw new Error("synthetic-sensitive-carrier"); } }, cookieTarget), (error) => error instanceof Error && error.message === "The normal login session cookies could not be read.");
 });
 test("fresh-session proof requires a live RPC actor matching the captured subject and intended owner", async () => {
   const target = { supabaseUrl: "http://127.0.0.1:54321", anonKey: "synthetic-public-key" }, old = sessionToken(sessionUser, oldSessionId), fresh = sessionToken(sessionUser, freshSessionId);
@@ -261,34 +283,6 @@ test("fresh-session proof requires a live RPC actor matching the captured subjec
   await assert.rejects(verifyObservedOwnerSession(target, fresh, sessionUser, old, async () => Response.json(otherSessionUser)), /live session actor/);
   await assert.rejects(verifyObservedOwnerSession(target, fresh, sessionUser, old, async () => new Response(null, { status: 403 })), /actual current GoTrue session/);
   assert.equal(observedOwnerSessionIdentity("invalid"), null);
-});
-test("current-login capture reads the actual Authorization header when provisional headers are empty", async () => {
-  const events = new EventEmitter(), fresh = sessionToken(sessionUser, freshSessionId), names: string[] = [];
-  const observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId });
-  events.emit("request", { ...sessionRequest("/auth/v1/user"), headers: () => ({}), headerValue: async (name: string) => { names.push(name); return `Bearer ${fresh}`; } });
-  assert.equal(await observation.wait(), fresh); assert.deepEqual(names, ["authorization"]); assert.equal(events.listenerCount("request"), 0);
-});
-test("a late actual-header lookup after disposal cannot capture into either login", async () => {
-  const events = new EventEmitter(), fresh = sessionToken(sessionUser, freshSessionId);
-  let finishHeader: (value: string) => void = () => {};
-  const header = new Promise<string>((resolve) => { finishHeader = resolve; });
-  const prior = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { timeoutMs: 10 });
-  events.emit("request", { ...sessionRequest("/auth/v1/user"), headers: () => ({}), headerValue: () => header }); prior.stop();
-  const absent = assert.rejects(prior.wait(), /capture an eligible token/);
-  const current = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId });
-  events.emit("request", sessionRequest("/auth/v1/user", fresh)); finishHeader(`Bearer ${sessionToken(sessionUser, oldSessionId)}`);
-  assert.equal(await current.wait(), fresh); await absent;
-  assert.equal(events.listenerCount("request"), 0); assert.equal(events.listenerCount("response"), 0);
-});
-test("missing current-login evidence reports only categorical counts, never identity or token values", async () => {
-  const events = new EventEmitter(), old = sessionToken(sessionUser, oldSessionId), wrong = sessionToken(otherSessionUser, freshSessionId);
-  const observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId, timeoutMs: 10 });
-  for (const token of [old, wrong, "invalid-token", undefined]) events.emit("request", sessionRequest("/auth/v1/user", token));
-  await assert.rejects(observation.wait(), (error) => {
-    assert.ok(error instanceof Error); const message = error.message;
-    for (const category of ["GET /auth/v1/user=4", "authorization_missing=1", "malformed_token=1", "wrong_subject=1", "prior_session=1"]) assert.ok(message.includes(category));
-    for (const sensitive of [old, wrong, sessionUser, otherSessionUser, oldSessionId, freshSessionId]) assert.equal(message.includes(sensitive), false);
-    return true;
-  });
-  assert.equal(events.listenerCount("request"), 0);
+  assert.equal(observedOwnerSessionIdentity(sessionToken("unknown-user", freshSessionId)), null);
+  assert.equal(observedOwnerSessionIdentity(sessionToken(sessionUser, "missing-session")), null);
 });

@@ -10,6 +10,7 @@ import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createServer } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { combineChunks, stringFromBase64URL, stringToBase64URL } from "@supabase/ssr";
 import { assertHostedCi, sanitizeCiFailure, SOURCE_CONTAINER } from "./ci-bootstrap-customer-journey-db.mjs";
 import { assertEmptyBrowserTarget, browserFixtureIdentity, cleanupBrowserFixtures, prepareBrowserCatalog, readCreatedOwner } from "./owner-browser-fixtures.mjs";
 import { assertOwnerWorkspaceNavigation, assertSavedWorkspacePreferences, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline } from "./owner-workspace-browser-scenarios.mjs";
@@ -161,51 +162,60 @@ export function observedOwnerSessionIdentity(value) {
     return uuid.test(claims.sub) && uuid.test(claims.session_id) && claims.is_anonymous !== true ? { userId: claims.sub, sessionId: claims.session_id } : null;
   } catch { return null; }
 }
-export function observeOwnerLoginSession(page, supabaseUrl, { expectedUserId, previousSessionId, timeoutMs = 10000 } = {}) {
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10000) throw new Error("Use a bounded current-login observation.");
-  const requests = new WeakSet(); let active = true, captured = false, resolveToken;
-  const counts = { user_get: 0, token_post: 0, authorization_missing: 0, header_read_failed: 0, token_response_200: 0, token_body_failed: 0, malformed_token: 0, wrong_subject: 0, prior_session: 0 };
-  const available = new Promise((resolve) => { resolveToken = resolve; });
-  const capture = (value) => {
-    if (!active || captured) return;
-    const identity = observedOwnerSessionIdentity(value);
-    if (!identity) { counts.malformed_token++; return; }
-    if (expectedUserId && identity.userId !== expectedUserId) { counts.wrong_subject++; return; }
-    if (previousSessionId && identity.sessionId === previousSessionId) { counts.prior_session++; return; }
-    captured = true; resolveToken(value);
-  };
-  const onRequest = (request) => {
-    try {
-      const url = new URL(request.url()); if (url.origin !== supabaseUrl) return;
-      if (url.pathname === "/auth/v1/user" && request.method() === "GET") {
-        requests.add(request); counts.user_get++;
-        // headers() is provisional and may omit security-related headers. Read
-        // only Authorization from this exact observed request, never cookies.
-        void withOwnerBrowserDeadline("observe current-login Authorization header", () => request.headerValue("authorization"), 5000).then((authorization) => {
-          if (!active || !requests.has(request)) return;
-          if (!authorization) { counts.authorization_missing++; return; }
-          capture(authorization.replace(/^Bearer /i, ""));
-        }).catch(() => { if (active) counts.header_read_failed++; });
-      } else if (url.pathname === "/auth/v1/token" && request.method() === "POST") { requests.add(request); counts.token_post++; }
-    } catch { /* Only actual GoTrue requests initiated during this login count. */ }
-  };
-  const onResponse = (response) => {
-    if (!active || !requests.has(response.request())) return;
-    try {
-      const url = new URL(response.url()); if (url.origin !== supabaseUrl || url.pathname !== "/auth/v1/token" || response.status() !== 200) return;
-      counts.token_response_200++;
-      void withOwnerBrowserDeadline("observe current-login token response", () => response.json(), 5000).then((data) => { if (active) capture(data?.access_token); }).catch(() => { if (active) counts.token_body_failed++; });
-    } catch { /* A response from a closed prior document is not session proof. */ }
-  };
-  page.on("request", onRequest); page.on("response", onResponse);
-  const stop = () => { active = false; page.off("request", onRequest); page.off("response", onResponse); };
-  return { stop, async wait() {
-    try { return await withOwnerBrowserDeadline("capture an eligible token for this login", () => available, timeoutMs); }
-    catch (error) {
-      const categories = `GET /auth/v1/user=${counts.user_get}; POST /auth/v1/token=${counts.token_post}; ${Object.entries(counts).filter(([key]) => !["user_get", "token_post"].includes(key)).map(([key, value]) => `${key}=${value}`).join("; ")}`;
-      throw new Error(`${error.message} Observer categories: ${categories}`);
-    } finally { stop(); }
-  } };
+export async function ownerSessionTokenFromCookies(cookies, target, nowSeconds = Date.now() / 1000) {
+  const app = new URL(target.appUrl), backend = new URL(target.supabaseUrl);
+  // Match the installed supabase-js default storageKey, not a cookie-name scan.
+  const key = `sb-${backend.hostname.split(".")[0]}-auth-token`;
+  const applicable = Array.isArray(cookies) ? cookies.filter((cookie) => {
+    if (typeof cookie?.name !== "string" || typeof cookie.domain !== "string" || typeof cookie.path !== "string") return false;
+    const domain = cookie.domain.toLowerCase(), host = app.hostname.toLowerCase();
+    const domainMatches = domain.startsWith(".") ? host === domain.slice(1) || host.endsWith(domain) : host === domain;
+    const pathMatches = cookie.path.startsWith("/") && (app.pathname === cookie.path || app.pathname.startsWith(cookie.path.endsWith("/") ? cookie.path : `${cookie.path}/`));
+    return domainMatches && pathMatches && (!cookie.secure || app.protocol === "https:") && (cookie.expires === -1 || Number.isFinite(cookie.expires) && cookie.expires > nowSeconds);
+  }) : [];
+  const selected = applicable.filter((cookie) => cookie.name === key || cookie.name.startsWith(`${key}.`));
+  if (!selected.length) throw new Error("The normal login did not leave this project's applicable session cookie.");
+  const values = new Map();
+  for (const cookie of selected) {
+    if (values.has(cookie.name) || typeof cookie.value !== "string" || !cookie.value || cookie.value.length > 32768)
+      throw new Error("The normal login session cookie is duplicated, empty or unsupported.");
+    values.set(cookie.name, cookie.value);
+  }
+  if (values.has(key) && values.size !== 1) throw new Error("The normal login session cookie contains ambiguous full and chunked generations.");
+  if (!values.has(key)) {
+    if (values.size > 32 || selected.some((cookie) => !/^(0|[1-9][0-9]*)$/.test(cookie.name.slice(key.length + 1))) ||
+        Array.from({ length: values.size }, (_, index) => `${key}.${index}`).some((name) => !values.has(name)))
+      throw new Error("The normal login session cookie chunks are missing, noncontiguous or unsupported.");
+    const scopes = new Set(selected.map(({ domain, path, secure, httpOnly, sameSite }) => JSON.stringify({ domain, path, secure, httpOnly, sameSite })));
+    if (scopes.size !== 1) throw new Error("The normal login session cookie chunks have ambiguous scopes or generations.");
+  }
+  const value = await combineChunks(key, (name) => values.get(name));
+  let session;
+  try {
+    if (!value?.startsWith("base64-") || value.length > 32768) throw new Error();
+    const encoded = value.slice(7);
+    if (!/^[A-Za-z0-9_-]+$/.test(encoded)) throw new Error();
+    const decoded = stringFromBase64URL(encoded);
+    if (stringToBase64URL(decoded) !== encoded) throw new Error();
+    session = JSON.parse(decoded);
+  } catch { throw new Error("The normal login session cookie is malformed or contains mismatched chunks."); }
+  const identity = observedOwnerSessionIdentity(session?.access_token);
+  if (!session || typeof session !== "object" || Array.isArray(session) || !identity ||
+      session.user?.id !== identity.userId)
+    throw new Error("The normal login session cookie does not contain a consistent signed-in owner session.");
+  // Decoding is not authorization: the caller must verify this exact JWT with
+  // current_session_actor, including fixture UID and a distinct prior session.
+  return session.access_token;
+}
+export async function readOwnerBrowserSession(context, target) {
+  // Read only cookies written by the normal email UI/app. No SDK session call,
+  // browser storage evaluation, cookie write, token refresh or network observer.
+  return withOwnerBrowserDeadline("read session cookies from the normal owner login", async () => {
+    let cookies;
+    try { cookies = await context.cookies(target.appUrl); }
+    catch { throw new Error("The normal login session cookies could not be read."); }
+    return ownerSessionTokenFromCookies(cookies, target);
+  }, 5000);
 }
 export async function verifyObservedOwnerSession(target, token, expectedUserId, previousToken, request = fetch) {
   const identity = observedOwnerSessionIdentity(token), previous = previousToken ? observedOwnerSessionIdentity(previousToken) : null;
@@ -314,7 +324,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   const cleanupErrors = [];
   const report = (status) => ({ kind: "owner_browser_acceptance", status, updatedAt: new Date().toISOString(), playwrightVersion: PLAYWRIGHT_VERSION,
     checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization,
-    limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately."],
+    limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately.", "Session proof reads only the project's cookies set by the normal email login, then verifies the exact token against the live current-session RPC; no cookie injection, session creation or token refresh is used."],
     ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) });
   const checkpoint = async (status = "in_progress") => {
     if (failure) status = "failed";
@@ -341,12 +351,9 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       page.on("pageerror", (error) => diagnostics.push(redactBrowserFailure(error.message, [target.anonKey, target.serviceKey])));
       await context.route("**/*", async (route) => { const origin = new URL(route.request().url()).origin; if (![target.appUrl, target.supabaseUrl].includes(origin)) { diagnostics.push("An external browser request was blocked."); await route.abort(); } else await route.continue(); });
       await step(`${owner.label}: real email login`, async () => {
-        const observation = observeOwnerLoginSession(page, target.supabaseUrl);
-        try {
-          await loginUi(page, target, owner.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/start"); await page.getByRole("button", { name: "Create my business", exact: true }).waitFor({ state: "visible" });
-          await phase(`${owner.label}: await token from this initial login`); const token = await observation.wait();
-          await phase(`${owner.label}: verify initial live session actor`); await verifyObservedOwnerSession(target, token); sessionTokens.set(owner.label, token);
-        } finally { observation.stop(); }
+        await loginUi(page, target, owner.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/start"); await page.getByRole("button", { name: "Create my business", exact: true }).waitFor({ state: "visible" });
+        await phase(`${owner.label}: read session cookie from this initial normal login`); const token = await readOwnerBrowserSession(context, target);
+        await phase(`${owner.label}: verify initial live session actor`); await verifyObservedOwnerSession(target, token); sessionTokens.set(owner.label, token);
       });
       let created;
       await step(`${owner.label}: visible create once`, async () => {
@@ -399,13 +406,10 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       }
     });
     await step("phone: real re-login preserves original workspace", async () => {
-      const owner = owners[1], observation = observeOwnerLoginSession(owner.page, target.supabaseUrl, { expectedUserId: owner.userId, previousSessionId: observedOwnerSessionIdentity(signedOutToken).sessionId });
-      let token;
-      try {
-        await loginUi(owner.page, target, owner.email); await owner.page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
-        await phase("phone: await token from this real re-login"); token = await observation.wait();
-        await phase("phone: verify distinct live re-login session actor"); await verifyObservedOwnerSession(target, token, owner.userId, signedOutToken); sessionTokens.set("phone", token);
-      } finally { observation.stop(); }
+      const owner = owners[1];
+      await loginUi(owner.page, target, owner.email); await owner.page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
+      await phase("phone: read session cookie from this normal re-login"); const token = await readOwnerBrowserSession(owner.context, target);
+      await phase("phone: verify distinct live re-login session actor"); await verifyObservedOwnerSession(target, token, owner.userId, signedOutToken); sessionTokens.set("phone", token);
       assert.equal(await owner.page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, owner); assert.equal(persisted.clientId, owner.clientId); assert.equal(persisted.membershipId, owner.membershipId); assert.equal(persisted.receiptId, owner.receiptId);
       await assertSavedWorkspacePreferences(owner.page, target.appUrl, owner.workspacePreferences);
@@ -414,11 +418,10 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     await step("phone: normal account switch replaces prior business access", async () => {
       const prior = owners[1], current = owners[0], page = prior.page;
       await signOutUi(page, target);
-      const previousToken = sessionTokens.get("phone"), observation = observeOwnerLoginSession(page, target.supabaseUrl, { expectedUserId: current.userId, previousSessionId: observedOwnerSessionIdentity(previousToken).sessionId });
-      try {
-        await loginUi(page, target, current.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
-        await phase("phone: verify current switched-account live session"); const token = await observation.wait(); await verifyObservedOwnerSession(target, token, current.userId, previousToken); sessionTokens.set("phone", token);
-      } finally { observation.stop(); }
+      const previousToken = sessionTokens.get("phone");
+      await loginUi(page, target, current.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
+      await phase("phone: read session cookie after the normal account switch"); const token = await readOwnerBrowserSession(prior.context, target);
+      await phase("phone: verify current switched-account live session"); await verifyObservedOwnerSession(target, token, current.userId, previousToken); sessionTokens.set("phone", token);
       await page.waitForFunction((name) => document.title.includes(name), current.name);
       assert.equal(await page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, current); assert.equal(persisted.clientId, current.clientId); assert.equal(persisted.membershipId, current.membershipId); assert.equal(persisted.receiptId, current.receiptId);
