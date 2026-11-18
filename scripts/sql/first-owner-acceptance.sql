@@ -95,7 +95,7 @@ do $replay$ declare receipt jsonb; original jsonb:=(select data from fo_fixture 
  if receipt->>'id' is distinct from original->>'id' or receipt->>'clientId' is distinct from original->>'clientId' or receipt->'replayed' is distinct from 'true'::jsonb then raise exception 'A second signup key created another business'; end if;
  receipt:=public.provision_first_owner((select id from fo_fixture where key='owner-a'),'{"name":"Synthetic owned business","description":"Synthetic owner declaration only","timezone":"America/Chicago"}');
  if receipt->>'id' is distinct from original->>'id' or receipt->'replayed' is distinct from 'true'::jsonb then raise exception 'A repeated signup key did not replay its receipt'; end if;
- begin perform public.provision_first_owner((select id from fo_fixture where key='owner-a'),'{"name":"Changed business","description":"Synthetic owner declaration only","timezone":"America/Chicago"}'); exception when sqlstate '40001' then denied:=true; end;
+ begin perform public.provision_first_owner((select id from fo_fixture where key='owner-a'),'{"name":"Changed business","description":"Synthetic owner declaration only","timezone":"America/Chicago"}'); exception when sqlstate 'PT409' then denied:=true; when sqlstate '40001' then raise exception 'Public first-owner RPC leaked transient 40001 instead of semantic PT409'; end;
  if not denied then raise exception 'Changed signup payload rewrote an existing owner workspace'; end if;
 end $replay$;
 -- Group 6: foreign-tenant RLS and existing/invited/disabled identities cannot

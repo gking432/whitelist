@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261118051339";
+export const EXPECTED_MIGRATION = "20261118170156";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -262,7 +262,7 @@ select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || json
 export function preferenceCasWinner(results) {
   if (!Array.isArray(results) || results.length !== 2 || new Set(results.map((item) => item?.worker)).size !== 2 || results.some((item) => !["a", "b"].includes(item?.worker))) throw new Error("Preference CAS did not report two distinct sessions.");
   const winners = results.filter((item) => item.won === true), conflicts = results.filter((item) => item.won === false);
-  if (winners.length !== 1 || conflicts.length !== 1 || conflicts[0].errorCode !== "40001" || winners[0].revision !== 1) throw new Error("Preference CAS did not have exactly one revision-one winner and one 40001 conflict.");
+  if (winners.length !== 1 || conflicts.length !== 1 || conflicts[0].errorCode !== "PT409" || winners[0].revision !== 1) throw new Error("Preference CAS did not have exactly one revision-one winner and one PT409 conflict.");
   return winners[0];
 }
 async function firstOwnerConcurrencyAcceptance(target) {
@@ -288,11 +288,11 @@ async function firstOwnerConcurrencyAcceptance(target) {
  select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','worker','receipt',(select result->>'id' from fo_race_result),'client',(select result->>'clientId' from fo_race_result),'replayed',(select result->'replayed' from fo_race_result)) as cj_report;`);
     if (!same[0].receipt || same[0].receipt !== same[1].receipt || same[0].client !== same[1].client || same.filter((item) => item.replayed === true).length !== 1) throw new Error("Parallel signup keys did not replay one durable workspace.");
     // Case 2: same actor/key, conflicting declarations -> one success and one
-    // real 40001 rejection, without replacing the first owner's declared facts.
+    // real public PT409 rejection, without replacing the first owner's facts.
     const conflict = await pair((worker) => `begin; create temp table fo_race_result(result jsonb); grant insert,select on fo_race_result to authenticated; ${claims(ids.actorB, ids.sessionB)}
  do $race$ declare result jsonb; begin
   begin result:=public.provision_first_owner('${ids.conflictKey}',${business(`Synthetic conflicting ${worker}`)}::jsonb); insert into fo_race_result values(jsonb_build_object('won',true,'receipt',result->>'id','client',result->>'clientId'));
-  exception when sqlstate '40001' then insert into fo_race_result values('{"won":false}'::jsonb); end;
+  exception when sqlstate 'PT409' then insert into fo_race_result values('{"won":false}'::jsonb); end;
  end $race$;
  select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','worker','won',(select result->'won' from fo_race_result),'receipt',(select result->>'receipt' from fo_race_result),'client',(select result->>'client' from fo_race_result)) as cj_report;`);
     if (conflict.filter((item) => item.won === true).length !== 1 || conflict.filter((item) => item.won === false).length !== 1) throw new Error("Conflicting signup declarations did not have exactly one immutable winner.");
@@ -320,7 +320,7 @@ async function firstOwnerConcurrencyAcceptance(target) {
  do $preference_race$ declare snapshot jsonb; begin
   begin snapshot:=public.save_owner_workspace_preferences('${clientA}','${worker === "a" ? ids.preferenceKeyA : ids.preferenceKeyB}',0,${literal(JSON.stringify(settingsFor(worker)))}::jsonb);
    insert into fo_preference_result values(jsonb_build_object('won',true,'revision',(snapshot->'preferences'->>'revision')::bigint));
-  exception when sqlstate '40001' then insert into fo_preference_result values(jsonb_build_object('won',false,'errorCode',sqlstate)); end;
+  exception when sqlstate 'PT409' then insert into fo_preference_result values(jsonb_build_object('won',false,'errorCode',sqlstate)); end;
  end $preference_race$;
  select pg_sleep(0.2); commit; select '${REPORT_PREFIX}'::text || (jsonb_build_object('kind','worker','worker','${worker}')||result) as cj_report from fo_preference_result;`);
     const winner = preferenceCasWinner(preferences);
@@ -344,7 +344,7 @@ async function firstOwnerConcurrencyAcceptance(target) {
   }
   if (failure) throw failure;
   console.log("PASS: two actual two-session first-owner signup races; committed synthetic session/workspace fixtures cleaned up.");
-  console.log("PASS: one actual two-session owner preference CAS case; synthetic actor/session claims, one revision-one winner and one 40001 conflict; authority unchanged and committed fixtures cleaned up. Browser CAS remains separately required.");
+  console.log("PASS: one actual two-session owner preference CAS case; synthetic actor/session claims, one revision-one winner and one PT409 conflict; authority unchanged and committed fixtures cleaned up. Browser CAS remains separately required.");
 }
 
 export async function main(args = process.argv.slice(2), env = process.env) {

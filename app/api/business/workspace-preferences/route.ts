@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       p_client: ctx.scope.clientId, p_key: input.requestKey, p_revision: input.revision, p_settings: settings,
     });
     if (result.error) {
-      if (result.error.code === "40001") return error("Your preferences changed elsewhere. Reload saved preferences before saving.", 409);
+      if (["PT409", "40001"].includes(result.error.code)) return error("Your preferences changed elsewhere. Reload saved preferences before saving.", 409);
       if (result.error.code === "42501") return error("Business workspace access is required.", 403);
       if (result.error.code === "22023") return error("Check your name and Today preferences.", 400);
       return error("Your save could not be confirmed. Retry the same change.", 503);

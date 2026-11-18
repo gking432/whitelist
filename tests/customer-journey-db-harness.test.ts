@@ -145,7 +145,7 @@ test("the broader security schema clone includes only its real static provider c
 });
 
 test("HubSpot SQL acceptance remains required with six real concurrency cases and no policy bypass", async () => {
-  assert.equal(EXPECTED_MIGRATION, "20261118051339");
+  assert.equal(EXPECTED_MIGRATION, "20261118170156");
   const verifier = await readFile(harnessUrl, "utf8");
   assert.match(verifier, /rollbackAcceptance\(target, "hubspot-oauth-acceptance.sql", "hubspot_oauth_acceptance"\)/);
   assert.match(verifier, /rollbackAcceptance\(target, "owner-workspace-acceptance.sql", "owner_workspace_acceptance"\)/);
@@ -163,15 +163,23 @@ test("HubSpot SQL acceptance remains required with six real concurrency cases an
   assert.doesNotMatch(sql, /disable\s+trigger|session_replication_role|create\s+(?:or\s+replace\s+)?function\s+auth\./i);
 });
 
-test("preference database CAS accepts only one revision-one winner and the intended 40001 conflict", () => {
-  const winner = { worker: "a", won: true, revision: 1 }, conflict = { worker: "b", won: false, errorCode: "40001" };
+test("preference database CAS accepts only one revision-one winner and the public PT409 conflict", () => {
+  const winner = { worker: "a", won: true, revision: 1 }, conflict = { worker: "b", won: false, errorCode: "PT409" };
   assert.equal(preferenceCasWinner([winner, conflict]), winner);
   assert.equal(preferenceCasWinner([conflict, winner]), winner);
   for (const results of [
     [], [winner], [winner, winner], [winner, { ...winner, worker: "b" }],
     [{ ...winner, revision: 2 }, conflict], [{ ...winner, won: "true" }, conflict],
     [winner, { ...conflict, worker: "c" }], [winner, { ...conflict, won: null }],
-    [winner, { ...conflict, errorCode: "42501" }], [winner, { ...conflict, errorCode: "40P01" }],
+    [winner, { ...conflict, errorCode: "40001" }], [winner, { ...conflict, errorCode: "42501" }], [winner, { ...conflict, errorCode: "40P01" }],
     [winner, { ...conflict, errorCode: "55P03" }], [winner, { ...conflict, errorCode: null }],
   ]) assert.throws(() => preferenceCasWinner(results), /Preference CAS/);
+});
+
+test("only the two owner public conflict boundaries require PT409 without permitting transient 40001", async () => {
+  for (const [file, rpc] of [["owner-workspace-acceptance.sql", "save_owner_workspace_preferences"], ["first-owner-acceptance.sql", "provision_first_owner"]]) {
+    const sql = await readFile(new URL(`../scripts/sql/${file}`, import.meta.url), "utf8");
+    assert.match(sql, new RegExp(`perform public\\.${rpc}\\([^;]+; exception when sqlstate 'PT409' then denied:=true; when sqlstate '40001' then raise exception`));
+    assert.doesNotMatch(sql, /when (?:serialization_failure|sqlstate '40001') then denied:=true/);
+  }
 });
