@@ -24,6 +24,7 @@ export type DailyWorkSection = {
   href?: string;
   rows: FocusRow[];
   remaining: number;
+  links?: { label: string; href: string }[];
 };
 export type FocusBrief = {
   title: string;
@@ -130,6 +131,7 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
         recordId: goal.id,
       })),
   ];
+  const needsAttention = brief.attention.length > 0 || brief.decisions > 0 || brief.urgentCount > 0;
   let state: FocusBrief["state"] = rows.length
     ? "planned"
     : connected
@@ -143,7 +145,7 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
   let description = connected
     ? "Nothing needs your attention in the records available here."
     : "Connect your apps to bring your appointments, messages, and decisions into view.";
-  if (brief.attention.length || brief.decisions || brief.urgentCount) {
+  if (needsAttention) {
     state = "attention";
     title =
       brief.decisions > 0
@@ -169,13 +171,13 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
     description = "The next steps from your saved work.";
   }
   if (data.errors.length || data.limited) {
-    state = "incomplete";
-    title = data.errors.length
-      ? "Your brief needs a refresh."
-      : "Here’s what’s on your radar.";
-    description = data.errors.length
-      ? "Some information couldn’t be checked. These are the records available so far."
-      : "This brief covers the recent records available here.";
+    if (!needsAttention) {
+      state = "incomplete";
+      title = data.errors.length ? "Your brief needs a refresh." : "Here’s what’s on your radar.";
+      description = data.errors.length ? "Some information couldn’t be checked. These are the records available so far." : "This brief covers the recent records available here.";
+    } else {
+      description += data.errors.length ? " Some information couldn’t be checked; the available decisions are below." : " This view covers the recent records available here.";
+    }
   }
   const unavailableImport = data.connectedData?.apps.some(
     (a) =>
@@ -185,10 +187,11 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
       (a.status === "connected" && (!a.lastSyncedAt || a.syncing)),
   );
   if (unavailableImport && !data.errors.length) {
-    state = "incomplete";
-    title = "Your connected apps are updating.";
-    description =
-      "Some information is still importing, paused, or needs attention. Check connections for the latest status.";
+    if (!needsAttention) {
+      state = "incomplete";
+      title = "Your connected apps are updating.";
+      description = "Some information is still importing, paused, or needs attention. Check connections for the latest status.";
+    } else description += " Some connected information is importing, paused or needs review.";
   }
   const unread =
     data.connectedData?.messages.filter((m) => m.unread && m.inbox) || [];
@@ -252,7 +255,7 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
     title = "Money records need source review.";
     description = "Conflicting or overlapping imports are excluded from amounts due until the sources agree.";
   }
-  const invoiceIds = new Set(invoices.map((record) => `record:${record.id}`));
+  const attentionKeys = new Set(brief.attention.map((item) => item.id));
   const sections: DailyWorkSection[] = [
     {
       key: "money-source-review", title: "Money source review", href: "/client/money",
@@ -303,29 +306,26 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
           kind: "attention" as const,
           href: m.href || "/client/messages",
         })),
-        ...rows.filter((row) => row.key.startsWith("conversation:")),
+        ...rows.filter((row) => row.key.startsWith("conversation:") && !attentionKeys.has(row.key)),
       ],
       remaining: 0,
     },
     {
       key: "attention",
       title: "Needs your attention",
-      href: "/client/business/approvals",
-      rows: rows.filter(
-        (row) =>
-          row.kind === "attention" &&
-          !row.key.startsWith("conversation:") &&
-          !row.key.startsWith("action:") &&
-          !row.key.startsWith("work:") &&
-          !invoiceIds.has(row.key),
-      ),
+      links: [
+        ...(brief.decisions ? [{ label: "Review decisions", href: "/client/business/approvals" }] : []),
+        ...(data.conversations.length ? [{ label: "Open Messages", href: "/client/messages" }] : []),
+        ...(brief.attention.some((item) => item.id.startsWith("action:") || item.id.startsWith("work:")) ? [{ label: "Open To-do", href: "/client/todo" }] : []),
+      ],
+      rows: rows.filter((row) => attentionKeys.has(row.key)).sort((a, b) => Number(b.label === "Decision") - Number(a.label === "Decision")),
       remaining: 0,
     },
     {
       key: "invoices",
       title: "Invoices",
       href: "/client/business/operations",
-      rows: invoices.map((record) => ({
+      rows: invoices.filter((record) => !attentionKeys.has(`record:${record.id}`)).map((record) => ({
         key: `invoice:${record.id}`,
         title: record.title,
         detail: [
@@ -361,14 +361,18 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
       href: "/client/todo",
       rows: rows.filter(
         (row) =>
-          row.kind === "action" ||
+          !attentionKeys.has(row.key) && (row.kind === "action" ||
           row.key.startsWith("action:") ||
-          row.key.startsWith("work:"),
+          row.key.startsWith("work:")),
       ),
       remaining: 0,
     },
   ]
     .filter((section) => section.rows.length > 0)
+    .sort((a, b) => {
+      const priority = (key: string) => key === "attention" ? 0 : key === "money-source-review" ? 1 : 2;
+      return priority(a.key) - priority(b.key);
+    })
     .map((section) => ({
       ...section,
       rows: section.rows.slice(0, 4),

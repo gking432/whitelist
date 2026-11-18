@@ -26,16 +26,10 @@ export default async function DesignPreviewPage({
     notFound();
   const data = emptyDesignPreview();
   const navigation = [
-    ...OWNER_AREAS.map((item) => ({
+    ...OWNER_AREAS.filter((item) => ["Today", "Messages", "To-do", "Manager", "Apps"].includes(item.label)).map((item) => ({
       ...item,
       href: item.href.replace("/client", "/preview"),
     })),
-    {
-      label: "Apps & connections",
-      href: "/preview/apps",
-      group: "Your business",
-      icon: "apps" as const,
-    },
   ];
   const content =
     area[0] === "messages" ? (

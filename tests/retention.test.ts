@@ -70,6 +70,7 @@ test("operational retention uses narrow tables, statuses, and cutoffs", async ()
     ],
   );
   assert.equal(calls.some((call) => call.operation === "rpc" && call.table === "purge_customer_interaction_content"), true);
+  assert.equal(calls.some((call) => call.operation === "rpc" && call.table === "purge_owner_workspace_activity"), true);
   assert.deepEqual(
     calls.find((call) => call.operation === "in")?.args,
     ["status", ["succeeded", "cancelled"]],

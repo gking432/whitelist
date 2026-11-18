@@ -3,6 +3,7 @@ import { knownCurrency, minorAmount } from "../connections/money.ts";
 import { reconcileMoneySources } from "../money/source-reconciliation.ts";
 import type { BusinessRecord, BusinessSnapshot } from "./types.ts";
 import type { BusinessContextSnapshot } from "./context-contract.ts";
+import type { WorkspacePersonalization } from "./workspace-preferences-contract.ts";
 
 export type BriefTask = {
   id: string;
@@ -23,6 +24,7 @@ export type BriefAppointment = {
   allDay?: boolean;
 };
 export type DailyBriefData = {
+  personalization?: WorkspacePersonalization;
   workspace: BusinessSnapshot;
   businessContext?: BusinessContextSnapshot;
   connectedData?: ConnectedData;

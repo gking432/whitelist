@@ -12,12 +12,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { assertHostedCi, sanitizeCiFailure, SOURCE_CONTAINER } from "./ci-bootstrap-customer-journey-db.mjs";
 import { assertEmptyBrowserTarget, browserFixtureIdentity, cleanupBrowserFixtures, prepareBrowserCatalog, readCreatedOwner } from "./owner-browser-fixtures.mjs";
+import { assertOwnerWorkspaceNavigation, assertSavedWorkspacePreferences, runOwnerWorkspaceScenarios } from "./owner-workspace-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
 export const MAILPIT_VERSION = "1.22.3";
 export const OWNER_BROWSER_CONFIRMATION = "owner-browser-disposable";
 export const BROWSER_COVERAGE = ["real login UI and fresh one-use GoTrue/Mailpit verification", "visible first-owner creation and reload without duplicate business", "empty Today and current Apps for the same business", "queued source imports rendered on desktop and phone", "two-owner source and endpoint isolation", "normal UI sign-out and stale signed user token denial", "real re-login preserves business, membership and creation receipt", "same-browser account switch replaces prior business access without provisioning", "revoked membership denies both current sessions and cannot create another business", "synthetic-only cleanup"];
+BROWSER_COVERAGE.push("deliberate owner-scoped Today preferences, source-backed usage suggestions, CAS, reset and exact retry");
 export function browserOptions(args) {
   if (args.length > 1 || args.some((arg) => !["--plan", "--preflight"].includes(arg))) throw new Error("Use no arguments, --plan, or --preflight.");
   return { plan: args[0] === "--plan", preflight: args[0] === "--preflight" };
@@ -180,6 +182,10 @@ async function sourceImport(env, target, fixture, owner) {
   } finally { await rm(protectedPath, { force: true }); }
 }
 async function visible(page, text) { await page.getByText(text, { exact: false }).first().waitFor({ state: "visible", timeout: 30000 }); }
+async function revealCustomerContext(page) {
+  const summary = page.locator("summary").filter({ hasText: /^\s*Customer context\s*$/ });
+  if (await summary.count() && !(await summary.evaluate((node) => node.parentElement.open))) await summary.click();
+}
 async function screenshot(page, target, name) {
   assert.ok(["/client", "/start", "/login"].some((prefix) => new URL(page.url()).pathname.startsWith(prefix)));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2), false, "Owner content must fit the actual desktop/phone viewport.");
@@ -188,7 +194,7 @@ async function screenshot(page, target, name) {
 async function signOutUi(page, target) {
   let button = page.getByRole("button", { name: "Sign out", exact: true });
   if (!(await button.first().isVisible().catch(() => false))) {
-    const menu = page.getByText("Menu", { exact: true });
+    const menu = page.locator("summary").filter({ hasText: /^\s*More\s*$/ });
     if (await menu.isVisible().catch(() => false)) await menu.click();
   }
   button = page.getByRole("button", { name: "Sign out", exact: true });
@@ -208,7 +214,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   if (installed.name !== "playwright" || installed.version !== PLAYWRIGHT_VERSION) throw new Error(`Use audited Playwright ${PLAYWRIGHT_VERSION} in the explicit CI-only module path.`);
   await mkdir(target.artifacts, { recursive: true });
   const fixture = browserFixtureIdentity(randomBytes(6).toString("hex")), checks = [], contexts = [], diagnostics = [];
-  let app, browser, failure, remainingFixtures = null;
+  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null;
   const step = async (key, action) => {
     try { await action(); checks.push({ key, status: "passed" }); console.log(`Owner browser: ${key}`); }
     catch (error) { checks.push({ key, status: "failed" }); throw new Error(`${key}: ${error.message}`); }
@@ -241,6 +247,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       });
       await step(`${owner.label}: empty Today and Apps reload`, async () => {
         await page.waitForFunction((name) => document.title.includes(name), owner.name);
+        await assertOwnerWorkspaceNavigation(page, owner.name);
+        assert.equal(await page.locator("[data-work-section]").count(), 0, "An empty Today must not show filler work sections.");
         await screenshot(page, target, `${owner.label}-empty-today`);
         const workspace = await page.request.get(`${target.appUrl}/api/business/workspace`); assert.equal(workspace.status(), 200); const saved = await workspace.json(); assert.ok(Array.isArray(saved.records)); assert.equal(saved.records.length, 0, "A new owner must not receive sample business records.");
         const empty = await page.request.get(`${target.appUrl}/api/connections`); assert.equal(empty.status(), 200); const source = await empty.json(); assert.equal(source.apps.length, 0); for (const field of ["messages", "appointments", "invoices", "payments", "leads", "customers", "crmDeals"]) assert.equal((source[field] || []).length, 0);
@@ -253,7 +261,13 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       const other = owners.find((candidate) => candidate.userId !== owner.userId);
       await step(`${owner.label}: imported source views and isolation`, async () => {
         const { page, sources } = owner;
-        await page.goto(`${target.appUrl}/client/apps`); await visible(page, sources.expected.customerName); await screenshot(page, target, `${owner.label}-source-apps`); assert.equal((await page.locator("body").innerText()).includes(other.marker), false);
+        await page.goto(`${target.appUrl}/client/apps`); await assertOwnerWorkspaceNavigation(page, owner.name); await screenshot(page, target, `${owner.label}-source-apps-collapsed`);
+        const accountControls = page.locator("summary").filter({ hasText: /^\s*Account controls & details\s*$/ });
+        assert.ok(await accountControls.count() > 0);
+        for (let index = 0; index < await accountControls.count(); index++) await accountControls.nth(index).click();
+        assert.equal(await page.getByRole("button", { name: "Pause updates", exact: true }).first().isEnabled(), true);
+        await visible(page, "Partial coverage");
+        await revealCustomerContext(page); await visible(page, sources.expected.customerName); await screenshot(page, target, `${owner.label}-source-apps`); assert.equal((await page.locator("body").innerText()).includes(other.marker), false);
         await page.goto(`${target.appUrl}/client/money`); await visible(page, sources.expected.invoiceNumber); await screenshot(page, target, `${owner.label}-source-money`); assert.equal((await page.locator("body").innerText()).includes(other.marker), false);
         await page.goto(`${target.appUrl}/client/messages`); await visible(page, sources.expected.inquiryTitle); assert.equal((await page.locator("body").innerText()).includes(other.marker), false);
         if (sources.expected.appointmentTitle) { await page.goto(`${target.appUrl}/client/calendar`); await visible(page, sources.expected.appointmentTitle); }
@@ -264,6 +278,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         }
       });
     }
+    workspacePersonalization = await runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, env });
     let signedOutToken;
     await step("phone: normal owner UI sign out", async () => { signedOutToken = observedTokens.get("phone"); assert.ok(signedOutToken, "A genuine browser GoTrue session token must be observed for revocation proof."); await owners[1].page.goto(`${target.appUrl}/client/apps`); await signOutUi(owners[1].page, target); });
     await step("phone: stale signed session denied by real RPCs", async () => {
@@ -277,7 +292,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       assert.equal(await owner.page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, owner); assert.equal(persisted.clientId, owner.clientId); assert.equal(persisted.membershipId, owner.membershipId); assert.equal(persisted.receiptId, owner.receiptId);
       assert.notEqual(observedTokens.get("phone"), signedOutToken, "Re-login must obtain a new genuine Auth session.");
-      await owner.page.goto(`${target.appUrl}/client/apps`); await visible(owner.page, owner.sources.expected.customerName); await screenshot(owner.page, target, "phone-relogin-persisted");
+      await assertSavedWorkspacePreferences(owner.page, target.appUrl, owner.workspacePreferences);
+      await owner.page.goto(`${target.appUrl}/client/apps`); await revealCustomerContext(owner.page); await visible(owner.page, owner.sources.expected.customerName); await screenshot(owner.page, target, "phone-relogin-persisted");
     });
     await step("phone: normal account switch replaces prior business access", async () => {
       const prior = owners[1], current = owners[0], page = prior.page;
@@ -285,9 +301,11 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       await page.waitForFunction((name) => document.title.includes(name), current.name);
       assert.equal(await page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, current); assert.equal(persisted.clientId, current.clientId); assert.equal(persisted.membershipId, current.membershipId); assert.equal(persisted.receiptId, current.receiptId);
+      await assertSavedWorkspacePreferences(page, target.appUrl, current.workspacePreferences);
+      assert.notDeepEqual(current.workspacePreferences, prior.workspacePreferences, "Distinct account preferences must not be substituted during the same-browser switch.");
       const scoped = await page.request.get(`${target.appUrl}/api/connections?clientId=${prior.clientId}`); assert.equal(scoped.status(), 200);
       const data = JSON.stringify(await scoped.json()); assert.ok(data.includes(current.marker)); assert.equal(data.includes(prior.marker), false, "The same browser must no longer read the previous account's sources.");
-      await page.goto(`${target.appUrl}/client/apps`); await visible(page, current.sources.expected.customerName); assert.equal((await page.locator("body").innerText()).includes(prior.marker), false);
+      await page.goto(`${target.appUrl}/client/apps`); await revealCustomerContext(page); await visible(page, current.sources.expected.customerName); assert.equal((await page.locator("body").innerText()).includes(prior.marker), false);
       await screenshot(page, target, "phone-switched-account");
       await page.goto(`${target.appUrl}/client/money`); await visible(page, current.sources.expected.invoiceNumber); assert.equal((await page.locator("body").innerText()).includes(prior.marker), false);
       for (const [kind, ref] of Object.entries(prior.sources.sourceRefs || {})) {
@@ -313,7 +331,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     if (app) { app.child.kill("SIGTERM"); await new Promise((done) => { if (app.child.exitCode !== null) done(); else { app.child.once("exit", done); setTimeout(() => { app.child.kill("SIGKILL"); done(); }, 5000).unref(); } }); }
     try { remainingFixtures = await cleanupBrowserFixtures(admin, fixture); } catch (error) { failure ||= error; }
     for (const owner of fixture.owners) try { await cleanupMailbox(target, owner.email); } catch (error) { failure ||= error; }
-    const report = { kind: "owner_browser_acceptance", status: failure ? "failed" : "passed", playwrightVersion: PLAYWRIGHT_VERSION, checks, remainingFixtures, diagnostics, limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call."], ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) };
+    const report = { kind: "owner_browser_acceptance", status: failure ? "failed" : "passed", playwrightVersion: PLAYWRIGHT_VERSION, checks, remainingFixtures, diagnostics, workspacePersonalization, limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately."], ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) };
     await writeFile(join(target.artifacts, "owner-browser-report.json"), JSON.stringify(report, null, 2));
   }
   if (failure) throw new Error(redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]));

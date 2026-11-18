@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261118034811";
+export const EXPECTED_MIGRATION = "20261118051339";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -317,6 +317,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await rollbackAcceptance(target, "money-followup-acceptance.sql", "money_followup_acceptance");
   await rollbackAcceptance(target, "hubspot-oauth-acceptance.sql", "hubspot_oauth_acceptance");
   await rollbackAcceptance(target, "first-owner-acceptance.sql", "first_owner_acceptance");
+  await rollbackAcceptance(target, "owner-workspace-acceptance.sql", "owner_workspace_acceptance");
   if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); }
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }

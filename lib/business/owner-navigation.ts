@@ -22,17 +22,36 @@ export const OWNER_AREAS = [
     group: "Your business",
   },
   {
+    label: "Calendar",
+    href: "/client/calendar",
+    section: "schedule",
+    icon: "activity",
+    group: "Your business",
+  },
+  {
+    label: "Money",
+    href: "/client/money",
+    section: "settings",
+    icon: "activity",
+    group: "Your business",
+  },
+  {
     label: "Manager",
     href: "/client/manager",
     section: "automations",
     icon: "assistant",
     group: "Your business",
   },
+  {
+    label: "Apps",
+    href: "/client/apps",
+    section: "settings",
+    icon: "apps",
+    group: "Your business",
+  },
 ] as const;
 
 export function isOwnerArea(pathname: string) {
-  return (
-    OWNER_AREAS.some((area) => area.href === pathname) ||
-    ["/client/conversations", "/client/apps", "/client/calendar", "/client/money", "/client/customer-work"].includes(pathname)
-  );
+  return (pathname === "/client" || pathname.startsWith("/client/")) &&
+    !(pathname === "/client/mobile" || pathname === "/client/crm" || pathname.startsWith("/client/crm/"));
 }

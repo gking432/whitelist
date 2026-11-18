@@ -39,6 +39,12 @@ export async function verifyOwnerConnectedData(args = process.argv.slice(2)) {
   const { fixture: f, origin } = validateOwnerConnectedFixture(JSON.parse(await readFile(args[1], "utf8")), process.env);
   const prefix = `owner-browser-${f.runId}`, scope = { partnerId: f.partnerId, clientId: f.clientId };
   const now = Date.now(), base = now - 60_000, clock = (round = 0) => new Date(base + round * 1000).toISOString();
+  // Fixture-only all-day source evidence stays observable in the business day
+  // even when hosted acceptance runs near midnight. It is not a booking receipt.
+  const dayParts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(now));
+  const dayPart = (key: string) => dayParts.find((part) => part.type === key)!.value;
+  const appointmentDay = `${dayPart("year")}-${dayPart("month")}-${dayPart("day")}`;
+  const appointmentEndDay = new Date(Date.parse(`${appointmentDay}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
   const epoch = (round = 0) => Math.floor((base + round * 1000) / 1000);
   const portal = f.marker.includes("-desktop-") ? "900000001" : "900000002";
   const tag = f.marker.replaceAll("-", ""), invoiceId = `in_${tag}`, paymentId = `pi_${tag}`;
@@ -73,7 +79,7 @@ export async function verifyOwnerConnectedData(args = process.argv.slice(2)) {
     }
     if (method === "GET" && u.origin === "https://www.googleapis.com" && u.pathname === "/calendar/v3/calendars/primary/events") {
       assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${access}`);
-      return reply({ items: [{ id: "fixture-event", status: "confirmed", updated: clock(round), summary: round ? expected.appointmentTitle : `${f.marker} appointment`, start: { dateTime: new Date(now + 3600000).toISOString() }, end: { dateTime: new Date(now + 7200000).toISOString() }, htmlLink: "https://calendar.google.com/calendar/event?eid=synthetic" }], nextSyncToken: "fixture-calendar-cursor" });
+      return reply({ items: [{ id: "fixture-event", status: "confirmed", updated: clock(round), summary: round ? expected.appointmentTitle : `${f.marker} appointment`, start: { date: appointmentDay }, end: { date: appointmentEndDay }, htmlLink: "https://calendar.google.com/calendar/event?eid=synthetic" }], nextSyncToken: "fixture-calendar-cursor" });
     }
     if (method === "GET" && u.origin === "https://api.hubapi.com" && ["/crm/v3/objects/contacts", "/crm/v3/objects/deals", "/crm/v3/objects/notes"].includes(u.pathname)) {
       assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${access}`);
@@ -187,7 +193,7 @@ export async function verifyOwnerConnectedData(args = process.argv.slice(2)) {
     await assertStopped(); assert.equal(forbiddenNetwork, 0);
     assert.ok((await rows("integration_connections")).every((c) => c.runtime_mode === "dry_run" && c.config.workspace_view_only === true && c.config.hubspot_actions_enabled !== true));
     const source = (key: string, type: string, external: string) => { const r = imported.rows.find((r) => r.connection_id === connections[key] && r.object_type === type && r.external_object_id === external); assert.ok(r); return { connectionId: r.connection_id, recordId: r.id }; };
-    const report = { version: 1, clientId: f.clientId, marker: f.marker, expected, counts: { canonical: imported.rows.length, messages: imported.data.messages.length, appointments: imported.data.appointments.length, customers: imported.data.customers?.length, invoices: imported.data.invoices?.length, payments: imported.data.payments?.length, intake: imported.data.leads?.length }, sourceRefs: { hubspot: source("hubspot", "customer", "1001"), invoice: source("stripe", "invoice", invoiceId) }, executedJobs: executed,
+    const report = { version: 1, clientId: f.clientId, marker: f.marker, expected, counts: { canonical: imported.rows.length, messages: imported.data.messages.length, appointments: imported.data.appointments.length, customers: imported.data.customers?.length, invoices: imported.data.invoices?.length, payments: imported.data.payments?.length, intake: imported.data.leads?.length }, sourceRefs: { hubspot: source("hubspot", "customer", "1001"), invoice: source("stripe", "invoice", invoiceId), message: source("google_workspace", "message", "fixture-mail"), appointment: source("google_workspace", "appointment", "fixture-event") }, executedJobs: executed,
       proof: { actualQueue: true, actualCanonicalRpc: true, ownerManagerSourcesMatch: true, providerTransportFixtures: true, externalNetworkRequests: 0, liveOAuth: false, liveProviderWrites: false, teamPaused: true, sandboxPreserved: true, paginationArchiveUpdateConflictRecoveryPause: true } };
     await writeFile(args[3], `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600, flag: "wx" });
     console.log(`PASS: actual queued connected-data import and owner/manager read models for ${f.marker}; provider transport fixtures only, no live OAuth or external write proof.`);

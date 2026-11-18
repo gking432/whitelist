@@ -17,9 +17,11 @@ import { ConnectedDataRefresh } from "./connected-data-refresh";
 import { FocusBriefCard } from "./focus-brief-card";
 import { DailyWorkSections } from "./daily-work-sections";
 import { buildFocusBrief } from "@/lib/business/focus-brief";
+import { orderDailySections, recommendWorkspaceFocus } from "@/lib/business/workspace-preferences";
+import { WorkspacePreferencesPanel } from "./workspace-preferences-panel";
 
 const quietButton =
-  "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40";
+  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40";
 const sectionHeading = "text-[13px] font-medium text-slate-500";
 
 function dateLabel(date: string, today: string) {
@@ -57,6 +59,8 @@ export function DailyBrief({
   const busy = preview || saving || refreshing;
   const brief = buildDailyBrief(data);
   const focus = buildFocusBrief(data);
+  const sections = orderDailySections(focus.sections, data.personalization?.preferences);
+  const recommendation = recommendWorkspaceFocus(focus.sections, data.personalization?.activity ?? []);
   if (preview && focus.link)
     focus.link = { ...focus.link, href: "/preview/apps" };
   const workspace = data.workspace;
@@ -120,14 +124,14 @@ export function DailyBrief({
   return (
     <div className="min-w-0 text-left">
       {!preview ? <ConnectedDataRefresh /> : null}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <p
           data-preview-date={preview ? "" : undefined}
           className="text-xs text-slate-500"
         >
           {date}
         </p>
-        <div className="flex items-center gap-1">
+        <div className="ml-auto flex min-w-0 items-center gap-1">
           <button
             onClick={() => startRefresh(() => router.refresh())}
             disabled={busy}
@@ -140,7 +144,7 @@ export function DailyBrief({
           </button>
           {workspace.canWrite ? (
             <details ref={addMenu} className="relative">
-              <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-lg px-2 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-900">
                 <Plus className="size-3.5" />
                 Add
               </summary>
@@ -154,7 +158,7 @@ export function DailyBrief({
                 ).map(([kind, label]) => (
                   <button
                     key={kind}
-                    className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                    className="block min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
                     disabled={busy}
                     onClick={() => {
                       setGoalFilter(null);
@@ -167,6 +171,7 @@ export function DailyBrief({
               </div>
             </details>
           ) : null}
+          {data.personalization ? <WorkspacePreferencesPanel snapshot={data.personalization} recommendation={recommendation} preview={preview} /> : null}
         </div>
       </div>
 
@@ -176,7 +181,7 @@ export function DailyBrief({
           greeting={`${greeting}${data.displayName ? `, ${data.displayName}` : ""}.`}
         />
       </div>
-      <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-xs text-slate-500">
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:items-center">
         {!preview ? <Link href="/client/customer-work" className="hover:text-slate-800">Customer work</Link> : null}
         <Link
           href={preview ? "/preview/manager" : "/client/manager"}
@@ -193,12 +198,12 @@ export function DailyBrief({
         </Link>
       </div>
       <DailyWorkSections
-        sections={focus.sections}
+        sections={sections}
         onOpenRecord={setSelectedId}
       />
       {data.errors.length ? (
         <details className="mt-6 text-xs text-amber-800">
-          <summary className="cursor-pointer">What couldn’t be checked</summary>
+          <summary className="min-h-11 cursor-pointer py-3">What couldn’t be checked</summary>
           <p role="alert" className="mt-2 leading-6">
             {data.errors.join(" ")} Refresh to try again.
           </p>
@@ -218,7 +223,7 @@ export function DailyBrief({
       <div className="mt-12 space-y-10">
         {visibleGoals.length ? (
           <details id="goals">
-            <summary className={`${sectionHeading} cursor-pointer`}>
+            <summary className={`${sectionHeading} min-h-11 cursor-pointer py-3`}>
               Goals · {brief.goals.length}
             </summary>
             <div className="mt-3 divide-y divide-slate-100">
@@ -232,7 +237,7 @@ export function DailyBrief({
                     <div className="flex items-start justify-between gap-5">
                       <button
                         onClick={() => setSelectedId(goal.id)}
-                        className="break-words text-left text-sm text-slate-800 hover:text-slate-500"
+                        className="min-h-11 break-words text-left text-sm text-slate-800 hover:text-slate-500"
                       >
                         {goal.title}
                       </button>
@@ -258,7 +263,7 @@ export function DailyBrief({
                     <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
                       {next ? (
                         <button
-                          className="text-left text-xs text-slate-500 hover:text-slate-700"
+                          className="min-h-11 text-left text-xs text-slate-500 hover:text-slate-700"
                           onClick={() =>
                             next.source === "workspace"
                               ? setSelectedId(next.id)
@@ -269,7 +274,7 @@ export function DailyBrief({
                         </button>
                       ) : workspace.canWrite ? (
                         <button
-                          className="text-xs text-slate-500 hover:text-slate-700"
+                          className="min-h-11 text-xs text-slate-500 hover:text-slate-700"
                           disabled={busy}
                           onClick={() => {
                             setGoalFilter(goal.id);
@@ -302,7 +307,7 @@ export function DailyBrief({
 
         {brief.news.length ? (
           <details>
-            <summary className={`${sectionHeading} cursor-pointer`}>
+            <summary className={`${sectionHeading} min-h-11 cursor-pointer py-3`}>
               Worth a look · {brief.news.length}
             </summary>
             <div className="mt-3 divide-y divide-slate-100">
@@ -334,7 +339,7 @@ export function DailyBrief({
                       <button
                         onClick={() => openEditor("knowledge", item)}
                         disabled={busy}
-                        className="hover:text-slate-700"
+                        className="min-h-11 px-2 hover:text-slate-700"
                         aria-label={`Edit ${item.title}`}
                       >
                         Edit

@@ -111,7 +111,7 @@ test("the daily brief shows only remaining confirmed appointments on the busines
   );
 });
 
-test("work below the greeting keeps messages and invoices visible even when other work fills the summary", () => {
+test("urgent customer work stays first with links to its source while ordinary invoices remain visible", () => {
   const state = data([
     ...Array.from({ length: 7 }, (_, index) =>
       record({ id: `action-${index}`, data: { due_date: "2026-10-30" } }),
@@ -136,22 +136,24 @@ test("work below the greeting keeps messages and invoices visible even when othe
   ];
   state.counts.conversations = 1;
   const brief = buildFocusBrief(state);
-  const messages = brief.sections.find((section) => section.key === "messages");
+  const attention = brief.sections.find((section) => section.key === "attention");
   const invoices = brief.sections.find((section) => section.key === "invoices");
   const todo = brief.sections.find((section) => section.key === "todo");
-  assert.equal(messages?.rows[0].href, "/client/messages?id=message");
+  assert.equal(brief.sections[0].key, "attention");
+  assert.equal(attention?.rows[0].href, "/client/messages?id=message");
+  assert.ok(attention?.links?.some((link) => link.href === "/client/messages"));
+  assert.ok(attention?.links?.some((link) => link.href === "/client/todo"));
   assert.deepEqual(
     invoices?.rows.map((row) => row.recordId),
     ["invoice"],
   );
   assert.equal(invoices?.rows[0].label, "$125.00");
   assert.match(invoices?.rows[0].detail || "", /Draft/);
-  assert.equal(todo?.rows.length, 4);
-  assert.equal(todo?.remaining, 3);
-  assert.equal(
-    brief.sections.some((section) => section.key === "attention"),
-    false,
-  );
+  assert.equal(attention?.rows.length, 4);
+  assert.equal(attention?.remaining, 4);
+  assert.equal(todo, undefined);
+  const keys = brief.sections.flatMap((section) => section.rows.map((row) => row.key));
+  assert.equal(new Set(keys).size, keys.length);
 });
 
 test("decisions take priority and urgent actions appear once in a bounded brief", () => {
@@ -265,11 +267,10 @@ test("attention combines source decisions, blocked agents, and inquiries without
   assert.equal(brief.decisions, 2);
   assert.equal(brief.attention[0].label, "Agent blocked");
   assert.equal(brief.urgentCount, 1);
-  assert.equal(
-    buildFocusBrief(state).sections.find((section) => section.key === "todo")
-      ?.rows[0].key,
-    "work:blocked",
-  );
+  const focus = buildFocusBrief(state);
+  assert.equal(focus.sections[0].key, "attention");
+  assert.deepEqual(focus.sections[0].rows.map((row) => row.key), ["approval:approval", "record:record", "work:blocked"]);
+  assert.equal(focus.sections.some((section) => section.key === "todo"), false);
   assert.equal(buildDailyBrief(data()).attention.length, 0);
 });
 test("industry updates require a safe original source and progress is measured, bounded data", () => {
@@ -358,4 +359,17 @@ test("Today exposes conflicting duplicate money imports without claiming an amou
   assert.match(brief.title, /Money records need source review/);
   assert.equal(brief.sections.some((section) => section.key === "connected-invoices"), false);
   assert.equal(brief.sections.find((section) => section.key === "money-source-review")?.rows.length, 1);
+});
+
+test("an available owner decision stays prominent when another source errors or is importing", () => {
+  const snapshot = data();
+  snapshot.approvals = [{ id: "decision", title: "Review actual decision", summary: "Saved approval", created_at: snapshot.generatedAt }];
+  snapshot.counts.approvals = 1;
+  snapshot.errors = ["Calendar could not be checked"];
+  const focus = buildFocusBrief(snapshot);
+  assert.equal(focus.state, "attention");
+  assert.equal(focus.title, "1 decision needs you.");
+  assert.match(focus.description, /couldn’t be checked/);
+  assert.equal(focus.link?.href, "/client/business/approvals");
+  assert.equal(focus.sections[0].rows[0].key, "approval:decision");
 });

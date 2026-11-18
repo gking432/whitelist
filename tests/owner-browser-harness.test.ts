@@ -3,6 +3,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage } from "../scripts/verify-owner-browser.mjs";
 import { browserFixtureIdentity } from "../scripts/owner-browser-fixtures.mjs";
+import { runOwnerWorkspaceScenarios, workspaceActivityFixture } from "../scripts/owner-workspace-browser-scenarios.mjs";
 
 const hosted = { CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted", GITHUB_ENV: "/tmp/owner-browser-env", RUNNER_TEMP: "/tmp/owner-browser-runner",
   OWNER_BROWSER_CONFIRMATION, NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321", NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-public-key", SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-key",
@@ -84,4 +85,17 @@ test("fixture identities are bounded synthetic tags and plan mode never claims a
   assert.throws(() => browserOptions(["--plan", "--preflight"]), /Use no arguments/);
   const plan = spawnSync(process.execPath, ["scripts/verify-owner-browser.mjs", "--plan"], { encoding: "utf8", env: { NODE_ENV: "test", PATH: process.env.PATH } });
   assert.equal(plan.status, 0); assert.equal(JSON.parse(plan.stdout).status, "not_run"); assert.doesNotMatch(plan.stdout, /acceptance passed/);
+});
+test("workspace evidence fixtures contain only scoped enum/day aggregates in the actual business timezone", () => {
+  const owner = { userId: "11111111-1111-4111-8111-111111111111", clientId: "22222222-2222-4222-8222-222222222222", label: "desktop" as const }, partnerId = "33333333-3333-4333-8333-333333333333";
+  const rows = workspaceActivityFixture(owner, partnerId, new Date("2026-11-18T00:30:00Z"));
+  assert.equal(rows.length, 8); assert.equal(rows[0].activity_date, "2026-11-17");
+  assert.equal(new Set(rows.filter((row) => row.module === "messages").map((row) => row.activity_date)).size, 5);
+  assert.equal(new Set(rows.filter((row) => row.module === "appointments").map((row) => row.activity_date)).size, 3);
+  assert.ok(rows.every((row) => row.user_id === owner.userId && row.client_id === owner.clientId && row.partner_id === partnerId && Object.keys(row).sort().join(",") === "activity_date,client_id,module,partner_id,user_id"));
+  assert.equal(workspaceActivityFixture({ ...owner, label: "phone" }, partnerId).filter((row) => row.module === "appointments").length, 5);
+  assert.throws(() => workspaceActivityFixture({ ...owner, userId: "unknown" }, partnerId), /exact disposable/);
+});
+test("workspace scenario service fixtures refuse to run without the hosted disposable CI guard", async () => {
+  await assert.rejects(runOwnerWorkspaceScenarios({ env: {} } as Parameters<typeof runOwnerWorkspaceScenarios>[0]), /disposable GitHub-hosted/);
 });

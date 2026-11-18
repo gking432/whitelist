@@ -197,13 +197,6 @@ export function PortalShell({
             group: "Manage",
           },
           {
-            label: "Apps & connections",
-            href: "/client/apps",
-            section: "settings",
-            icon: "apps",
-            group: "Manage",
-          },
-          {
             label: "Detailed CRM",
             href: "/client/crm",
             section: "overview",

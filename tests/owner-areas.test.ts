@@ -64,12 +64,20 @@ test("task status changes require an optimistic concurrency token and reject bro
     false,
   );
 });
-test("the four owner areas share the minimal shell while detailed tools retain their own access paths", () => {
+test("seven owner areas keep stable navigation while self-contained mobile and CRM views retain their layouts", () => {
   assert.deepEqual(
     OWNER_AREAS.map((area) => area.label),
-    ["Today", "Messages", "To-do", "Manager"],
+    ["Today", "Messages", "To-do", "Calendar", "Money", "Manager", "Apps"],
   );
-  assert.equal(isOwnerArea("/client/todo"), true);
+  assert.equal(new Set(OWNER_AREAS.map((area) => area.href)).size, 7);
+  for (const path of ["/client", "/client/todo", "/client/apps", "/client/calendar", "/client/money", "/client/business/business", "/client/business/approvals", "/client/onboarding"])
+    assert.equal(isOwnerArea(path), true, path);
+  for (const path of ["/client/mobile", "/client/crm", "/client/crm/contacts", "/partner", "/control", "/client-other", "https://external.invalid/client"])
+    assert.equal(isOwnerArea(path), false, path);
+  // Navigation remains a permission-filtered view; settings/schedule access
+  // must not be invented for an owner with a smaller allowed section set.
+  const allowed = new Set(["action-center", "automations", "tasks"]);
+  assert.deepEqual(OWNER_AREAS.filter((area) => allowed.has(area.section)).map((area) => area.label), ["Today", "Messages", "To-do", "Manager"]);
   assert.equal(isOwnerArea("/client/conversations"), true);
   assert.equal(isOwnerArea("/client/crm"), false);
 });

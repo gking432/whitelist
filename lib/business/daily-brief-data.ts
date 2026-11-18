@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { loadBusinessSnapshot } from "./data";
 import { canReadBusinessWorkspace, canWriteBusinessWorkspace } from "./access";
 import { readBusinessContext } from "./context-data";
+import { loadWorkspacePersonalization } from "./workspace-preferences-data";
 import {
   addDays,
   localDate,
@@ -48,6 +49,7 @@ export async function loadDailyBrief(
     blocked,
     team,
     sharedContext,
+    personalization,
   ] = await Promise.all([
     loadBusinessSnapshot(portal),
     readConnectedData(admin, { partnerId, clientId }),
@@ -91,6 +93,7 @@ export async function loadDailyBrief(
     readBusinessContext(admin, { partnerId, clientId }, canWriteBusinessWorkspace(portal.access))
       .then((data) => ({ data, error: null }))
       .catch(() => ({ data: null, error: "Shared business context could not be loaded. Setup and observation coverage may be incomplete." })),
+    loadWorkspacePersonalization(portal),
   ]);
   const errors = [
     workspace.error,
@@ -107,14 +110,15 @@ export async function loadDailyBrief(
   ].filter((e): e is string => typeof e === "string" && !!e);
   const name = person.data?.full_name?.trim();
   return {
+    personalization,
     workspace: sharedContext.data ? { ...workspace, profile: sharedContext.data.profile } : workspace,
     businessContext: sharedContext.data ?? undefined,
     connectedData,
     displayName:
-      name &&
-      !["Client Owner", "Partner Owner", "Platform Owner"].includes(name)
+      personalization.preferences.displayName || (name &&
+      !["Client Owner", "Partner Owner", "Platform Owner", portal.client.name].includes(name)
         ? name.split(/\s+/)[0]
-        : null,
+        : null),
     timeZone,
     generatedAt,
     tasks: (tasks.data as unknown as DailyBriefData["tasks"]) || [],

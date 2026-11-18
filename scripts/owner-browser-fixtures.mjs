@@ -20,7 +20,7 @@ export async function assertEmptyBrowserTarget(admin) {
   const users = await admin.auth.admin.listUsers({ page: 1, perPage: 1 });
   if (users.error || users.data.users.length) throw new Error("The browser target contains existing identities. Nothing was seeded.");
   const marker = await admin.from("platform_schema_state").select("current_migration").eq("singleton", true).single();
-  if (marker.error || !String(marker.data?.current_migration).startsWith("20261118034811")) throw new Error("The genuine first-owner migration is not applied to the API-backed database.");
+  if (marker.error || marker.data?.current_migration !== "20261118051339_owner_workspace_preferences") throw new Error("The owner workspace migration is not applied to the API-backed database.");
 }
 export async function prepareBrowserCatalog(admin, fixture) {
   await inserted(admin, "partners", { id: fixture.partnerId, name: `${fixture.prefix} synthetic CI operator`, slug: fixture.prefix, status: "active", plan_key: "partner_v1", is_test_account: true });
