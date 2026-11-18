@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 export type BrowserCiEnvironment = Readonly<Record<string, string | undefined>>;
 export type OwnerBrowserTarget = {
   appUrl: string;
@@ -25,4 +26,6 @@ export type OwnerBrowserSessionCookie = { name: string; value: string; domain: s
 export function ownerSessionTokenFromCookies(cookies: unknown, target: Pick<OwnerBrowserTarget, "appUrl" | "supabaseUrl">, nowSeconds?: number): Promise<string>;
 export function readOwnerBrowserSession(context: { cookies(url: string): Promise<OwnerBrowserSessionCookie[]> }, target: Pick<OwnerBrowserTarget, "appUrl" | "supabaseUrl">): Promise<string>;
 export function verifyObservedOwnerSession(target: Pick<OwnerBrowserTarget, "supabaseUrl" | "anonKey">, token: string, expectedUserId?: string, previousToken?: string, request?: typeof fetch): Promise<ObservedOwnerSessionIdentity>;
+export type OwnerWorkspaceAccessDiagnosis = { cookieReadable: boolean | null; cookieSubjectMatches: boolean | null; sameInitialSession: boolean | null; actorVerified: boolean | null; goTrueStatus: number | null; goTrueUserMatches: boolean | null; membershipStatus: "active" | "invited" | "disabled" | "missing" | "unknown"; ownerRole: boolean | null };
+export function diagnoseOwnerWorkspaceAccess(owner: { context: Parameters<typeof readOwnerBrowserSession>[0]; userId: string; clientId: string; membershipId: string }, target: Pick<OwnerBrowserTarget, "appUrl" | "supabaseUrl" | "anonKey">, initialToken: string | undefined, admin: SupabaseClient, partnerId: string, request?: typeof fetch): Promise<OwnerWorkspaceAccessDiagnosis>;
 export function main(args?: string[], env?: BrowserCiEnvironment): Promise<void>;

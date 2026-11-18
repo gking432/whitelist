@@ -44,14 +44,57 @@ export function workspaceActivityFixture(owner, partnerId, clock = new Date(), t
   })));
 }
 
-async function snapshot(page, appUrl) {
-  const result = await page.request.get(`${appUrl}${endpoint}`, { timeout: 15000 }); assert.equal(result.status(), 200);
-  const saved = await withOwnerBrowserDeadline("read preference snapshot body", () => result.json(), 10000); assert.equal(saved.available, true); assert.equal(saved.canEdit, true);
+function preferenceErrorCategory(body) {
+  return new Map([
+    ["Business workspace access is required.", "access_denied"], ["Sign in with business owner access.", "access_denied"], ["Invalid request origin.", "origin_denied"],
+    ["Your preferences could not be loaded. Try again.", "data_unavailable"], ["The data service is unavailable.", "data_unavailable"],
+    ["Your preferences changed elsewhere. Reload saved preferences before saving.", "revision_conflict"],
+    ["Check your name and Today preferences.", "invalid_request"], ["Your save could not be confirmed. Retry the same change.", "save_unavailable"],
+  ]).get(body?.error) || "unknown_error";
+}
+function safeAccessDiagnosis(value) {
+  const flag = (key) => { const item = value?.[key]; return typeof item === "boolean" ? item : null; };
+  const status = value?.goTrueStatus, membership = value?.membershipStatus;
+  return { cookieReadable: flag("cookieReadable"), cookieSubjectMatches: flag("cookieSubjectMatches"), sameInitialSession: flag("sameInitialSession"),
+    actorVerified: flag("actorVerified"), goTrueStatus: Number.isSafeInteger(status) && status >= 100 && status <= 599 ? status : null,
+    goTrueUserMatches: flag("goTrueUserMatches"), membershipStatus: ["active", "invited", "disabled", "missing"].includes(membership) ? membership : "unknown", ownerRole: flag("ownerRole") };
+}
+export async function inspectWorkspacePreferenceResponse(response, { operation, phase = async () => {}, diagnose403 }, requireJson = false) {
+  const status = response.status(); let body, bodyFailed = false;
+  // A failure's evidence must never replace the original HTTP assertion.
+  const record = async (text) => { if (status === 200) await phase(text); else try { await phase(text); } catch { /* Preserve the actual failed response. */ } };
+  await record(`${operation}: response HTTP ${status}`);
+  if (requireJson || status !== 200) {
+    await record(`${operation}: read response JSON`);
+    try { body = await withOwnerBrowserDeadline("read preference response JSON", () => response.json(), 10000); }
+    catch { bodyFailed = true; }
+  }
+  if (status !== 200) {
+    const category = bodyFailed ? "response_json_unavailable" : preferenceErrorCategory(body);
+    await record(`${operation}: HTTP ${status}; error=${category}`);
+    if (status === 403 && diagnose403) {
+      let diagnosis = safeAccessDiagnosis();
+      try {
+        await record(`${operation}: HTTP 403 read-only access diagnosis`);
+        diagnosis = safeAccessDiagnosis(await withOwnerBrowserDeadline("read-only failed-access diagnosis", diagnose403, 20000));
+      } catch { /* Diagnosis cannot heal, retry or mask the original403. */ }
+      await record(`${operation}: HTTP 403; error=${category}; diagnosis=${JSON.stringify(diagnosis)}`);
+    }
+  }
+  assert.equal(status, 200, `${operation} must return its actual HTTP 200 response.`);
+  assert.equal(bodyFailed, false, `${operation} must return its actual complete JSON response.`);
+  await record(`${operation}: HTTP 200${requireJson ? ", JSON complete" : ""} completed`);
+  return body;
+}
+export async function readWorkspacePreferenceSnapshot(page, appUrl, trace = { operation: "owner: preference snapshot GET" }) {
+  await trace.phase?.(`${trace.operation}: request`);
+  const result = await page.request.get(`${appUrl}${endpoint}`, { timeout: 15000 });
+  const saved = await inspectWorkspacePreferenceResponse(result, trace, true); assert.equal(saved.available, true); assert.equal(saved.canEdit, true);
   assert.ok(saved.preferences && Number.isSafeInteger(saved.preferences.revision));
   return saved;
 }
-export async function assertSavedWorkspacePreferences(page, appUrl, expected) {
-  const saved = await snapshot(page, appUrl);
+export async function assertSavedWorkspacePreferences(page, appUrl, expected, trace) {
+  const saved = await readWorkspacePreferenceSnapshot(page, appUrl, trace);
   assert.deepEqual(saved.preferences, expected, "The actual signed-in account must retain only its own saved workspace preferences.");
 }
 export async function assertOwnerWorkspaceNavigation(page, businessName) {
@@ -111,22 +154,25 @@ async function setOrder(controls, order) {
     assert.equal(current[target], order[target], "The real reorder control must change the visible module order.");
   }
 }
-async function acknowledged(controls, notice) {
+async function acknowledged(controls, notice, trace) {
+  await trace?.phase?.(`${trace.operation}: await visible save acknowledgement`);
   const status = controls.getByRole("status").filter({ hasText: notice });
   await status.waitFor({ state: "visible", timeout: 15000 }); assert.equal(await status.innerText(), notice);
   const save = controls.getByRole("button", { name: "Save preferences", exact: true });
   await save.waitFor({ state: "visible", timeout: 15000 });
   await save.click({ trial: true, timeout: 15000 }); // Wait for enabled/actionable without submitting again.
   assert.equal(await save.isEnabled(), true, "The real client must finish consuming its saved receipt before reloading.");
+  await trace?.phase?.(`${trace.operation}: visible acknowledgement and enabled Save confirmed`);
 }
-async function saveUi(page, appUrl, settings) {
+async function saveUi(page, appUrl, settings, trace) {
   const controls = await panel(page); await controls.getByLabel("Preferred name", { exact: true }).fill(settings.displayName || "");
   await setOrder(controls, settings.order);
   for (const area of modules) await controls.getByLabel(`Pin ${labels[area]}`, { exact: true }).setChecked(settings.pinned.includes(area));
+  await trace.phase?.(`${trace.operation}: submit manual Save POST`);
   const pending = preferenceResponse(page, "save"); await controls.getByRole("button", { name: "Save preferences", exact: true }).click();
-  const response = await pending; assert.equal(response.status(), 200, "A real preference save must succeed before showing success.");
-  await acknowledged(controls, "Today preferences saved.");
-  const saved = await snapshot(page, appUrl); assert.deepEqual({ ...saved.preferences, revision: 0 }, { ...settings, revision: 0 }); return saved.preferences;
+  await inspectWorkspacePreferenceResponse(await pending, trace);
+  await acknowledged(controls, "Today preferences saved.", trace);
+  const saved = await readWorkspacePreferenceSnapshot(page, appUrl, { ...trace, operation: `${trace.operation}: saved snapshot GET` }); assert.deepEqual({ ...saved.preferences, revision: 0 }, { ...settings, revision: 0 }); return saved.preferences;
 }
 async function assertSafety(admin, fixture, owner) {
   const team = await admin.from("agent_team_settings").select("status,channel_authority").eq("partner_id", fixture.partnerId).eq("client_id", owner.clientId).single();
@@ -137,13 +183,16 @@ async function assertSafety(admin, fixture, owner) {
   }
 }
 
-export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase = async () => {}, env = process.env }) {
+export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase = async () => {}, diagnoseAccess, env = process.env }) {
   assertHostedCi(env); assert.equal(env.OWNER_BROWSER_CONFIRMATION, "owner-browser-disposable");
   assert.equal(owners.length, 2); assert.match(fixture.prefix, /^owner-browser-[a-f0-9]{12}$/);
   const proof = { actualPreferenceApi: true, realNavigationActivity: true, syntheticActivityDays: true, concurrentCompareAndSwap: true, exactRetry: true, partialCoverageVisible: true, owners: [] };
   for (const owner of owners) {
     assert.ok(owner.marker.startsWith(`${fixture.prefix}-`)); const page = owner.page;
     const other = owners.find((candidate) => candidate.userId !== owner.userId);
+    const trace = (operation) => ({ operation: `${owner.label}: ${operation}`, phase, diagnose403: diagnoseAccess ? () => diagnoseAccess(owner) : undefined });
+    const snapshot = (operation) => readWorkspacePreferenceSnapshot(page, target.appUrl, trace(operation));
+    const reload = async (operation) => { await phase(`${owner.label}: ${operation}: reload requested`); await page.reload(); await phase(`${owner.label}: ${operation}: reload completed`); };
     await step(`${owner.label}: scoped workspace activity and real navigation`, async () => {
       await phase(`${owner.label}: verify real owner receipt and business`);
       const receipt = await admin.from("first_owner_workspaces").select("id").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).single(); assert.equal(receipt.error, null); assert.equal(receipt.data.id, owner.receiptId);
@@ -177,36 +226,42 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
       const activity = workspaceActivityFixture(owner, fixture.partnerId, new Date(), business.data.timezone);
       const inserted = await admin.from("owner_workspace_activity").upsert(activity); assert.equal(inserted.error, null);
       await phase(`${owner.label}: verify authenticated aggregate snapshot`);
-      const saved = await snapshot(page, target.appUrl); assert.equal(saved.activity.find((value) => value.module === (owner.label === "desktop" ? "messages" : "appointments"))?.days, 5);
+      const saved = await snapshot("activity aggregate snapshot GET"); assert.equal(saved.activity.find((value) => value.module === (owner.label === "desktop" ? "messages" : "appointments"))?.days, 5);
     });
     await step(`${owner.label}: deliberate Today preferences survive reload`, async () => {
-      await page.goto(`${target.appUrl}/client`); await assertOwnerWorkspaceNavigation(page, owner.name);
-      const imported = await page.request.get(`${target.appUrl}/api/connections`); assert.equal(imported.status(), 200);
-      assert.ok((await imported.json()).apps.some((app) => app.streams?.some((stream) => stream.partial === true)), "The actual imported form stream has bounded partial coverage, not fabricated complete history.");
+      await phase(`${owner.label}: preference Today navigation requested`); await page.goto(`${target.appUrl}/client`); await assertOwnerWorkspaceNavigation(page, owner.name); await phase(`${owner.label}: preference Today navigation completed`);
+      await phase(`${owner.label}: preference source connections GET requested`);
+      const imported = await page.request.get(`${target.appUrl}/api/connections`);
+      const source = await inspectWorkspacePreferenceResponse(imported, trace("preference source connections GET"), true);
+      assert.ok(source.apps.some((app) => app.streams?.some((stream) => stream.partial === true)), "The actual imported form stream has bounded partial coverage, not fabricated complete history.");
       const brief = page.getByRole("region", { name: "Your daily brief", exact: true });
       assert.doesNotMatch(await brief.innerText(), /All clear for now|Nothing needs your attention/i, "The real partial connected-data case must not render an all-clear claim.");
       await screenshot(page, target, `${owner.label}-workspace-before`);
       const area = owner.label === "desktop" ? "messages" : "appointments";
       assert.ok(await page.locator(`[data-work-section='${area === "messages" ? "intake" : "appointments"}']`).count() > 0, "Suggestions need actual matching Today work.");
-      const unchanged = await snapshot(page, target.appUrl); assert.deepEqual(unchanged.preferences.order, modules, "Usage evidence cannot silently shuffle Today.");
+      const unchanged = await snapshot("unchanged order snapshot GET"); assert.deepEqual(unchanged.preferences.order, modules, "Usage evidence cannot silently shuffle Today.");
       const settings = { displayName: `${owner.label === "desktop" ? "Desktop" : "Phone"} owner`, order: owner.label === "desktop" ? ["appointments", "messages", "todo", "money"] : [...modules], pinned: [] };
-      const manual = await saveUi(page, target.appUrl, settings); await page.reload();
+      const manual = await saveUi(page, target.appUrl, settings, trace("manual preference Save POST")); await reload("after manual preference Save");
       const controls = await panel(page);
       await controls.locator(`[data-workspace-recommendation='${area}']`).waitFor({ state: "visible" });
       await controls.getByRole("button", { name: `Make ${labels[area]} first`, exact: true }).click();
-      assert.deepEqual((await snapshot(page, target.appUrl)).preferences, manual, "Choosing a suggestion only changes the draft until Save.");
-      const response = preferenceResponse(page, "save"); await controls.getByRole("button", { name: "Save preferences", exact: true }).click(); assert.equal((await response).status(), 200);
-      await acknowledged(controls, "Today preferences saved.");
-      await page.reload();
-      owner.workspacePreferences = (await snapshot(page, target.appUrl)).preferences;
+      assert.deepEqual((await snapshot("unsaved suggestion snapshot GET")).preferences, manual, "Choosing a suggestion only changes the draft until Save.");
+      await phase(`${owner.label}: suggestion Save POST requested`);
+      const response = preferenceResponse(page, "save"); await controls.getByRole("button", { name: "Save preferences", exact: true }).click();
+      await inspectWorkspacePreferenceResponse(await response, trace("suggestion Save POST"));
+      await acknowledged(controls, "Today preferences saved.", trace("suggestion Save POST"));
+      await reload("after suggestion Save");
+      owner.workspacePreferences = (await snapshot("saved suggestion snapshot GET")).preferences;
       assert.equal(owner.workspacePreferences.order[0], area); assert.equal(owner.workspacePreferences.displayName, settings.displayName);
       await page.getByText(settings.displayName, { exact: false }).first().waitFor({ state: "visible" });
       await screenshot(page, target, `${owner.label}-workspace-after`);
-      const foreign = await page.request.get(`${target.appUrl}${endpoint}?clientId=${other.clientId}`); assert.equal(foreign.status(), 200); assert.deepEqual((await foreign.json()).preferences, owner.workspacePreferences);
+      await phase(`${owner.label}: foreign tenant query snapshot GET requested`);
+      const foreign = await page.request.get(`${target.appUrl}${endpoint}?clientId=${other.clientId}`);
+      const own = await inspectWorkspacePreferenceResponse(foreign, trace("foreign tenant query snapshot GET"), true); assert.deepEqual(own.preferences, owner.workspacePreferences);
     });
     await step(`${owner.label}: preference CAS and exact retry`, async () => {
       await phase(`${owner.label}: read saved preferences before CAS`);
-      const current = (await snapshot(page, target.appUrl)).preferences;
+      const current = (await snapshot("before CAS snapshot GET")).preferences;
       const commands = ["A", "B"].map((name) => ({ action: "save", requestKey: randomUUID(), revision: current.revision, displayName: `${owner.label} race ${name}`, order: current.order, pinned: current.pinned }));
       await phase(`${owner.label}: concurrent preference save race`);
       const result = await post(page, commands, phase, `${owner.label}: preference race`); assert.deepEqual(result.map((item) => item.status).sort(), [200, 409]);
@@ -220,15 +275,17 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
       await phase(`${owner.label}: supplied actor and tenant fields rejection`);
       const unknown = (await post(page, [{ ...commands[winner], requestKey: randomUUID(), revision: accepted.preferences.revision, userId: other.userId, clientId: other.clientId }], phase, `${owner.label}: unknown request fields`))[0]; assert.equal(unknown.status, 400);
       await phase(`${owner.label}: restore intended preferences after CAS`);
-      await page.reload(); await saveUi(page, target.appUrl, owner.workspacePreferences);
+      await reload("restore intended preferences after CAS"); await saveUi(page, target.appUrl, owner.workspacePreferences, trace("restore preferences manual Save POST"));
     });
     await step(`${owner.label}: reset and urgent decision precedence`, async () => {
-      const controls = await panel(page), response = preferenceResponse(page, "reset"); await controls.getByRole("button", { name: "Reset preferences", exact: true }).click(); assert.equal((await response).status(), 200);
-      await acknowledged(controls, "Default preferences restored.");
-      await page.reload(); const reset = await snapshot(page, target.appUrl); assert.deepEqual(reset.preferences.order, modules); assert.deepEqual(reset.preferences.pinned, []); assert.equal(reset.preferences.displayName, null);
+      await phase(`${owner.label}: Reset preferences POST requested`);
+      const controls = await panel(page), response = preferenceResponse(page, "reset"); await controls.getByRole("button", { name: "Reset preferences", exact: true }).click();
+      await inspectWorkspacePreferenceResponse(await response, trace("Reset preferences POST"));
+      await acknowledged(controls, "Default preferences restored.", trace("Reset preferences POST"));
+      await reload("after Reset preferences"); const reset = await snapshot("reset defaults snapshot GET"); assert.deepEqual(reset.preferences.order, modules); assert.deepEqual(reset.preferences.pinned, []); assert.equal(reset.preferences.displayName, null);
       const settings = { displayName: `${owner.label === "desktop" ? "Desktop" : "Phone"} owner`, order: owner.label === "desktop" ? ["appointments", "messages", "todo", "money"] : [...modules], pinned: ["money"] };
-      owner.workspacePreferences = await saveUi(page, target.appUrl, settings);
-      await page.reload(); await assertSavedWorkspacePreferences(page, target.appUrl, owner.workspacePreferences);
+      owner.workspacePreferences = await saveUi(page, target.appUrl, settings, trace("pin and reorder Save POST"));
+      await reload("verify pin and reorder"); await assertSavedWorkspacePreferences(page, target.appUrl, owner.workspacePreferences, trace("pin and reorder snapshot GET"));
       const ordinary = await page.locator("[data-work-section]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-work-section")).filter((key) => !["attention", "money-source-review"].includes(key)));
       assert.equal(ordinary[0], "connected-invoices", "A saved Money pin moves actual money rows first after reload.");
       assert.ok(ordinary.includes("appointments") && ordinary.includes("intake"));
@@ -238,14 +295,13 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
       const id = randomUUID(), title = `${owner.marker} synthetic owner decision`;
       const approval = await admin.from("approval_items").insert({ id, partner_id: fixture.partnerId, client_id: owner.clientId, type: "content_draft", status: "pending", title, summary: "Synthetic disposable presentation review. No customer message or action is authorized.", proposed_payload: {} }); assert.equal(approval.error, null);
       try {
-        await page.reload(); await page.getByText(title, { exact: true }).first().waitFor({ state: "visible" });
+        await reload("urgent decision precedence"); await page.getByText(title, { exact: true }).first().waitFor({ state: "visible" });
         const keys = await page.locator("[data-work-section]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-work-section"))); assert.equal(keys[0], "attention", "An owner decision stays first even with Money pinned.");
         assert.ok(keys.includes("connected-invoices")); await screenshot(page, target, `${owner.label}-workspace-urgent`); await assertSafety(admin, fixture, owner);
       } finally { const removed = await admin.from("approval_items").delete().eq("id", id).eq("partner_id", fixture.partnerId).eq("client_id", owner.clientId); assert.equal(removed.error, null); }
       proof.owners.push({ label: owner.label, preferences: owner.workspacePreferences, recommendation: owner.label === "desktop" ? "messages" : "appointments" });
     });
   }
-  await assertSavedWorkspacePreferences(owners[0].page, target.appUrl, owners[0].workspacePreferences);
-  await assertSavedWorkspacePreferences(owners[1].page, target.appUrl, owners[1].workspacePreferences);
+  for (const owner of owners) await assertSavedWorkspacePreferences(owner.page, target.appUrl, owner.workspacePreferences, { operation: `${owner.label}: final preference snapshot GET`, phase, diagnose403: diagnoseAccess ? () => diagnoseAccess(owner) : undefined });
   return proof;
 }

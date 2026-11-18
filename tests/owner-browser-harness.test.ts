@@ -3,9 +3,9 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { createChunks, stringToBase64URL } from "@supabase/ssr";
-import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, ownerSessionTokenFromCookies, readOwnerBrowserSession, observedOwnerSessionIdentity, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage, verifyObservedOwnerSession, type OwnerBrowserSessionCookie } from "../scripts/verify-owner-browser.mjs";
+import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, diagnoseOwnerWorkspaceAccess, freshMailboxEntries, mailpitMailboxEntries, main, ownerSessionTokenFromCookies, readOwnerBrowserSession, observedOwnerSessionIdentity, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage, verifyObservedOwnerSession, type OwnerBrowserSessionCookie } from "../scripts/verify-owner-browser.mjs";
 import { browserFixtureIdentity } from "../scripts/owner-browser-fixtures.mjs";
-import { collectWorkspacePreferencePosts, observeNewWorkspaceActivity, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture, type WorkspaceActivityRequest, type WorkspaceActivityResponse } from "../scripts/owner-workspace-browser-scenarios.mjs";
+import { collectWorkspacePreferencePosts, inspectWorkspacePreferenceResponse, readWorkspacePreferenceSnapshot, observeNewWorkspaceActivity, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture, type WorkspaceActivityRequest, type WorkspaceActivityResponse } from "../scripts/owner-workspace-browser-scenarios.mjs";
 
 const hosted = { CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted", GITHUB_ENV: "/tmp/owner-browser-env", RUNNER_TEMP: "/tmp/owner-browser-runner",
   OWNER_BROWSER_CONFIRMATION, NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321", NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-public-key", SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-key",
@@ -285,4 +285,150 @@ test("fresh-session proof requires a live RPC actor matching the captured subjec
   assert.equal(observedOwnerSessionIdentity("invalid"), null);
   assert.equal(observedOwnerSessionIdentity(sessionToken("unknown-user", freshSessionId)), null);
   assert.equal(observedOwnerSessionIdentity(sessionToken(sessionUser, "missing-session")), null);
+});
+
+function originalPreference403(error: unknown, operation: string): boolean {
+  assert.ok(error instanceof assert.AssertionError);
+  assert.equal(error.actual, 403); assert.equal(error.expected, 200);
+  assert.ok(error.message.includes(`${operation} must return its actual HTTP 200 response.`));
+  return true;
+}
+
+test("a preference403 records the exact operation and only fixed error/access categories", async () => {
+  const operation = "phone: suggestion Save POST", phases: string[] = [];
+  const secrets = ["synthetic-access-token", "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+  let diagnoses = 0;
+  const response = { status: () => 403, json: async () => ({ error: "Business workspace access is required.", rawBody: secrets[0], userId: secrets[1], sessionId: secrets[2] }) };
+  await assert.rejects(inspectWorkspacePreferenceResponse(response, { operation, phase: async (label: string) => { phases.push(label); }, diagnose403: async () => {
+    diagnoses++; return { cookieReadable: true, cookieSubjectMatches: false, sameInitialSession: true, actorVerified: false, goTrueStatus: 403,
+      goTrueUserMatches: false, membershipStatus: "disabled", ownerRole: false, token: secrets[0], userId: secrets[1], sessionId: secrets[2], headers: { authorization: secrets[0] }, arbitrary: "do-not-serialize" };
+  } }), (error: unknown) => originalPreference403(error, operation));
+  assert.equal(diagnoses, 1);
+  assert.ok(phases.includes(`${operation}: response HTTP 403`));
+  assert.ok(phases.includes(`${operation}: HTTP 403; error=access_denied`));
+  const line = phases.find((label) => label.includes("; diagnosis=")); assert.ok(line);
+  assert.deepEqual(JSON.parse(line.slice(line.indexOf("; diagnosis=") + "; diagnosis=".length)), {
+    cookieReadable: true, cookieSubjectMatches: false, sameInitialSession: true, actorVerified: false, goTrueStatus: 403,
+    goTrueUserMatches: false, membershipStatus: "disabled", ownerRole: false,
+  });
+  for (const secret of [...secrets, "rawBody", "userId", "sessionId", "authorization", "do-not-serialize"]) assert.equal(phases.join("\n").includes(secret), false);
+
+  const unknown: string[] = [];
+  await assert.rejects(inspectWorkspacePreferenceResponse({ status: () => 403, json: async () => ({ error: secrets[0] }) }, {
+    operation: "phone: saved snapshot GET", phase: async (label: string) => { unknown.push(label); },
+    diagnose403: async () => ({ cookieReadable: secrets[0], goTrueStatus: 999, membershipStatus: secrets[1], ownerRole: "true" }),
+  }, true), (error: unknown) => originalPreference403(error, "phone: saved snapshot GET"));
+  assert.ok(unknown.some((label) => label.includes("error=unknown_error")));
+  const safe = unknown.find((label) => label.includes("; diagnosis=")); assert.ok(safe);
+  const parsed = JSON.parse(safe.slice(safe.indexOf("; diagnosis=") + "; diagnosis=".length));
+  assert.equal(parsed.cookieReadable, null); assert.equal(parsed.goTrueStatus, null); assert.equal(parsed.membershipStatus, "unknown"); assert.equal(parsed.ownerRole, null);
+  for (const secret of secrets) assert.equal(unknown.join("\n").includes(secret), false);
+});
+
+test("JSON, diagnosis and phase failures cannot replace the original preference403 assertion", async () => {
+  for (const failure of ["body", "diagnosis", "phase"] as const) {
+    const operation = `phone: ${failure} saved snapshot GET`, phases: string[] = []; let diagnoses = 0;
+    await assert.rejects(inspectWorkspacePreferenceResponse({ status: () => 403, json: async () => {
+      if (failure === "body") throw new Error("sensitive-body-error"); return { error: "Business workspace access is required." };
+    } }, { operation, phase: async (label: string) => { phases.push(label); if (failure === "phase") throw new Error("sensitive-phase-error"); }, diagnose403: async () => {
+      diagnoses++; if (failure === "diagnosis") throw new Error("sensitive-diagnosis-error"); return { actorVerified: false };
+    } }, true), (error: unknown) => {
+      originalPreference403(error, operation); assert.ok(error instanceof Error); assert.equal(error.message.includes("sensitive-"), false); return true;
+    });
+    assert.equal(diagnoses, 1, "The one read-only diagnosis is attempted without repairing or retrying the failed command.");
+    if (failure === "body") assert.ok(phases.some((label) => label.includes("error=response_json_unavailable")));
+  }
+});
+
+test("snapshotGET makes one actual request on403 and requires complete valid200 JSON", async () => {
+  const operation = "phone: before suggestion snapshot GET", appUrl = "http://127.0.0.1:3000";
+  let gets = 0, jsonReads = 0, diagnoses = 0;
+  const failed = { request: { get: async (url: string, options?: { timeout: number }) => {
+    gets++; assert.equal(url, `${appUrl}/api/business/workspace-preferences`); assert.deepEqual(options, { timeout: 15000 });
+    return { status: () => 403, json: async () => { jsonReads++; return { error: "Invalid request origin." }; } };
+  } } };
+  await assert.rejects(readWorkspacePreferenceSnapshot(failed, appUrl, { operation, diagnose403: async () => { diagnoses++; return {}; } }), (error: unknown) => originalPreference403(error, operation));
+  assert.deepEqual({ gets, jsonReads, diagnoses }, { gets: 1, jsonReads: 1, diagnoses: 1 });
+
+  const snapshot = { available: true, canEdit: true, preferences: { revision: 6, displayName: "Phone owner", order: ["messages", "appointments", "todo", "money"], pinned: ["money"] }, activity: [] };
+  const ok = { request: { get: async () => { gets++; return { status: () => 200, json: async () => { jsonReads++; return snapshot; } }; } } };
+  assert.deepEqual(await readWorkspacePreferenceSnapshot(ok, appUrl, { operation, diagnose403: async () => { diagnoses++; return {}; } }), snapshot);
+  assert.deepEqual({ gets, jsonReads, diagnoses }, { gets: 2, jsonReads: 2, diagnoses: 1 });
+  const broken = { request: { get: async () => { gets++; return { status: () => 200, json: async () => { jsonReads++; throw new Error("lost body"); } }; } } };
+  await assert.rejects(readWorkspacePreferenceSnapshot(broken, appUrl, { operation }), /actual complete JSON response/);
+  assert.deepEqual({ gets, jsonReads, diagnoses }, { gets: 3, jsonReads: 3, diagnoses: 1 });
+  const unavailable = { request: { get: async () => ({ status: () => 200, json: async () => ({ ...snapshot, canEdit: false }) }) } };
+  await assert.rejects(readWorkspacePreferenceSnapshot(unavailable, appUrl, { operation }), assert.AssertionError);
+});
+
+test("successful observedSavePOST does not read an unused CDP body or run403 diagnostics", async () => {
+  let reads = 0, diagnoses = 0; const phases: string[] = [];
+  const result = await inspectWorkspacePreferenceResponse({ status: () => 200, json: async () => { reads++; throw new Error("unused CDP body must not be read"); } }, {
+    operation: "phone: suggestion Save POST", phase: async (label: string) => { phases.push(label); }, diagnose403: async () => { diagnoses++; throw new Error("not a403"); },
+  });
+  assert.equal(result, undefined); assert.equal(reads, 0); assert.equal(diagnoses, 0);
+  assert.deepEqual(phases, ["phone: suggestion Save POST: response HTTP 200", "phone: suggestion Save POST: HTTP 200 completed"]);
+});
+
+test("bounded JSON or403-diagnosis timeout still ends in the original403 with noGET retry", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    for (const hung of ["body", "diagnosis"] as const) {
+      let signalStart: () => void = () => {}; const started = new Promise<void>((resolve) => { signalStart = resolve; });
+      let gets = 0, diagnoses = 0, settled = false;
+      const operation = `phone: ${hung} timeout snapshot GET`;
+      const page = { request: { get: async () => { gets++; return { status: () => 403, json: async () => {
+        if (hung === "body") { signalStart(); return new Promise<unknown>(() => {}); }
+        return { error: "Business workspace access is required." };
+      } }; } } };
+      const pending = readWorkspacePreferenceSnapshot(page, "http://127.0.0.1:3000", { operation, diagnose403: async () => {
+        diagnoses++; if (hung === "diagnosis") { signalStart(); return new Promise<unknown>(() => {}); } return {};
+      } });
+      const rejected = assert.rejects(pending, (error: unknown) => { settled = true; return originalPreference403(error, operation); });
+      await started; const budget = hung === "body" ? 10000 : 20000;
+      t.mock.timers.tick(budget - 1); await Promise.resolve(); assert.equal(settled, false);
+      t.mock.timers.tick(1); await rejected;
+      assert.equal(gets, 1); assert.equal(diagnoses, 1); assert.equal(settled, true);
+    }
+  } finally { t.mock.timers.reset(); }
+});
+
+
+test("failed-access diagnosis reads only the exact fixture membership and live identity boundaries", async () => {
+  const token = sessionToken(sessionUser, freshSessionId), cookie = sessionCookie(token);
+  const owner = { context: { cookies: async () => [cookie] }, userId: sessionUser, clientId: "55555555-5555-4555-8555-555555555555", membershipId: "66666666-6666-4666-8666-666666666666" };
+  const partnerId = "77777777-7777-4777-8777-777777777777", target = { ...cookieTarget, anonKey: "synthetic-public-key" };
+  const filters: [string, string][] = [], requests: string[] = [];
+  let membershipResult: { error: unknown; data: { status: string; role: string } | null } = { error: null, data: { status: "active", role: "client_owner" } };
+  const builder = {
+    select(columns: string): unknown { assert.equal(columns, "status,role"); return builder; },
+    eq(key: string, value: string): unknown { filters.push([key, value]); return builder; },
+    async maybeSingle() { return membershipResult; },
+  };
+  const admin = { from(table: string) { assert.equal(table, "memberships"); return builder; } } as unknown as Parameters<typeof diagnoseOwnerWorkspaceAccess>[3];
+  const request = async (url: string | URL | Request, options?: RequestInit) => {
+    const path = new URL(String(url)).pathname; requests.push(path);
+    assert.equal(new Headers(options?.headers).get("authorization"), `Bearer ${token}`); assert.ok(options?.signal);
+    if (path === "/rest/v1/rpc/current_session_actor") { assert.equal(options?.method, "POST"); assert.equal(options?.body, "{}"); return Response.json(sessionUser); }
+    assert.equal(path, "/auth/v1/user"); assert.notEqual(options?.method, "POST"); return Response.json({ id: sessionUser });
+  };
+  const result = await diagnoseOwnerWorkspaceAccess(owner, target, token, admin, partnerId, request);
+  assert.deepEqual(result, { cookieReadable: true, cookieSubjectMatches: true, sameInitialSession: true, actorVerified: true,
+    goTrueStatus: 200, goTrueUserMatches: true, membershipStatus: "active", ownerRole: true });
+  assert.deepEqual(filters, [["id", owner.membershipId], ["user_id", owner.userId], ["client_id", owner.clientId], ["partner_id", partnerId]]);
+  assert.deepEqual(requests.sort(), ["/auth/v1/user", "/rest/v1/rpc/current_session_actor"]);
+  for (const secret of [token, sessionUser, freshSessionId, owner.clientId, owner.membershipId, partnerId]) assert.equal(JSON.stringify(result).includes(secret), false);
+
+  membershipResult = { error: null, data: { status: "disabled", role: "client_viewer" } };
+  const denied = await diagnoseOwnerWorkspaceAccess(owner, target, token, admin, partnerId, async (url) =>
+    new Response("sensitive-provider-body", { status: String(url).includes("/auth/v1/user") ? 429 : 403 }));
+  assert.equal(denied.actorVerified, false); assert.equal(denied.goTrueStatus, 429); assert.equal(denied.goTrueUserMatches, null);
+  assert.equal(denied.membershipStatus, "disabled"); assert.equal(denied.ownerRole, false);
+  assert.equal(JSON.stringify(denied).includes("sensitive-provider-body"), false);
+
+  membershipResult = { error: { message: "sensitive-db-error" }, data: null }; let unavailableRequests = 0;
+  const unavailable = await diagnoseOwnerWorkspaceAccess({ ...owner, context: { cookies: async () => { throw new Error("sensitive-cookie-error"); } } }, target, token, admin, partnerId, async () => { unavailableRequests++; throw new Error("unexpected identity request"); });
+  assert.equal(unavailable.cookieReadable, false); assert.equal(unavailable.actorVerified, false);
+  assert.equal(unavailable.membershipStatus, "unknown"); assert.equal(unavailable.ownerRole, null); assert.equal(unavailableRequests, 0);
+  for (const secret of ["sensitive-db-error", "sensitive-cookie-error", token]) assert.equal(JSON.stringify(unavailable).includes(secret), false);
 });

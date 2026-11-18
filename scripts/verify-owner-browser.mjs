@@ -227,6 +227,40 @@ export async function verifyObservedOwnerSession(target, token, expectedUserId, 
   assert.ok(actor === identity.userId && (!expectedUserId || actor === expectedUserId), "The live session actor, signed token subject and intended owner must match.");
   return identity;
 }
+export async function diagnoseOwnerWorkspaceAccess(owner, target, initialToken, admin, partnerId, request = fetch) {
+  // A later read-only snapshot can distinguish boundaries, not establish the
+  // cause of an earlier403. Never retry/heal that request or mutate a session.
+  const result = { cookieReadable: false, cookieSubjectMatches: null, sameInitialSession: null, actorVerified: false,
+    goTrueStatus: null, goTrueUserMatches: null, membershipStatus: "unknown", ownerRole: null };
+  const membership = async () => {
+    try {
+      const response = await withOwnerBrowserDeadline("read exact failed-access membership", () => admin.from("memberships").select("status,role").eq("id", owner.membershipId).eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", partnerId).maybeSingle(), 5000);
+      if (response.error) return;
+      result.membershipStatus = !response.data ? "missing" : ["active", "invited", "disabled"].includes(response.data.status) ? response.data.status : "unknown";
+      result.ownerRole = response.data ? response.data.role === "client_owner" : false;
+    } catch { /* A diagnostic failure is unknown, never an active membership. */ }
+  };
+  let token;
+  try { token = await readOwnerBrowserSession(owner.context, target); result.cookieReadable = true; }
+  catch { await membership(); return result; }
+  const identity = observedOwnerSessionIdentity(token), initial = observedOwnerSessionIdentity(initialToken);
+  result.cookieSubjectMatches = identity?.userId === owner.userId;
+  result.sameInitialSession = identity && initial ? identity.sessionId === initial.sessionId : null;
+  await Promise.all([
+    (async () => { try { await verifyObservedOwnerSession(target, token, owner.userId, undefined, request); result.actorVerified = true; } catch { /* Keep only the verified boolean. */ } })(),
+    (async () => {
+      try {
+        const response = await request(`${target.supabaseUrl}/auth/v1/user`, { headers: { apikey: target.anonKey, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000), redirect: "error" });
+        result.goTrueStatus = Number.isSafeInteger(response.status) && response.status >= 100 && response.status <= 599 ? response.status : null;
+        if (response.status === 200) {
+          const user = await withOwnerBrowserDeadline("read failed-access identity diagnosis", () => response.json(), 5000);
+          result.goTrueUserMatches = user?.id === owner.userId && user.id === identity?.userId;
+        }
+      } catch { /* Do not emit identity bodies, credentials or arbitrary errors. */ }
+    })(), membership(),
+  ]);
+  return result;
+}
 async function startApp(env, target) {
   await readFile(join(root, ".next/BUILD_ID"), "utf8");
   await new Promise((done, reject) => {
@@ -396,7 +430,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         }
       });
     }
-    workspacePersonalization = await runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase, env });
+    const diagnoseAccess = (owner) => diagnoseOwnerWorkspaceAccess(owner, target, sessionTokens.get(owner.label), admin, fixture.partnerId);
+    workspacePersonalization = await runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase, diagnoseAccess, env });
     let signedOutToken;
     await step("phone: normal owner UI sign out", async () => { signedOutToken = sessionTokens.get("phone"); assert.ok(signedOutToken, "A genuine browser GoTrue session token must be observed for revocation proof."); await owners[1].page.goto(`${target.appUrl}/client/apps`); await signOutUi(owners[1].page, target); });
     await step("phone: stale signed session denied by real RPCs", async () => {
@@ -412,7 +447,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       await phase("phone: verify distinct live re-login session actor"); await verifyObservedOwnerSession(target, token, owner.userId, signedOutToken); sessionTokens.set("phone", token);
       assert.equal(await owner.page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, owner); assert.equal(persisted.clientId, owner.clientId); assert.equal(persisted.membershipId, owner.membershipId); assert.equal(persisted.receiptId, owner.receiptId);
-      await assertSavedWorkspacePreferences(owner.page, target.appUrl, owner.workspacePreferences);
+      await assertSavedWorkspacePreferences(owner.page, target.appUrl, owner.workspacePreferences, { operation: "phone: re-login saved preference snapshot GET", phase, diagnose403: () => diagnoseAccess(owner) });
       await owner.page.goto(`${target.appUrl}/client/apps`); await revealCustomerContext(owner.page); await visible(owner.page, owner.sources.expected.customerName); await screenshot(owner.page, target, "phone-relogin-persisted");
     });
     await step("phone: normal account switch replaces prior business access", async () => {
@@ -425,7 +460,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       await page.waitForFunction((name) => document.title.includes(name), current.name);
       assert.equal(await page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, current); assert.equal(persisted.clientId, current.clientId); assert.equal(persisted.membershipId, current.membershipId); assert.equal(persisted.receiptId, current.receiptId);
-      await assertSavedWorkspacePreferences(page, target.appUrl, current.workspacePreferences);
+      await assertSavedWorkspacePreferences(page, target.appUrl, current.workspacePreferences, { operation: "phone: switched account preference snapshot GET", phase, diagnose403: () => diagnoseAccess({ ...current, page, context: prior.context }) });
       assert.notDeepEqual(current.workspacePreferences, prior.workspacePreferences, "Distinct account preferences must not be substituted during the same-browser switch.");
       const scoped = await page.request.get(`${target.appUrl}/api/connections?clientId=${prior.clientId}`); assert.equal(scoped.status(), 200);
       const data = JSON.stringify(await scoped.json()); assert.ok(data.includes(current.marker)); assert.equal(data.includes(prior.marker), false, "The same browser must no longer read the previous account's sources.");
