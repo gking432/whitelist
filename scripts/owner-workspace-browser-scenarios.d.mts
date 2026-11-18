@@ -8,11 +8,13 @@ export type WorkspaceScenarioOwner = {
   userId: string; clientId: string; label: "desktop" | "phone"; marker: string; receiptId: string; name: string;
   page: object; workspacePreferences?: WorkspacePreferences;
 };
+export function withOwnerBrowserDeadline<T>(label: string, action: () => T | PromiseLike<T>, timeoutMs?: number): Promise<Awaited<T>>;
 export function workspaceActivityFixture(owner: Pick<WorkspaceScenarioOwner, "userId" | "clientId" | "label">, partnerId: string, clock?: Date, timeZone?: string): WorkspaceActivityFixtureRow[];
 export function assertSavedWorkspacePreferences(page: { request: { get(url: string): Promise<{ status(): number; json(): Promise<unknown> }> } }, appUrl: string, expected: WorkspacePreferences): Promise<void>;
 export function assertOwnerWorkspaceNavigation(page: object, businessName: string): Promise<void>;
 export function runOwnerWorkspaceScenarios(options: {
   admin: SupabaseClient; fixture: { prefix: string; partnerId: string }; owners: WorkspaceScenarioOwner[]; target: OwnerBrowserTarget;
   step(key: string, action: () => Promise<void>): Promise<void>;
+  phase?(label: string): Promise<void>;
   screenshot(page: object, target: OwnerBrowserTarget, name: string): Promise<void>; env?: BrowserCiEnvironment;
 }): Promise<{ actualPreferenceApi: boolean; realNavigationActivity: boolean; syntheticActivityDays: boolean; concurrentCompareAndSwap: boolean; exactRetry: boolean; partialCoverageVisible: boolean; owners: { label: string; preferences: WorkspacePreferences; recommendation: string }[] }>;

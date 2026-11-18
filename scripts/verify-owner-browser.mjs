@@ -5,14 +5,14 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createServer } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { assertHostedCi, sanitizeCiFailure, SOURCE_CONTAINER } from "./ci-bootstrap-customer-journey-db.mjs";
 import { assertEmptyBrowserTarget, browserFixtureIdentity, cleanupBrowserFixtures, prepareBrowserCatalog, readCreatedOwner } from "./owner-browser-fixtures.mjs";
-import { assertOwnerWorkspaceNavigation, assertSavedWorkspacePreferences, runOwnerWorkspaceScenarios } from "./owner-workspace-browser-scenarios.mjs";
+import { assertOwnerWorkspaceNavigation, assertSavedWorkspacePreferences, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline } from "./owner-workspace-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
@@ -200,9 +200,10 @@ async function verifyIntakePauseResume(page, target, admin, fixture, owner) {
   for (const [action, label, paused] of [["pause", "Pause intake", true], ["resume", "Resume intake", false]]) {
     const pending = page.waitForResponse((response) => {
       try { const body = response.request().postDataJSON(); return new URL(response.url()).pathname === "/api/connections" && response.request().method() === "POST" && body?.action === action && body.connectionId === account.id; } catch { return false; }
-    });
+    }, { timeout: 15000 });
+    void pending.catch(() => {});
     await card.getByRole("button", { name: label, exact: true }).click();
-    const response = await pending, body = await response.json().catch(() => null);
+    const response = await pending, body = await withOwnerBrowserDeadline("read intake control response body", () => response.json(), 10000);
     assert.equal(response.status(), 200, `The exact intake ${action} must succeed${typeof body?.error === "string" ? `: ${body.error.slice(0, 300)}` : "."}`);
     const read = await page.request.get(`${target.appUrl}/api/connections`); assert.equal(read.status(), 200);
     const updated = (await read.json()).apps.find((app) => app.id === account.id); assert.ok(updated); assert.equal(updated.provider, "generic_inbound_webhook"); assert.equal(updated.paused, paused);
@@ -244,9 +245,23 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await mkdir(target.artifacts, { recursive: true });
   const fixture = browserFixtureIdentity(randomBytes(6).toString("hex")), checks = [], contexts = [], diagnostics = [];
   let app, browser, failure, remainingFixtures = null, workspacePersonalization = null;
+  let activeStep = null, currentPhase = "preparing browser acceptance", failurePhase = null, cleanupStatus = "not_started", checkpointTail = Promise.resolve();
+  const cleanupErrors = [];
+  const report = (status) => ({ kind: "owner_browser_acceptance", status, updatedAt: new Date().toISOString(), playwrightVersion: PLAYWRIGHT_VERSION,
+    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization,
+    limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately."],
+    ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) });
+  const checkpoint = async (status = "in_progress") => {
+    if (failure) status = "failed";
+    const json = JSON.stringify(report(status), null, 2), destination = join(target.artifacts, "owner-browser-report.json");
+    checkpointTail = checkpointTail.catch(() => {}).then(async () => { await writeFile(`${destination}.tmp`, json); await rename(`${destination}.tmp`, destination); });
+    await withOwnerBrowserDeadline("persist sanitized browser evidence", () => checkpointTail, 5000);
+  };
+  const phase = async (label) => { if (failure) throw failure; currentPhase = label; console.log(`Owner browser phase: ${label}`); await checkpoint(); };
   const step = async (key, action) => {
-    try { await action(); checks.push({ key, status: "passed" }); console.log(`Owner browser: ${key}`); }
-    catch (error) { checks.push({ key, status: "failed" }); throw new Error(`${key}: ${error.message}`); }
+    activeStep = key; currentPhase = "starting stage"; console.log(`Owner browser starting: ${key}`); await checkpoint();
+    try { await withOwnerBrowserDeadline(`stage ${key}; inspect recorded phase`, action, 120000); checks.push({ key, status: "passed" }); activeStep = null; currentPhase = "stage completed"; console.log(`Owner browser: ${key}`); await checkpoint(); }
+    catch (error) { checks.push({ key, status: "failed" }); failurePhase ||= currentPhase; failure = new Error(`${key}: ${error.message}`); console.error(`Owner browser failed: ${redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey])}`); await checkpoint("failed"); throw failure; }
   };
   try {
     await prepareBrowserCatalog(admin, fixture);
@@ -256,7 +271,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     const owners = [], observedTokens = new Map();
     for (const owner of fixture.owners) {
       const context = await browser.newContext({ viewport: owner.label === "phone" ? { width: 390, height: 844 } : { width: 1280, height: 900 }, isMobile: owner.label === "phone", hasTouch: owner.label === "phone", locale: "en-US", timezoneId: "America/Chicago" });
-      contexts.push(context); const page = await context.newPage(); page.setDefaultTimeout(30000);
+      contexts.push(context); context.setDefaultTimeout(30000); context.setDefaultNavigationTimeout(30000); const page = await context.newPage(); page.setDefaultTimeout(30000);
       context.on("request", (request) => { if (JSON.stringify(request.headers()).includes(target.serviceKey) || (request.postData() || "").includes(target.serviceKey)) diagnostics.push("A service credential reached the browser."); });
       // Capture only a genuine GoTrue user token in this Node process's memory.
       // Never inject it into a browser, log it or write it into any artifact.
@@ -308,7 +323,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         }
       });
     }
-    workspacePersonalization = await runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, env });
+    workspacePersonalization = await runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase, env });
     let signedOutToken;
     await step("phone: normal owner UI sign out", async () => { signedOutToken = observedTokens.get("phone"); assert.ok(signedOutToken, "A genuine browser GoTrue session token must be observed for revocation proof."); await owners[1].page.goto(`${target.appUrl}/client/apps`); await signOutUi(owners[1].page, target); });
     await step("phone: stale signed session denied by real RPCs", async () => {
@@ -354,17 +369,33 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       await screenshot(page, target, "phone-switched-revoked-access"); await signOutUi(page, target);
     });
     assert.deepEqual(diagnostics, [], "The real browser must have no uncaught page errors, external requests or service-key exposure.");
-  } catch (error) { failure = error; }
+  } catch (error) { failure ||= error; failurePhase ||= currentPhase; console.error(`Owner browser stopping: ${redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey])}`); await checkpoint("failed"); }
   finally {
-    for (const context of contexts) await context.close().catch(() => {});
-    if (browser) await browser.close().catch(() => {});
-    if (app) { app.child.kill("SIGTERM"); await new Promise((done) => { if (app.child.exitCode !== null) done(); else { app.child.once("exit", done); setTimeout(() => { app.child.kill("SIGKILL"); done(); }, 5000).unref(); } }); }
-    try { remainingFixtures = await cleanupBrowserFixtures(admin, fixture); } catch (error) { failure ||= error; }
-    for (const owner of fixture.owners) try { await cleanupMailbox(target, owner.email); } catch (error) { failure ||= error; }
-    const report = { kind: "owner_browser_acceptance", status: failure ? "failed" : "passed", playwrightVersion: PLAYWRIGHT_VERSION, checks, remainingFixtures, diagnostics, workspacePersonalization, limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately."], ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) };
-    await writeFile(join(target.artifacts, "owner-browser-report.json"), JSON.stringify(report, null, 2));
+    const cleanupCheckpoint = async (status = failure ? "failed" : "in_progress") => {
+      try { await checkpoint(status); }
+      catch (error) { failure ||= error; failurePhase ||= currentPhase; console.error("Owner browser evidence checkpoint could not be written; scoped cleanup will still be attempted."); }
+    };
+    cleanupStatus = "running"; await cleanupCheckpoint();
+    const clean = async (label, action, timeoutMs) => {
+      currentPhase = label; await cleanupCheckpoint();
+      try { return await withOwnerBrowserDeadline(label, action, timeoutMs); }
+      catch (error) { cleanupErrors.push(label); failure ||= error; failurePhase ||= currentPhase; await cleanupCheckpoint("failed"); }
+    };
+    for (let index = 0; index < contexts.length; index++) await clean(`close browser context ${index + 1}`, () => contexts[index].close(), 5000);
+    if (browser) await clean("close owned browser", () => browser.close(), 8000);
+    if (app) await clean("stop owned app", async () => { app.child.kill("SIGTERM"); await new Promise((done) => { if (app.child.exitCode !== null) done(); else { app.child.once("exit", done); setTimeout(() => { app.child.kill("SIGKILL"); done(); }, 5000).unref(); } }); }, 6000);
+    const cleaned = await clean("verify synthetic database fixture cleanup", () => cleanupBrowserFixtures(admin, fixture), 30000);
+    if (cleaned === 0) remainingFixtures = 0; // Only the actual scoped empty-target check proves cleanup.
+    for (const owner of fixture.owners) await clean(`clean synthetic ${owner.label} mailbox`, () => cleanupMailbox(target, owner.email), 12000);
+    cleanupStatus = cleanupErrors.length ? "incomplete" : "complete"; currentPhase = "acceptance finished";
+    await cleanupCheckpoint(failure ? "failed" : "passed");
   }
   if (failure) throw new Error(redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]));
   console.log(`Owner browser acceptance passed ${checks.length} genuine browser/source stages; synthetic fixtures remaining: ${remainingFixtures}.`);
 }
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) main().catch((error) => { console.error(`BLOCKED/FAIL owner browser: ${redactBrowserFailure(error.message)}`); process.exitCode = 1; });
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) main().catch((error) => {
+  console.error(`BLOCKED/FAIL owner browser: ${redactBrowserFailure(error.message)}`); process.exitCode = 1;
+  // The failed report and bounded scoped cleanup have already been attempted.
+  // A leftover transport or child must not keep a failed disposable CLI alive.
+  process.exit(1);
+});

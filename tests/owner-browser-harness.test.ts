@@ -3,7 +3,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage } from "../scripts/verify-owner-browser.mjs";
 import { browserFixtureIdentity } from "../scripts/owner-browser-fixtures.mjs";
-import { runOwnerWorkspaceScenarios, workspaceActivityFixture } from "../scripts/owner-workspace-browser-scenarios.mjs";
+import { runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture } from "../scripts/owner-workspace-browser-scenarios.mjs";
 
 const hosted = { CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted", GITHUB_ENV: "/tmp/owner-browser-env", RUNNER_TEMP: "/tmp/owner-browser-runner",
   OWNER_BROWSER_CONFIRMATION, NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321", NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-public-key", SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-key",
@@ -98,4 +98,30 @@ test("workspace evidence fixtures contain only scoped enum/day aggregates in the
 });
 test("workspace scenario service fixtures refuse to run without the hosted disposable CI guard", async () => {
   await assert.rejects(runOwnerWorkspaceScenarios({ env: {} } as Parameters<typeof runOwnerWorkspaceScenarios>[0]), /disposable GitHub-hosted/);
+});
+test("browser deadlines fail a stalled operation and preserve genuine operation failures", async () => {
+  assert.equal(await withOwnerBrowserDeadline("completed unit operation", async () => "completed", 100), "completed");
+  const original = new Error("Real operation failed");
+  await assert.rejects(withOwnerBrowserDeadline("failed unit operation", () => { throw original; }, 100), (error) => error === original);
+  await assert.rejects(withOwnerBrowserDeadline("stalled response body", () => new Promise(() => {}), 10), { name: "OwnerBrowserDeadlineError", message: "Owner browser deadline exceeded: stalled response body (10ms)." });
+  for (const timeout of [0, -1, NaN, Infinity, 180001]) await assert.rejects(withOwnerBrowserDeadline("invalid deadline", () => "must not run", timeout), /finite bounded/);
+});
+test("a late failing operation after its deadline does not create an unhandled waiter", async () => {
+  let rejectOperation: (reason: Error) => void = () => {};
+  const operation = new Promise<never>((_, reject) => { rejectOperation = reject; });
+  await assert.rejects(withOwnerBrowserDeadline("stalled channel", () => operation, 10), /stalled channel/);
+  rejectOperation(new Error("Channel closed after bounded cleanup"));
+  await Promise.resolve();
+});
+test("workspace activity requires real visibility inside the diagnosed stage without untimed tab activation", async () => {
+  const phases: string[] = [], prefix = "owner-browser-012345abcdef";
+  const values: Record<string, object> = { first_owner_workspaces: { error: null, data: { id: "receipt" } }, client_businesses: { error: null, data: { timezone: "America/Chicago" } }, agent_team_settings: { error: null, data: { status: "paused", channel_authority: { email: "off" } } }, action_jobs: { error: null, count: 0 }, agent_work_items: { error: null, count: 0 } };
+  const queries: string[] = [];
+  const admin = { from(table: string) { queries.push(table); const response = values[table]; assert.ok(response); const builder = { select() { return builder; }, eq() { return builder; }, async single() { return response; }, then(resolve: (value: object) => unknown) { return Promise.resolve(response).then(resolve); } }; return builder; } };
+  const page = { async waitForFunction() { throw new Error("Document did not become visible"); }, async bringToFront() { assert.fail("An untimed front activation must not precede the tracked stage."); } };
+  const owner = { userId: "11111111-1111-4111-8111-111111111111", clientId: "22222222-2222-4222-8222-222222222222", label: "desktop", marker: `${prefix}-desktop-source`, receiptId: "receipt", name: "Synthetic owner", page };
+  const options = { admin, fixture: { prefix, partnerId: "33333333-3333-4333-8333-333333333333" }, owners: [owner, { ...owner, userId: "44444444-4444-4444-8444-444444444444", label: "phone" }], target: {}, env: hosted, step: async (_label: string, action: () => Promise<void>) => action(), phase: async (label: string) => { phases.push(label); }, screenshot: async () => {} };
+  await assert.rejects(runOwnerWorkspaceScenarios(options as unknown as Parameters<typeof runOwnerWorkspaceScenarios>[0]), /did not become visible/);
+  assert.equal(phases.at(-1), "desktop: require real document visibility");
+  assert.deepEqual(queries, ["first_owner_workspaces", "client_businesses", "agent_team_settings", "action_jobs", "agent_work_items"]);
 });

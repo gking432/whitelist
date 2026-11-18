@@ -8,6 +8,15 @@ import { assertHostedCi } from "./ci-bootstrap-customer-journey-db.mjs";
 const modules = ["messages", "appointments", "todo", "money"];
 const labels = { messages: "Messages", appointments: "Appointments", todo: "To-do", money: "Money" };
 const endpoint = "/api/business/workspace-preferences";
+export async function withOwnerBrowserDeadline(label, action, timeoutMs = 30000) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000) throw new Error("Use a finite bounded owner-browser deadline.");
+  let timer;
+  try {
+    return await Promise.race([Promise.resolve().then(action), new Promise((_, reject) => {
+      timer = setTimeout(() => { const error = new Error(`Owner browser deadline exceeded: ${label} (${timeoutMs}ms).`); error.name = "OwnerBrowserDeadlineError"; reject(error); }, timeoutMs);
+    })]);
+  } finally { clearTimeout(timer); }
+}
 export function workspaceActivityFixture(owner, partnerId, clock = new Date(), timeZone = "America/Chicago") {
   for (const value of [owner.userId, owner.clientId, partnerId]) if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)) throw new Error("Use exact disposable owner fixture IDs.");
   if (!["desktop", "phone"].includes(owner.label) || !Number.isFinite(clock.getTime())) throw new Error("Use a bounded synthetic workspace scenario.");
@@ -22,8 +31,8 @@ export function workspaceActivityFixture(owner, partnerId, clock = new Date(), t
 }
 
 async function snapshot(page, appUrl) {
-  const result = await page.request.get(`${appUrl}${endpoint}`); assert.equal(result.status(), 200);
-  const saved = await result.json(); assert.equal(saved.available, true); assert.equal(saved.canEdit, true);
+  const result = await page.request.get(`${appUrl}${endpoint}`, { timeout: 15000 }); assert.equal(result.status(), 200);
+  const saved = await withOwnerBrowserDeadline("read preference snapshot body", () => result.json(), 10000); assert.equal(saved.available, true); assert.equal(saved.canEdit, true);
   assert.ok(saved.preferences && Number.isSafeInteger(saved.preferences.revision));
   return saved;
 }
@@ -46,16 +55,18 @@ export async function assertOwnerWorkspaceNavigation(page, businessName) {
   }
 }
 async function post(page, commands) {
-  return page.evaluate(async ({ path, bodies }) => Promise.all(bodies.map(async (body) => {
-    const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return withOwnerBrowserDeadline("authenticated preference POST and body", () => page.evaluate(async ({ path, bodies }) => Promise.all(bodies.map(async (body) => {
+    const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
     return { status: response.status, body: await response.json() };
-  })), { path: endpoint, bodies: commands });
+  })), { path: endpoint, bodies: commands }), 20000);
 }
 function preferenceResponse(page, action) {
-  return page.waitForResponse((response) => {
+  const pending = page.waitForResponse((response) => {
     try { return new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON()?.action === action; }
     catch { return false; }
-  });
+  }, { timeout: 15000 });
+  void pending.catch(() => {}); // A failed click must not leave an unhandled waiter.
+  return pending;
 }
 async function panel(page) {
   const summary = page.locator("summary").filter({ hasText: /^\s*Customize Today\s*$/ }); await summary.waitFor({ state: "visible" });
@@ -89,29 +100,41 @@ async function assertSafety(admin, fixture, owner) {
   }
 }
 
-export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, env = process.env }) {
+export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase = async () => {}, env = process.env }) {
   assertHostedCi(env); assert.equal(env.OWNER_BROWSER_CONFIRMATION, "owner-browser-disposable");
   assert.equal(owners.length, 2); assert.match(fixture.prefix, /^owner-browser-[a-f0-9]{12}$/);
   const proof = { actualPreferenceApi: true, realNavigationActivity: true, syntheticActivityDays: true, concurrentCompareAndSwap: true, exactRetry: true, partialCoverageVisible: true, owners: [] };
   for (const owner of owners) {
     assert.ok(owner.marker.startsWith(`${fixture.prefix}-`)); const page = owner.page;
-    await page.bringToFront();
     const other = owners.find((candidate) => candidate.userId !== owner.userId);
     await step(`${owner.label}: scoped workspace activity and real navigation`, async () => {
+      await phase(`${owner.label}: verify real owner receipt and business`);
       const receipt = await admin.from("first_owner_workspaces").select("id").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).single(); assert.equal(receipt.error, null); assert.equal(receipt.data.id, owner.receiptId);
       const business = await admin.from("client_businesses").select("timezone").eq("id", owner.clientId).eq("partner_id", fixture.partnerId).single(); assert.equal(business.error, null);
+      await phase(`${owner.label}: verify stopped authority and empty outbox`);
       await assertSafety(admin, fixture, owner);
+      // Playwright pages already behave as active pages. Avoid the unnecessary
+      // untimed bringToFront channel call; require actual visibility instead.
+      await phase(`${owner.label}: require real document visibility`);
+      await page.waitForFunction(() => document.visibilityState === "visible", undefined, { timeout: 15000 });
       const activityResponse = page.waitForResponse((response) => {
         try { return new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON()?.action === "activity" && response.request().postDataJSON()?.module === "messages"; } catch { return false; }
-      });
-      await page.goto(`${target.appUrl}/client/messages`);
-      const activityResult = await activityResponse, activityBody = await activityResult.json().catch(() => null);
+      }, { timeout: 20000 });
+      void activityResponse.catch(() => {});
+      await phase(`${owner.label}: navigate Messages and observe collector response`);
+      await page.goto(`${target.appUrl}/client/messages`, { timeout: 20000 });
+      const activityResult = await activityResponse;
+      await phase(`${owner.label}: read real activity response body`);
+      const activityBody = await withOwnerBrowserDeadline("read navigation activity body", () => activityResult.json(), 10000);
       assert.equal(activityResult.status(), 200, `Real navigation activity was rejected${typeof activityBody?.error === "string" ? `: ${activityBody.error.slice(0, 300)}` : "."}`);
+      await phase(`${owner.label}: verify once-per-day navigation persistence`);
       const once = await admin.from("owner_workspace_activity").select("activity_date").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).eq("module", "messages"); assert.equal(once.error, null);
-      await page.goto(`${target.appUrl}/client`); await page.goto(`${target.appUrl}/client/messages`);
+      await page.goto(`${target.appUrl}/client`, { timeout: 20000 }); await page.goto(`${target.appUrl}/client/messages`, { timeout: 20000 });
       const twice = await admin.from("owner_workspace_activity").select("activity_date").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).eq("module", "messages"); assert.equal(twice.error, null); assert.deepEqual(twice.data, once.data, "Repeated real opens record one enum per business day.");
+      await phase(`${owner.label}: save explicitly synthetic aggregate dates`);
       const activity = workspaceActivityFixture(owner, fixture.partnerId, new Date(), business.data.timezone);
       const inserted = await admin.from("owner_workspace_activity").upsert(activity); assert.equal(inserted.error, null);
+      await phase(`${owner.label}: verify authenticated aggregate snapshot`);
       const saved = await snapshot(page, target.appUrl); assert.equal(saved.activity.find((value) => value.module === (owner.label === "desktop" ? "messages" : "appointments"))?.days, 5);
     });
     await step(`${owner.label}: deliberate Today preferences survive reload`, async () => {
