@@ -152,6 +152,53 @@ function observedAuthenticatedToken(value) {
     return payload.role === "authenticated" && typeof payload.sub === "string" && typeof payload.session_id === "string" ? value : null;
   } catch { return null; }
 }
+export function observedOwnerSessionIdentity(value) {
+  const token = typeof value === "string" ? observedAuthenticatedToken(value) : null;
+  if (!token) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
+    const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    return uuid.test(claims.sub) && uuid.test(claims.session_id) && claims.is_anonymous !== true ? { userId: claims.sub, sessionId: claims.session_id } : null;
+  } catch { return null; }
+}
+export function observeOwnerLoginSession(page, supabaseUrl, { expectedUserId, previousSessionId, timeoutMs = 10000 } = {}) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10000) throw new Error("Use a bounded current-login observation.");
+  const requests = new WeakSet(); let active = true, captured = false, resolveToken;
+  const available = new Promise((resolve) => { resolveToken = resolve; });
+  const capture = (value) => {
+    if (!active || captured) return;
+    const identity = observedOwnerSessionIdentity(value);
+    if (!identity || expectedUserId && identity.userId !== expectedUserId || previousSessionId && identity.sessionId === previousSessionId) return;
+    captured = true; resolveToken(value);
+  };
+  const onRequest = (request) => {
+    try {
+      const url = new URL(request.url()); if (url.origin !== supabaseUrl) return;
+      if (url.pathname === "/auth/v1/user" && request.method() === "GET") { requests.add(request); capture((request.headers().authorization || "").replace(/^Bearer /i, "")); }
+      else if (url.pathname === "/auth/v1/token" && request.method() === "POST") requests.add(request);
+    } catch { /* Only actual GoTrue requests initiated during this login count. */ }
+  };
+  const onResponse = (response) => {
+    if (!active || !requests.has(response.request())) return;
+    try {
+      const url = new URL(response.url()); if (url.origin !== supabaseUrl || url.pathname !== "/auth/v1/token" || response.status() !== 200) return;
+      void withOwnerBrowserDeadline("observe current-login token response", () => response.json(), 5000).then((data) => { if (active) capture(data?.access_token); }).catch(() => {});
+    } catch { /* A response from a closed prior document is not session proof. */ }
+  };
+  page.on("request", onRequest); page.on("response", onResponse);
+  const stop = () => { active = false; page.off("request", onRequest); page.off("response", onResponse); };
+  return { stop, async wait() { try { return await withOwnerBrowserDeadline("capture an eligible token for this login", () => available, timeoutMs); } finally { stop(); } } };
+}
+export async function verifyObservedOwnerSession(target, token, expectedUserId, previousToken, request = fetch) {
+  const identity = observedOwnerSessionIdentity(token), previous = previousToken ? observedOwnerSessionIdentity(previousToken) : null;
+  assert.ok(identity && (!expectedUserId || identity.userId === expectedUserId), "The captured signed-in token must belong to the intended owner.");
+  assert.ok(!previousToken || previous && identity.sessionId !== previous.sessionId, "Re-login must obtain a distinct genuine GoTrue session.");
+  const result = await request(`${target.supabaseUrl}/rest/v1/rpc/current_session_actor`, { method: "POST", headers: { apikey: target.anonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(10000) });
+  assert.equal(result.status, 200, "The captured token must resolve an actual current GoTrue session.");
+  const actor = await withOwnerBrowserDeadline("verify captured current-session actor body", () => result.json(), 5000);
+  assert.ok(actor === identity.userId && (!expectedUserId || actor === expectedUserId), "The live session actor, signed token subject and intended owner must match.");
+  return identity;
+}
 async function startApp(env, target) {
   await readFile(join(root, ".next/BUILD_ID"), "utf8");
   await new Promise((done, reject) => {
@@ -268,26 +315,27 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     app = await startApp(env, target);
     const playwright = await import(pathToFileURL(target.modulePath).href);
     browser = await playwright.chromium.launch({ headless: true });
-    const owners = [], observedTokens = new Map();
+    const owners = [], sessionTokens = new Map();
     for (const owner of fixture.owners) {
       const context = await browser.newContext({ viewport: owner.label === "phone" ? { width: 390, height: 844 } : { width: 1280, height: 900 }, isMobile: owner.label === "phone", hasTouch: owner.label === "phone", locale: "en-US", timezoneId: "America/Chicago" });
       contexts.push(context); context.setDefaultTimeout(30000); context.setDefaultNavigationTimeout(30000); const page = await context.newPage(); page.setDefaultTimeout(30000);
       context.on("request", (request) => { if (JSON.stringify(request.headers()).includes(target.serviceKey) || (request.postData() || "").includes(target.serviceKey)) diagnostics.push("A service credential reached the browser."); });
-      // Capture only a genuine GoTrue user token in this Node process's memory.
-      // Never inject it into a browser, log it or write it into any artifact.
-      page.on("request", (request) => { const url = new URL(request.url()); if (url.origin !== target.supabaseUrl || url.pathname !== "/auth/v1/user") return; const token = observedAuthenticatedToken((request.headers().authorization || "").replace(/^Bearer /i, "")); if (token) observedTokens.set(owner.label, token); });
-      page.on("response", (response) => { const url = new URL(response.url()); if (url.origin !== target.supabaseUrl || url.pathname !== "/auth/v1/token" || response.status() !== 200) return; void response.json().then((data) => { const token = observedAuthenticatedToken(data.access_token || ""); if (token) observedTokens.set(owner.label, token); }).catch(() => {}); });
       page.on("pageerror", (error) => diagnostics.push(redactBrowserFailure(error.message, [target.anonKey, target.serviceKey])));
       await context.route("**/*", async (route) => { const origin = new URL(route.request().url()).origin; if (![target.appUrl, target.supabaseUrl].includes(origin)) { diagnostics.push("An external browser request was blocked."); await route.abort(); } else await route.continue(); });
       await step(`${owner.label}: real email login`, async () => {
-        await loginUi(page, target, owner.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/start"); await page.getByRole("button", { name: "Create my business", exact: true }).waitFor({ state: "visible" });
+        const observation = observeOwnerLoginSession(page, target.supabaseUrl);
+        try {
+          await loginUi(page, target, owner.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/start"); await page.getByRole("button", { name: "Create my business", exact: true }).waitFor({ state: "visible" });
+          await phase(`${owner.label}: await token from this initial login`); const token = await observation.wait();
+          await phase(`${owner.label}: verify initial live session actor`); await verifyObservedOwnerSession(target, token); sessionTokens.set(owner.label, token);
+        } finally { observation.stop(); }
       });
       let created;
       await step(`${owner.label}: visible create once`, async () => {
         await page.getByLabel("Business name", { exact: true }).fill(owner.name); await page.getByLabel("Business description", { exact: true }).fill("Synthetic browser acceptance business: project planning and customer coordination."); await page.getByLabel("Timezone", { exact: true }).fill("America/Chicago");
         await screenshot(page, target, `${owner.label}-filled-create-form`);
         await page.getByRole("button", { name: "Create my business", exact: true }).click(); await page.waitForURL((url) => url.pathname === "/client/onboarding");
-        created = await readCreatedOwner(admin, fixture, owner); await page.goto(`${target.appUrl}/start`); await page.waitForURL((url) => url.pathname === "/client"); assert.equal((await readCreatedOwner(admin, fixture, owner)).clientId, created.clientId);
+        created = await readCreatedOwner(admin, fixture, owner); assert.ok(observedOwnerSessionIdentity(sessionTokens.get(owner.label))?.userId === created.userId, "The browser-created workspace must belong to the observed real session actor."); await page.goto(`${target.appUrl}/start`); await page.waitForURL((url) => url.pathname === "/client"); assert.equal((await readCreatedOwner(admin, fixture, owner)).clientId, created.clientId);
       });
       await step(`${owner.label}: empty Today and Apps reload`, async () => {
         await page.waitForFunction((name) => document.title.includes(name), owner.name);
@@ -325,7 +373,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     }
     workspacePersonalization = await runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase, env });
     let signedOutToken;
-    await step("phone: normal owner UI sign out", async () => { signedOutToken = observedTokens.get("phone"); assert.ok(signedOutToken, "A genuine browser GoTrue session token must be observed for revocation proof."); await owners[1].page.goto(`${target.appUrl}/client/apps`); await signOutUi(owners[1].page, target); });
+    await step("phone: normal owner UI sign out", async () => { signedOutToken = sessionTokens.get("phone"); assert.ok(signedOutToken, "A genuine browser GoTrue session token must be observed for revocation proof."); await owners[1].page.goto(`${target.appUrl}/client/apps`); await signOutUi(owners[1].page, target); });
     await step("phone: stale signed session denied by real RPCs", async () => {
       for (const [rpc, body] of [["current_session_actor", {}], ["provision_first_owner", { p_key: randomUUID(), p_business: { name: owners[1].name, description: "Synthetic browser acceptance business: project planning and customer coordination.", timezone: "America/Chicago" } }]]) {
         const response = await fetch(`${target.supabaseUrl}/rest/v1/rpc/${rpc}`, { method: "POST", headers: { apikey: target.anonKey, Authorization: `Bearer ${signedOutToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) });
@@ -333,16 +381,26 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       }
     });
     await step("phone: real re-login preserves original workspace", async () => {
-      const owner = owners[1]; await loginUi(owner.page, target, owner.email); await owner.page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
+      const owner = owners[1], observation = observeOwnerLoginSession(owner.page, target.supabaseUrl, { expectedUserId: owner.userId, previousSessionId: observedOwnerSessionIdentity(signedOutToken).sessionId });
+      let token;
+      try {
+        await loginUi(owner.page, target, owner.email); await owner.page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
+        await phase("phone: await token from this real re-login"); token = await observation.wait();
+        await phase("phone: verify distinct live re-login session actor"); await verifyObservedOwnerSession(target, token, owner.userId, signedOutToken); sessionTokens.set("phone", token);
+      } finally { observation.stop(); }
       assert.equal(await owner.page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, owner); assert.equal(persisted.clientId, owner.clientId); assert.equal(persisted.membershipId, owner.membershipId); assert.equal(persisted.receiptId, owner.receiptId);
-      assert.notEqual(observedTokens.get("phone"), signedOutToken, "Re-login must obtain a new genuine Auth session.");
       await assertSavedWorkspacePreferences(owner.page, target.appUrl, owner.workspacePreferences);
       await owner.page.goto(`${target.appUrl}/client/apps`); await revealCustomerContext(owner.page); await visible(owner.page, owner.sources.expected.customerName); await screenshot(owner.page, target, "phone-relogin-persisted");
     });
     await step("phone: normal account switch replaces prior business access", async () => {
       const prior = owners[1], current = owners[0], page = prior.page;
-      await signOutUi(page, target); await loginUi(page, target, current.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
+      await signOutUi(page, target);
+      const previousToken = sessionTokens.get("phone"), observation = observeOwnerLoginSession(page, target.supabaseUrl, { expectedUserId: current.userId, previousSessionId: observedOwnerSessionIdentity(previousToken).sessionId });
+      try {
+        await loginUi(page, target, current.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
+        await phase("phone: verify current switched-account live session"); const token = await observation.wait(); await verifyObservedOwnerSession(target, token, current.userId, previousToken); sessionTokens.set("phone", token);
+      } finally { observation.stop(); }
       await page.waitForFunction((name) => document.title.includes(name), current.name);
       assert.equal(await page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, current); assert.equal(persisted.clientId, current.clientId); assert.equal(persisted.membershipId, current.membershipId); assert.equal(persisted.receiptId, current.receiptId);

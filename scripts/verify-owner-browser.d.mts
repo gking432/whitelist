@@ -19,4 +19,15 @@ export function freshMailboxEntries(messages: unknown, priorIds: readonly string
 export function mailpitMailboxEntries(response: unknown, email: string): { id: string }[];
 export function assertMailpitContainer(inspection: unknown, mailboxUrl: string): void;
 export function cleanupMailbox(target: { inbucketUrl: string }, email: string, request?: typeof fetch): Promise<void>;
+export type ObservedOwnerSessionIdentity = { userId: string; sessionId: string };
+export type ObservedOwnerSessionRequest = { url(): string; method(): string; headers(): Record<string, string> };
+export type ObservedOwnerSessionResponse = { url(): string; status(): number; request(): ObservedOwnerSessionRequest; json(): Promise<unknown> };
+export function observedOwnerSessionIdentity(value: unknown): ObservedOwnerSessionIdentity | null;
+export function observeOwnerLoginSession(page: {
+  on(event: "request", listener: (request: ObservedOwnerSessionRequest) => void): unknown;
+  on(event: "response", listener: (response: ObservedOwnerSessionResponse) => void): unknown;
+  off(event: "request", listener: (request: ObservedOwnerSessionRequest) => void): unknown;
+  off(event: "response", listener: (response: ObservedOwnerSessionResponse) => void): unknown;
+}, supabaseUrl: string, options?: { expectedUserId?: string; previousSessionId?: string; timeoutMs?: number }): { wait(): Promise<string>; stop(): void };
+export function verifyObservedOwnerSession(target: Pick<OwnerBrowserTarget, "supabaseUrl" | "anonKey">, token: string, expectedUserId?: string, previousToken?: string, request?: typeof fetch): Promise<ObservedOwnerSessionIdentity>;
 export function main(args?: string[], env?: BrowserCiEnvironment): Promise<void>;

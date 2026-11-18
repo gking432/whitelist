@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage } from "../scripts/verify-owner-browser.mjs";
+import { EventEmitter } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
+import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, observeOwnerLoginSession, observedOwnerSessionIdentity, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage, verifyObservedOwnerSession, type ObservedOwnerSessionRequest } from "../scripts/verify-owner-browser.mjs";
 import { browserFixtureIdentity } from "../scripts/owner-browser-fixtures.mjs";
 import { collectWorkspacePreferencePosts, observeNewWorkspaceActivity, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture, type WorkspaceActivityRequest, type WorkspaceActivityResponse } from "../scripts/owner-workspace-browser-scenarios.mjs";
 
@@ -199,4 +201,64 @@ test("preference diagnostics retain a409 header when its JSON body times out, wi
 test("invalid preference JSON remains a failed body outcome rather than a successful receipt", async () => {
   const result = await collectWorkspacePreferencePosts({ path: "/api/business/workspace-preferences", bodies: [{}] }, async () => new Response("invalid json", { status: 200 }));
   assert.deepEqual(result, [{ complete: false, status: 200, body: null, failedAt: "json_body", reason: "invalid_json" }]);
+});
+
+const sessionUser = "11111111-1111-4111-8111-111111111111", otherSessionUser = "22222222-2222-4222-8222-222222222222";
+const oldSessionId = "33333333-3333-4333-8333-333333333333", freshSessionId = "44444444-4444-4444-8444-444444444444";
+function sessionToken(userId: string, sessionId: string) {
+  return `${Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")}.${Buffer.from(JSON.stringify({ role: "authenticated", sub: userId, session_id: sessionId })).toString("base64url")}.synthetic-signature`;
+}
+function sessionRequest(path: string, token?: string): ObservedOwnerSessionRequest {
+  return { url: () => `http://127.0.0.1:54321${path}`, method: () => path === "/auth/v1/user" ? "GET" : "POST", headers: (): Record<string, string> => token ? { authorization: `Bearer ${token}` } : {} };
+}
+test("a delayed prior-login response cannot overwrite a fresh login-scoped token capture", async () => {
+  const events = new EventEmitter(), old = sessionToken(sessionUser, oldSessionId), fresh = sessionToken(sessionUser, freshSessionId);
+  let finishOld: (value: unknown) => void = () => {};
+  const oldBody = new Promise<unknown>((resolve) => { finishOld = resolve; }), request = sessionRequest("/auth/v1/token");
+  const oldObserver = observeOwnerLoginSession(events, "http://127.0.0.1:54321");
+  events.emit("request", request); events.emit("response", { request: () => request, url: request.url, status: () => 200, json: () => oldBody }); oldObserver.stop();
+  const current = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId });
+  events.emit("request", sessionRequest("/auth/v1/user", fresh));
+  finishOld({ access_token: old }); await oldBody; await Promise.resolve();
+  assert.equal(await current.wait(), fresh); assert.equal(await current.wait(), fresh, "The first eligible capture is immutable.");
+  assert.equal(events.listenerCount("request"), 0); assert.equal(events.listenerCount("response"), 0);
+});
+test("a current login ignores old request identities, wrong subjects and the prior session", async () => {
+  const events = new EventEmitter(), priorRequest = sessionRequest("/auth/v1/token"); events.emit("request", priorRequest);
+  const observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser, previousSessionId: oldSessionId });
+  events.emit("response", { request: () => priorRequest, url: priorRequest.url, status: () => 200, json: async () => ({ access_token: sessionToken(sessionUser, "55555555-5555-4555-8555-555555555555") }) });
+  events.emit("request", sessionRequest("/auth/v1/user", sessionToken(sessionUser, oldSessionId)));
+  events.emit("request", sessionRequest("/auth/v1/user", sessionToken(otherSessionUser, freshSessionId)));
+  events.emit("request", sessionRequest("/auth/v1/user", "invalid-token"));
+  const fresh = sessionToken(sessionUser, freshSessionId); events.emit("request", sessionRequest("/auth/v1/user", fresh));
+  assert.equal(await observation.wait(), fresh); assert.equal(events.listenerCount("request"), 0);
+});
+test("current-login missing evidence fails within its wait budget, which starts after login", async () => {
+  const events = new EventEmitter(), observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { timeoutMs: 10 });
+  await delay(20); assert.equal(events.listenerCount("request"), 1, "No rejection timer runs while the normal email/login flow is still progressing.");
+  await assert.rejects(observation.wait(), /capture an eligible token for this login/);
+  assert.equal(events.listenerCount("request"), 0); assert.equal(events.listenerCount("response"), 0);
+  const neverWaited = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { timeoutMs: 10 }); neverWaited.stop(); await delay(15);
+  assert.equal(events.listenerCount("request"), 0, "A failed login can dispose its unused observer without an unhandled rejection.");
+});
+test("a fresh token-response capture is scoped and disposed after the real response body completes", async () => {
+  const events = new EventEmitter(), fresh = sessionToken(sessionUser, freshSessionId), request = sessionRequest("/auth/v1/token");
+  const observation = observeOwnerLoginSession(events, "http://127.0.0.1:54321", { expectedUserId: sessionUser });
+  events.emit("request", request); events.emit("response", { request: () => request, url: request.url, status: () => 200, json: async () => ({ access_token: fresh }) });
+  assert.equal(await observation.wait(), fresh); assert.equal(events.listenerCount("response"), 0);
+});
+test("fresh-session proof requires a live RPC actor matching the captured subject and intended owner", async () => {
+  const target = { supabaseUrl: "http://127.0.0.1:54321", anonKey: "synthetic-public-key" }, old = sessionToken(sessionUser, oldSessionId), fresh = sessionToken(sessionUser, freshSessionId);
+  const calls: string[] = [];
+  const request = async (url: string | URL | Request, options?: RequestInit) => {
+    calls.push(String(url)); assert.equal(new Headers(options?.headers).get("authorization"), `Bearer ${fresh}`); assert.equal(options?.body, "{}"); assert.ok(options?.signal);
+    return Response.json(sessionUser);
+  };
+  assert.deepEqual(await verifyObservedOwnerSession(target, fresh, sessionUser, old, request), { userId: sessionUser, sessionId: freshSessionId });
+  assert.deepEqual(calls, [`${target.supabaseUrl}/rest/v1/rpc/current_session_actor`]);
+  await assert.rejects(verifyObservedOwnerSession(target, old, sessionUser, old, request), /distinct genuine GoTrue session/);
+  await assert.rejects(verifyObservedOwnerSession(target, fresh, otherSessionUser, old, request), /intended owner/);
+  await assert.rejects(verifyObservedOwnerSession(target, fresh, sessionUser, old, async () => Response.json(otherSessionUser)), /live session actor/);
+  await assert.rejects(verifyObservedOwnerSession(target, fresh, sessionUser, old, async () => new Response(null, { status: 403 })), /actual current GoTrue session/);
+  assert.equal(observedOwnerSessionIdentity("invalid"), null);
 });
