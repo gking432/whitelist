@@ -17,7 +17,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
 export const MAILPIT_VERSION = "1.22.3";
 export const OWNER_BROWSER_CONFIRMATION = "owner-browser-disposable";
-export const BROWSER_COVERAGE = ["real login UI and fresh one-use GoTrue/Mailpit verification", "visible first-owner creation and reload without duplicate business", "empty Today and current Apps for the same business", "queued source imports rendered on desktop and phone", "two-owner source and endpoint isolation", "normal UI sign-out and stale signed user token denial", "real re-login preserves business, membership and creation receipt", "revoked membership denies current reads and cannot create another business", "synthetic-only cleanup"];
+export const BROWSER_COVERAGE = ["real login UI and fresh one-use GoTrue/Mailpit verification", "visible first-owner creation and reload without duplicate business", "empty Today and current Apps for the same business", "queued source imports rendered on desktop and phone", "two-owner source and endpoint isolation", "normal UI sign-out and stale signed user token denial", "real re-login preserves business, membership and creation receipt", "same-browser account switch replaces prior business access without provisioning", "revoked membership denies both current sessions and cannot create another business", "synthetic-only cleanup"];
 export function browserOptions(args) {
   if (args.length > 1 || args.some((arg) => !["--plan", "--preflight"].includes(arg))) throw new Error("Use no arguments, --plan, or --preflight.");
   return { plan: args[0] === "--plan", preflight: args[0] === "--preflight" };
@@ -279,9 +279,31 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       assert.notEqual(observedTokens.get("phone"), signedOutToken, "Re-login must obtain a new genuine Auth session.");
       await owner.page.goto(`${target.appUrl}/client/apps`); await visible(owner.page, owner.sources.expected.customerName); await screenshot(owner.page, target, "phone-relogin-persisted");
     });
+    await step("phone: normal account switch replaces prior business access", async () => {
+      const prior = owners[1], current = owners[0], page = prior.page;
+      await signOutUi(page, target); await loginUi(page, target, current.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/client");
+      await page.waitForFunction((name) => document.title.includes(name), current.name);
+      assert.equal(await page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
+      const persisted = await readCreatedOwner(admin, fixture, current); assert.equal(persisted.clientId, current.clientId); assert.equal(persisted.membershipId, current.membershipId); assert.equal(persisted.receiptId, current.receiptId);
+      const scoped = await page.request.get(`${target.appUrl}/api/connections?clientId=${prior.clientId}`); assert.equal(scoped.status(), 200);
+      const data = JSON.stringify(await scoped.json()); assert.ok(data.includes(current.marker)); assert.equal(data.includes(prior.marker), false, "The same browser must no longer read the previous account's sources.");
+      await page.goto(`${target.appUrl}/client/apps`); await visible(page, current.sources.expected.customerName); assert.equal((await page.locator("body").innerText()).includes(prior.marker), false);
+      await screenshot(page, target, "phone-switched-account");
+      await page.goto(`${target.appUrl}/client/money`); await visible(page, current.sources.expected.invoiceNumber); assert.equal((await page.locator("body").innerText()).includes(prior.marker), false);
+      for (const [kind, ref] of Object.entries(prior.sources.sourceRefs || {})) {
+        const endpoint = kind === "invoice" ? "invoice-follow-up" : kind === "hubspot" ? "crm-gateway" : null; if (!endpoint) continue;
+        const denied = await page.request.get(`${target.appUrl}/api/business/${endpoint}?${new URLSearchParams({ connectionId: ref.connectionId, recordId: ref.recordId })}`); assert.ok([403, 404].includes(denied.status()), "Switching accounts must deny exact source-review access to the previous business.");
+      }
+    });
     await step("desktop: revoked membership and no re-provision", async () => {
       const owner = owners[0], disabled = await admin.from("memberships").update({ status: "disabled" }).eq("id", owner.membershipId).eq("user_id", owner.userId).eq("client_id", owner.clientId); assert.equal(disabled.error, null);
       assert.equal((await owner.page.request.get(`${target.appUrl}/api/connections`)).status(), 403); await owner.page.goto(`${target.appUrl}/client`); await visible(owner.page, "Business setup unavailable"); assert.equal(await owner.page.getByRole("button", { name: "Create my business", exact: true }).count(), 0); await screenshot(owner.page, target, "desktop-revoked-access"); await signOutUi(owner.page, target);
+    });
+    await step("phone: switched session loses revoked business access", async () => {
+      const page = owners[1].page;
+      assert.equal((await page.request.get(`${target.appUrl}/api/connections`)).status(), 403);
+      await page.goto(`${target.appUrl}/client`); await visible(page, "Business setup unavailable"); assert.equal(await page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
+      await screenshot(page, target, "phone-switched-revoked-access"); await signOutUi(page, target);
     });
     assert.deepEqual(diagnostics, [], "The real browser must have no uncaught page errors, external requests or service-key exposure.");
   } catch (error) { failure = error; }

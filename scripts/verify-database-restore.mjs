@@ -341,6 +341,13 @@ try {
       "--exit-on-error",
       "/tmp/public.dump",
     ]);
+    if (section === "pre-data") {
+      // pg_dump stores public-schema ACL deltas against initdb's PUBLIC USAGE
+      // baseline. DROP/CREATE removed it; restore that baseline before the
+      // archive's post-data GRANT/REVOKE deltas. Never grant PUBLIC CREATE.
+      dockerExec(targetContainer, ["psql", "-U", "supabase_admin", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c",
+        "grant usage on schema public to public"]);
+    }
   }
 
   const restoredTables = query(
