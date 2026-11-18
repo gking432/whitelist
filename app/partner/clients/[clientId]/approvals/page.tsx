@@ -1,3 +1,4 @@
+import { InvoiceFollowupPreview } from "@/components/approvals/invoice-followup-preview";
 import { CalendarChangePreview } from "@/components/approvals/calendar-change-preview";
 import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
 import Link from "next/link";
@@ -138,6 +139,7 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
 
               {item.type === "external_action" ? <ExternalActionPreview payload={item.proposed_payload} /> : null}
               {item.type === "appointment_change" ? <CalendarChangePreview payload={item.proposed_payload} /> : null}
+              {item.proposed_payload?.invoice_followup_version === 1 ? <InvoiceFollowupPreview payload={item.proposed_payload} /> : null}
               <div className="mt-4 border-t pt-4">
                 {access.canResolveApprovals ? (
                   <ApprovalResolutionForm
@@ -147,6 +149,7 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
                       item.id,
                     )}
                     editableContent={item.editable_content}
+                    allowEdit={item.proposed_payload?.invoice_followup_version !== 1}
                     consequence={
                       item.type === "external_action"
                         ? "Approving submits these exact fields to the connected app when this client and solution are live. Watch Action history for the confirmed result."

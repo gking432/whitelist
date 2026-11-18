@@ -18,7 +18,7 @@ export async function loadTodoSnapshot(
     loadBusinessSnapshot(portal),
     admin
       .from("crm_tasks")
-      .select("id,title,description,status,priority,due_at,updated_at")
+      .select("id,title,description,status,priority,due_at,updated_at,source_invoice_record_id")
       .eq("partner_id", partnerId)
       .eq("client_id", clientId)
       .neq("status", "cancelled")

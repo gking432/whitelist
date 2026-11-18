@@ -1,5 +1,7 @@
 "use client";
 
+import { InvoiceFollowupPreview } from "@/components/approvals/invoice-followup-preview";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -846,10 +848,12 @@ function CustomerDecision({
           <ExternalActionPreview payload={approval.proposed_payload} />
         ) : null}
         {approval.type === "appointment_change" ? <CalendarChangePreview payload={approval.proposed_payload} /> : null}
+              {approval.proposed_payload?.invoice_followup_version === 1 ? <InvoiceFollowupPreview payload={approval.proposed_payload} /> : null}
         {canDecide ? (
           <ApprovalResolutionForm
             action={resolve}
             editableContent={approval.editable_content}
+                    allowEdit={approval.proposed_payload?.invoice_followup_version !== 1}
             consequence="Approving authorizes this action and queues it for delivery. Check Recent for delivery status. Rejecting cancels the proposal."
           />
         ) : (

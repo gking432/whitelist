@@ -27,6 +27,7 @@ import { bookingLifecycleDeliveryBlock } from "@/lib/scheduling/lifecycle-guard"
 import { intakeBookingDeliveryBlock } from "@/lib/scheduling/intake-guard";
 import { bookApprovedAppointment } from "@/lib/scheduling/book-approved";
 import { executeApprovedCalendarMutation } from "@/lib/scheduling/calendar-mutation";
+import { invoiceFollowupDeliveryBlock } from "@/lib/money/guard";
 import type { ActionPreflight } from "./action-preflight";
 
 // Executes one durable action job — the shared dispatch used by manual
@@ -76,6 +77,8 @@ export async function executeActionJob(
       await recordConversationDelivery(admin, job, outcome);
     return outcome;
   }
+  const invoiceBlocked = await invoiceFollowupDeliveryBlock(admin, job);
+  if (invoiceBlocked) return { status: "skipped", attempted: false, delivered: false, detail: invoiceBlocked };
   const calendarMutation = ["calendar.cancel", "calendar.reschedule"].includes(job.kind);
   const confirmationBlocked = job.payload.booking_lifecycle_version === 1 || calendarMutation ? null : await confirmationDeliveryBlock(admin, job);
   if (confirmationBlocked) return { status: "skipped", attempted: false, delivered: false, detail: confirmationBlocked };
@@ -84,6 +87,8 @@ export async function executeActionJob(
   const finalActionCheck: ActionPreflight = async () => {
     const policy = await authorityDeliveryBlock(admin, job);
     if (policy) return policy;
+    const invoice = await invoiceFollowupDeliveryBlock(admin, job);
+    if (invoice) return invoice;
     const confirmation = job.payload.booking_lifecycle_version === 1 || calendarMutation ? null : await confirmationDeliveryBlock(admin, job);
     if (confirmation) return confirmation;
     const lifecycle = await bookingLifecycleDeliveryBlock(admin, job) ?? await intakeBookingDeliveryBlock(admin, job);

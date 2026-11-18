@@ -12,12 +12,14 @@ type ApprovalResolutionFormProps = {
   action: (previousState: FormState, formData: FormData) => Promise<FormState>;
   editableContent: string | null;
   consequence: string;
+  allowEdit?: boolean;
 };
 
 export function ApprovalResolutionForm({
   action,
   editableContent,
   consequence,
+  allowEdit = true,
 }: ApprovalResolutionFormProps) {
   const formId = useId();
   const [state, formAction, isPending] = useActionState(
@@ -55,10 +57,11 @@ export function ApprovalResolutionForm({
             name="edited_content"
             className="mt-1.5"
             defaultValue={editableContent}
+            readOnly={!allowEdit}
             rows={4}
           />
           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-            Use “Edit &amp; approve” to approve your edited version above.
+            {allowEdit ? "Use “Edit & approve” to approve your edited version above." : "Review this exact source-backed template. Its financial content cannot be edited."}
           </p>
         </div>
       ) : null}
@@ -86,7 +89,7 @@ export function ApprovalResolutionForm({
         >
           Approve
         </Button>
-        {editableContent !== null ? (
+        {editableContent !== null && allowEdit ? (
           <Button
             type="submit"
             name="resolution"

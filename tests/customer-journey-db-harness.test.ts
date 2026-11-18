@@ -56,7 +56,7 @@ test("read-only preflight and marker/ledger checks cannot infer acceptance from 
   for (const values of [{ nonTestPartners: 1 }, { nonTestClients: 1 }, { database: "postgres" }, { unfilteredRead: false }, { appliedVersions: ["not-a-version"] }])
     assert.throws(() => assertPreflight(report(values), target));
   const files = ["20261117030202_reviewed_business_authority.sql", "20261117033546_multi_application_workspace.sql", "20261117043720_owner_intake_adoption.sql", "20261117133444_customer_journey_lifecycle.sql", `${EXPECTED_MIGRATION}_approved_calendar_changes.sql`, "20261009014610_business_agent_activation.sql"];
-  assert.deepEqual(migrationPlan(files, report()), [`${EXPECTED_MIGRATION}_approved_calendar_changes.sql`]);
+  assert.deepEqual(migrationPlan([...files, "20990101000000_unreviewed_future.sql"], report()), [`${EXPECTED_MIGRATION}_approved_calendar_changes.sql`]);
   assert.throws(() => migrationPlan(files, report({ appliedVersions: [] })), /disagree/);
   assert.throws(() => migrationPlan(files, report({ migration: "20990101000000_newer" })), /newer/);
 });

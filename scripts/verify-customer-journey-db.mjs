@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261117225829";
+export const EXPECTED_MIGRATION = "20261118020030";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -18,6 +18,7 @@ export const COVERAGE = [
   "rollback: source-bound replacement offer, approved internal cancellation/time change, exact receipt recovery and review dedupe",
   "rollback: received customer body/status immutability while scoped identity linking remains possible",
   "rollback: selected Google grants, preserved stops, exact activation, paused inbound collection and uncertain-source reconciliation",
+  "rollback: source-backed invoice review, verified recipient, paid-invoice suppression and duplicate receipt protection",
   "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim and adoption dedupe",
 ];
 export class Blocked extends Error {}
@@ -110,7 +111,7 @@ export function readReport(output, kind) {
 }
 export function migrationVersion(marker) { return typeof marker === "string" ? /^(\d{14})(?:_|$)/.exec(marker)?.[1] ?? null : null; }
 export function migrationPlan(files, report) {
-  const eligible = files.filter((file) => /^20261117\d{6}_[a-z0-9_]+\.sql$/.test(file)).sort();
+  const eligible = files.filter((file) => /^\d{14}_[a-z0-9_]+\.sql$/.test(file) && file.slice(0, 14) >= "20261117030202" && file.slice(0, 14) <= EXPECTED_MIGRATION).sort();
   const versions = new Set(report.appliedVersions);
   const marker = migrationVersion(report.migration);
   if (!marker || marker > EXPECTED_MIGRATION) throw new Blocked("The schema marker is missing, unrecognized, or newer than this verifier.");
@@ -244,6 +245,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   requireLatest(report, missing);
   await rollbackAcceptance(target);
   await rollbackAcceptance(target, "google-calendar-acceptance.sql", "google_calendar_acceptance");
+  await rollbackAcceptance(target, "money-followup-acceptance.sql", "money_followup_acceptance");
   if (options.concurrency) await concurrencyAcceptance(target);
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }

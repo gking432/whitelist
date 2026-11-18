@@ -4,6 +4,7 @@ export type SavedTask = {
   id: string;
   title: string;
   description: string | null;
+  source_invoice_record_id?: string | null;
   status: "open" | "done" | "cancelled";
   priority: string;
   due_at: string | null;

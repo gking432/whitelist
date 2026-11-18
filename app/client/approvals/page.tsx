@@ -1,3 +1,4 @@
+import { InvoiceFollowupPreview } from "@/components/approvals/invoice-followup-preview";
 import { CalendarChangePreview } from "@/components/approvals/calendar-change-preview";
 import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
 import { ActionJobsPanel } from "@/components/partner/action-jobs-panel";
@@ -128,11 +129,13 @@ export default async function ClientPortalApprovalsPage() {
               </div>
               {item.type === "external_action" ? <ExternalActionPreview payload={item.proposed_payload} /> : null}
               {item.type === "appointment_change" ? <CalendarChangePreview payload={item.proposed_payload} /> : null}
+              {item.proposed_payload?.invoice_followup_version === 1 ? <InvoiceFollowupPreview payload={item.proposed_payload} /> : null}
               <div className="mt-4 border-t pt-4">
                 {access.canResolveApprovals ? (
                   <ApprovalResolutionForm
                     action={resolveClientApproval.bind(null, item.id)}
                     editableContent={item.editable_content}
+                    allowEdit={item.proposed_payload?.invoice_followup_version !== 1}
                     consequence="Approving authorizes this action and queues delivery. Check its delivery status below. Rejecting cancels the proposed action."
                   />
                 ) : (

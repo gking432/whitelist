@@ -386,6 +386,7 @@ export function TodoWorkspace({
       {task ? (
         <BusinessDialog title={task.title} onClose={() => setTaskId(null)}>
           <div className="space-y-5">
+            {task.source_invoice_record_id ? <Link href={`/client/money#invoice-${task.source_invoice_record_id}`} className="text-sm underline">Open invoice source review</Link> : null}
             {task.description ? (
               <p className="whitespace-pre-wrap text-sm leading-7">
                 {task.description}

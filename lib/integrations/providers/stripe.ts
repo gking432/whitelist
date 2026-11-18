@@ -54,11 +54,44 @@ export function mapStripeInvoice(source: Record<string, unknown>): CanonicalReco
     total: stripeMinorUnits(source.total), amount_due: stripeMinorUnits(source.amount_due),
     amount_remaining: stripeMinorUnits(source.amount_remaining), amount_paid: stripeMinorUnits(source.amount_paid),
     currency: currency(source.currency), status: text(source.status) ?? "unknown",
+    collection_method: text(source.collection_method), livemode: source.livemode === true,
     due_date: iso(source.due_date), hosted_url: text(source.hosted_invoice_url),
     source_updated_at: updatedAt,
   };
   return { objectType: "invoice", externalId: id(source.id) ?? "", deleted: source.deleted === true,
     updatedAt: updatedAt ?? iso(source.created), data, source: safeSource(source, data) };
+}
+
+/** A restricted read proves the selected account and exact invoice only. It
+ * never sends a Stripe invoice, creates a payment link, or grants write access.
+ * Reference: https://docs.stripe.com/api/invoices/retrieve */
+export async function readRestrictedStripeInvoice(
+  credentials: StripeCredentials,
+  binding: { accountId: string; invoiceId: string },
+  deps: { fetch?: typeof fetch; now?: () => string } = {},
+): Promise<{ accountId: string; invoice: CanonicalRecord; observedAt: string }> {
+  if (credentials.accessMode !== "read_only" || !/^rk_live_[A-Za-z0-9_]+$/.test(credentials.apiKey) ||
+      !/^acct_[A-Za-z0-9_]{1,250}$/.test(binding.accountId) || !/^in_[A-Za-z0-9_]{1,250}$/.test(binding.invoiceId))
+    throw new Error("A restricted live Stripe read key and exact saved account/invoice are required.");
+  const request = deps.fetch ?? fetch;
+  const read = async (path: string): Promise<Record<string, unknown>> => {
+    const response = await request(`${BASE}${path}`, {
+      method: "GET", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000),
+      headers: { Authorization: `Bearer ${credentials.apiKey}`, "Stripe-Version": "2026-10-28.endive" },
+    });
+    if (!response.ok) throw new Error("The current Stripe invoice read could not be verified.");
+    const value: unknown = await response.json();
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Stripe returned an invalid invoice observation.");
+    return value as Record<string, unknown>;
+  };
+  const account = await read("/account");
+  if (account.id !== binding.accountId || account.object !== "account")
+    throw new Error("The Stripe read key belongs to a different account.");
+  const observedAt = deps.now?.() ?? new Date().toISOString();
+  if (!Number.isFinite(Date.parse(observedAt))) throw new Error("The invoice observation clock is invalid.");
+  const source = await read(`/invoices/${encodeURIComponent(binding.invoiceId)}`);
+  if (source.id !== binding.invoiceId || source.object !== "invoice") throw new Error("Stripe returned a different invoice.");
+  return { accountId: binding.accountId, invoice: withClock(mapStripeInvoice(source), source, { observedAt }), observedAt };
 }
 function paymentStatus(providerStatus: string | null, received: number | null, refunded: number | null): string {
   if (refunded !== null && refunded > 0) return received !== null && received > 0 && refunded >= received ? "refunded" : "partially_refunded";
