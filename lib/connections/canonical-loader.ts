@@ -5,7 +5,7 @@ import { OWNER_PROVIDERS, type ConnectedApp, type ConnectedStream } from "./type
 
 export type OwnerConnectionRow = {
   id: string; partner_id: string; client_id: string; display_name: string;
-  external_account_name?: string | null; status: string; runtime_mode: string;
+  external_account_name?: string | null; external_account_id?: string | null; status: string; runtime_mode: string;
   config?: Record<string, unknown> | null;
   provider: { provider_key: string; capabilities?: string[] } | { provider_key: string; capabilities?: string[] }[] | null;
 };
@@ -33,7 +33,7 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
   const generatedAt = (options.clock?.() ?? new Date()).toISOString();
   const limit = Math.max(1, Math.min(options.recordLimit ?? 1000, 1000));
   const connectionResult: QueryResult = options.connections ? { data: options.connections, error: null } : await admin.from("integration_connections")
-    .select("id,partner_id,client_id,display_name,external_account_name,status,runtime_mode,config,provider:integration_providers!inner(provider_key,capabilities)")
+    .select("id,partner_id,client_id,display_name,external_account_name,external_account_id,status,runtime_mode,config,provider:integration_providers!inner(provider_key,capabilities)")
     .eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).in("provider.provider_key", [...OWNER_PROVIDERS])
     .order("created_at").limit(101);
   const allConnections = list<OwnerConnectionRow>(connectionResult.data).filter((c) => (OWNER_PROVIDERS as readonly string[]).includes(connectionProvider(c)));
@@ -86,6 +86,7 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
     const completed = times.length === streams.length && streams.length ? times.sort()[0] : null;
     return { id: c.id, name: c.display_name || provider, provider, account: c.external_account_name ?? null,
       status: c.status, paused: c.runtime_mode === "paused", readOnly: c.config?.workspace_view_only === true || ["stripe", "generic_inbound_webhook"].includes(provider),
+      ...(provider === "stripe" ? { sourceAccountId: c.external_account_id ?? null } : {}),
       ...(provider === "google_workspace" ? { writePermissions: { calendarWrite: googleAccountCanAct(c.config ?? {}, "calendar"), emailSend: googleAccountCanAct(c.config ?? {}, "email") } } : {}),
       lastSyncedAt: completed, stale: streams.some((s) => ["stale", "missing", "error", "paused"].includes(s.status)),
       syncing: streams.some((s) => s.partial && !eventBased) || jobs.some((j) => j.connection_id === c.id && j.status === "running"),

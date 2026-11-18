@@ -182,7 +182,20 @@ do $approval$ declare control jsonb; v_approval_id uuid; source_id uuid; job_id 
  update public.integration_canonical_records set canonical_data=canonical_data||'{"status":"paid","amount_due_minor":0}'::jsonb where id in(select r.id from public.integration_canonical_records r where r.partner_id=p and r.client_id=c and r.object_type='invoice' and r.external_object_id=(control->'command'->'pin'->>'invoice_id'));
  check_result:=public.invoice_followup_action_check(p,c,v_approval_id,job_id);
  if check_result->>'allowed' is distinct from 'false' or not exists(select 1 from public.action_jobs where id=job_id and status='processing' and claim_token is not null) then raise exception 'Paid invoice remained executable or its in-flight history was rewritten'; end if;
+ insert into mf_fixture(key,id,data) select 'processing-history',j.id,to_jsonb(j) from public.action_jobs j where j.id=job_id;
 end $approval$;
+
+-- Retain the exact processing history above. Later independent controls use
+-- another explicitly verified synthetic email thread on the same contact;
+-- no recipient identity is inferred from invoice metadata or a matching name.
+do $later_thread$ declare thread_id uuid; person uuid:=(select id from mf_fixture where key='contact-a'); begin
+ insert into mf_fixture(key,id) select 'conversation-first',id from mf_fixture where key='conversation-a';
+ insert into public.business_conversations(partner_id,client_id,connection_id,channel,external_thread_id,contact_id,identity_status,mode,state)
+ values((select id from mf_fixture where key='partner-a'),(select id from mf_fixture where key='client-a'),(select id from mf_fixture where key='email-a'),'email','synthetic-later-thread-__RUN_ID__@synthetic.invalid',person,'owner_verified','agent','open') returning id into thread_id;
+ update mf_fixture set id=thread_id where key='conversation-a';
+ insert into public.business_conversation_messages(partner_id,client_id,conversation_id,external_key,direction,body,status,created_at)
+ values((select id from mf_fixture where key='partner-a'),(select id from mf_fixture where key='client-a'),thread_id,'mf-__RUN_ID__-later-thread','inbound','Synthetic distinct verified email correspondence for independent controls.','received',now()-interval '9 minutes');
+end $later_thread$;
 
 -- Group 4: real RPC rejection covers missing owner decisions and exact scope,
 -- source/contact/thread pins. It cannot silently match a customer identity.
@@ -349,8 +362,65 @@ do $own_read$ declare ordinary_task uuid; denied boolean:=false; p uuid:=(select
  if not denied or not exists(select 1 from public.crm_tasks where id=ordinary_task and source_invoice_record_id is null and title='Synthetic ordinary task edit remains allowed') then raise exception 'Browser source binding was allowed or ordinary task editing was broken'; end if;
 end $own_read$;
 reset role;
+
+-- Group 9: unresolved generic replies serialize outreach on the EXACT verified
+-- conversation, even without a money marker. Each status gets a fresh thread
+-- and positive control; accepted/uncertain rows and their claims are preserved.
+set local role service_role;
+select set_config('request.jwt.claim.role','service_role',true);
+do $unresolved_thread$ declare saved_status text; thread_id uuid; other_thread uuid; other_proposal uuid; other_job uuid; legacy_proposal uuid; legacy_job uuid; money_proposal uuid;
+ control jsonb; check_result jsonb; generic_pin jsonb; before_job jsonb; before_proposal jsonb; before_other_job jsonb; denied boolean; authority integer;
+ p uuid:=(select id from mf_fixture where key='partner-a'); c uuid:=(select id from mf_fixture where key='client-a'); actor uuid:=(select id from mf_fixture where key='owner-a'); sender uuid:=(select id from mf_fixture where key='email-a'); person uuid:=(select id from mf_fixture where key='contact-a');
+ reason text:='Reconcile the existing unresolved message action on this exact customer conversation before preparing another reminder.';
+begin
+ select authority_revision into authority from public.agent_team_settings where partner_id=p and client_id=c;
+ insert into public.business_conversations(partner_id,client_id,connection_id,channel,external_thread_id,contact_id,identity_status,mode,state)
+ values(p,c,sender,'email','synthetic-other-thread-__RUN_ID__@synthetic.invalid',person,'owner_verified','agent','open') returning id into other_thread;
+ generic_pin:=jsonb_build_object('conversation_id',other_thread,'conversation_revision',1,'connection_id',sender,'channel','email','to','synthetic-other-thread-__RUN_ID__@synthetic.invalid','authority_revision',authority);
+ insert into public.approval_items(partner_id,client_id,type,status,title,proposed_payload,editable_content,resolved_content,resolved_by,resolved_at)
+ values(p,c,'customer_message','approved','Synthetic other-thread approved reply',generic_pin,'Synthetic historical reply; no provider call made.','Synthetic historical reply; no provider call made.',actor,now()-interval '1 minute') returning id into other_proposal;
+ insert into public.action_jobs(partner_id,client_id,connection_id,approval_id,kind,status,payload,claim_token,claimed_at,last_attempt_at,attempt_count)
+ select p,c,sender,other_proposal,'email.send','processing',a.proposed_payload||jsonb_build_object('body',a.resolved_content),extensions.gen_random_uuid(),now()-interval '1 minute',now()-interval '1 minute',1 from public.approval_items a where a.id=other_proposal returning id into other_job;
+ select to_jsonb(j) into before_other_job from public.action_jobs j where j.id=other_job;
+ foreach saved_status in array array['pending','processing','provider_pending','uncertain','failed','succeeded'] loop
+  insert into public.business_conversations(partner_id,client_id,connection_id,channel,external_thread_id,contact_id,identity_status,mode,state)
+  values(p,c,sender,'email','synthetic-thread-'||saved_status||'-__RUN_ID__@synthetic.invalid',person,'owner_verified','agent','open') returning id into thread_id;
+  update mf_fixture set id=thread_id where key='conversation-a';
+  -- This succeeds while other_job is still processing on another verified
+  -- thread of the same contact, proving the guard uses exact thread identity.
+  control:=pg_temp.mf_control('thread-'||saved_status); money_proposal:=(control->'receipt'->>'approvalId')::uuid;
+  generic_pin:=jsonb_build_object('conversation_id',thread_id,'conversation_revision',1,'connection_id',sender,'channel','email','to','synthetic-thread-'||saved_status||'-__RUN_ID__@synthetic.invalid','authority_revision',authority);
+  insert into public.approval_items(partner_id,client_id,type,status,title,proposed_payload,editable_content,resolved_content,resolved_by,resolved_at)
+  values(p,c,'customer_message','approved','Synthetic existing generic reply '||saved_status,generic_pin,'Synthetic historical generic reply; no provider call made.','Synthetic historical generic reply; no provider call made.',actor,now()-interval '1 minute') returning id into legacy_proposal;
+  insert into public.action_jobs(partner_id,client_id,connection_id,approval_id,kind,status,payload,claim_token,claimed_at,last_attempt_at,attempt_count,external_ref,receipt_recorded_at)
+  select p,c,sender,legacy_proposal,'email.send',saved_status,a.proposed_payload||jsonb_build_object('body',a.resolved_content),
+   case when saved_status='processing' then extensions.gen_random_uuid() else null end,
+   case when saved_status in ('processing','provider_pending','uncertain') then now()-interval '1 minute' else null end,
+   case when saved_status='pending' then null else now()-interval '1 minute' end,case when saved_status='pending' then 0 else 1 end,
+   case when saved_status='succeeded' then 'synthetic-recorded-message-__RUN_ID__' else null end,
+   case when saved_status='succeeded' then now()-interval '1 minute' else null end
+  from public.approval_items a where a.id=legacy_proposal returning id into legacy_job;
+  select to_jsonb(j) into before_job from public.action_jobs j where j.id=legacy_job;
+  select to_jsonb(a) into before_proposal from public.approval_items a where a.id=legacy_proposal;
+  check_result:=public.invoice_followup_action_check(p,c,money_proposal,null);
+  if saved_status='succeeded' then
+   if check_result->>'allowed' is distinct from 'true' then raise exception 'Completed generic message history permanently blocked a later reviewed invoice: %',check_result->>'reason'; end if;
+  else
+   if check_result->>'allowed' is distinct from 'false' or check_result->>'reason' is distinct from reason then raise exception 'Unresolved same-thread generic % message did not block the invoice for the exact expected reason: %',saved_status,check_result->>'reason'; end if;
+   denied:=false;
+   begin update public.approval_items set status='approved',resolved_by=actor where id=money_proposal;
+   exception when sqlstate '40001' then if sqlerrm is distinct from reason then raise; end if; denied:=true; end;
+   if not denied or not exists(select 1 from public.approval_items where id=money_proposal and status='pending') or exists(select 1 from public.action_jobs where approval_id=money_proposal) then raise exception 'Invoice approval queued beside unresolved same-thread message: %',saved_status; end if;
+  end if;
+  if before_job is distinct from (select to_jsonb(j) from public.action_jobs j where j.id=legacy_job)
+   or before_proposal is distinct from (select to_jsonb(a) from public.approval_items a where a.id=legacy_proposal)
+   or before_other_job is distinct from (select to_jsonb(j) from public.action_jobs j where j.id=other_job) then raise exception 'Invoice guard rewrote existing generic outcome, claim or immutable approval: %',saved_status; end if;
+ end loop;
+ if (select data from mf_fixture where key='processing-history') is distinct from (select to_jsonb(j) from public.action_jobs j where j.id=(select id from mf_fixture where key='processing-history')) then raise exception 'Independent conversation controls changed the original processing invoice history'; end if;
+end $unresolved_thread$;
+reset role;
 rollback;
 select '__CUSTOMER_JOURNEY_REPORT__'::text||jsonb_build_object('kind','money_followup_acceptance','rolledBack',true,'remainingFixtures',
  (select count(*) from public.partners where slug like 'cj-acceptance-__RUN_ID__-money-%')+(select count(*) from auth.users where email like 'cj-acceptance-__RUN_ID__-money-%@synthetic.invalid'),
  'checks',jsonb_build_array('accepted_owner_prepares_shared_review_without_crm_or_source_writes','receipt_replay_and_same_account_invoice_dedupe','immutable_financial_template_claim_and_paid_execution_guard',
- 'exact_source_customer_recipient_scope_and_decision_atomicity','balance_collection_fresh_complete_peer_source_policy','source_activity_suppression_account_and_authority_interruptions','uncertain_outcome_preservation_and_source_handoff','actual_browser_rpc_denial_and_scoped_work_rls'))::text as cj_report;
+ 'exact_source_customer_recipient_scope_and_decision_atomicity','balance_collection_fresh_complete_peer_source_policy','source_activity_suppression_account_and_authority_interruptions','uncertain_outcome_preservation_and_source_handoff','actual_browser_rpc_denial_and_scoped_work_rls','unresolved_exact_thread_generic_message_guard_and_history_preservation'))::text as cj_report;

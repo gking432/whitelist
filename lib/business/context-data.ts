@@ -1,3 +1,4 @@
+import { reconcileMoneySources, moneyEvidenceForSource } from "../money/source-reconciliation.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadConnectedRecords, type OwnerConnectionRow } from "../connections/data.ts";
 import { mapConnectedData } from "../connections/records.ts";
@@ -26,7 +27,7 @@ export async function readBusinessContext(
     scoped("client_knowledge_profiles", `${tenant},id,business_description,services_offered,business_hours,booking_rules,updated_at`).maybeSingle(),
     scoped("agent_team_settings", "status,authority_revision,channel_authority,conversations_enabled,sales_enabled,scheduling_enabled").maybeSingle(),
     scoped("business_agent_activation", "status,website,email,sms,instagram,bookings,workspace_connection_id").maybeSingle(),
-    scoped("integration_connections", `${tenant},id,display_name,external_account_name,status,runtime_mode,config,provider:integration_providers!inner(provider_key)`)
+    scoped("integration_connections", `${tenant},id,display_name,external_account_name,external_account_id,status,runtime_mode,config,provider:integration_providers!inner(provider_key)`)
       .order("id").limit(CONTEXT_CONNECTION_LIMIT + 1),
     scoped("business_records", `${tenant},id,kind,title,status,revision,source_record_id,updated_at,created_at`)
       .order("updated_at", { ascending: false }).limit(CONTEXT_RECORD_LIMIT + 1),
@@ -83,6 +84,9 @@ export async function readBusinessContext(
       start_at: text(row.start_at) || undefined, next_action: text(row.next_action),
     })),
   });
+  const reconciledMoney = reconcileMoneySources(connected.data.invoices, connected.data.payments);
+  const invoiceBySource = new Map(reconciledMoney.invoices.flatMap((invoice) => invoice.sourceRecords.map((source) => [source.id, invoice] as const)));
+  const paymentBySource = new Map(reconciledMoney.payments.flatMap((payment) => payment.sourceRecords.map((source) => [source.id, payment] as const)));
   const importedBatch = (kind: string): EvidenceBatch => {
     const batch = connected.batches.find((item) => item.objectType === kind);
     return {
@@ -90,7 +94,8 @@ export async function readBusinessContext(
       hasMore: batch?.hasMore ?? false,
       rows: (batch?.rows ?? []).flatMap((row): RecordEvidence[] => {
         const single = mapConnectedData(connected.apps, [row], generatedAt);
-        const message = single.messages[0], appointment = single.appointments[0], lead = single.leads?.[0], invoice = single.invoices?.[0], payment = single.payments?.[0];
+        const message = single.messages[0], appointment = single.appointments[0], lead = single.leads?.[0], invoiceSource = invoiceBySource.get(row.id), paymentSource = paymentBySource.get(row.id);
+        const invoice = invoiceSource ? moneyEvidenceForSource(invoiceSource, row.id) : undefined, payment = paymentSource ? moneyEvidenceForSource(paymentSource, row.id) : undefined;
         const display = message ?? appointment ?? lead ?? invoice ?? payment;
         const cancelled = kind === "appointment" && (row.canonical_data.deleted === true || ["cancelled", "canceled"].includes(text(row.canonical_data.status)));
         if (!display && !cancelled) return [];
@@ -109,6 +114,7 @@ export async function readBusinessContext(
             connectionId: row.connection_id, externalId: row.external_object_id, provider,
             href: display?.href ?? null, ...(message ? { direction: message.direction } : {}),
             ...(lead ? { summary: lead.preview } : {}),
+            ...((invoice?.sourceWarning || payment?.sourceWarning) ? { summary: invoice?.sourceWarning || payment?.sourceWarning || undefined } : {}),
             ...(invoice ? { currency: invoice.currency, totalMinor: invoice.totalMinor, amountDueMinor: invoice.amountDueMinor, amountPaidMinor: invoice.amountPaidMinor } : {}),
             ...(payment ? { currency: payment.currency, amountMinor: payment.amountMinor, amountRefundedMinor: payment.amountRefundedMinor } : {}),
           },

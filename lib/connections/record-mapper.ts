@@ -77,14 +77,14 @@ export function mapConnectedData(apps: ConnectedApp[], rows: ImportedRow[], gene
         preview: (str(d.description) || str(d.message)).slice(0, 1200) });
     }
     if (provider === "stripe" && row.object_type === "invoice") {
-      invoices.push({ id: row.id, connectionId: app.id, externalId: row.external_object_id, account, provider,
+      invoices.push({ id: row.id, connectionId: app.id, externalId: row.external_object_id, account, provider, accountId: app.sourceAccountId ?? null,
         number: str(d.number).slice(0, 100) || null, status: str(d.status) || "unknown", currency: knownCurrency(d.currency),
         totalMinor: minorAmount(d.total_minor ?? d.total), amountDueMinor: minorAmount(d.amount_due_minor ?? d.amount_remaining),
         amountPaidMinor: minorAmount(d.amount_paid_minor ?? d.amount_paid), dueAt: timestamp(d.due_date),
         updatedAt: timestamp(row.updated_at) ?? timestamp(row.external_updated_at), href: safeProviderLink(d.hosted_url, provider, "invoice") });
     }
     if (provider === "stripe" && row.object_type === "payment") {
-      payments.push({ id: row.id, connectionId: app.id, externalId: row.external_object_id, account, provider,
+      payments.push({ id: row.id, connectionId: app.id, externalId: row.external_object_id, account, provider, accountId: app.sourceAccountId ?? null,
         status: str(d.status) || "unknown", currency: knownCurrency(d.currency),
         amountMinor: minorAmount(Object.hasOwn(d, "amount_minor") ? d.amount_minor : d.amount_received), amountRefundedMinor: minorAmount(d.amount_refunded_minor ?? d.amount_refunded),
         updatedAt: timestamp(row.updated_at) ?? timestamp(row.external_updated_at), href: safeProviderLink(d.receipt_url, provider, "payment") });

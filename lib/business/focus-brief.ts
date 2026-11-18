@@ -247,8 +247,21 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
     title = `${invoices.length} ${invoices.length === 1 ? "invoice to review" : "invoices to review"}.`;
     description = "Your saved invoices are below.";
   }
+  if (connectedMoney?.conflictCount && ["quiet", "planned"].includes(state)) {
+    state = "incomplete";
+    title = "Money records need source review.";
+    description = "Conflicting or overlapping imports are excluded from amounts due until the sources agree.";
+  }
   const invoiceIds = new Set(invoices.map((record) => `record:${record.id}`));
   const sections: DailyWorkSection[] = [
+    {
+      key: "money-source-review", title: "Money source review", href: "/client/money",
+      rows: [...(connectedMoney?.invoices ?? []), ...(connectedMoney?.payments ?? [])].filter((record) => record.status === "source_conflict").map((record) => ({
+        key: `money-source:${record.connectionId}:${record.id}`, title: "number" in record ? `Invoice ${record.number || record.externalId}` : "Payment source needs review",
+        detail: record.sourceWarning || "Check conflicting or overlapping source records.", label: "Source review", kind: "attention" as const,
+        href: "number" in record ? `/client/money#invoice-${record.id}` : "/client/money",
+      })), remaining: 0,
+    },
     {
       key: "connected-invoices",
       title: "Money due",

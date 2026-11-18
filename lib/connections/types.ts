@@ -25,6 +25,7 @@ export type ConnectedApp = {
   paused: boolean;
   stale?: boolean;
   readOnly: boolean;
+  sourceAccountId?: string | null;
   writePermissions?: { calendarWrite: boolean; emailSend: boolean };
   lastSyncedAt: string | null;
   syncing: boolean;
@@ -67,13 +68,13 @@ export type SyncedLead = {
   receivedAt: string | null; href: string | null; preview?: string;
 };
 export type SyncedInvoice = {
-  id: string; connectionId: string; externalId: string; account: string; provider: string;
+  id: string; connectionId: string; externalId: string; account: string; provider: string; accountId?: string | null;
   number: string | null; status: string; currency: string | null;
   totalMinor: number | null; amountDueMinor: number | null; amountPaidMinor: number | null;
   dueAt: string | null; updatedAt: string | null; href: string | null;
 };
 export type SyncedPayment = {
-  id: string; connectionId: string; externalId: string; account: string; provider: string;
+  id: string; connectionId: string; externalId: string; account: string; provider: string; accountId?: string | null;
   status: string; currency: string | null; amountMinor: number | null;
   amountRefundedMinor: number | null; updatedAt: string | null; href: string | null;
 };

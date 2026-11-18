@@ -1,5 +1,6 @@
 import type { ConnectedApp, ConnectedData } from "../connections/types.ts";
 import { knownCurrency, minorAmount } from "../connections/money.ts";
+import { reconcileMoneySources } from "../money/source-reconciliation.ts";
 import type { BusinessRecord, BusinessSnapshot } from "./types.ts";
 import type { BusinessContextSnapshot } from "./context-contract.ts";
 
@@ -128,7 +129,8 @@ export function safeSourceUrl(value: unknown): string | null {
 
 /** Current-record invoice totals stay separated by currency and exclude drafts. */
 export function buildConnectedMoney(data: ConnectedData) {
-  const invoices = [...(data.invoices ?? [])].sort((a, b) =>
+  const reconciled = reconcileMoneySources(data.invoices, data.payments);
+  const invoices = reconciled.invoices.sort((a, b) =>
     (a.dueAt || "9999").localeCompare(b.dueAt || "9999") || a.id.localeCompare(b.id));
   const open = invoices.filter((invoice) => ["open", "past_due"].includes(invoice.status));
   const outstanding = open.filter((invoice) => minorAmount(invoice.amountDueMinor) !== null && invoice.amountDueMinor! > 0);
@@ -145,7 +147,10 @@ export function buildConnectedMoney(data: ConnectedData) {
     outstanding,
     totals: [...totals.values()].sort((a, b) => a.currency.localeCompare(b.currency)),
     unknownDueCount: open.filter((invoice) => minorAmount(invoice.amountDueMinor) === null || !knownCurrency(invoice.currency)).length,
-    payments: [...(data.payments ?? [])].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.id.localeCompare(b.id)),
+    payments: reconciled.payments.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.id.localeCompare(b.id)),
+    sourceWarnings: reconciled.sourceWarnings,
+    duplicateCount: reconciled.duplicateCount,
+    conflictCount: reconciled.conflictCount,
   };
 }
 

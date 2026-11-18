@@ -348,3 +348,14 @@ test("read-only mail is useful without agents, and delayed imports cannot report
   d.connectedData.apps[0].stale=false;d.connectedData.apps[0].lastSyncedAt=null;
   assert.equal(buildFocusBrief(d).state,"incomplete");
 });
+
+test("Today exposes conflicting duplicate money imports without claiming an amount due", () => {
+  const snapshot = data();
+  const invoice = { id: "invoice-a", connectionId: "stripe-a", externalId: "in_same", accountId: "acct_verified", account: "Business", provider: "stripe", number: "INV-1", status: "open", currency: "USD", totalMinor: 1200, amountDueMinor: 1200, amountPaidMinor: 0, dueAt: "2026-10-30T15:00:00Z", updatedAt: snapshot.generatedAt, href: "https://invoice.stripe.com/i/in_same" };
+  snapshot.connectedData = { apps: [{ id: "stripe-a", name: "Stripe", account: "Business", provider: "stripe", status: "connected", paused: false, readOnly: true, lastSyncedAt: snapshot.generatedAt, syncing: false, error: null }], messages: [], appointments: [], payments: [], invoices: [invoice, { ...invoice, id: "invoice-b", connectionId: "stripe-b", status: "paid", amountDueMinor: 0, amountPaidMinor: 1200 }], limited: false, errors: [], generatedAt: snapshot.generatedAt };
+  const brief = buildFocusBrief(snapshot);
+  assert.equal(brief.state, "incomplete");
+  assert.match(brief.title, /Money records need source review/);
+  assert.equal(brief.sections.some((section) => section.key === "connected-invoices"), false);
+  assert.equal(brief.sections.find((section) => section.key === "money-source-review")?.rows.length, 1);
+});
