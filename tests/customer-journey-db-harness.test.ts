@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 const harnessUrl = new URL("../scripts/verify-customer-journey-db.mjs", import.meta.url);
-const { validateTarget, parseOptions, redact, parseCliRows, parsePsqlRows, parsePsqlExecution, REPORT_PREFIX, readReport, preflightSql, assertPreflight, migrationPlan, CONFIRMATION, EXPECTED_MIGRATION } = await import(harnessUrl.href);
+const { validateTarget, parseOptions, redact, parseCliRows, parsePsqlRows, parsePsqlExecution, REPORT_PREFIX, readReport, preflightSql, assertPreflight, migrationPlan, preferenceCasWinner, CONFIRMATION, EXPECTED_MIGRATION } = await import(harnessUrl.href);
 const bootstrapUrl = new URL("../scripts/ci-bootstrap-customer-journey-db.mjs", import.meta.url);
 const { assertHostedCi, assertToolchain, isolatedUrl, assertBaseline, sanitizeCiFailure, PINNED_CLI_VERSION, ACCEPTANCE_DATABASE, CATALOG_TABLES } = await import(bootstrapUrl.href);
 const configured = (values: Record<string, string> = {}) => ({ ISOLATED_DATABASE_URL: "postgresql://synthetic:secret%40word@127.0.0.1:5432/customer_journey_test", ISOLATED_DATABASE_CONFIRMATION: CONFIRMATION, ...values });
@@ -161,4 +161,17 @@ test("HubSpot SQL acceptance remains required with six real concurrency cases an
   assert.match(sql, /__CUSTOMER_JOURNEY_REPORT__'::text/);
   assert.match(sql, /rollback;[\s\S]*hubspot_oauth_acceptance/);
   assert.doesNotMatch(sql, /disable\s+trigger|session_replication_role|create\s+(?:or\s+replace\s+)?function\s+auth\./i);
+});
+
+test("preference database CAS accepts only one revision-one winner and the intended 40001 conflict", () => {
+  const winner = { worker: "a", won: true, revision: 1 }, conflict = { worker: "b", won: false, errorCode: "40001" };
+  assert.equal(preferenceCasWinner([winner, conflict]), winner);
+  assert.equal(preferenceCasWinner([conflict, winner]), winner);
+  for (const results of [
+    [], [winner], [winner, winner], [winner, { ...winner, worker: "b" }],
+    [{ ...winner, revision: 2 }, conflict], [{ ...winner, won: "true" }, conflict],
+    [winner, { ...conflict, worker: "c" }], [winner, { ...conflict, won: null }],
+    [winner, { ...conflict, errorCode: "42501" }], [winner, { ...conflict, errorCode: "40P01" }],
+    [winner, { ...conflict, errorCode: "55P03" }], [winner, { ...conflict, errorCode: null }],
+  ]) assert.throws(() => preferenceCasWinner(results), /Preference CAS/);
 });

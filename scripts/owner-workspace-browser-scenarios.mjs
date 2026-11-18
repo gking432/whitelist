@@ -68,11 +68,25 @@ export async function assertOwnerWorkspaceNavigation(page, businessName) {
     if (!wasOpen) await more.click();
   }
 }
-async function post(page, commands) {
-  return withOwnerBrowserDeadline("authenticated preference POST and body", () => page.evaluate(async ({ path, bodies }) => Promise.all(bodies.map(async (body) => {
-    const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
-    return { status: response.status, body: await response.json() };
-  })), { path: endpoint, bodies: commands }), 20000);
+export async function collectWorkspacePreferencePosts({ path, bodies }, request = fetch) {
+  return Promise.all(bodies.map(async (body) => {
+    let status = null, failedAt = "headers";
+    const signal = AbortSignal.timeout(15000);
+    try {
+      const response = await request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+      status = response.status; failedAt = "json_body";
+      return { complete: true, status, body: await response.json(), failedAt: null, reason: null };
+    } catch (error) {
+      return { complete: false, status, body: null, failedAt, reason: signal.aborted || error?.name === "TimeoutError" ? "timeout" : error?.name === "SyntaxError" ? "invalid_json" : "request_failed" };
+    }
+  }));
+}
+async function post(page, commands, phase, operation) {
+  const results = await withOwnerBrowserDeadline("authenticated preference POST and body", () => page.evaluate(collectWorkspacePreferencePosts, { path: endpoint, bodies: commands }), 20000);
+  const diagnostics = results.map((result, index) => `attempt ${index + 1}: HTTP ${result.status ?? "no headers"}, ${result.complete ? "JSON complete" : `${result.failedAt}/${result.reason}`}`).join("; ");
+  await phase(`${operation}: ${diagnostics}`);
+  assert.ok(results.every((result) => result.complete), `${operation} did not complete every actual JSON response: ${diagnostics}`);
+  return results;
 }
 function preferenceResponse(page, action) {
   const pending = page.waitForResponse((response) => {
@@ -191,14 +205,21 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
       const foreign = await page.request.get(`${target.appUrl}${endpoint}?clientId=${other.clientId}`); assert.equal(foreign.status(), 200); assert.deepEqual((await foreign.json()).preferences, owner.workspacePreferences);
     });
     await step(`${owner.label}: preference CAS and exact retry`, async () => {
+      await phase(`${owner.label}: read saved preferences before CAS`);
       const current = (await snapshot(page, target.appUrl)).preferences;
       const commands = ["A", "B"].map((name) => ({ action: "save", requestKey: randomUUID(), revision: current.revision, displayName: `${owner.label} race ${name}`, order: current.order, pinned: current.pinned }));
-      const result = await post(page, commands); assert.deepEqual(result.map((item) => item.status).sort(), [200, 409]);
+      await phase(`${owner.label}: concurrent preference save race`);
+      const result = await post(page, commands, phase, `${owner.label}: preference race`); assert.deepEqual(result.map((item) => item.status).sort(), [200, 409]);
       const winner = result.findIndex((item) => item.status === 200), accepted = result[winner].body.snapshot;
-      const retry = (await post(page, [commands[winner]]))[0]; assert.equal(retry.status, 200); assert.deepEqual(retry.body.snapshot.preferences, accepted.preferences);
-      const changed = (await post(page, [{ ...commands[winner], displayName: "Changed same-key attempt" }]))[0]; assert.equal(changed.status, 409);
+      await phase(`${owner.label}: exact same-key receipt retry`);
+      const retry = (await post(page, [commands[winner]], phase, `${owner.label}: exact retry`))[0]; assert.equal(retry.status, 200); assert.deepEqual(retry.body.snapshot.preferences, accepted.preferences);
+      await phase(`${owner.label}: changed same-key request rejection`);
+      const changed = (await post(page, [{ ...commands[winner], displayName: "Changed same-key attempt" }], phase, `${owner.label}: changed same-key request`))[0]; assert.equal(changed.status, 409);
+      await phase(`${owner.label}: foreign-origin request rejection`);
       const forbidden = await page.request.post(`${target.appUrl}${endpoint}`, { headers: { Origin: "https://outside.invalid" }, data: commands[winner] }); assert.equal(forbidden.status(), 403);
-      const unknown = (await post(page, [{ ...commands[winner], requestKey: randomUUID(), revision: accepted.preferences.revision, userId: other.userId, clientId: other.clientId }]))[0]; assert.equal(unknown.status, 400);
+      await phase(`${owner.label}: supplied actor and tenant fields rejection`);
+      const unknown = (await post(page, [{ ...commands[winner], requestKey: randomUUID(), revision: accepted.preferences.revision, userId: other.userId, clientId: other.clientId }], phase, `${owner.label}: unknown request fields`))[0]; assert.equal(unknown.status, 400);
+      await phase(`${owner.label}: restore intended preferences after CAS`);
       await page.reload(); await saveUi(page, target.appUrl, owner.workspacePreferences);
     });
     await step(`${owner.label}: reset and urgent decision precedence`, async () => {

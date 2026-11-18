@@ -9,6 +9,10 @@ export type WorkspaceScenarioOwner = {
   page: object; workspacePreferences?: WorkspacePreferences;
 };
 export function withOwnerBrowserDeadline<T>(label: string, action: () => T | PromiseLike<T>, timeoutMs?: number): Promise<Awaited<T>>;
+export type WorkspacePreferencePostOutcome =
+  | { complete: true; status: number; body: unknown; failedAt: null; reason: null }
+  | { complete: false; status: number | null; body: null; failedAt: "headers" | "json_body"; reason: "timeout" | "invalid_json" | "request_failed" };
+export function collectWorkspacePreferencePosts(input: { path: string; bodies: readonly unknown[] }, request?: typeof fetch): Promise<WorkspacePreferencePostOutcome[]>;
 export type WorkspaceActivityRequest = { url(): string; method(): string; postDataJSON(): unknown };
 export type WorkspaceActivityResponse = { request(): WorkspaceActivityRequest; status(): number };
 export function observeNewWorkspaceActivity(page: {

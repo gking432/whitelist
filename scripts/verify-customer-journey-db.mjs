@@ -21,7 +21,7 @@ export const COVERAGE = [
   "rollback: source-backed invoice review, verified recipient, paid-invoice suppression and duplicate receipt protection",
   "rollback: customer-owned HubSpot OAuth, portal/grant/refresh CAS, source-owned CRM approval and uncertain POST suppression",
   "rollback: first-owner authenticated session, configured operator, isolated workspace, no implicit launch and replay/revocation gates",
-  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease and two first-owner creation races",
+  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease, two first-owner creation races and owner preference CAS (synthetic session claims; browser CAS remains separate)",
 ];
 export class Blocked extends Error {}
 
@@ -259,8 +259,14 @@ select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || json
 }
 // Integrate into verifier after preserved concurrency cases. Uses existing
 // query/readReport/literal/isolationAssertion helpers, no new queue or bypass.
+export function preferenceCasWinner(results) {
+  if (!Array.isArray(results) || results.length !== 2 || new Set(results.map((item) => item?.worker)).size !== 2 || results.some((item) => !["a", "b"].includes(item?.worker))) throw new Error("Preference CAS did not report two distinct sessions.");
+  const winners = results.filter((item) => item.won === true), conflicts = results.filter((item) => item.won === false);
+  if (winners.length !== 1 || conflicts.length !== 1 || conflicts[0].errorCode !== "40001" || winners[0].revision !== 1) throw new Error("Preference CAS did not have exactly one revision-one winner and one 40001 conflict.");
+  return winners[0];
+}
 async function firstOwnerConcurrencyAcceptance(target) {
-  const ids = Object.fromEntries(["run","partner","package","actorA","actorB","sessionA","sessionB","keyA","keyB","conflictKey"].map((key) => [key, randomUUID()]));
+  const ids = Object.fromEntries(["run","partner","package","actorA","actorB","sessionA","sessionB","keyA","keyB","conflictKey","preferenceKeyA","preferenceKeyB"].map((key) => [key, randomUUID()]));
   const prefix = `cj-acceptance-${ids.run}-first-owner-race`;
   const business = (name) => literal(JSON.stringify({ name, description: "Synthetic first owner concurrency declaration", timezone: "America/Chicago" }));
   const claims = (actor, session) => `set local role authenticated; select set_config('request.jwt.claim.role','authenticated',true); select set_config('request.jwt.claim.sub','${actor}',true); select set_config('request.jwt.claims',${literal(JSON.stringify({ sub: actor, role: "authenticated", session_id: session }))},true);`;
@@ -292,6 +298,44 @@ async function firstOwnerConcurrencyAcceptance(target) {
     if (conflict.filter((item) => item.won === true).length !== 1 || conflict.filter((item) => item.won === false).length !== 1) throw new Error("Conflicting signup declarations did not have exactly one immutable winner.");
     const counts = readReport(await query(target, `select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','first_owner_race_counts','clients',(select count(*) from public.client_businesses where partner_id='${ids.partner}'),'receipts',(select count(*) from public.first_owner_workspaces where user_id in('${ids.actorA}','${ids.actorB}')),'owners',(select count(*) from public.memberships where user_id in('${ids.actorA}','${ids.actorB}') and role='client_owner' and status='active'),'otherRoles',(select count(*) from public.memberships where user_id in('${ids.actorA}','${ids.actorB}') and role<>'client_owner'),'outbox',(select count(*) from public.action_jobs where partner_id='${ids.partner}'),'connections',(select count(*) from public.integration_connections where partner_id='${ids.partner}'),'beta',(select count(*) from public.client_beta_acceptances where partner_id='${ids.partner}')) as cj_report;`), "first_owner_race_counts");
     if (counts.clients !== 2 || counts.receipts !== 2 || counts.owners !== 2 || counts.otherRoles !== 0 || counts.outbox !== 0 || counts.connections !== 0 || counts.beta !== 0) throw new Error("First-owner races created duplicate scope, authority or side effects.");
+    // Case 3 is separate database proof, not a substitute for the genuine
+    // browser's concurrent preference POSTs. Both psql sessions use actor A's
+    // real fixture session row and synthetic JWT claims, with no auth bypass.
+    const clientA = same[0].client;
+    if (typeof clientA !== "string" || !/^[0-9a-f-]{36}$/i.test(clientA)) throw new Error("Preference CAS requires the exact provisioned first-owner client.");
+    const authoritySql = `jsonb_build_object(
+ 'businesses',(select jsonb_agg(to_jsonb(c) order by c.id) from public.client_businesses c where c.partner_id='${ids.partner}'),
+ 'memberships',(select jsonb_agg(to_jsonb(m) order by m.id) from public.memberships m where m.partner_id='${ids.partner}'),
+ 'teams',(select jsonb_agg(to_jsonb(t) order by t.client_id) from public.agent_team_settings t where t.partner_id='${ids.partner}'),
+ 'activation',(select jsonb_agg(to_jsonb(a) order by a.client_id) from public.business_agent_activation a where a.partner_id='${ids.partner}'),
+ 'outbox',(select count(*) from public.action_jobs where partner_id='${ids.partner}'),
+ 'work',(select count(*) from public.agent_work_items where partner_id='${ids.partner}'),
+ 'connections',(select count(*) from public.integration_connections where partner_id='${ids.partner}'),
+ 'beta',(select count(*) from public.client_beta_acceptances where partner_id='${ids.partner}'))`;
+    const before = readReport(await query(target, `select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','preference_cas_baseline','rows',(select count(*) from public.owner_workspace_preferences where partner_id='${ids.partner}'),'authority',${authoritySql}) as cj_report;`), "preference_cas_baseline");
+    if (before.rows !== 0) throw new Error("Preference CAS requires a genuinely unsaved revision-zero fixture.");
+    const settingsFor = (worker) => ({ displayName: `Synthetic preference race ${worker}`, order: worker === "a" ? ["messages", "appointments", "todo", "money"] : ["money", "appointments", "messages", "todo"], pinned: worker === "a" ? [] : ["money"] });
+    const preferences = await pair((worker) => `begin; set local statement_timeout='15s'; set local lock_timeout='5s';
+ create temp table fo_preference_result(result jsonb); grant insert,select on fo_preference_result to authenticated; ${claims(ids.actorA, ids.sessionA)}
+ do $preference_race$ declare snapshot jsonb; begin
+  begin snapshot:=public.save_owner_workspace_preferences('${clientA}','${worker === "a" ? ids.preferenceKeyA : ids.preferenceKeyB}',0,${literal(JSON.stringify(settingsFor(worker)))}::jsonb);
+   insert into fo_preference_result values(jsonb_build_object('won',true,'revision',(snapshot->'preferences'->>'revision')::bigint));
+  exception when sqlstate '40001' then insert into fo_preference_result values(jsonb_build_object('won',false,'errorCode',sqlstate)); end;
+ end $preference_race$;
+ select pg_sleep(0.2); commit; select '${REPORT_PREFIX}'::text || (jsonb_build_object('kind','worker','worker','${worker}')||result) as cj_report from fo_preference_result;`);
+    const winner = preferenceCasWinner(preferences);
+    const final = readReport(await query(target, `select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','preference_cas_final',
+ 'rows',(select count(*) from public.owner_workspace_preferences where partner_id='${ids.partner}'),
+ 'scopedRows',(select count(*) from public.owner_workspace_preferences where user_id='${ids.actorA}' and client_id='${clientA}' and partner_id='${ids.partner}'),
+ 'revision',(select revision from public.owner_workspace_preferences where user_id='${ids.actorA}' and client_id='${clientA}'),
+ 'requestKey',(select request_key from public.owner_workspace_preferences where user_id='${ids.actorA}' and client_id='${clientA}'),
+ 'settings',(select settings from public.owner_workspace_preferences where user_id='${ids.actorA}' and client_id='${clientA}'),
+ 'authority',${authoritySql}) as cj_report;`), "preference_cas_final");
+    const winningKey = winner.worker === "a" ? ids.preferenceKeyA : ids.preferenceKeyB;
+    const expectedSettings = settingsFor(winner.worker);
+    if (final.rows !== 1 || final.scopedRows !== 1 || final.revision !== 1 || final.requestKey !== winningKey ||
+        final.settings?.displayName !== expectedSettings.displayName || JSON.stringify(final.settings?.order) !== JSON.stringify(expectedSettings.order) || JSON.stringify(final.settings?.pinned) !== JSON.stringify(expectedSettings.pinned)) throw new Error("Preference CAS did not persist exactly the winning owner's revision-one settings and request key.");
+    if (JSON.stringify(final.authority) !== JSON.stringify(before.authority)) throw new Error("Preference CAS changed business authority, membership or execution state.");
   } catch (error) { failure = error; }
   finally {
     const cleaned = readReport(await query(target, `begin; set local lock_timeout='5s'; delete from public.first_owner_signup_configuration where partner_id='${ids.partner}'; delete from public.partners where id='${ids.partner}' and slug='${prefix}'; delete from auth.users where id in('${ids.actorA}','${ids.actorB}') and email in('${prefix}-a@synthetic.invalid','${prefix}-b@synthetic.invalid'); commit;
@@ -300,6 +344,7 @@ async function firstOwnerConcurrencyAcceptance(target) {
   }
   if (failure) throw failure;
   console.log("PASS: two actual two-session first-owner signup races; committed synthetic session/workspace fixtures cleaned up.");
+  console.log("PASS: one actual two-session owner preference CAS case; synthetic actor/session claims, one revision-one winner and one 40001 conflict; authority unchanged and committed fixtures cleaned up. Browser CAS remains separately required.");
 }
 
 export async function main(args = process.argv.slice(2), env = process.env) {

@@ -3,7 +3,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage } from "../scripts/verify-owner-browser.mjs";
 import { browserFixtureIdentity } from "../scripts/owner-browser-fixtures.mjs";
-import { observeNewWorkspaceActivity, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture, type WorkspaceActivityRequest, type WorkspaceActivityResponse } from "../scripts/owner-workspace-browser-scenarios.mjs";
+import { collectWorkspacePreferencePosts, observeNewWorkspaceActivity, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture, type WorkspaceActivityRequest, type WorkspaceActivityResponse } from "../scripts/owner-workspace-browser-scenarios.mjs";
 
 const hosted = { CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted", GITHUB_ENV: "/tmp/owner-browser-env", RUNNER_TEMP: "/tmp/owner-browser-runner",
   OWNER_BROWSER_CONFIRMATION, NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321", NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-public-key", SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-key",
@@ -170,4 +170,33 @@ test("HTTP200 with two empty activity reads cannot pass the real navigation pers
   assert.equal(queries.filter((table) => table === "owner_workspace_activity").length, 1, "Failure precedes repeat opens and synthetic aggregate insertion.");
   assert.deepEqual(filters.slice(0, 4), [["user_id", owner.userId], ["client_id", owner.clientId], ["partner_id", options.fixture.partnerId], ["module", "messages"]]);
   assert.match(String(filters[4][1]), /^\d{4}-\d{2}-\d{2}$/); assert.equal(filters[4][0], "activity_date");
+});
+test("a header timeout cannot erase the other concurrent preference response or retry either command", async () => {
+  const calls: unknown[] = [], receipt = { snapshot: { preferences: { revision: 3, displayName: "Actual saved value" } } };
+  const request = async (_url: string | URL | Request, init?: RequestInit) => {
+    const command = JSON.parse(String(init?.body)); calls.push(command); assert.ok(init?.signal);
+    if (command.requestKey === "first") throw new DOMException("Sensitive transport text must not be copied", "TimeoutError");
+    return Response.json(receipt);
+  };
+  const bodies = [{ requestKey: "first" }, { requestKey: "second" }];
+  const result = await collectWorkspacePreferencePosts({ path: "/api/business/workspace-preferences", bodies }, request);
+  assert.deepEqual(result[0], { complete: false, status: null, body: null, failedAt: "headers", reason: "timeout" });
+  assert.deepEqual(result[1], { complete: true, status: 200, body: receipt, failedAt: null, reason: null });
+  assert.deepEqual(calls, bodies, "Only the original two requests execute, without an automatic retry or fallback.");
+  assert.equal(JSON.stringify(result).includes("Sensitive transport"), false);
+});
+test("preference diagnostics retain a409 header when its JSON body times out, without accepting the result", async () => {
+  let index = 0;
+  const request = async () => {
+    if (index++ === 0) { const response = new Response(null, { status: 409 }); response.json = async () => { throw new DOMException("body timeout", "TimeoutError"); }; return response; }
+    return Response.json({ snapshot: { preferences: { revision: 5 } } });
+  };
+  const result = await collectWorkspacePreferencePosts({ path: "/api/business/workspace-preferences", bodies: [{}, {}] }, request);
+  assert.deepEqual(result[0], { complete: false, status: 409, body: null, failedAt: "json_body", reason: "timeout" });
+  assert.equal(result[1].complete, true); assert.equal(result[1].status, 200);
+  assert.equal(result.every((outcome) => outcome.complete), false, "Expected header statuses alone cannot make a race pass.");
+});
+test("invalid preference JSON remains a failed body outcome rather than a successful receipt", async () => {
+  const result = await collectWorkspacePreferencePosts({ path: "/api/business/workspace-preferences", bodies: [{}] }, async () => new Response("invalid json", { status: 200 }));
+  assert.deepEqual(result, [{ complete: false, status: 200, body: null, failedAt: "json_body", reason: "invalid_json" }]);
 });
