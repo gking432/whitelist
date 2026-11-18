@@ -17,6 +17,20 @@ export async function withOwnerBrowserDeadline(label, action, timeoutMs = 30000)
     })]);
   } finally { clearTimeout(timer); }
 }
+export function observeNewWorkspaceActivity(page, appUrl, area, timeoutMs = 20000) {
+  if (!modules.includes(area) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) throw new Error("Use a bounded supported activity observation.");
+  const requests = new WeakSet();
+  const onRequest = (request) => {
+    try { const body = request.postDataJSON(); if (request.url() === `${appUrl}${endpoint}` && request.method() === "POST" && body?.action === "activity" && body.module === area) requests.add(request); }
+    catch { /* Other requests do not count as the collector for this navigation. */ }
+  };
+  page.on("request", onRequest);
+  try {
+    const pending = page.waitForResponse((response) => requests.has(response.request()), { timeout: timeoutMs }).finally(() => page.off("request", onRequest));
+    void pending.catch(() => {});
+    return pending;
+  } catch (error) { page.off("request", onRequest); throw error; }
+}
 export function workspaceActivityFixture(owner, partnerId, clock = new Date(), timeZone = "America/Chicago") {
   for (const value of [owner.userId, owner.clientId, partnerId]) if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)) throw new Error("Use exact disposable owner fixture IDs.");
   if (!["desktop", "phone"].includes(owner.label) || !Number.isFinite(clock.getTime())) throw new Error("Use a bounded synthetic workspace scenario.");
@@ -83,12 +97,21 @@ async function setOrder(controls, order) {
     assert.equal(current[target], order[target], "The real reorder control must change the visible module order.");
   }
 }
+async function acknowledged(controls, notice) {
+  const status = controls.getByRole("status").filter({ hasText: notice });
+  await status.waitFor({ state: "visible", timeout: 15000 }); assert.equal(await status.innerText(), notice);
+  const save = controls.getByRole("button", { name: "Save preferences", exact: true });
+  await save.waitFor({ state: "visible", timeout: 15000 });
+  await save.click({ trial: true, timeout: 15000 }); // Wait for enabled/actionable without submitting again.
+  assert.equal(await save.isEnabled(), true, "The real client must finish consuming its saved receipt before reloading.");
+}
 async function saveUi(page, appUrl, settings) {
   const controls = await panel(page); await controls.getByLabel("Preferred name", { exact: true }).fill(settings.displayName || "");
   await setOrder(controls, settings.order);
   for (const area of modules) await controls.getByLabel(`Pin ${labels[area]}`, { exact: true }).setChecked(settings.pinned.includes(area));
   const pending = preferenceResponse(page, "save"); await controls.getByRole("button", { name: "Save preferences", exact: true }).click();
   const response = await pending; assert.equal(response.status(), 200, "A real preference save must succeed before showing success.");
+  await acknowledged(controls, "Today preferences saved.");
   const saved = await snapshot(page, appUrl); assert.deepEqual({ ...saved.preferences, revision: 0 }, { ...settings, revision: 0 }); return saved.preferences;
 }
 async function assertSafety(admin, fixture, owner) {
@@ -117,20 +140,25 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
       // untimed bringToFront channel call; require actual visibility instead.
       await phase(`${owner.label}: require real document visibility`);
       await page.waitForFunction(() => document.visibilityState === "visible", undefined, { timeout: 15000 });
-      const activityResponse = page.waitForResponse((response) => {
-        try { return new URL(response.url()).pathname === endpoint && response.request().method() === "POST" && response.request().postDataJSON()?.action === "activity" && response.request().postDataJSON()?.module === "messages"; } catch { return false; }
-      }, { timeout: 20000 });
-      void activityResponse.catch(() => {});
+      const activityResponse = observeNewWorkspaceActivity(page, target.appUrl, "messages");
       await phase(`${owner.label}: navigate Messages and observe collector response`);
       await page.goto(`${target.appUrl}/client/messages`, { timeout: 20000 });
       const activityResult = await activityResponse;
-      await phase(`${owner.label}: read real activity response body`);
-      const activityBody = await withOwnerBrowserDeadline("read navigation activity body", () => activityResult.json(), 10000);
-      assert.equal(activityResult.status(), 200, `Real navigation activity was rejected${typeof activityBody?.error === "string" ? `: ${activityBody.error.slice(0, 300)}` : "."}`);
+      await phase(`${owner.label}: real activity response HTTP ${activityResult.status()}`);
+      assert.equal(activityResult.status(), 200, "The newly observed real navigation collector must succeed.");
+      // This fire-and-forget collector has no decision receipt to consume. Check
+      // its actual scoped database effect instead of the unused CDP JSON body.
+      const today = workspaceActivityFixture(owner, fixture.partnerId, new Date(), business.data.timezone)[0].activity_date;
       await phase(`${owner.label}: verify once-per-day navigation persistence`);
-      const once = await admin.from("owner_workspace_activity").select("activity_date").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).eq("module", "messages"); assert.equal(once.error, null);
-      await page.goto(`${target.appUrl}/client`, { timeout: 20000 }); await page.goto(`${target.appUrl}/client/messages`, { timeout: 20000 });
-      const twice = await admin.from("owner_workspace_activity").select("activity_date").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).eq("module", "messages"); assert.equal(twice.error, null); assert.deepEqual(twice.data, once.data, "Repeated real opens record one enum per business day.");
+      const readActivity = () => admin.from("owner_workspace_activity").select("activity_date").eq("user_id", owner.userId).eq("client_id", owner.clientId).eq("partner_id", fixture.partnerId).eq("module", "messages").eq("activity_date", today);
+      const once = await readActivity(); assert.equal(once.error, null); assert.deepEqual(once.data, [{ activity_date: today }], "Exactly one scoped activity row must exist for the current business day before synthetic aggregate fixtures.");
+      await phase(`${owner.label}: repeat real Messages navigation and collector`);
+      await page.goto(`${target.appUrl}/client`, { timeout: 20000 });
+      await page.waitForFunction(() => document.visibilityState === "visible", undefined, { timeout: 15000 });
+      const repeatResponse = observeNewWorkspaceActivity(page, target.appUrl, "messages");
+      await page.goto(`${target.appUrl}/client/messages`, { timeout: 20000 });
+      const repeated = await repeatResponse; assert.equal(repeated.status(), 200, "The repeat open must complete its newly observed real collector before checking persistence.");
+      const twice = await readActivity(); assert.equal(twice.error, null); assert.deepEqual(twice.data, once.data, "Repeated real opens retain exactly one enum row for the current business day.");
       await phase(`${owner.label}: save explicitly synthetic aggregate dates`);
       const activity = workspaceActivityFixture(owner, fixture.partnerId, new Date(), business.data.timezone);
       const inserted = await admin.from("owner_workspace_activity").upsert(activity); assert.equal(inserted.error, null);
@@ -154,6 +182,7 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
       await controls.getByRole("button", { name: `Make ${labels[area]} first`, exact: true }).click();
       assert.deepEqual((await snapshot(page, target.appUrl)).preferences, manual, "Choosing a suggestion only changes the draft until Save.");
       const response = preferenceResponse(page, "save"); await controls.getByRole("button", { name: "Save preferences", exact: true }).click(); assert.equal((await response).status(), 200);
+      await acknowledged(controls, "Today preferences saved.");
       await page.reload();
       owner.workspacePreferences = (await snapshot(page, target.appUrl)).preferences;
       assert.equal(owner.workspacePreferences.order[0], area); assert.equal(owner.workspacePreferences.displayName, settings.displayName);
@@ -174,6 +203,7 @@ export async function runOwnerWorkspaceScenarios({ admin, fixture, owners, targe
     });
     await step(`${owner.label}: reset and urgent decision precedence`, async () => {
       const controls = await panel(page), response = preferenceResponse(page, "reset"); await controls.getByRole("button", { name: "Reset preferences", exact: true }).click(); assert.equal((await response).status(), 200);
+      await acknowledged(controls, "Default preferences restored.");
       await page.reload(); const reset = await snapshot(page, target.appUrl); assert.deepEqual(reset.preferences.order, modules); assert.deepEqual(reset.preferences.pinned, []); assert.equal(reset.preferences.displayName, null);
       const settings = { displayName: `${owner.label === "desktop" ? "Desktop" : "Phone"} owner`, order: owner.label === "desktop" ? ["appointments", "messages", "todo", "money"] : [...modules], pinned: ["money"] };
       owner.workspacePreferences = await saveUi(page, target.appUrl, settings);

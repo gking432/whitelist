@@ -3,7 +3,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage } from "../scripts/verify-owner-browser.mjs";
 import { browserFixtureIdentity } from "../scripts/owner-browser-fixtures.mjs";
-import { runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture } from "../scripts/owner-workspace-browser-scenarios.mjs";
+import { observeNewWorkspaceActivity, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline, workspaceActivityFixture, type WorkspaceActivityRequest, type WorkspaceActivityResponse } from "../scripts/owner-workspace-browser-scenarios.mjs";
 
 const hosted = { CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted", GITHUB_ENV: "/tmp/owner-browser-env", RUNNER_TEMP: "/tmp/owner-browser-runner",
   OWNER_BROWSER_CONFIRMATION, NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321", NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-public-key", SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-key",
@@ -124,4 +124,50 @@ test("workspace activity requires real visibility inside the diagnosed stage wit
   await assert.rejects(runOwnerWorkspaceScenarios(options as unknown as Parameters<typeof runOwnerWorkspaceScenarios>[0]), /did not become visible/);
   assert.equal(phases.at(-1), "desktop: require real document visibility");
   assert.deepEqual(queries, ["first_owner_workspaces", "client_businesses", "agent_team_settings", "action_jobs", "agent_work_items"]);
+});
+
+function activityObserverFixture(automatic = false) {
+  const listeners = new Set<(request: WorkspaceActivityRequest) => void>(), registration: string[] = [];
+  let predicate: (response: WorkspaceActivityResponse) => boolean = () => false, resolve: (response: WorkspaceActivityResponse) => void = () => {}, reject: (error: Error) => void = () => {};
+  const request = (overrides: { url?: string; method?: string; action?: string; area?: string } = {}): WorkspaceActivityRequest => ({ url: () => overrides.url || "http://127.0.0.1:3000/api/business/workspace-preferences", method: () => overrides.method || "POST", postDataJSON: () => ({ action: overrides.action || "activity", module: overrides.area || "messages" }) });
+  const emit = (value: WorkspaceActivityRequest) => { for (const listener of listeners) listener(value); };
+  const respond = (value: WorkspaceActivityRequest) => { const response = { request: () => value, status: () => 200 }; if (!predicate(response)) return false; resolve(response); return true; };
+  const page = {
+    on(_event: "request", listener: (request: WorkspaceActivityRequest) => void) { registration.push("request listener"); listeners.add(listener); },
+    off(_event: "request", listener: (request: WorkspaceActivityRequest) => void) { listeners.delete(listener); },
+    waitForResponse(match: (response: WorkspaceActivityResponse) => boolean, options: { timeout: number }) { registration.push("response waiter"); assert.equal(options.timeout, 20000); predicate = match; return new Promise<WorkspaceActivityResponse>((done, fail) => { resolve = done; reject = fail; }); },
+    async waitForFunction() {},
+    async goto(url: string) { if (automatic && new URL(url).pathname === "/client/messages") { const value = request(); emit(value); assert.equal(respond(value), true); } },
+  };
+  return { page, request, emit, respond, listeners, registration, fail: (error: Error) => reject(error) };
+}
+test("activity observations exclude old navigation responses and match only a new exact collector request", async () => {
+  const fixture = activityObserverFixture(), old = fixture.request(); fixture.emit(old);
+  const pending = observeNewWorkspaceActivity(fixture.page, "http://127.0.0.1:3000", "messages");
+  assert.deepEqual(fixture.registration, ["request listener", "response waiter"]);
+  assert.equal(fixture.respond(old), false);
+  for (const wrong of [{ area: "appointments" }, { action: "save" }, { method: "GET" }, { url: "https://outside.invalid/api/business/workspace-preferences" }]) {
+    const value = fixture.request(wrong); fixture.emit(value); assert.equal(fixture.respond(value), false);
+  }
+  const current = fixture.request(); fixture.emit(current); assert.equal(fixture.respond(current), true);
+  assert.equal((await pending).request(), current); assert.equal(fixture.listeners.size, 0);
+  const repeated = observeNewWorkspaceActivity(fixture.page, "http://127.0.0.1:3000", "messages");
+  assert.equal(fixture.respond(current), false, "A second navigation must observe another new request.");
+  const next = fixture.request(); fixture.emit(next); assert.equal(fixture.respond(next), true); assert.equal((await repeated).request(), next);
+});
+test("failed activity observation removes its request listener without changing the failure", async () => {
+  const fixture = activityObserverFixture(), error = new Error("Actual collector did not respond");
+  const pending = observeNewWorkspaceActivity(fixture.page, "http://127.0.0.1:3000", "messages"); fixture.fail(error);
+  await assert.rejects(pending, (value) => value === error); assert.equal(fixture.listeners.size, 0);
+});
+test("HTTP200 with two empty activity reads cannot pass the real navigation persistence proof", async () => {
+  const prefix = "owner-browser-012345abcdef", fixture = activityObserverFixture(true), queries: string[] = [], filters: [string, unknown][] = [];
+  const values: Record<string, object> = { first_owner_workspaces: { error: null, data: { id: "receipt" } }, client_businesses: { error: null, data: { timezone: "America/Chicago" } }, agent_team_settings: { error: null, data: { status: "paused", channel_authority: { email: "off" } } }, action_jobs: { error: null, count: 0 }, agent_work_items: { error: null, count: 0 }, owner_workspace_activity: { error: null, data: [] } };
+  const admin = { from(table: string) { queries.push(table); const value = values[table]; assert.ok(value); const builder = { select() { return builder; }, eq(key: string, content: unknown) { if (table === "owner_workspace_activity") filters.push([key, content]); return builder; }, async single() { return value; }, then(resolve: (result: object) => unknown) { return Promise.resolve(value).then(resolve); } }; return builder; } };
+  const owner = { userId: "11111111-1111-4111-8111-111111111111", clientId: "22222222-2222-4222-8222-222222222222", label: "desktop", marker: `${prefix}-desktop-source`, receiptId: "receipt", name: "Synthetic owner", page: fixture.page };
+  const options = { admin, fixture: { prefix, partnerId: "33333333-3333-4333-8333-333333333333" }, owners: [owner, { ...owner, userId: "44444444-4444-4444-8444-444444444444", label: "phone" }], target: { appUrl: "http://127.0.0.1:3000" }, env: hosted, step: async (_key: string, action: () => Promise<void>) => action(), screenshot: async () => {} };
+  await assert.rejects(runOwnerWorkspaceScenarios(options as unknown as Parameters<typeof runOwnerWorkspaceScenarios>[0]), /Exactly one scoped activity row/);
+  assert.equal(queries.filter((table) => table === "owner_workspace_activity").length, 1, "Failure precedes repeat opens and synthetic aggregate insertion.");
+  assert.deepEqual(filters.slice(0, 4), [["user_id", owner.userId], ["client_id", owner.clientId], ["partner_id", options.fixture.partnerId], ["module", "messages"]]);
+  assert.match(String(filters[4][1]), /^\d{4}-\d{2}-\d{2}$/); assert.equal(filters[4][0], "activity_date");
 });

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { WorkspacePreferences } from "../lib/business/workspace-preferences-contract.ts";
+import type { WorkspaceModule, WorkspacePreferences } from "../lib/business/workspace-preferences-contract.ts";
 import type { BrowserCiEnvironment, OwnerBrowserTarget } from "./verify-owner-browser.mjs";
 export type WorkspaceActivityFixtureRow = {
   user_id: string; client_id: string; partner_id: string; module: "messages" | "appointments"; activity_date: string;
@@ -9,6 +9,13 @@ export type WorkspaceScenarioOwner = {
   page: object; workspacePreferences?: WorkspacePreferences;
 };
 export function withOwnerBrowserDeadline<T>(label: string, action: () => T | PromiseLike<T>, timeoutMs?: number): Promise<Awaited<T>>;
+export type WorkspaceActivityRequest = { url(): string; method(): string; postDataJSON(): unknown };
+export type WorkspaceActivityResponse = { request(): WorkspaceActivityRequest; status(): number };
+export function observeNewWorkspaceActivity(page: {
+  on(event: "request", listener: (request: WorkspaceActivityRequest) => void): unknown;
+  off(event: "request", listener: (request: WorkspaceActivityRequest) => void): unknown;
+  waitForResponse(predicate: (response: WorkspaceActivityResponse) => boolean, options: { timeout: number }): Promise<WorkspaceActivityResponse>;
+}, appUrl: string, area: WorkspaceModule, timeoutMs?: number): Promise<WorkspaceActivityResponse>;
 export function workspaceActivityFixture(owner: Pick<WorkspaceScenarioOwner, "userId" | "clientId" | "label">, partnerId: string, clock?: Date, timeZone?: string): WorkspaceActivityFixtureRow[];
 export function assertSavedWorkspacePreferences(page: { request: { get(url: string): Promise<{ status(): number; json(): Promise<unknown> }> } }, appUrl: string, expected: WorkspacePreferences): Promise<void>;
 export function assertOwnerWorkspaceNavigation(page: object, businessName: string): Promise<void>;
