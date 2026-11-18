@@ -86,6 +86,8 @@ Custom enterprise work adds discovery and bespoke workflows inside a client's ex
 
 ## Nightly execution
 
+Latest owner sequencing is functional connected application → simple modern adaptable desktop/phone UI → coordinated agents → later marketing/advertising departments. The build and supervisor exchange assignments/completion callbacks after tested GitHub checkpoints, with a cumulative handoff ledger in document46. The supervisor manages one heartbeat; a completion callback is not a promise that this chat keeps running after its turn. For UI personalization use explicit preferences and evidenced use with stable navigation and pin/reorder/reset controls. Later campaign agents may prepare detailed plans and creative from reviewed business knowledge; spending/publication still requires saved bounded authority/budget and verified supported receipts.
+
 Each night choose an increment that produces a working capability, not just another mock screen. Record the business outcome, code/configuration changes, verification and the next unfinished increment. Infrastructure/access steps are substeps of task 1, not separate roadmap milestones.
 
 Examples of appropriately scoped nightly increments after access is available:

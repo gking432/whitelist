@@ -276,7 +276,7 @@ end $interruptions$;
 
 -- Group 7: uncertain effects block new keys without changing their outcome.
 -- A source-only handoff is durable, replayable work with no customer message.
-do $outcome_and_handoff$ declare control jsonb; proposal uuid; job_id uuid; command jsonb; result jsonb; again jsonb; before_job jsonb; src public.integration_canonical_records;
+do $outcome_and_handoff$ declare control jsonb; proposal uuid; job_id uuid; command jsonb; result jsonb; again jsonb; before_job jsonb; handoff_source uuid; src public.integration_canonical_records;
  p uuid:=(select id from mf_fixture where key='partner-a'); c uuid:=(select id from mf_fixture where key='client-a'); actor uuid:=(select id from mf_fixture where key='owner-a');
 begin
  control:=pg_temp.mf_control('uncertain'); proposal:=(control->'receipt'->>'approvalId')::uuid;
@@ -288,7 +288,9 @@ begin
  perform pg_temp.mf_reject(pg_temp.mf_command((control->'receipt'->>'sourceRecordId')::uuid),'do not repeat uncertain invoice email');
  again:=public.prepare_invoice_followup(p,c,actor,control->'command');
  if again->>'replayed' is distinct from 'true' or again->>'id' is distinct from control->'receipt'->>'id' or before_job is distinct from (select to_jsonb(j) from public.action_jobs j where id=job_id) then raise exception 'Uncertain invoice history changed or exact request did not replay'; end if;
- select * into src from public.integration_canonical_records where id=pg_temp.mf_invoice('handoff');
+ -- This helper inserts a fixture. Evaluate it once, outside a row predicate.
+ handoff_source:=pg_temp.mf_invoice('handoff');
+ select * into src from public.integration_canonical_records where id=handoff_source;
  command:=jsonb_build_object('owner_request',jsonb_build_object('action','handoff_invoice_followup','key',extensions.gen_random_uuid(),'targetId',src.id,'connectionId',src.connection_id,'expectedRevision','synthetic-source-reviewed-for-handoff','note','Owner chose to review identity and balance in Stripe first.'),'expectedSourceUpdatedAt',src.updated_at);
  result:=public.prepare_invoice_followup(p,c,actor,command); again:=public.prepare_invoice_followup(p,c,actor,command);
  if result->>'approvalId' is not null or again->>'id' is distinct from result->>'id' or again->>'replayed' is distinct from 'true'
