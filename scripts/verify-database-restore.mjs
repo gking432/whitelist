@@ -134,6 +134,20 @@ async function openSourceSnapshot() {
   };
 }
 
+// Permission fidelity matters for the narrow authenticated wrappers/private
+// provisioning functions. Compare API-role grants across both app schemas.
+const functionGrantsSql = `select coalesce(string_agg(grant_row,E'\n' order by grant_row),'') from (
+ select n.nspname||'.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||'):'||case when a.grantee=0 then 'PUBLIC' else r.rolname end||':'||a.privilege_type||':'||a.is_grantable::text as grant_row
+ from pg_proc p join pg_namespace n on n.oid=p.pronamespace cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+ left join pg_roles r on r.oid=a.grantee where n.nspname in ('public','owner_onboarding') and (a.grantee=0 or r.rolname in ('anon','authenticated','service_role'))
+) grants`;
+
+const schemaGrantsSql = `select coalesce(string_agg(grant_row,E'\n' order by grant_row),'') from (
+ select n.nspname||':'||case when a.grantee=0 then 'PUBLIC' else r.rolname end||':'||a.privilege_type||':'||a.is_grantable::text as grant_row
+ from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a left join pg_roles r on r.oid=a.grantee
+ where n.nspname in ('public','owner_onboarding') and (a.grantee=0 or r.rolname in ('anon','authenticated','service_role'))
+) grants`;
+
 function sourcePostgresImage() {
   const configured = process.env.RESTORE_POSTGRES_IMAGE?.trim();
   if (configured) return configured;
@@ -189,6 +203,9 @@ try {
   const sourceRowCounts = new Map();
   let sourcePolicyCount;
   let sourceFunctionCount;
+  let sourcePrivateFunctionCount;
+  let sourceFunctionGrants;
+  let sourceSchemaGrants;
   let authUsers;
   try {
     console.log(`Creating application-data backup from ${sourceContainer}...`);
@@ -200,8 +217,8 @@ try {
       "postgres",
       "--format=custom",
       "--schema=public",
+      "--schema=owner_onboarding",
       "--no-owner",
-      "--no-acl",
       `--snapshot=${sourceSnapshot.snapshotId}`,
     ], { encoding: null });
     writeFileSync(dumpPath, dump);
@@ -224,6 +241,10 @@ try {
     sourceFunctionCount = await sourceSnapshot.scalar(
       "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'",
     );
+
+    sourcePrivateFunctionCount = await sourceSnapshot.scalar("select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='owner_onboarding'");
+    sourceFunctionGrants = await sourceSnapshot.scalar(functionGrantsSql);
+    sourceSchemaGrants = await sourceSnapshot.scalar(schemaGrantsSql);
 
     // Public profile and membership rows reference auth.users. A disposable
     // drill only needs stable identities; managed Supabase restores the complete
@@ -306,7 +327,6 @@ try {
       "--section",
       section,
       "--no-owner",
-      "--no-acl",
       "--exit-on-error",
       "/tmp/public.dump",
     ]);
@@ -337,6 +357,11 @@ try {
     sourceFunctionCount,
     query(targetContainer, "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'"),
   );
+
+  assertEqual("private owner onboarding function count", sourcePrivateFunctionCount,
+    query(targetContainer, "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='owner_onboarding'"));
+  assertEqual("application API function execution grants", sourceFunctionGrants, query(targetContainer, functionGrantsSql));
+  assertEqual("application API schema grants", sourceSchemaGrants, query(targetContainer, schemaGrantsSql));
 
   console.log(
     `Restore verified: ${sourceTables.length} tables, all row counts, RLS policies, and functions match.`,

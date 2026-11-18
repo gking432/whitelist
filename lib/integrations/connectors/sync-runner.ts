@@ -61,6 +61,17 @@ type JobRow = ConnectorSyncJob & {
   connection_external_account_id: string | null;
 };
 
+/** Preserve successful import evidence while recording only the current leased
+ * pull failure. A paused connection or superseded worker must not write health. */
+async function recordPullFailure(admin: SupabaseClient, job: { partner_id: string; client_id: string; connection_id: string; id: string }, lockedAt: string | null, detail: string) {
+  const result = await admin.rpc("record_connector_pull_failure", {
+    p_partner: job.partner_id, p_client: job.client_id, p_connection: job.connection_id,
+    p_job: job.id, p_locked_at: lockedAt, p_error: detail.slice(0, 1500),
+  });
+  if (result.error || typeof result.data !== "boolean") throw new Error("The current connector read failure could not be recorded. Its previous completed import is retained.");
+  return result.data;
+}
+
 function value(data: Record<string, unknown>, key: string): string | null {
   return typeof data[key] === "string" && data[key] ? String(data[key]) : null;
 }
@@ -649,7 +660,7 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
   // the worker died, so replaying it could duplicate a customer or lead.
   let staleQuery = admin
     .from("integration_sync_jobs")
-    .select("id, attempts, max_attempts, connection:integration_connections!integration_sync_jobs_scope_fk!inner(config)")
+    .select("id,partner_id,client_id,connection_id,locked_at,attempts,max_attempts,connection:integration_connections!integration_sync_jobs_scope_fk!inner(config)")
     .eq("status", "running")
     .eq("direction", "pull")
     .or(`locked_at.is.null,locked_at.lt.${staleCutoff}`);
@@ -661,7 +672,11 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
   for (const stale of stalePulls ?? []) {
     const attempts = stale.attempts + 1;
     const exhausted = attempts >= stale.max_attempts;
-    const { data: recovered } = await admin
+    const detail = exhausted
+      ? "Connector read exhausted its retry limit after the worker lease repeatedly expired."
+      : "Recovered a stale connector read after its worker lease expired.";
+    if (exhausted && !await recordPullFailure(admin, stale, stale.locked_at, detail)) continue;
+    let recovery = admin
       .from("integration_sync_jobs")
       .update({
         status: exhausted
@@ -672,12 +687,12 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
         completed_at: exhausted ? new Date().toISOString() : null,
         locked_at: null,
         locked_by: null,
-        last_error: exhausted
-          ? "Connector read exhausted its retry limit after the worker lease repeatedly expired."
-          : "Recovered a stale connector read after its worker lease expired.",
+        last_error: detail,
       })
       .eq("id", stale.id)
-      .eq("status", "running")
+      .eq("status", "running").eq("attempts", stale.attempts);
+    recovery = stale.locked_at === null ? recovery.is("locked_at", null) : recovery.eq("locked_at", stale.locked_at);
+    const { data: recovered } = await recovery
       .select("id")
       .maybeSingle().throwOnError();
     if (recovered) recoveredPulls += 1;
@@ -804,13 +819,24 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
       })
       .eq("id", job.id)
       .in("status", ["queued", "failed"])
-      .select("id")
+      .select("id,locked_at")
       .maybeSingle().throwOnError();
     if (!claimed.data) continue;
-    let credentials = await readProviderCredentials<unknown>(
-      admin,
-      job.connection_id,
-    );
+    const claimTime = claimed.data.locked_at as string;
+    let credentials: unknown;
+    try { credentials = await readProviderCredentials<unknown>(admin, job.connection_id); }
+    catch {
+      // One unavailable/decryption-failed account must not prevent unrelated
+      // provider reads in this already bounded batch from getting a turn.
+      const detail = "Saved connection credentials could not be read. Review or reconnect this exact account.";
+      if (job.direction === "pull" && !await recordPullFailure(admin, job, claimTime, detail)) { failed += 1; continue; }
+      await admin.from("integration_sync_jobs").update({ status: job.attempts + 1 < job.maxAttempts ? "failed" : "dead_letter",
+        attempts: job.attempts + 1, last_error: detail, locked_at: null, locked_by: null,
+        scheduled_for: new Date(Date.now() + connectorRetryDelayMinutes(job.attempts + 1) * 60_000).toISOString(),
+      }).eq("id", job.id).eq("status", "running").eq("locked_at", claimTime).throwOnError();
+      failed += 1;
+      continue;
+    }
     if (job.provider?.provider_key === "hubspot") {
       try {
         const saved = credentials && typeof credentials === "object" ? credentials as Record<string, unknown> : {};
@@ -821,12 +847,11 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
       } catch (error) {
         const reauth = error instanceof HubSpotOAuthError && error.reauth;
         const detail = error instanceof HubSpotOAuthError ? error.message : "The scoped HubSpot read authorization could not be confirmed.";
+        if (!await recordPullFailure(admin, job, claimTime, detail)) { failed += 1; continue; }
         await admin.from("integration_sync_jobs").update({ status: reauth ? "cancelled" : job.attempts + 1 < job.maxAttempts ? "failed" : "dead_letter",
           attempts: job.attempts + 1, last_error: detail, locked_at: null, locked_by: null,
           scheduled_for: new Date(Date.now() + connectorRetryDelayMinutes(job.attempts + 1) * 60_000).toISOString(),
-        }).eq("id", job.id).eq("partner_id", job.partner_id).eq("client_id", job.client_id).throwOnError();
-        await admin.from("integration_sync_states").update({ status: reauth ? "paused" : "failing", last_error: detail })
-          .eq("partner_id", job.partner_id).eq("client_id", job.client_id).eq("connection_id", job.connection_id).eq("stream_key", job.objectType).throwOnError();
+        }).eq("id", job.id).eq("partner_id", job.partner_id).eq("client_id", job.client_id).eq("status", "running").eq("locked_at", claimTime).throwOnError();
         failed += 1;
         continue;
       }
@@ -909,6 +934,7 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
     } catch (error) {
       const detail =
         error instanceof Error ? error.message : "Could not load field mappings.";
+      if (job.direction === "pull" && !await recordPullFailure(admin, job, claimTime, detail)) { failed += 1; continue; }
       await admin
         .from("integration_sync_jobs")
         .update({
@@ -921,7 +947,7 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
           locked_at: null,
           locked_by: null,
         })
-        .eq("id", job.id).throwOnError();
+        .eq("id", job.id).eq("status", "running").eq("locked_at", claimTime).throwOnError();
       failed += 1;
       continue;
     }
@@ -990,6 +1016,7 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
       succeeded += 1;
     } else {
       const attempts = job.attempts + 1;
+      if (job.direction === "pull" && !outcome.cancelled && !await recordPullFailure(admin, job, claimTime, outcome.error)) { failed += 1; continue; }
       if (outcome.reconnectRequired) {
         const now = new Date().toISOString();
         await admin
@@ -1042,7 +1069,7 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
             ? new Date().toISOString()
             : null,
         })
-        .eq("id", job.id).throwOnError();
+        .eq("id", job.id).eq("status", "running").eq("locked_at", claimTime).throwOnError();
       if (job.direction === "push") {
         await admin
           .from("integration_events")

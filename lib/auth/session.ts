@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 
 import { isLocalDevAutoLoginEnabled } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { readCurrentServerUser } from "./session-check.ts";
 
 export type AuthState = {
   isSupabaseConfigured: boolean;
@@ -21,13 +22,8 @@ export async function getAuthState(): Promise<AuthState> {
     };
   }
 
-  const { data, error } = await supabase.auth.getUser();
-
-  return {
-    isSupabaseConfigured: true,
-    user: data.user,
-    error: error?.message ?? null,
-  };
+  const { user, error } = await readCurrentServerUser(supabase);
+  return { isSupabaseConfigured: true, user, error };
 }
 
 export async function requireAuthenticatedUser(nextPath = "/partner") {

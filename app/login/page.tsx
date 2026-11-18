@@ -48,7 +48,7 @@ const pillars = [
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const brand = await publicAgencyBrand(params.agency);
-  const nextPath = toSafeNextPath(params.next, "/");
+  const nextPath = toSafeNextPath(params.next, "/start");
   const authState = await getAuthState();
 
   if (authState.user) {
@@ -161,6 +161,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             />
           </div>
 
+          {params.error === "auth-link-invalid" ? <p role="alert" className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">This sign-in link is incomplete or expired. Request a new link.</p> : null}
           {params.error === "dev-login-failed" ? (
             <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               Local dev sign-in failed. Check that the local Supabase seed has

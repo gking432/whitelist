@@ -14,6 +14,7 @@ type Props = {
   userEmail: string;
   navigation: WorkspaceNavItem[];
   banner?: React.ReactNode;
+  accountActions?: React.ReactNode;
   footer?: React.ReactNode;
   workspaceSwitcher?: boolean;
   help?: { href: string; label: string };
@@ -28,6 +29,7 @@ export function WorkspaceChrome({
   userEmail,
   navigation,
   banner,
+  accountActions,
   footer,
   help,
   workspaceSwitcher = false,
@@ -83,6 +85,7 @@ export function WorkspaceChrome({
                   </p>
                 </div>
               </div>
+              {accountActions}
             </div>
           </div>
         </aside>
@@ -105,6 +108,7 @@ export function WorkspaceChrome({
               </Link>
             ) : null}
             <WorkspaceNavigation items={navigation} mobile />
+            {accountActions ? <div className="flex justify-end border-t px-5 py-2">{accountActions}</div> : null}
           </header>
           <main
             id="workspace-content"

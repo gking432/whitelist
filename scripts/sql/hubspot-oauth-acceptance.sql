@@ -256,6 +256,72 @@ do $source_history$ declare receipt jsonb; command jsonb; src public.integration
 end $source_history$;
 
 
+-- Coordinator integration draft: append before Group 10 of
+-- scripts/sql/hubspot-oauth-acceptance.sql while service_role is active.
+-- Reuses actual accepted business/owner fixtures. All rows roll back with that
+-- asset. No OAuth token, provider request, delivery or hosted data is involved.
+do $connector_health$
+declare
+ p uuid:=(select id from hf_fixture where key='partner-a');
+ c uuid:=(select id from hf_fixture where key='client-a');
+ foreign_p uuid:=(select id from hf_fixture where key='partner-b');
+ foreign_c uuid:=(select id from hf_fixture where key='client-b');
+ conn uuid:=extensions.gen_random_uuid(); other_conn uuid:=extensions.gen_random_uuid();
+ job uuid:=extensions.gen_random_uuid(); push_job uuid:=extensions.gen_random_uuid();
+ original_claim timestamptz:=now()-interval '10 minutes';
+ current_claim timestamptz:=now()-interval '2 minutes';
+ prior_complete timestamptz:=now()-interval '20 minutes';
+ prior_cursor jsonb:='{"version":1,"phase":"archived"}'::jsonb;
+ saved_state jsonb; saved_job jsonb; previous_actions integer;
+begin
+ insert into public.integration_connections(id,partner_id,client_id,provider_id,display_name,status,runtime_mode,credential_status,config)
+ select conn,p,c,id,'Synthetic background source health','connected','dry_run','configured','{"workspace_view_only":true,"hubspot_owner_crm":true}' from public.integration_providers where provider_key='hubspot';
+ insert into public.integration_connections(id,partner_id,client_id,provider_id,display_name,status,runtime_mode,credential_status,config)
+ select other_conn,p,c,id,'Synthetic other account health','connected','dry_run','configured','{"workspace_view_only":true}' from public.integration_providers where provider_key='google_workspace';
+ insert into public.integration_sync_states(partner_id,client_id,connection_id,stream_key,status,last_completed_at,cursor_value)
+ values(p,c,conn,'customer','idle',prior_complete,prior_cursor),(p,c,conn,'note','idle',prior_complete,'{}'),(p,c,other_conn,'appointment','idle',prior_complete,'{}');
+ insert into public.integration_sync_jobs(id,partner_id,client_id,connection_id,direction,object_type,operation,status,locked_at,locked_by,attempts,max_attempts)
+ values(job,p,c,conn,'pull','customer','sync','running',original_claim,'synthetic-acceptance',4,5),
+       (push_job,p,c,conn,'push','customer','create','running',original_claim,'synthetic-acceptance',0,5);
+ select count(*) into previous_actions from public.action_jobs where partner_id=p and client_id=c;
+ select to_jsonb(s) into saved_state from public.integration_sync_states s where connection_id=conn and stream_key='customer';
+ if public.record_connector_pull_failure(foreign_p,c,conn,job,original_claim,'foreign partner')
+  or public.record_connector_pull_failure(p,foreign_c,conn,job,original_claim,'foreign business')
+  or public.record_connector_pull_failure(p,c,other_conn,job,original_claim,'wrong account')
+  or public.record_connector_pull_failure(p,c,conn,push_job,original_claim,'push cannot change read health')
+  or public.record_connector_pull_failure(p,c,conn,job,original_claim-interval '1 second','stale claim') then
+  raise exception 'Foreign source, write job or stale read claim changed stream health';
+ end if;
+ if saved_state is distinct from (select to_jsonb(s) from public.integration_sync_states s where connection_id=conn and stream_key='customer') then raise exception 'Rejected pull failure changed previous successful source evidence'; end if;
+ if not public.record_connector_pull_failure(p,c,conn,job,original_claim,'Synthetic current exhausted read') then raise exception 'Exact exhausted read could not record its current failure'; end if;
+ if not exists(select 1 from public.integration_sync_states where partner_id=p and client_id=c and connection_id=conn and stream_key='customer' and status='failing' and last_error='Synthetic current exhausted read' and last_completed_at=prior_complete and cursor_value=prior_cursor)
+  or not exists(select 1 from public.integration_sync_states where connection_id=conn and stream_key='note' and status='idle' and last_error is null)
+  or not exists(select 1 from public.integration_sync_states where connection_id=other_conn and stream_key='appointment' and status='idle' and last_error is null) then raise exception 'Failure erased completion/cursor or contaminated another stream/account'; end if;
+ -- A restarted worker owns a new claim. Its predecessor cannot publish a late
+ -- error, even though the same durable job remains running.
+ update public.integration_sync_jobs set locked_at=current_claim where id=job;
+ select to_jsonb(s) into saved_state from public.integration_sync_states s where connection_id=conn and stream_key='customer';
+ if public.record_connector_pull_failure(p,c,conn,job,original_claim,'late worker') or saved_state is distinct from (select to_jsonb(s) from public.integration_sync_states s where connection_id=conn and stream_key='customer') then raise exception 'A superseded worker overwrote current read health'; end if;
+ update public.integration_connections set runtime_mode='paused' where id=conn;
+ if public.record_connector_pull_failure(p,c,conn,job,current_claim,'late paused worker') then raise exception 'A paused account accepted a late read failure'; end if;
+ update public.integration_connections set runtime_mode='dry_run' where id=conn;
+ -- Legacy stale running rows can lack a clock; only an exact NULL claim may
+ -- record their exhaustion. A non-NULL old timestamp never matches them.
+ update public.integration_sync_jobs set locked_at=null where id=job;
+ if public.record_connector_pull_failure(p,c,conn,job,current_claim,'wrong nonnull legacy claim') or not public.record_connector_pull_failure(p,c,conn,job,null,'Synthetic unclocked stale exhaustion') then raise exception 'Legacy running read claim equality was not exact'; end if;
+ update public.integration_sync_jobs set status='dead_letter',completed_at=now()-interval '1 minute',locked_at=null,locked_by=null where id=job;
+ select to_jsonb(j) into saved_job from public.integration_sync_jobs j where id=job;
+ if public.record_connector_pull_failure(p,c,conn,job,null,'terminal history must remain unchanged') then raise exception 'Terminal read history published a new current failure'; end if;
+ -- A later completed import supersedes current health without mutating the old
+ -- dead-letter row. Projection tests separately use distinct observation clocks;
+ -- now() is intentionally fixed throughout this rolled-back transaction.
+ update public.integration_sync_states set status='idle',last_error=null,cursor_value='{}',last_completed_at=now() where connection_id=conn and stream_key='customer';
+ if saved_job is distinct from (select to_jsonb(j) from public.integration_sync_jobs j where id=job)
+  or not exists(select 1 from public.integration_sync_states where connection_id=conn and stream_key='customer' and status='idle' and last_error is null and last_completed_at=now())
+  or (select count(*) from public.action_jobs where partner_id=p and client_id=c)<>previous_actions then raise exception 'Read recovery rewrote historical attempts or created a customer action'; end if;
+ if has_function_privilege('anon','public.record_connector_pull_failure(uuid,uuid,uuid,uuid,timestamptz,text)','EXECUTE') or has_function_privilege('authenticated','public.record_connector_pull_failure(uuid,uuid,uuid,uuid,timestamptz,text)','EXECUTE') or not has_function_privilege('service_role','public.record_connector_pull_failure(uuid,uuid,uuid,uuid,timestamptz,text)','EXECUTE') then raise exception 'Read failure RPC grants allow browser mutation'; end if;
+end $connector_health$;
+
 -- Group 10: functions and source credentials are inaccessible to browser roles.
 do $grants$ declare f record; begin
  for f in select p.oid::regprocedure signature from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in('begin_hubspot_oauth','finish_hubspot_oauth','claim_hubspot_oauth_refresh','finish_hubspot_oauth_refresh','fail_hubspot_oauth_refresh','configure_hubspot','prepare_hubspot_change','crm_gateway_source_check','crm_gateway_action_check','mark_crm_gateway_attempt','hubspot_open_review') loop
@@ -289,4 +355,4 @@ reset role;
 rollback;
 select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','hubspot_oauth_acceptance','rolledBack',true,'remainingFixtures',
  (select count(*) from public.partners where slug like 'cj-acceptance-__RUN_ID__-hubspot-%')+(select count(*) from auth.users where email like 'cj-acceptance-__RUN_ID__-hubspot-%@synthetic.invalid'),
- 'checks',jsonb_build_array('scoped_single_use_oauth_preserves_pause_and_no_activation','denied_wrong_portal_grants_and_stale_cas_preserve_access','exact_portal_dedup_and_explicit_selection_config_cas','refresh_lease_claim_rotation_and_grant_revision_cas','retryable_reauth_and_late_refresh_failure_preservation','external_portal_pinned_version_archive_conflict_imports_without_local_identity_projection','owner_crm_prepare_replay_and_actual_authenticated_approval_outbox','single_use_crm_attempt_marker_unknown_outcome_never_repeats','changed_source_archive_grant_and_authority_block_unsent_approval','actual_browser_rpc_privileges_and_tenant_read_scope'))::text as cj_report;
+ 'checks',jsonb_build_array('scoped_single_use_oauth_preserves_pause_and_no_activation','denied_wrong_portal_grants_and_stale_cas_preserve_access','exact_portal_dedup_and_explicit_selection_config_cas','refresh_lease_claim_rotation_and_grant_revision_cas','retryable_reauth_and_late_refresh_failure_preservation','external_portal_pinned_version_archive_conflict_imports_without_local_identity_projection','owner_crm_prepare_replay_and_actual_authenticated_approval_outbox','single_use_crm_attempt_marker_unknown_outcome_never_repeats','changed_source_archive_grant_and_authority_block_unsent_approval','actual_browser_rpc_privileges_and_tenant_read_scope','claim_bound_background_read_failure_and_restart_recovery_preserve_source_history'))::text as cj_report;

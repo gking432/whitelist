@@ -14,6 +14,7 @@ import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 type Props = {
   children: React.ReactNode;
   banner?: React.ReactNode;
+  accountActions?: React.ReactNode;
   clientName: string;
   branding: PortalBranding;
   experienceMode: ClientExperienceMode;
@@ -27,6 +28,7 @@ type Props = {
 export function PortalShell({
   children,
   banner,
+  accountActions,
   clientName,
   branding,
   experienceMode,
@@ -259,12 +261,14 @@ export function PortalShell({
             visibleSections.includes(item.section),
           )}
           banner={banner}
+          accountActions={accountActions}
         >
           {children}
         </DailyBriefShell>
       ) : simpleView || pathname.startsWith("/client/crm") ? (
         <>
           {banner}
+          {accountActions ? <div className="flex justify-end px-5 py-2">{accountActions}</div> : null}
           {children}
         </>
       ) : (
@@ -278,6 +282,7 @@ export function PortalShell({
             visibleSections.includes(item.section),
           )}
           banner={banner}
+          accountActions={accountActions}
           footer={
             <div className="flex flex-wrap justify-between gap-x-6 gap-y-1">
               <p>

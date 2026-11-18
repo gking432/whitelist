@@ -54,11 +54,11 @@ export default async function HomePage() {
                 href={
                   user
                     ? "/workspaces/client"
-                    : "/login?next=%2Fworkspaces%2Fclient"
+                    : "/login?next=%2Fstart"
                 }
                 className="inline-flex items-center gap-4 rounded-xl bg-primary px-6 py-3.5 text-sm font-medium text-white"
               >
-                {user ? "Open your business" : "Sign in to your business"}
+                {user ? "Open your business" : "Get started"}
                 <ArrowRight className="size-4" />
               </Link>
             </div>

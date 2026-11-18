@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { loadFirstOwnerEntry } from "@/lib/auth/first-owner";
 import { canReadBusinessWorkspace } from "@/lib/business/access";
 
+import { SignOutButton } from "@/components/auth/sign-out-button";
 import { PortalShell } from "@/components/client/portal-shell";
 import { ImpersonationBanner } from "@/components/impersonation/impersonation-banner";
 import { loadClientPortal } from "@/lib/clients/portal";
@@ -34,6 +37,12 @@ export default async function ClientPortalLayout({
   const portal = await loadClientPortal();
 
   if (portal.kind === "denied") {
+    const entryClient = await createSupabaseServerClient();
+    let needsSetup = false;
+    if (entryClient) {
+      try { const entry = await loadFirstOwnerEntry(entryClient); needsSetup = entry.state === "new" || entry.state === "setup_required"; } catch { /* A failed eligibility check never grants setup access. */ }
+    }
+    if (needsSetup) redirect("/start");
     const localPreview =
       process.env.NODE_ENV !== "production" && isLocalDevAutoLoginEnabled();
     return (
@@ -49,6 +58,7 @@ export default async function ClientPortalLayout({
               ? "This browser does not have an active business selected. Choose your business from the account directory."
               : "Your account is not connected to an active client portal. Contact the partner that manages your business’s automations to request access."}
           </p>
+          <div className="mt-5"><SignOutButton /></div>
           {localPreview ? (
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
@@ -78,6 +88,7 @@ export default async function ClientPortalLayout({
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             The portal could not be loaded. Try again shortly.
           </p>
+          <div className="mt-5"><SignOutButton /></div>
         </div>
       </main>
     );
@@ -97,6 +108,7 @@ export default async function ClientPortalLayout({
 
   return (
     <PortalShell
+      accountActions={<SignOutButton />}
       businessWorkspace={canReadBusinessWorkspace(portal.access)}
       clientName={portal.client.name}
       branding={portal.branding}

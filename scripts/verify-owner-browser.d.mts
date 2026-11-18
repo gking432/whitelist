@@ -1,0 +1,18 @@
+export type BrowserCiEnvironment = Readonly<Record<string, string | undefined>>;
+export type OwnerBrowserTarget = {
+  appUrl: string;
+  supabaseUrl: string;
+  modulePath: string;
+  artifacts: string;
+  anonKey: string;
+  serviceKey: string;
+};
+export declare const PLAYWRIGHT_VERSION: "1.65.1";
+export declare const OWNER_BROWSER_CONFIRMATION: "owner-browser-disposable";
+export declare const BROWSER_COVERAGE: string[];
+export function browserOptions(args: readonly string[]): { plan: boolean; preflight: boolean };
+export function browserEnvironment(env: BrowserCiEnvironment, requireBrowser?: boolean): OwnerBrowserTarget;
+export function redactBrowserFailure(value: unknown, secrets?: readonly string[]): string;
+export function verificationLinkFromMessage(message: unknown, target: Pick<OwnerBrowserTarget, "supabaseUrl" | "appUrl">): string | null;
+export function freshMailboxEntries(messages: unknown, priorIds: readonly string[]): ({ id: string } & Record<string, unknown>)[];
+export function main(args?: string[], env?: BrowserCiEnvironment): Promise<void>;

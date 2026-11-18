@@ -2,6 +2,7 @@ import { googleAccountCanAct } from "./google-permissions.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { latestImportedRows, mapConnectedData, type ImportedRow } from "./records.ts";
 import { OWNER_PROVIDERS, type ConnectedApp, type ConnectedStream } from "./types.ts";
+import { connectedStreamHealth, type StreamHealthJob } from "./stream-health.ts";
 
 export type OwnerConnectionRow = {
   id: string; partner_id: string; client_id: string; display_name: string;
@@ -24,7 +25,6 @@ type QueryResult = { data: unknown; error: unknown };
 type Batch = { objectType: string; rows: ImportedRow[]; hasMore: boolean; limit: number };
 const list = <T>(value: unknown) => Array.isArray(value) ? value as T[] : [];
 const validDate = (value: string | null | undefined) => !!value && Number.isFinite(Date.parse(value));
-const paging = (cursor: Record<string, unknown> | null) => !!(cursor?.pageToken || cursor?.nextLink || cursor?.after || cursor?.starting_after || cursor?.has_more === true);
 
 /** Internal server loader shared by owner views and manager context. Raw canonical rows never form an API response. */
 export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, options: {
@@ -51,7 +51,7 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
   const until = new Date(Date.parse(generatedAt) + 33 * 86400000).toISOString();
   const [statesResult, jobsResult, mail, calendar, leads, invoices, payments, linkedCalendar, customers, notes, business] = await Promise.all([
     ids.length ? scoped("integration_sync_states", "partner_id,client_id,connection_id,stream_key,cursor_value,last_completed_at,status,last_error").order("connection_id").order("stream_key").limit(1001) : Promise.resolve(empty),
-    ids.length ? scoped("integration_sync_jobs", "connection_id,status,object_type").in("status", ["queued", "running", "failed", "dead_letter"]).eq("direction", "pull").in("object_type", ["message", "appointment", "lead", "invoice", "payment", "customer", "note"]).limit(1001) : Promise.resolve(empty),
+    ids.length ? scoped("integration_sync_jobs", "connection_id,status,object_type,updated_at,completed_at").in("status", ["queued", "running", "failed", "dead_letter"]).eq("direction", "pull").in("object_type", ["message", "appointment", "lead", "invoice", "payment", "customer", "note"]).order("updated_at", { ascending: false }).order("id").limit(1001) : Promise.resolve(empty),
     sourceIds("message").length ? read("message").gte("external_updated_at", since).order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
     sourceIds("appointment").length ? read("appointment").gte("canonical_data->>start_at", since.slice(0, 10)).lt("canonical_data->>start_at", until.slice(0, 10)).order("canonical_data->>start_at").limit(limit + 1) : Promise.resolve(empty),
     sourceIds("lead").length ? read("lead").order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
@@ -70,21 +70,17 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
   ].map((batch) => ({ ...batch, rows: latestImportedRows(batch.rows).slice(0, limit) }));
   const rows = batches.flatMap((batch) => batch.rows);
   for (const row of rows) if (row.partner_id !== scope.partnerId || row.client_id !== scope.clientId) throw new Error("Imported records do not belong to this workspace.");
-  const states = list<OwnerStreamRow>(statesResult.data).slice(0, 1000), jobs = list<{ connection_id: string; status: string; object_type: string }>(jobsResult.data).slice(0, 1000);
+  const states = list<OwnerStreamRow>(statesResult.data).slice(0, 1000), jobs = list<StreamHealthJob & { connection_id: string; object_type: string }>(jobsResult.data).slice(0, 1000);
   const apps: ConnectedApp[] = connections.map((c) => {
     const provider = connectionProvider(c), eventBased = provider === "generic_inbound_webhook";
-    const streams: ConnectedStream[] = (OWNER_STREAMS[provider] ?? []).map((key) => {
+    const health = (OWNER_STREAMS[provider] ?? []).map((key) => {
       const state = states.find((s) => s.connection_id === c.id && s.stream_key === key), work = jobs.filter((j) => j.connection_id === c.id && j.object_type === key);
-      const partial = eventBased || paging(state?.cursor_value ?? null) || !!batches.find((b) => b.objectType === key)?.hasMore;
-      const status = c.runtime_mode === "paused" || state?.status === "paused" ? "paused"
-        : c.status === "needs_attention" || state?.last_error || state?.status === "failing" || work.some((j) => ["failed", "dead_letter"].includes(j.status)) ? "error"
-          : !validDate(state?.last_completed_at) ? "missing"
-            : Date.parse(state!.last_completed_at!) > Date.parse(generatedAt) || (!eventBased && Date.parse(generatedAt) - Date.parse(state!.last_completed_at!) > 45 * 60000) || paging(state?.cursor_value ?? null) ? "stale" : "fresh";
-      return { key, status, lastSyncedAt: state?.last_completed_at ?? null, partial,
-        detail: eventBased ? "Only received form events are available; earlier submissions and undelivered events are not established."
-          : status === "fresh" ? partial ? "Recently synced; only a bounded or paged sample is loaded." : "This stream completed recently within its supported import window."
-            : status === "missing" ? "No complete import has been verified for this stream." : status === "paused" ? "Import is paused; saved records may be outdated." : status === "error" ? "This stream needs connection or import attention." : "Import is delayed or still processing pages." };
+      return connectedStreamHealth({ key, generatedAt, eventBased, connectionStatus: c.status, paused: c.runtime_mode === "paused", state, jobs: work,
+        sampled: !!batches.find((b) => b.objectType === key)?.hasMore,
+        metadataIncomplete: list(statesResult.data).length > 1000 || list(jobsResult.data).length > 1000,
+        metadataUnavailable: !!statesResult.error || !!jobsResult.error });
     });
+    const streams: ConnectedStream[] = health.map((result) => result.stream);
     const times = streams.map((s) => s.lastSyncedAt).filter((s): s is string => validDate(s));
     const completed = times.length === streams.length && streams.length ? times.sort()[0] : null;
     return { id: c.id, name: c.display_name || provider, provider, account: c.external_account_name ?? null,
@@ -93,7 +89,7 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
       ...(provider === "stripe" ? { sourceAccountId: c.external_account_id ?? null } : {}),
       ...(provider === "google_workspace" ? { writePermissions: { calendarWrite: googleAccountCanAct(c.config ?? {}, "calendar"), emailSend: googleAccountCanAct(c.config ?? {}, "email") } } : {}),
       lastSyncedAt: completed, stale: streams.some((s) => ["stale", "missing", "error", "paused"].includes(s.status)),
-      syncing: streams.some((s) => s.partial && !eventBased) || jobs.some((j) => j.connection_id === c.id && j.status === "running"),
+      syncing: health.some((result) => result.syncing),
       error: streams.some((s) => s.status === "error") ? "A connection stream needs attention. Refresh or reconnect the account." : null,
       streams, capabilities: (OWNER_STREAMS[provider] ?? []).map((key) => `${key}.read`) };
   });

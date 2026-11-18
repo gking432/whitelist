@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261118030334";
+export const EXPECTED_MIGRATION = "20261118034811";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -20,7 +20,8 @@ export const COVERAGE = [
   "rollback: selected Google grants, preserved stops, exact activation, paused inbound collection and uncertain-source reconciliation",
   "rollback: source-backed invoice review, verified recipient, paid-invoice suppression and duplicate receipt protection",
   "rollback: customer-owned HubSpot OAuth, portal/grant/refresh CAS, source-owned CRM approval and uncertain POST suppression",
-  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume and refresh lease",
+  "rollback: first-owner authenticated session, configured operator, isolated workspace, no implicit launch and replay/revocation gates",
+  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease and two first-owner creation races",
 ];
 export class Blocked extends Error {}
 
@@ -256,6 +257,51 @@ select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || json
   if (testError) throw testError;
   console.log("PASS: six actual two-session concurrency cases; committed synthetic fixtures cleaned up.");
 }
+// Integrate into verifier after preserved concurrency cases. Uses existing
+// query/readReport/literal/isolationAssertion helpers, no new queue or bypass.
+async function firstOwnerConcurrencyAcceptance(target) {
+  const ids = Object.fromEntries(["run","partner","package","actorA","actorB","sessionA","sessionB","keyA","keyB","conflictKey"].map((key) => [key, randomUUID()]));
+  const prefix = `cj-acceptance-${ids.run}-first-owner-race`;
+  const business = (name) => literal(JSON.stringify({ name, description: "Synthetic first owner concurrency declaration", timezone: "America/Chicago" }));
+  const claims = (actor, session) => `set local role authenticated; select set_config('request.jwt.claim.role','authenticated',true); select set_config('request.jwt.claim.sub','${actor}',true); select set_config('request.jwt.claims',${literal(JSON.stringify({ sub: actor, role: "authenticated", session_id: session }))},true);`;
+  let failure;
+  try {
+    const created = readReport(await query(target, `begin; ${isolationAssertion(target.database)}
+ do $blank_configuration$ begin if exists(select 1 from public.first_owner_signup_configuration) then raise exception 'First owner race target must have no prior signup configuration'; end if; end $blank_configuration$;
+ insert into auth.users(id,email,email_confirmed_at) values('${ids.actorA}','${prefix}-a@synthetic.invalid',now()),('${ids.actorB}','${prefix}-b@synthetic.invalid',now());
+ insert into auth.sessions(id,user_id,created_at,updated_at,not_after) values('${ids.sessionA}','${ids.actorA}',now(),now(),now()+interval '1 hour'),('${ids.sessionB}','${ids.actorB}',now(),now(),now()+interval '1 hour');
+ insert into public.partners(id,name,slug,status) values('${ids.partner}','Synthetic customer journey acceptance first owner races','${prefix}','active');
+ insert into public.partner_packages(id,partner_id,name) values('${ids.package}','${ids.partner}','Synthetic first owner race package');
+ set local role service_role; select public.configure_first_owner_signup('${ids.partner}','${ids.package}',true);
+ commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','first_owner_race_fixture','sessions',(select count(*) from auth.sessions where id in('${ids.sessionA}','${ids.sessionB}')),'operators',(select count(*) from public.partners where id='${ids.partner}')) as cj_report;`), "first_owner_race_fixture");
+    if (created.sessions !== 2 || created.operators !== 1) throw new Error("Real first-owner session/operator race fixture was not confirmed.");
+    const pair = async (sqlFor) => Promise.all(["a","b"].map(async (worker) => readReport(await query(target, sqlFor(worker)), "worker")));
+    // Case 1: two tabs, different keys, same normalized details -> one business.
+    const same = await pair((worker) => `begin; create temp table fo_race_result(result jsonb); grant insert,select on fo_race_result to authenticated; ${claims(ids.actorA, ids.sessionA)}
+ insert into fo_race_result select public.provision_first_owner('${worker === "a" ? ids.keyA : ids.keyB}',${business("Synthetic same owner race")}::jsonb); select pg_sleep(0.2); commit;
+ select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','worker','receipt',(select result->>'id' from fo_race_result),'client',(select result->>'clientId' from fo_race_result),'replayed',(select result->'replayed' from fo_race_result)) as cj_report;`);
+    if (!same[0].receipt || same[0].receipt !== same[1].receipt || same[0].client !== same[1].client || same.filter((item) => item.replayed === true).length !== 1) throw new Error("Parallel signup keys did not replay one durable workspace.");
+    // Case 2: same actor/key, conflicting declarations -> one success and one
+    // real 40001 rejection, without replacing the first owner's declared facts.
+    const conflict = await pair((worker) => `begin; create temp table fo_race_result(result jsonb); grant insert,select on fo_race_result to authenticated; ${claims(ids.actorB, ids.sessionB)}
+ do $race$ declare result jsonb; begin
+  begin result:=public.provision_first_owner('${ids.conflictKey}',${business(`Synthetic conflicting ${worker}`)}::jsonb); insert into fo_race_result values(jsonb_build_object('won',true,'receipt',result->>'id','client',result->>'clientId'));
+  exception when sqlstate '40001' then insert into fo_race_result values('{"won":false}'::jsonb); end;
+ end $race$;
+ select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','worker','won',(select result->'won' from fo_race_result),'receipt',(select result->>'receipt' from fo_race_result),'client',(select result->>'client' from fo_race_result)) as cj_report;`);
+    if (conflict.filter((item) => item.won === true).length !== 1 || conflict.filter((item) => item.won === false).length !== 1) throw new Error("Conflicting signup declarations did not have exactly one immutable winner.");
+    const counts = readReport(await query(target, `select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','first_owner_race_counts','clients',(select count(*) from public.client_businesses where partner_id='${ids.partner}'),'receipts',(select count(*) from public.first_owner_workspaces where user_id in('${ids.actorA}','${ids.actorB}')),'owners',(select count(*) from public.memberships where user_id in('${ids.actorA}','${ids.actorB}') and role='client_owner' and status='active'),'otherRoles',(select count(*) from public.memberships where user_id in('${ids.actorA}','${ids.actorB}') and role<>'client_owner'),'outbox',(select count(*) from public.action_jobs where partner_id='${ids.partner}'),'connections',(select count(*) from public.integration_connections where partner_id='${ids.partner}'),'beta',(select count(*) from public.client_beta_acceptances where partner_id='${ids.partner}')) as cj_report;`), "first_owner_race_counts");
+    if (counts.clients !== 2 || counts.receipts !== 2 || counts.owners !== 2 || counts.otherRoles !== 0 || counts.outbox !== 0 || counts.connections !== 0 || counts.beta !== 0) throw new Error("First-owner races created duplicate scope, authority or side effects.");
+  } catch (error) { failure = error; }
+  finally {
+    const cleaned = readReport(await query(target, `begin; set local lock_timeout='5s'; delete from public.first_owner_signup_configuration where partner_id='${ids.partner}'; delete from public.partners where id='${ids.partner}' and slug='${prefix}'; delete from auth.users where id in('${ids.actorA}','${ids.actorB}') and email in('${prefix}-a@synthetic.invalid','${prefix}-b@synthetic.invalid'); commit;
+ select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','first_owner_race_cleanup','remaining',(select count(*) from public.partners where id='${ids.partner}')+(select count(*) from auth.users where id in('${ids.actorA}','${ids.actorB}'))+(select count(*) from public.first_owner_signup_configuration where partner_id='${ids.partner}')) as cj_report;`), "first_owner_race_cleanup");
+    if (cleaned.remaining !== 0) throw new Error("First-owner race cleanup was incomplete.");
+  }
+  if (failure) throw failure;
+  console.log("PASS: two actual two-session first-owner signup races; committed synthetic session/workspace fixtures cleaned up.");
+}
+
 export async function main(args = process.argv.slice(2), env = process.env) {
   const options = parseOptions(args);
   if (options.plan) { console.log(`PLAN ONLY — SQL not executed.\n${COVERAGE.map((item) => `- ${item}`).join("\n")}`); return; }
@@ -270,7 +316,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await rollbackAcceptance(target, "google-calendar-acceptance.sql", "google_calendar_acceptance");
   await rollbackAcceptance(target, "money-followup-acceptance.sql", "money_followup_acceptance");
   await rollbackAcceptance(target, "hubspot-oauth-acceptance.sql", "hubspot_oauth_acceptance");
-  if (options.concurrency) await concurrencyAcceptance(target);
+  await rollbackAcceptance(target, "first-owner-acceptance.sql", "first_owner_acceptance");
+  if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); }
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

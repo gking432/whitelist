@@ -12,7 +12,7 @@ export async function requestLoginLink(
   const emailValue = formData.get("email");
   const email =
     typeof emailValue === "string" ? emailValue.trim().toLowerCase() : "";
-  const nextPath = toSafeNextPath(formData.get("next"), "/");
+  const nextPath = toSafeNextPath(formData.get("next"), "/start");
 
   if (!email || !email.includes("@")) {
     return {
@@ -37,6 +37,7 @@ export async function requestLoginLink(
     email,
     options: {
       emailRedirectTo: callbackUrl.toString(),
+      shouldCreateUser: true,
     },
   });
 

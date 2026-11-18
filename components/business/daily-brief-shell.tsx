@@ -14,6 +14,7 @@ export function DailyBriefShell({
   email,
   navigation,
   banner,
+  accountActions,
   preview = false,
 }: {
   children: React.ReactNode;
@@ -22,6 +23,7 @@ export function DailyBriefShell({
   email: string;
   navigation: WorkspaceNavItem[];
   banner?: React.ReactNode;
+  accountActions?: React.ReactNode;
   preview?: boolean;
 }) {
   const pathname = usePathname();
@@ -111,6 +113,7 @@ export function DailyBriefShell({
                   {email}
                 </p>
               ) : null}
+              {accountActions ? <div className="mt-2 border-t border-slate-100 px-3 pt-3 pb-2">{accountActions}</div> : null}
             </div>
           </details>
         </nav>
