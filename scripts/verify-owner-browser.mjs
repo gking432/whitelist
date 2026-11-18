@@ -15,8 +15,9 @@ import { assertEmptyBrowserTarget, browserFixtureIdentity, cleanupBrowserFixture
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
+export const MAILPIT_VERSION = "1.22.3";
 export const OWNER_BROWSER_CONFIRMATION = "owner-browser-disposable";
-export const BROWSER_COVERAGE = ["real login UI and fresh one-use GoTrue/Inbucket verification", "visible first-owner creation and reload without duplicate business", "empty Today and current Apps for the same business", "queued source imports rendered on desktop and phone", "two-owner source and endpoint isolation", "normal UI sign-out and stale signed user token denial", "real re-login preserves business, membership and creation receipt", "revoked membership denies current reads and cannot create another business", "synthetic-only cleanup"];
+export const BROWSER_COVERAGE = ["real login UI and fresh one-use GoTrue/Mailpit verification", "visible first-owner creation and reload without duplicate business", "empty Today and current Apps for the same business", "queued source imports rendered on desktop and phone", "two-owner source and endpoint isolation", "normal UI sign-out and stale signed user token denial", "real re-login preserves business, membership and creation receipt", "revoked membership denies current reads and cannot create another business", "synthetic-only cleanup"];
 export function browserOptions(args) {
   if (args.length > 1 || args.some((arg) => !["--plan", "--preflight"].includes(arg))) throw new Error("Use no arguments, --plan, or --preflight.");
   return { plan: args[0] === "--plan", preflight: args[0] === "--preflight" };
@@ -48,7 +49,7 @@ export function redactBrowserFailure(value, secrets = []) {
     .replace(/((?:access_token|refresh_token|token_hash|code_verifier|token|code)=)[^\s&#"'<>]+/gi, "$1[redacted]");
 }
 export function verificationLinkFromMessage(message, target) {
-  const html = typeof message?.body?.html === "string" ? message.body.html : "", plain = typeof message?.body?.text === "string" ? message.body.text : "";
+  const html = typeof message?.HTML === "string" ? message.HTML : "", plain = typeof message?.Text === "string" ? message.Text : "";
   const candidates = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map((item) => item[1]);
   candidates.push(...plain.match(/https?:\/\/[^\s<>"']+/g) || []);
   for (const raw of candidates) {
@@ -65,7 +66,26 @@ const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 export function freshMailboxEntries(messages, priorIds) {
   if (!Array.isArray(messages)) throw new Error("The actual email mailbox returned an unsupported response.");
   const prior = new Set(priorIds);
-  return messages.filter((message) => typeof message?.id === "string" && message.id && !prior.has(message.id)).reverse();
+  // Mailpit returns newest first. Never choose a consumed message or "latest".
+  return messages.filter((message) => typeof message?.id === "string" && message.id && message.id !== "latest" && !prior.has(message.id));
+}
+function hasMailboxRecipient(message, email) {
+  return Array.isArray(message?.To) && message.To.some((recipient) => typeof recipient?.Address === "string" && recipient.Address.toLowerCase() === email.toLowerCase());
+}
+export function mailpitMailboxEntries(response, email) {
+  if (!Array.isArray(response?.messages) || response.start !== 0 || !Number.isSafeInteger(response.messages_count) || response.messages_count !== response.messages.length || response.messages.length > 50)
+    throw new Error("The actual Mailpit mailbox returned an unsupported or truncated response.");
+  if (response.messages.some((message) => typeof message?.ID !== "string" || !/^[a-z0-9-]{1,128}$/i.test(message.ID) || message.ID === "latest"))
+    throw new Error("The actual Mailpit mailbox returned an unsupported message identity.");
+  // Search is only a bounded lookup; independently require the exact recipient.
+  return response.messages.filter((message) => hasMailboxRecipient(message, email)).map((message) => ({ id: message.ID }));
+}
+export function assertMailpitContainer(inspection, mailboxUrl) {
+  const name = SOURCE_CONTAINER.replace("supabase_db_", "supabase_inbucket_");
+  const container = Array.isArray(inspection) && inspection.length === 1 ? inspection[0] : null;
+  if (container?.Name !== `/${name}` || container.State?.Running !== true || !String(container.Config?.Image).endsWith(`/mailpit:v${MAILPIT_VERSION}`) ||
+      !container.NetworkSettings?.Ports?.["8025/tcp"]?.some((port) => port.HostPort === new URL(mailboxUrl).port))
+    throw new Error("The pinned Mailpit image, running Supabase mailbox identity and loopback port could not be confirmed.");
 }
 function run(command, args, timeout = 30000) { return execFileSync(command, args, { cwd: root, shell: false, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], timeout, maxBuffer: 1024 * 1024 }); }
 async function inspectTarget(env, target) {
@@ -81,28 +101,37 @@ async function inspectTarget(env, target) {
   const config = await readFile(join(root, "supabase/config.toml"), "utf8");
   const configuredPort = config.match(/\[inbucket\]\s*\nenabled\s*=\s*true[\s\S]*?\nport\s*=\s*(\d+)/)?.[1];
   if (new URL(inbucketUrl).port !== configuredPort) throw new Error("The loopback mailbox port differs from the pinned Supabase configuration.");
+  // CLI 2.107.0 keeps [inbucket]/INBUCKET_URL but runs Mailpit v1.22.3.
+  // Primary source: supabase/cli@v2.107.0 apps/cli-go/internal/start/start.go
+  // and pkg/config/templates/Dockerfile. Do not probe an unrelated mail server.
+  assertMailpitContainer(JSON.parse(run("docker", ["inspect", SOURCE_CONTAINER.replace("supabase_db_", "supabase_inbucket_")])), inbucketUrl);
   return { ...target, inbucketUrl };
 }
-async function mailboxMessages(target, email) {
-  const response = await fetch(`${target.inbucketUrl}/api/v1/mailbox/${encodeURIComponent(email.split("@")[0])}`, { signal: AbortSignal.timeout(5000) });
-  if (response.status === 404) return [];
+async function mailboxMessages(target, email, request = fetch) {
+  const query = new URLSearchParams({ query: `to:${email}`, start: "0", limit: "50" });
+  const response = await request(`${target.inbucketUrl}/api/v1/search?${query}`, { redirect: "error", signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error("The actual email mailbox could not be read.");
-  const messages = await response.json();
-  if (!Array.isArray(messages)) throw new Error("The actual email mailbox returned an unsupported response.");
-  return messages;
+  return mailpitMailboxEntries(await response.json(), email);
 }
 async function mailboxLink(target, email, priorIds) {
-  const mailbox = encodeURIComponent(email.split("@")[0]);
   for (let attempt = 0; attempt < 60; attempt++) {
     for (const entry of freshMailboxEntries(await mailboxMessages(target, email), priorIds)) {
-        const detail = await fetch(`${target.inbucketUrl}/api/v1/mailbox/${mailbox}/${encodeURIComponent(entry.id)}`, { signal: AbortSignal.timeout(5000) });
+        const detail = await fetch(`${target.inbucketUrl}/api/v1/message/${encodeURIComponent(entry.id)}`, { redirect: "error", signal: AbortSignal.timeout(5000) });
         if (!detail.ok) continue;
-        const link = verificationLinkFromMessage(await detail.json(), target);
+        const message = await detail.json();
+        if (message?.ID !== entry.id || !hasMailboxRecipient(message, email)) throw new Error("The Mailpit message identity or exact recipient did not match the fresh login request.");
+        const link = verificationLinkFromMessage(message, target);
         if (link) return link;
     }
     await delay(500);
   }
   throw new Error("The login form did not produce a usable one-use GoTrue email link in the actual disposable mailbox.");
+}
+export async function cleanupMailbox(target, email, request = fetch) {
+  const ids = (await mailboxMessages(target, email, request)).map((message) => message.id);
+  if (!ids.length) return; // Mailpit deletes ALL messages if IDs is empty/omitted.
+  const response = await request(`${target.inbucketUrl}/api/v1/messages`, { method: "DELETE", redirect: "error", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ IDs: ids }), signal: AbortSignal.timeout(5000) });
+  if (!response.ok) throw new Error("Synthetic login message cleanup could not be confirmed.");
 }
 async function loginUi(page, target, email) {
   const priorIds = (await mailboxMessages(target, email)).map((message) => message.id);
@@ -259,7 +288,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     if (browser) await browser.close().catch(() => {});
     if (app) { app.child.kill("SIGTERM"); await new Promise((done) => { if (app.child.exitCode !== null) done(); else { app.child.once("exit", done); setTimeout(() => { app.child.kill("SIGKILL"); done(); }, 5000).unref(); } }); }
     try { remainingFixtures = await cleanupBrowserFixtures(admin, fixture); } catch (error) { failure ||= error; }
-    for (const owner of fixture.owners) await fetch(`${target.inbucketUrl}/api/v1/mailbox/${encodeURIComponent(owner.email.split("@")[0])}`, { method: "DELETE", signal: AbortSignal.timeout(5000) }).catch(() => {});
+    for (const owner of fixture.owners) try { await cleanupMailbox(target, owner.email); } catch (error) { failure ||= error; }
     const report = { kind: "owner_browser_acceptance", status: failure ? "failed" : "passed", playwrightVersion: PLAYWRIGHT_VERSION, checks, remainingFixtures, diagnostics, limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call."], ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) };
     await writeFile(join(target.artifacts, "owner-browser-report.json"), JSON.stringify(report, null, 2));
   }

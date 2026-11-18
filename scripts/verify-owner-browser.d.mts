@@ -8,6 +8,7 @@ export type OwnerBrowserTarget = {
   serviceKey: string;
 };
 export declare const PLAYWRIGHT_VERSION: "1.65.1";
+export declare const MAILPIT_VERSION: "1.22.3";
 export declare const OWNER_BROWSER_CONFIRMATION: "owner-browser-disposable";
 export declare const BROWSER_COVERAGE: string[];
 export function browserOptions(args: readonly string[]): { plan: boolean; preflight: boolean };
@@ -15,4 +16,7 @@ export function browserEnvironment(env: BrowserCiEnvironment, requireBrowser?: b
 export function redactBrowserFailure(value: unknown, secrets?: readonly string[]): string;
 export function verificationLinkFromMessage(message: unknown, target: Pick<OwnerBrowserTarget, "supabaseUrl" | "appUrl">): string | null;
 export function freshMailboxEntries(messages: unknown, priorIds: readonly string[]): ({ id: string } & Record<string, unknown>)[];
+export function mailpitMailboxEntries(response: unknown, email: string): { id: string }[];
+export function assertMailpitContainer(inspection: unknown, mailboxUrl: string): void;
+export function cleanupMailbox(target: { inbucketUrl: string }, email: string, request?: typeof fetch): Promise<void>;
 export function main(args?: string[], env?: BrowserCiEnvironment): Promise<void>;

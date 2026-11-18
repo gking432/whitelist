@@ -106,7 +106,7 @@ do $scope$ declare denied boolean:=false; label text; begin
  if not denied then raise exception 'Owner read private signup receipt storage directly'; end if;
  foreach label in array array['invited','disabled','existing-owner'] loop
   perform pg_temp.fo_claim(label); denied:=false;
-  if public.get_first_owner_entry()->>'state' is distinct from case when label='existing-owner' then 'existing' else 'blocked' end then raise exception 'Existing % access was misclassified first owner',label; end if;
+  if public.get_first_owner_entry()->>'state' is distinct from (case when label='existing-owner' then 'existing' else 'blocked' end) then raise exception 'Existing % access was misclassified first owner',label; end if;
   begin perform public.provision_first_owner(extensions.gen_random_uuid(),'{"name":"Unwanted duplicate","description":"Synthetic owner declaration only","timezone":"America/Chicago"}'); exception when insufficient_privilege then denied:=true; end;
   if not denied then raise exception 'Existing % identity created a new business',label; end if;
  end loop;

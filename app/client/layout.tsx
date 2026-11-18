@@ -38,11 +38,15 @@ export default async function ClientPortalLayout({
 
   if (portal.kind === "denied") {
     const entryClient = await createSupabaseServerClient();
-    let needsSetup = false;
+    let destination: string | null = null;
     if (entryClient) {
-      try { const entry = await loadFirstOwnerEntry(entryClient); needsSetup = entry.state === "new" || entry.state === "setup_required"; } catch { /* A failed eligibility check never grants setup access. */ }
+      try {
+        const entry = await loadFirstOwnerEntry(entryClient);
+        if (entry.state === "new" || entry.state === "setup_required" || entry.state === "blocked") destination = "/start";
+        else if (entry.state === "existing" && entry.destination !== "/client") destination = entry.destination;
+      } catch { /* A failed eligibility check never grants setup access. */ }
     }
-    if (needsSetup) redirect("/start");
+    if (destination) redirect(destination);
     const localPreview =
       process.env.NODE_ENV !== "production" && isLocalDevAutoLoginEnabled();
     return (
@@ -56,7 +60,7 @@ export default async function ClientPortalLayout({
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {localPreview
               ? "This browser does not have an active business selected. Choose your business from the account directory."
-              : "Your account is not connected to an active client portal. Contact the partner that manages your business’s automations to request access."}
+              : "Your account does not have access to this workspace. Ask its administrator to check your access."}
           </p>
           <div className="mt-5"><SignOutButton /></div>
           {localPreview ? (

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { browserEnvironment, browserOptions, freshMailboxEntries, main, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage } from "../scripts/verify-owner-browser.mjs";
+import { assertMailpitContainer, browserEnvironment, browserOptions, cleanupMailbox, freshMailboxEntries, mailpitMailboxEntries, main, OWNER_BROWSER_CONFIRMATION, PLAYWRIGHT_VERSION, redactBrowserFailure, verificationLinkFromMessage } from "../scripts/verify-owner-browser.mjs";
 import { browserFixtureIdentity } from "../scripts/owner-browser-fixtures.mjs";
 
 const hosted = { CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted", GITHUB_ENV: "/tmp/owner-browser-env", RUNNER_TEMP: "/tmp/owner-browser-runner",
@@ -26,10 +26,10 @@ test("only the real GoTrue verification link bound to this app and first-owner p
   const target = { supabaseUrl: "http://127.0.0.1:54321", appUrl: "http://127.0.0.1:3000" };
   const destination = `${target.appUrl}/auth/confirm?next=%2Fstart`;
   const link = `${target.supabaseUrl}/auth/v1/verify?token=synthetic-once&type=magiclink&redirect_to=${encodeURIComponent(destination)}`;
-  assert.equal(verificationLinkFromMessage({ body: { html: `<a href="${link.replaceAll("&", "&amp;")}">Sign in</a>` } }, target), link);
+  assert.equal(verificationLinkFromMessage({ HTML: `<a href="${link.replaceAll("&", "&amp;")}">Sign in</a>` }, target), link);
   for (const bad of [link.replace("127.0.0.1:54321", "evil.test"), link.replace("type=magiclink", "type=recovery"), link.replace(encodeURIComponent(destination), encodeURIComponent("https://evil.test/auth/confirm?next=%2Fstart")), link.replace("token=synthetic-once", "missing=token")])
-    assert.equal(verificationLinkFromMessage({ body: { text: bad } }, target), null);
-  assert.equal(verificationLinkFromMessage({ body: { text: "No actual sign-in link" } }, target), null);
+    assert.equal(verificationLinkFromMessage({ Text: bad }, target), null);
+  assert.equal(verificationLinkFromMessage({ Text: "No actual sign-in link" }, target), null);
 });
 test("diagnostics remove verification links, session tokens and explicit credentials", () => {
   const message = "service=secret-value http://127.0.0.1:54321/auth/v1/verify?token=one-use&type=magiclink access_token=token-one refresh_token=token-two code=code-three";
@@ -42,6 +42,38 @@ test("re-login ignores consumed messages and requires a newly observed mailbox I
   assert.deepEqual(freshMailboxEntries([old, fresh, { id: null }], [old.id]), [fresh]);
   assert.deepEqual(freshMailboxEntries([old], [old.id]), []);
   assert.throws(() => freshMailboxEntries({ message: "unusable" }, []), /unsupported response/);
+});
+test("the legacy Inbucket container must be the pinned running Mailpit image with the configured port", () => {
+  const container = { Name: "/supabase_inbucket_partner-platform", State: { Running: true }, Config: { Image: "public.ecr.aws/supabase/mailpit:v1.22.3" }, NetworkSettings: { Ports: { "8025/tcp": [{ HostPort: "54324" }] } } };
+  assert.doesNotThrow(() => assertMailpitContainer([container], "http://127.0.0.1:54324"));
+  for (const change of [{ Name: "/unrelated" }, { State: { Running: false } }, { Config: { Image: "inbucket/inbucket:latest" } }, { Config: { Image: "axllent/mailpit:latest" } }, { NetworkSettings: { Ports: { "8025/tcp": [{ HostPort: "54325" }] } } }])
+    assert.throws(() => assertMailpitContainer([{ ...container, ...change }], "http://127.0.0.1:54324"), /pinned Mailpit/);
+});
+test("Mailpit search results require exact recipients and complete bounded message IDs", () => {
+  const email = "owner-browser-012345abcdef-phone@example.test";
+  const old = { ID: "consumed-message", To: [{ Address: email }] }, fresh = { ID: "new-message", To: [{ Address: email.toUpperCase() }] };
+  const wrong = { ID: "wrong-recipient", To: [{ Name: email, Address: `other-${email}` }] };
+  const response = { start: 0, messages_count: 3, messages: [fresh, old, wrong] };
+  const entries = mailpitMailboxEntries(response, email);
+  assert.deepEqual(entries, [{ id: fresh.ID }, { id: old.ID }]);
+  assert.deepEqual(freshMailboxEntries(entries, [old.ID]), [{ id: fresh.ID }]);
+  assert.deepEqual(mailpitMailboxEntries({ start: 0, messages_count: 0, messages: [] }, email), []);
+  for (const invalid of [[], { ...response, messages_count: 4 }, { ...response, start: 50 }, { start: 0, messages_count: 1, messages: [{ ...fresh, ID: "latest" }] }])
+    assert.throws(() => mailpitMailboxEntries(invalid, email), /unsupported/);
+});
+test("Mailpit cleanup sends only exact synthetic-recipient IDs and never an empty global delete", async () => {
+  const email = "owner-browser-012345abcdef-phone@example.test", calls: { url: URL; method: string; body?: BodyInit | null }[] = [];
+  const request = (messages: unknown[]) => async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input)); calls.push({ url, method: init?.method || "GET", body: init?.body });
+    return url.pathname === "/api/v1/search" ? Response.json({ start: 0, messages_count: messages.length, messages }) : new Response("ok");
+  };
+  const target = { inbucketUrl: "http://127.0.0.1:54324" };
+  await cleanupMailbox(target, email, request([]));
+  assert.equal(calls.length, 1); assert.equal(calls[0].url.searchParams.get("query"), `to:${email}`); assert.equal(calls[0].method, "GET");
+  calls.length = 0;
+  await cleanupMailbox(target, email, request([{ ID: "owned-message", To: [{ Address: email }] }, { ID: "foreign-message", To: [{ Address: "other@example.test" }] }]));
+  assert.equal(calls.length, 2); assert.equal(calls[1].method, "DELETE"); assert.equal(calls[1].url.pathname, "/api/v1/messages");
+  assert.deepEqual(JSON.parse(String(calls[1].body)), { IDs: ["owned-message"] });
 });
 test("fixture identities are bounded synthetic tags and plan mode never claims a completed browser run", () => {
   const fixture = browserFixtureIdentity("012345abcdef");
