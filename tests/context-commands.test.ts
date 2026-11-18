@@ -105,13 +105,41 @@ test("production repository sends authenticated scope and actor separately from 
 
 test("stale revisions and reused keys surface as refresh-required conflicts", async () => {
   for (const error of [
-    { code: "40001", message: "revision mismatch" },
-    { code: "P0001", message: "Authority changed" },
-    { code: "P0001", message: "Request key reused" },
+    { code: "PT409", message: "private source and authority details" },
   ]) {
     const admin = { async rpc() { return { data: null, error }; } } as unknown as SupabaseClient;
     await assert.rejects(executeContextCommand(supabaseCommandRepository(admin), actor, control), expectStatus(409));
   }
+});
+
+test("unrecognized and deadlock errors cannot become semantic conflicts from message text", async () => {
+  for (const code of ["40001", "40P01", "XX000", "P0001", "PGRST003"]) {
+    let calls = 0;
+    const admin = { async rpc() {
+      calls++;
+      return { data: null, error: { code, message: "Authority changed; Request key reused; private database detail" } };
+    } } as unknown as SupabaseClient;
+    await assert.rejects(executeContextCommand(supabaseCommandRepository(admin), actor, control), (error) => {
+      assert.ok(error instanceof BusinessCommandError);
+      assert.equal(error.status, 503);
+      assert.doesNotMatch(error.message, /Authority changed|Request key reused|private database detail/);
+      return true;
+    });
+    assert.equal(calls, 1, "A failed command must not silently retry persistence.");
+  }
+});
+
+test("database permission denial keeps its403 without exposing policy diagnostics", async () => {
+  let calls = 0;
+  const admin = { async rpc() {
+    calls++;
+    return { data: null, error: { code: "42501", message: "private changed membership and policy" } };
+  } } as unknown as SupabaseClient;
+  await assert.rejects(executeContextCommand(supabaseCommandRepository(admin), actor, control), (error) => {
+    assert.ok(error instanceof BusinessCommandError); assert.equal(error.status, 403);
+    assert.doesNotMatch(error.message, /private|membership|policy/); return true;
+  });
+  assert.equal(calls, 1);
 });
 
 test("missing current context review is actionable and does not claim permission escalation", async () => {

@@ -21,8 +21,9 @@ export function supabaseCommandRepository(admin: SupabaseClient): CommandReposit
       p_partner: actor.partnerId, p_client: actor.clientId, p_actor: actor.actorId, p_command: command,
     });
     if (error) {
-      if (error.code === "40001" || error.message.includes("changed") || error.message.includes("key reused"))
+      if (error.code === "PT409")
         throw new BusinessCommandError("The business context or authority changed. Refresh and review before retrying.", 409);
+      if (error.code === "42501") throw new BusinessCommandError("Business owner write access is required.", 403);
       if (error.code === "22023") throw new BusinessCommandError("Review the current business context before enabling drafting or approved actions.", 422);
       throw new BusinessCommandError("The change could not be saved. Retry with the same request key.", 503);
     }

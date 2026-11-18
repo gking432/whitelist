@@ -10,6 +10,9 @@ import type { FormState } from "@/lib/forms/state";
 import type { AccessContext } from "@/lib/permissions/types";
 
 export type ApprovalResolution = "approve" | "edit_and_approve" | "reject";
+export type ApprovalResolutionResult = FormState & {
+  httpStatus: 200 | 403 | 404 | 409 | 422 | 503;
+};
 
 export type ResolveApprovalInput = {
   supabase: SupabaseClient;
@@ -34,17 +37,33 @@ type ApprovalRow = {
   assigned_to: string | null;
 };
 
+function databaseFailure(error: { code?: string }): ApprovalResolutionResult {
+  if (error.code === "PT409") {
+    return { status: "error", httpStatus: 409,
+      message: "The approval or its source changed. Refresh and review before deciding again." };
+  }
+  if (error.code === "42501") {
+    return { status: "error", httpStatus: 403, message: "Your current access cannot resolve this approval item." };
+  }
+  if (error.code === "22023") {
+    return { status: "error", httpStatus: 422, message: "Review the approval and its current source before deciding again." };
+  }
+  return { status: "error", httpStatus: 503,
+    message: "The approval could not be resolved. Refresh to check its current state before trying again." };
+}
+
 // Shared by partner and client portal actions. Callers must have already
 // resolved an access context scoped to the approval's client; RLS enforces
 // the same boundary underneath.
 export async function resolveApprovalItem(
   input: ResolveApprovalInput,
-): Promise<FormState> {
+): Promise<ApprovalResolutionResult> {
   const { supabase, access, approvalId, clientId, resolution } = input;
 
   if (!access.canResolveApprovals) {
     return {
       status: "error",
+      httpStatus: 403,
       message: "Your role cannot resolve approval items.",
     };
   }
@@ -60,14 +79,18 @@ export async function resolveApprovalItem(
 
   const approval = data as ApprovalRow | null;
 
-  if (error || !approval) {
-    return { status: "error", message: "The approval item was not found." };
+  if (error) {
+    return databaseFailure(error);
+  }
+  if (!approval) {
+    return { status: "error", httpStatus: 404, message: "The approval item was not found." };
   }
   const crmGateway = approval.type === "crm_change" || approval.proposed_payload?.crm_gateway_version === 1;
 
   if (approval.status !== "pending") {
     return {
       status: "error",
+      httpStatus: 409,
       message: "This approval item was already resolved.",
     };
   }
@@ -80,15 +103,16 @@ export async function resolveApprovalItem(
   ) {
     return {
       status: "error",
+      httpStatus: 403,
       message: "This approval is not assigned to you.",
     };
   }
 
   if (approval.type === "appointment_change" && resolution === "edit_and_approve") {
-    return { status: "error", message: "Reject this appointment change and prepare a new exact proposal to change its time or source." };
+    return { status: "error", httpStatus: 422, message: "Reject this appointment change and prepare a new exact proposal to change its time or source." };
   }
   if (crmGateway && resolution === "edit_and_approve") {
-    return { status: "error", message: "Reject this HubSpot proposal and prepare a fresh source review to change its exact target, customer fields or note." };
+    return { status: "error", httpStatus: 422, message: "Reject this HubSpot proposal and prepare a fresh source review to change its exact target, customer fields or note." };
   }
 
   const editedContent = input.editedContent?.trim();
@@ -96,6 +120,7 @@ export async function resolveApprovalItem(
   if (resolution === "edit_and_approve" && !editedContent) {
     return {
       status: "error",
+      httpStatus: 422,
       message: "Provide the edited content before approving.",
     };
   }
@@ -130,10 +155,14 @@ export async function resolveApprovalItem(
     .select("id")
     .maybeSingle();
 
-  if (updateError || !resolved) {
+  if (updateError) {
+    return databaseFailure(updateError);
+  }
+  if (!resolved) {
     return {
       status: "error",
-      message: "The approval could not be resolved. Try again.",
+      httpStatus: 409,
+      message: "This approval item changed or was already resolved. Refresh and review its current state.",
     };
   }
 
@@ -203,6 +232,7 @@ export async function resolveApprovalItem(
 
   return {
     status: "success",
+    httpStatus: 200,
     message:
       nextStatus === "rejected"
         ? crmGateway ? "HubSpot proposal rejected." : "Approval rejected. The workflow run was cancelled."
