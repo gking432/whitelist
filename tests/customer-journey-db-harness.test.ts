@@ -143,3 +143,21 @@ test("the broader security schema clone includes only its real static provider c
   assert.match(source, /"ON_ERROR_STOP=1"\], providers/);
   assert.doesNotMatch(source, /--table=(?:auth\.|public\.(?:partners|client_businesses|profiles|memberships))/);
 });
+
+test("HubSpot SQL acceptance remains required with six real concurrency cases and no policy bypass", async () => {
+  assert.equal(EXPECTED_MIGRATION, "20261118030334");
+  const verifier = await readFile(harnessUrl, "utf8");
+  assert.match(verifier, /rollbackAcceptance\(target, "hubspot-oauth-acceptance.sql", "hubspot_oauth_acceptance"\)/);
+  assert.match(verifier, /six actual two-session concurrency cases/);
+  assert.match(verifier, /const callbacks = await pair/);
+  assert.match(verifier, /const refreshes = await pair/);
+  assert.match(verifier, /callbacks.filter.*length !== 1/);
+  assert.match(verifier, /refreshes.filter.*length !== 1/);
+  const sql = await readFile(new URL("../scripts/sql/hubspot-oauth-acceptance.sql", import.meta.url), "utf8");
+  for (const rpc of ["begin_hubspot_oauth", "finish_hubspot_oauth", "claim_hubspot_oauth_refresh", "finish_hubspot_oauth_refresh", "prepare_hubspot_change", "mark_crm_gateway_attempt"])
+    assert.ok(sql.includes(`public.${rpc}(`), rpc);
+  assert.match(sql, /set local role authenticated;[\s\S]*actual_owner_approval/);
+  assert.match(sql, /__CUSTOMER_JOURNEY_REPORT__'::text/);
+  assert.match(sql, /rollback;[\s\S]*hubspot_oauth_acceptance/);
+  assert.doesNotMatch(sql, /disable\s+trigger|session_replication_role|create\s+(?:or\s+replace\s+)?function\s+auth\./i);
+});

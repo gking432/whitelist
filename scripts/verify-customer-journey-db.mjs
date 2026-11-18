@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261118020030";
+export const EXPECTED_MIGRATION = "20261118030334";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -19,7 +19,8 @@ export const COVERAGE = [
   "rollback: received customer body/status immutability while scoped identity linking remains possible",
   "rollback: selected Google grants, preserved stops, exact activation, paused inbound collection and uncertain-source reconciliation",
   "rollback: source-backed invoice review, verified recipient, paid-invoice suppression and duplicate receipt protection",
-  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim and adoption dedupe",
+  "rollback: customer-owned HubSpot OAuth, portal/grant/refresh CAS, source-owned CRM approval and uncertain POST suppression",
+  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume and refresh lease",
 ];
 export class Blocked extends Error {}
 
@@ -194,7 +195,7 @@ async function rollbackAcceptance(target, asset = "customer-journey-acceptance.s
   console.log(`PASS: ${report.checks.length} ${kind} rollback SQL assertion groups; synthetic fixtures rolled back.`);
 }
 async function concurrencyAcceptance(target) {
-  const ids = Object.fromEntries(["run", "partner", "client", "owner", "approval", "work", "connection", "request"].map((key) => [key, randomUUID()]));
+  const ids = Object.fromEntries(["run", "partner", "client", "owner", "approval", "work", "connection", "request", "hubspotGrant", "hubspotClaimA", "hubspotClaimB"].map((key) => [key, randomUUID()]));
   const prefix = `cj-acceptance-${ids.run}`;
   const cleanup = `begin; set local lock_timeout='5s'; delete from public.partners where id='${ids.partner}' and slug='${prefix}'; delete from auth.users where id='${ids.owner}' and email='${prefix}@synthetic.invalid'; commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','cleanup','remaining',(select count(*) from public.partners where id='${ids.partner}')+(select count(*) from auth.users where id='${ids.owner}')) as cj_report;`;
   let testError;
@@ -225,13 +226,35 @@ commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind',
     if (!adoptions[0].receipt || adoptions[0].receipt !== adoptions[1].receipt || adoptions.filter((result) => result.replayed === true).length !== 1) throw new Error("Concurrent intake adoption did not replay one durable receipt.");
     const counts = readReport(await query(target, `select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','counts','outbox',(select count(*) from public.action_jobs where approval_id='${ids.approval}'),'leads',(select count(*) from public.crm_leads where partner_id='${ids.partner}' and client_id='${ids.client}'),'receipts',(select count(*) from public.business_owner_commands where client_id='${ids.client}' and request_key='${ids.request}')) as cj_report;`), "counts");
     if (counts.outbox !== 1 || counts.leads !== 1 || counts.receipts !== 1) throw new Error("Concurrent operations created duplicate durable rows.");
+    // Real committed HubSpot attempt, two independent callback sessions and
+    // two independent refresh leases. Token envelopes are synthetic database
+    // fixtures; these assertions establish no provider consent or POST result.
+    const hubspot = readReport(await query(target, `begin; create temp table cj_hubspot_fixture(result jsonb); grant insert,select on cj_hubspot_fixture to service_role; set local role service_role;
+insert into cj_hubspot_fixture select public.begin_hubspot_oauth('${ids.partner}','${ids.client}','${ids.owner}',null,repeat('a',64),'synthetic-server-state-no-provider-proof','{}',now()+interval '15 minutes');
+commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','hubspot_fixture','attemptId',result->>'attemptId','connectionId',result->>'connectionId') as cj_report from cj_hubspot_fixture;`), "hubspot_fixture");
+    if (![hubspot.attemptId, hubspot.connectionId].every((value) => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value))) throw new Error("Committed HubSpot callback fixture was not verified.");
+    const callbacks = await pair(() => `begin; create temp table cj_worker_result(won boolean); grant insert,select on cj_worker_result to service_role; set local role service_role;
+with consumed as(update public.business_connection_oauth_attempts set consumed_at=now() where id='${hubspot.attemptId}' and partner_id='${ids.partner}' and client_id='${ids.client}' and actor_id='${ids.owner}' and connection_id='${hubspot.connectionId}' and provider_key='hubspot' and purpose='hubspot_oauth' and cookie_hash=repeat('a',64) and consumed_at is null and expires_at>now() returning id) insert into cj_worker_result select count(*)=1 from consumed;
+select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','worker','won',(select won from cj_worker_result)) as cj_report;`);
+    if (callbacks.filter((result) => result.won === true).length !== 1) throw new Error("Concurrent HubSpot callback consume did not have exactly one actor/browser-scoped winner.");
+    const finished = readReport(await query(target, `begin; set local role service_role;
+select public.finish_hubspot_oauth('${hubspot.attemptId}','synthetic-encrypted-oauth-envelope-no-provider-proof','test','810001','Synthetic concurrent HubSpot account',array['oauth','crm.objects.contacts.read','crm.objects.deals.read'],'{}',now()+interval '30 minutes','${ids.hubspotGrant}');
+commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','hubspot_finish','secrets',(select count(*) from public.integration_secrets where connection_id='${hubspot.connectionId}'),'attempts',(select count(*) from public.business_connection_oauth_attempts where id='${hubspot.attemptId}'),'revision',(select config->>'hubspot_secret_revision' from public.integration_connections where id='${hubspot.connectionId}')) as cj_report;`), "hubspot_finish");
+    if (finished.secrets !== 1 || finished.attempts !== 0 || finished.revision !== ids.hubspotGrant) throw new Error("The one consumed HubSpot callback did not commit exactly one current secret.");
+    const refreshes = await pair((worker) => `begin; create temp table cj_worker_result(won boolean); grant insert,select on cj_worker_result to service_role; set local role service_role;
+insert into cj_worker_result select public.claim_hubspot_oauth_refresh('${ids.partner}','${ids.client}','${hubspot.connectionId}','${ids.hubspotGrant}','${worker === "a" ? ids.hubspotClaimA : ids.hubspotClaimB}');
+select pg_sleep(0.2); commit; select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','worker','won',(select won from cj_worker_result)) as cj_report;`);
+    if (refreshes.filter((result) => result.won === true).length !== 1) throw new Error("Concurrent HubSpot token refresh did not have exactly one lease owner.");
+    const leases = readReport(await query(target, `select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','hubspot_leases','leases',(select count(*) from public.hubspot_oauth_refresh_leases where connection_id='${hubspot.connectionId}'),'secrets',(select count(*) from public.integration_secrets where connection_id='${hubspot.connectionId}'),'outbox',(select count(*) from public.action_jobs where client_id='${ids.client}')) as cj_report;`), "hubspot_leases");
+    if (leases.leases !== 1 || leases.secrets !== 1 || leases.outbox !== 1) throw new Error("Concurrent HubSpot auth created duplicate leases/secrets or an unauthorized outbox.");
+
   } catch (error) { testError = error; }
   finally {
     const result = readReport(await query(target, cleanup), "cleanup");
     if (result.remaining !== 0) throw new Error("Synthetic concurrency cleanup was incomplete.");
   }
   if (testError) throw testError;
-  console.log("PASS: four actual two-session concurrency cases; committed synthetic fixtures cleaned up.");
+  console.log("PASS: six actual two-session concurrency cases; committed synthetic fixtures cleaned up.");
 }
 export async function main(args = process.argv.slice(2), env = process.env) {
   const options = parseOptions(args);
@@ -246,6 +269,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await rollbackAcceptance(target);
   await rollbackAcceptance(target, "google-calendar-acceptance.sql", "google_calendar_acceptance");
   await rollbackAcceptance(target, "money-followup-acceptance.sql", "money_followup_acceptance");
+  await rollbackAcceptance(target, "hubspot-oauth-acceptance.sql", "hubspot_oauth_acceptance");
   if (options.concurrency) await concurrencyAcceptance(target);
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }

@@ -96,15 +96,17 @@ export async function readBusinessContext(
         const single = mapConnectedData(connected.apps, [row], generatedAt);
         const message = single.messages[0], appointment = single.appointments[0], lead = single.leads?.[0], invoiceSource = invoiceBySource.get(row.id), paymentSource = paymentBySource.get(row.id);
         const invoice = invoiceSource ? moneyEvidenceForSource(invoiceSource, row.id) : undefined, payment = paymentSource ? moneyEvidenceForSource(paymentSource, row.id) : undefined;
-        const display = message ?? appointment ?? lead ?? invoice ?? payment;
+        const customer = single.customers?.[0], deal = single.crmDeals?.[0];
+        const crmNote = kind === "note" && row.canonical_data.portal_id === connected.apps.find((app) => app.id === row.connection_id)?.sourceAccountId ? { title: "Imported HubSpot note", summary: text(row.canonical_data.body).slice(0, 500), href: null } : null;
+        const display = message ?? appointment ?? lead ?? invoice ?? payment ?? customer ?? deal ?? crmNote;
         const cancelled = kind === "appointment" && (row.canonical_data.deleted === true || ["cancelled", "canceled"].includes(text(row.canonical_data.status)));
         if (!display && !cancelled) return [];
         const provider = connected.apps.find((app) => app.id === row.connection_id)?.provider;
         return [{
           partner_id: text(row.partner_id), client_id: text(row.client_id), id: row.id,
           table: "integration_canonical_records", kind,
-          title: (message?.subject ?? appointment?.title ?? lead?.title ?? (invoice ? `Invoice ${invoice.number ?? invoice.externalId}` : payment ? `Payment ${payment.externalId}` : "Cancelled appointment")).slice(0, 300),
-          status: cancelled ? row.canonical_data.deleted === true ? "deleted" : "cancelled" : message ? "imported_snapshot" : appointment?.status ?? lead?.status ?? invoice?.status ?? payment?.status ?? "unknown",
+          title: (message?.subject ?? appointment?.title ?? lead?.title ?? customer?.name ?? deal?.name ?? crmNote?.title ?? (invoice ? `Invoice ${invoice.number ?? invoice.externalId}` : payment ? `Payment ${payment.externalId}` : "Cancelled appointment")).slice(0, 300),
+          status: customer || deal || crmNote ? row.canonical_data.archived === true || row.canonical_data.deleted === true ? "archived" : "imported_snapshot" : cancelled ? row.canonical_data.deleted === true ? "deleted" : "cancelled" : message ? "imported_snapshot" : appointment?.status ?? lead?.status ?? invoice?.status ?? payment?.status ?? "unknown",
           revision: row.updated_at ?? row.external_updated_at ?? "unknown",
           updated_at: invoice?.updatedAt ?? payment?.updatedAt ?? row.external_updated_at ?? row.updated_at ?? generatedAt,
           source_updated_at: row.updated_at ?? undefined,
@@ -114,6 +116,7 @@ export async function readBusinessContext(
             connectionId: row.connection_id, externalId: row.external_object_id, provider,
             href: display?.href ?? null, ...(message ? { direction: message.direction } : {}),
             ...(lead ? { summary: lead.preview } : {}),
+            ...(crmNote ? { summary: crmNote.summary } : {}),
             ...((invoice?.sourceWarning || payment?.sourceWarning) ? { summary: invoice?.sourceWarning || payment?.sourceWarning || undefined } : {}),
             ...(invoice ? { currency: invoice.currency, totalMinor: invoice.totalMinor, amountDueMinor: invoice.amountDueMinor, amountPaidMinor: invoice.amountPaidMinor } : {}),
             ...(payment ? { currency: payment.currency, amountMinor: payment.amountMinor, amountRefundedMinor: payment.amountRefundedMinor } : {}),
@@ -130,7 +133,7 @@ export async function readBusinessContext(
     batch("appointments", "Upcoming appointments", appointments, "crm_appointments", "appointment"),
     batch("workspace_events", "Recorded workspace activity", workspaceEvents, "business_workspace_events", "event"),
     batch("work_events", "Recorded assignment activity", workEvents, "agent_work_events", "event"),
-    ...["message", "appointment", "lead", "invoice", "payment"].map(importedBatch),
+    ...["message", "appointment", "lead", "invoice", "payment", "customer", "note"].map(importedBatch),
   ];
   const input: BusinessContextInput = {
     scope, generatedAt, profile: profile.data as unknown as ProfileEvidence | null,

@@ -62,28 +62,28 @@ export const PILOT_PROVIDERS: Record<PilotProviderKey, PilotProviderMeta> = {
   hubspot: {
     key: "hubspot",
     title: "HubSpot CRM",
-    tagline: "Keeps the client's contact list up to date automatically.",
+    tagline: "Bring the client's existing HubSpot customer records into one view.",
     allows: [
-      "Create a contact when a new lead comes in (or update the existing one).",
-      'Attach an "AI Assistant" note to the contact describing what happened.',
-      "Check that the connection is healthy.",
+      "Read contacts, deals and notes from the exact connected HubSpot account.",
+      "After separate owner permission and approval, create a deliberately new contact or add a note to an explicitly reviewed contact.",
+      "Check the account and its actual read permissions; this check does not establish write readiness.",
     ],
     neverDoes: [
-      "Never deletes contacts, changes deal stages, or clears existing fields.",
+      "Never guesses a customer match, merges identities, updates contacts, deletes records or changes deal stages.",
       "Never emails anyone through HubSpot.",
     ],
-    connectMethod: "credentials",
+    connectMethod: "oauth",
     fields: [
       {
         name: "privateAppToken",
         label: "Private app access token",
         placeholder: "pat-na1-…",
-        help: "In HubSpot: Settings → Integrations → Private Apps → Create app. Give it the crm.objects.contacts read/write scopes.",
+        help: "Existing legacy tokens support read-only compatibility. Connect through /client/apps for account-verified owner OAuth and separately selected permissions.",
         secret: true,
       },
     ],
     whereToGet:
-      "HubSpot → Settings (gear icon) → Integrations → Private Apps → Create a private app. Scopes needed: crm.objects.contacts (read + write). Copy the access token after creating.",
+      "Open /client/apps and connect your HubSpot account using OAuth. Contact and deal read scopes support imports; contact creation and notes require separately selected owner permissions and approval. Existing legacy private-app tokens remain read-only compatibility; creating new legacy private apps is unavailable after October 26, 2026.",
   },
   gohighlevel: {
     key: "gohighlevel",

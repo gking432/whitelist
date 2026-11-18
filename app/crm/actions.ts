@@ -34,6 +34,7 @@ type ActionContext = {
   partnerId: string;
   clientId: string;
   clientName: string;
+  externalCustomerSystem: boolean;
 };
 
 function clean(value: unknown, max = 1000): string {
@@ -93,7 +94,7 @@ async function actionContext(
 
     const { data: client } = await admin
       .from("client_businesses")
-      .select("name")
+      .select("name,customer_system_connection_id")
       .eq("id", clientId)
       .eq("partner_id", access.partnerId)
       .maybeSingle();
@@ -108,6 +109,7 @@ async function actionContext(
       partnerId: access.partnerId,
       clientId,
       clientName: client.name,
+      externalCustomerSystem: !!client.customer_system_connection_id,
     };
   } catch (error) {
     if (isAccessError(error)) {
@@ -277,6 +279,7 @@ export async function createCrmLead(input: {
 }): Promise<FormState> {
   const context = await actionContext(input.clientId, "crm_edit", "contacts");
   if ("status" in context) return context;
+  if (context.externalCustomerSystem) return result("The selected external CRM owns customer and deal records. Use Apps to review a new HubSpot contact or exact-contact note. Current contact/deal corrections are made in HubSpot while controlled updates are being added.", "error");
 
   const name = clean(input.name, 200);
   const phone = clean(input.phone, 80);
@@ -442,6 +445,7 @@ export async function updateCrmLeadStage(input: {
 }): Promise<FormState> {
   const context = await actionContext(input.clientId, "crm_edit", "pipeline");
   if ("status" in context) return context;
+  if (context.externalCustomerSystem) return result("The selected external CRM owns customer and deal records. Use Apps to review a new HubSpot contact or exact-contact note. Current contact/deal corrections are made in HubSpot while controlled updates are being added.", "error");
 
   const allowed = ["new", "contacted", "quoted", "scheduled", "won", "lost"];
   if (!validUuid(input.leadId) || !allowed.includes(input.status)) {
@@ -495,6 +499,7 @@ export async function updateCrmLead(input: {
 }): Promise<FormState> {
   const context = await actionContext(input.clientId, "crm_edit", "contacts");
   if ("status" in context) return context;
+  if (context.externalCustomerSystem) return result("The selected external CRM owns customer and deal records. Use Apps to review a new HubSpot contact or exact-contact note. Current contact/deal corrections are made in HubSpot while controlled updates are being added.", "error");
 
   if (!validUuid(input.leadId)) return result("Lead not found.", "error");
 
@@ -554,6 +559,7 @@ export async function updateCrmContact(input: {
 }): Promise<FormState> {
   const context = await actionContext(input.clientId, "crm_edit", "contacts");
   if ("status" in context) return context;
+  if (context.externalCustomerSystem) return result("The selected external CRM owns customer and deal records. Use Apps to review a new HubSpot contact or exact-contact note. Current contact/deal corrections are made in HubSpot while controlled updates are being added.", "error");
 
   if (!validUuid(input.contactId)) return result("Contact not found.", "error");
 

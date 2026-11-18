@@ -7,6 +7,6 @@ export function crmSyncDeliveryStatus(status: string): "succeeded" | "dry_run" |
 }
 
 /** Old failed rows predate uncertainty classification and may already exist at the provider. */
-export function legacyCrmSyncNeedsReconciliation(job: { kind: string; status: string }): boolean {
-  return job.kind === "crm.sync" && job.status === "failed";
+export function legacyCrmSyncNeedsReconciliation(job: { kind: string; status: string; payload?: Record<string, unknown> }): boolean {
+  return job.kind === "crm.sync" && job.status === "failed" && job.payload?.crm_gateway_version !== 1;
 }

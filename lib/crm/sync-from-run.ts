@@ -12,8 +12,6 @@ import {
 } from "@/lib/integrations/providers/gohighlevel";
 import {
   buildContactPayloadPreview,
-  syncContactWithNote,
-  type HubSpotCredentials,
 } from "@/lib/integrations/providers/hubspot";
 import { deliverOutboundWebhook } from "@/lib/integrations/providers/outbound-webhook";
 import { decryptSecret } from "@/lib/integrations/secrets";
@@ -62,6 +60,11 @@ async function findCrmConnection(
   admin: SupabaseClient,
   input: CrmSyncInput,
 ): Promise<CrmConnectionRow | null> {
+  const selected = await admin.from("client_businesses").select("customer_system_connection_id").eq("id", input.clientId).eq("partner_id", input.partnerId).maybeSingle().throwOnError();
+  if (selected.data?.customer_system_connection_id) {
+    const exact = await admin.from("integration_connections").select("id,runtime_mode,status,error_count,config,provider:integration_providers!inner(provider_key,category)").eq("id", selected.data.customer_system_connection_id).eq("partner_id",input.partnerId).eq("client_id",input.clientId).maybeSingle().throwOnError();
+    return exact.data as unknown as CrmConnectionRow | null;
+  }
   // Native CRM first (HubSpot, GoHighLevel — anything in category "crm").
   const { data: native } = await admin
     .from("integration_connections")
@@ -134,33 +137,7 @@ async function runLiveSync(
 ): Promise<LiveSyncResult> {
   const providerKey = connection.provider?.provider_key ?? "";
 
-  if (providerKey === "hubspot") {
-    const credentials = await readProviderCredentials<HubSpotCredentials>(
-      admin,
-      connection.id,
-    );
-
-    if (!credentials?.privateAppToken) {
-      throw new Error("HubSpot credentials are missing. Reconnect HubSpot.");
-    }
-
-    const outcome = await syncContactWithNote(credentials, fields, noteBody, () => runActionPreflight(input.beforeWrite));
-
-    return {
-      detail: `HubSpot contact ${outcome.contactAction} (${outcome.contactId})${
-        outcome.noteId
-          ? " with an AI Assistant note"
-          : "; the AI Assistant note could not be attached"
-      }.`,
-      crm: {
-        status: outcome.noteId ? "synced" : "uncertain",
-        provider: "hubspot",
-        contact_id: outcome.contactId,
-        contact_action: outcome.contactAction,
-        note_id: outcome.noteId,
-      },
-    };
-  }
+  if (providerKey === "hubspot") throw new Error("HubSpot writes require an exact owner-reviewed gateway decision in Apps and Approvals.");
 
   if (providerKey === "gohighlevel") {
     const credentials = await readProviderCredentials<GoHighLevelCredentials>(
@@ -307,6 +284,12 @@ export async function syncRunToCrm(
       redacted: true,
     }).throwOnError();
   };
+
+  if (providerKey === "hubspot") {
+    const review = await admin.rpc("prepare_hubspot_run_handoff", { p_partner: input.partnerId, p_client: input.clientId, p_connection: connection.id, p_run: input.runId });
+    if (review.error) throw new Error("The HubSpot review handoff could not be saved; no CRM write occurred.");
+    return { step: { name: "Review HubSpot customer change", detail: "A source-run review task is saved. Choose an exact imported contact for a note, or deliberately review a new contact in Apps and Approvals. No identity match or provider write occurred." }, crm: { status: "review_required", provider: "hubspot", task_id: review.data, connection_id: connection.id, source_run_id: input.runId, review_url: `/client/apps?crmRun=${input.runId}` } };
+  }
 
   if (connection.runtime_mode !== "live") {
     await logEvent("dry_run", "crm.contact_sync_preview", {

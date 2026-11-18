@@ -63,6 +63,7 @@ export async function resolveApprovalItem(
   if (error || !approval) {
     return { status: "error", message: "The approval item was not found." };
   }
+  const crmGateway = approval.type === "crm_change" || approval.proposed_payload?.crm_gateway_version === 1;
 
   if (approval.status !== "pending") {
     return {
@@ -85,6 +86,9 @@ export async function resolveApprovalItem(
 
   if (approval.type === "appointment_change" && resolution === "edit_and_approve") {
     return { status: "error", message: "Reject this appointment change and prepare a new exact proposal to change its time or source." };
+  }
+  if (crmGateway && resolution === "edit_and_approve") {
+    return { status: "error", message: "Reject this HubSpot proposal and prepare a fresh source review to change its exact target, customer fields or note." };
   }
 
   const editedContent = input.editedContent?.trim();
@@ -154,7 +158,10 @@ export async function resolveApprovalItem(
 
   // Transition the paused run, recording exactly what happened to the
   // approved content (sent, dry run, or recorded only).
-  if (approval.workflow_run_id) {
+  // A gateway proposal references the original run as source evidence. Its
+  // resolution must not rewrite that run's summary/status; the new outcome
+  // belongs to this approval and its durable action job.
+  if (approval.workflow_run_id && !crmGateway) {
     const approvedSummary =
       resolution === "reject"
         ? `Rejected: ${approval.title}`
@@ -198,9 +205,9 @@ export async function resolveApprovalItem(
     status: "success",
     message:
       nextStatus === "rejected"
-        ? "Approval rejected. The workflow run was cancelled."
+        ? crmGateway ? "HubSpot proposal rejected." : "Approval rejected. The workflow run was cancelled."
         : delivery
           ? delivery.detail
-          : "Approval recorded. The workflow run was completed.",
+          : crmGateway ? "HubSpot approval recorded. Check Action history for a verified provider result." : "Approval recorded. The workflow run was completed.",
   };
 }

@@ -1,4 +1,5 @@
 import { InvoiceFollowupPreview } from "@/components/approvals/invoice-followup-preview";
+import { CrmGatewayPreview } from "@/components/approvals/crm-gateway-preview";
 import { CalendarChangePreview } from "@/components/approvals/calendar-change-preview";
 import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
 import Link from "next/link";
@@ -140,6 +141,7 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
               {item.type === "external_action" ? <ExternalActionPreview payload={item.proposed_payload} /> : null}
               {item.type === "appointment_change" ? <CalendarChangePreview payload={item.proposed_payload} /> : null}
               {item.proposed_payload?.invoice_followup_version === 1 ? <InvoiceFollowupPreview payload={item.proposed_payload} /> : null}
+              {item.type === "crm_change" ? <CrmGatewayPreview payload={item.proposed_payload} /> : null}
               <div className="mt-4 border-t pt-4">
                 {access.canResolveApprovals ? (
                   <ApprovalResolutionForm
@@ -149,9 +151,11 @@ export default async function ClientApprovalsPage({ params }: PageProps) {
                       item.id,
                     )}
                     editableContent={item.editable_content}
-                    allowEdit={item.proposed_payload?.invoice_followup_version !== 1}
+                    allowEdit={!["crm_change", "appointment_change"].includes(item.type) && item.proposed_payload?.invoice_followup_version !== 1}
                     consequence={
-                      item.type === "external_action"
+                      item.type === "crm_change"
+                        ? "Approving authorizes only this exact HubSpot change. Current grants, source versions and pause controls are checked before execution; only a verified provider result establishes completion."
+                        : item.type === "external_action"
                         ? "Approving submits these exact fields to the connected app when this client and solution are live. Watch Action history for the confirmed result."
                         : item.type === "customer_message"
                         ? "Approving locks the final message content and queues delivery through the connected live SMS or email provider."

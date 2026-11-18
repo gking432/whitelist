@@ -1,4 +1,4 @@
-export const EXPECTED_SCHEMA_VERSION = "20261118020030_invoice_followup_review";
+export const EXPECTED_SCHEMA_VERSION = "20261118030334_hubspot_customer_system";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

@@ -1,3 +1,4 @@
+import { executeCrmGatewayAction } from "@/lib/crm/gateway-service";
 import {
   conversationDeliveryBlock,
   deliverWebsiteReply,
@@ -44,6 +45,7 @@ export async function executeActionJob(
   admin: SupabaseClient,
   job: ActionJobRecord,
 ): Promise<DeliveryOutcome> {
+  if (job.kind === "crm.sync" && (job.payload.crm_gateway_version !== undefined || job.payload.provider === "hubspot" && job.approval_id)) return executeCrmGatewayAction(admin, job);
   if (job.kind !== "crm.sync") {
     const { data: approval, error } = await admin
       .from("approval_items")

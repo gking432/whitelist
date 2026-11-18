@@ -104,6 +104,8 @@ export async function recordLeadInInternalCrm(
   }
 
   try {
+    const customerSystem = await admin.from("client_businesses").select("customer_system_connection_id").eq("id", input.clientId).eq("partner_id", input.partnerId).maybeSingle().throwOnError();
+    if (customerSystem.data?.customer_system_connection_id) return { step: { name: "External CRM review", detail: "The selected external customer system owns customers and deals. Review the exact HubSpot target in Apps; no local customer or lead copy was created." }, internal_crm: { status: "skipped", reason: "external_customer_system" } };
     if (!(await clientUsesInternalCrm(admin, input.clientId))) {
       return null;
     }

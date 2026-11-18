@@ -27,6 +27,7 @@ export function authorizedActionPayload(
   )
     return null;
   const payload = approval.proposed_payload ?? {};
+  if (job.kind === "crm.sync") return approval.type === "crm_change" && payload.crm_gateway_version === 1 ? payload : null;
   if (job.kind === "external.action")
     return approval.type === "external_action" ? payload : null;
   if (job.kind === "calendar.book")

@@ -61,7 +61,7 @@ export function ApprovalResolutionForm({
             rows={4}
           />
           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-            {allowEdit ? "Use “Edit & approve” to approve your edited version above." : "Review this exact source-backed template. Its financial content cannot be edited."}
+            {allowEdit ? "Use “Edit & approve” to approve your edited version above." : "Review this exact source-backed proposal. To change its content, reject it and prepare a fresh review."}
           </p>
         </div>
       ) : null}

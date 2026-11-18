@@ -1,3 +1,4 @@
+import { startHubSpotOAuth } from "@/lib/connections/hubspot-oauth";
 import { NextResponse, after, type NextRequest } from "next/server";
 import { z } from "zod";
 import { connectionsContext } from "@/lib/connections/context";
@@ -16,8 +17,10 @@ import {
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 const Input = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("upgrade_hubspot_permissions"), connectionId: z.uuid(), permissions: z.array(z.enum(["contact.create", "note.create"])).max(2).refine((a)=>new Set(a).size===a.length) }).strict(),
+  z.object({ action: z.literal("configure_hubspot"), connectionId: z.uuid(), expectedRevision: z.string().min(1).max(100), selectedCrm: z.boolean(), actionsEnabled: z.boolean() }).strict(),
   z.object({ action: z.literal("upgrade_google_permissions"), connectionId: z.uuid(), permissions: z.array(z.enum(["calendar.write", "email.send"])).min(1).max(2).refine((items) => new Set(items).size === items.length) }).strict(),
-  z.object({ action: z.literal("connect"), provider: z.enum(OWNER_PROVIDERS).default("google_workspace"), connectionId: z.uuid().optional() }).strict(),
+  z.object({ action: z.literal("connect"), provider: z.enum(OWNER_PROVIDERS).default("google_workspace"), connectionId: z.uuid().optional(), permissions: z.array(z.enum(["contact.create", "note.create"])).max(2).optional() }).strict(),
   z.object({ action: z.literal("prepare_intake"), key: z.uuid() }).strict(),
   z
     .object({
@@ -80,6 +83,17 @@ export async function POST(request: NextRequest) {
     );
   const input = parsed.data;
   try {
+    if (input.action === "configure_hubspot") {
+      const result = await admin.rpc("configure_hubspot", { p_partner: ctx.scope.partnerId, p_client: ctx.scope.clientId, p_connection: input.connectionId, p_expected_revision: input.expectedRevision, p_selected: input.selectedCrm, p_enabled: input.actionsEnabled });
+      if (result.error) throw new Error("Refresh the exact HubSpot settings before saving.");
+      return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (input.action === "upgrade_hubspot_permissions" || (input.action === "connect" && input.provider === "hubspot")) {
+      const auth = await startHubSpotOAuth(admin, ctx.scope, ctx.user.id, input.connectionId, input.permissions ?? []);
+      const response = NextResponse.json({ url: auth.url }, { headers: { "Cache-Control": "no-store" } });
+      response.cookies.set(auth.cookieName, auth.cookie, { httpOnly: true, secure: request.nextUrl.protocol === "https:", sameSite: "lax", path: "/", maxAge: 900 });
+      return response;
+    }
     if (input.action === "upgrade_google_permissions") {
       const auth = await startGooglePermissionUpgrade(admin, ctx.scope, ctx.user.id, input.connectionId, input.permissions);
       const response = NextResponse.json({ url: auth.url }, { headers: { "Cache-Control": "no-store" } });

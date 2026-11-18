@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Plus, RefreshCw } from "lucide-react";
 import { localDate } from "@/lib/business/daily-brief";
+import { crmSourceRunId } from "@/lib/crm/gateway-presentation";
 import type { BusinessRecord } from "@/lib/business/types";
 import type { SavedTask, TodoSnapshot } from "@/lib/business/todo-types";
 import { AGENTS, type AgentKey } from "@/lib/agents/catalog";
@@ -39,6 +40,7 @@ export function TodoWorkspace({
     (record) => record.id === selectedId,
   );
   const task = data.tasks.find((item) => item.id === taskId);
+  const crmReviewRunId = crmSourceRunId(task?.source_crm_review_run_id);
   const today = localDate(data.generatedAt, data.timeZone);
   const allJobs = data.workspace.records.filter(
     (record) => record.kind === "job" && record.status !== "archived",
@@ -387,6 +389,7 @@ export function TodoWorkspace({
         <BusinessDialog title={task.title} onClose={() => setTaskId(null)}>
           <div className="space-y-5">
             {task.source_invoice_record_id ? <Link href={`/client/money#invoice-${task.source_invoice_record_id}`} className="text-sm underline">Open invoice source review</Link> : null}
+            {crmReviewRunId ? <Link href={`/client/apps?crmRun=${crmReviewRunId}`} className="text-sm underline">Review original work and HubSpot proposal</Link> : null}
             {task.description ? (
               <p className="whitespace-pre-wrap text-sm leading-7">
                 {task.description}

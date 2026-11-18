@@ -1,13 +1,15 @@
-export const OWNER_PROVIDERS = ["google_workspace", "microsoft_365", "stripe", "generic_inbound_webhook"] as const;
+import type { ConnectedCustomer, ConnectedCrmDeal } from "../crm/provider-contract.ts";
+export const OWNER_PROVIDERS = ["hubspot", "google_workspace", "microsoft_365", "stripe", "generic_inbound_webhook"] as const;
 export type OwnerProvider = (typeof OWNER_PROVIDERS)[number];
 export type ConnectionProviderOption = {
   key: OwnerProvider;
   label: string;
-  category: "mail_calendar" | "money" | "intake";
+  category: "mail_calendar" | "money" | "intake" | "crm";
   setup: "oauth" | "operator" | "token";
   available: boolean;
   detail: string;
   capabilities: string[];
+  createAccountUrl?: string; signInUrl?: string;
 };
 export type ConnectedStream = {
   key: string;
@@ -26,7 +28,8 @@ export type ConnectedApp = {
   stale?: boolean;
   readOnly: boolean;
   sourceAccountId?: string | null;
-  writePermissions?: { calendarWrite: boolean; emailSend: boolean };
+  selectedCrm?: boolean; actionsEnabled?: boolean; revision?: string;
+  writePermissions?: { calendarWrite: boolean; emailSend: boolean; contactCreate?: boolean; noteCreate?: boolean };
   lastSyncedAt: string | null;
   syncing: boolean;
   error: string | null;
@@ -79,6 +82,8 @@ export type SyncedPayment = {
   amountRefundedMinor: number | null; updatedAt: string | null; href: string | null;
 };
 export type ConnectedData = {
+  customers?: ConnectedCustomer[];
+  crmDeals?: ConnectedCrmDeal[];
   apps: ConnectedApp[];
   messages: SyncedMessage[];
   appointments: SyncedAppointment[];

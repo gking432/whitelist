@@ -43,6 +43,7 @@ export async function dispatchActionJob(
           status: outcome.status,
           outcome_detail: outcome.detail,
           last_error: ["failed", "uncertain"].includes(outcome.status) ? outcome.detail : null,
+          ...(outcome.crmGatewayReceipt ? { provider_receipt: outcome.crmGatewayReceipt } : {}),
           ...(outcome.externalRef ? { external_ref: outcome.externalRef } : {}),
           ...(outcome.status === "succeeded" ? { receipt_recorded_at: new Date().toISOString() } : {}),
           ...(job.kind === "calendar.book" && outcome.status === "succeeded" ? { confirmation_due_at: new Date().toISOString() } : {}),

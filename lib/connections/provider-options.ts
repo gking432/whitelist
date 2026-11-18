@@ -1,11 +1,17 @@
+import { getHubSpotOAuthClient } from "../integrations/providers/hubspot-oauth.ts";
 import { getGoogleOAuthClient, getMicrosoftOAuthClient, getSecretsEncryptionKey } from "../env.ts";
 import type { ConnectionProviderOption } from "./types.ts";
 
 export function ownerProviderOptions(configuration: {
-  google: boolean; microsoft: boolean; secureStorage: boolean;
+  google: boolean; microsoft: boolean; secureStorage: boolean; hubspot?: boolean;
 }): ConnectionProviderOption[] {
   const ready = configuration.secureStorage;
   return [
+    { key: "hubspot", label: "HubSpot", category: "crm", setup: "oauth", available: ready && configuration.hubspot === true,
+      createAccountUrl: "https://www.hubspot.com/products/get-started", signInUrl: "https://app.hubspot.com/login",
+      detail: ready && configuration.hubspot ? "Connect your own HubSpot account. Import contacts, deals and notes first; separately grant and enable reviewed contact and note creation. Controlled contact/deal updates are a later acceptance target."
+        : "Your operator needs to configure the HubSpot OAuth app. You can create or sign in to your own HubSpot account now.",
+      capabilities: ["customer.read", "lead.read", "note.read"] },
     { key: "google_workspace", label: "Gmail & Google Calendar", category: "mail_calendar", setup: "oauth",
       available: ready && configuration.google,
       detail: ready && configuration.google ? "Connect read-only email and calendar first. You can separately authorize calendar changes or email sending for this same account; assistants and paused actions keep their own controls."
@@ -31,7 +37,7 @@ export function ownerProviderOptions(configuration: {
 export function readOwnerProviderOptions(): ConnectionProviderOption[] {
   const key = getSecretsEncryptionKey();
   return ownerProviderOptions({
-    google: !!getGoogleOAuthClient(), microsoft: !!getMicrosoftOAuthClient(),
+    hubspot: !!getHubSpotOAuthClient(), google: !!getGoogleOAuthClient(), microsoft: !!getMicrosoftOAuthClient(),
     secureStorage: !!key && Buffer.from(key, "base64").length === 32,
   });
 }

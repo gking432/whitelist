@@ -47,6 +47,8 @@ import {
 } from "./sync-executor";
 import type { CanonicalRecord, ConnectorContext } from "./types";
 import type { ConnectorFieldMapping } from "./types";
+import { loadHubSpotOAuthCredentials } from "../../connections/hubspot-oauth";
+import { HubSpotOAuthError } from "../providers/hubspot-oauth";
 
 type JobRow = ConnectorSyncJob & {
   partner_id: string;
@@ -56,6 +58,7 @@ type JobRow = ConnectorSyncJob & {
   connection_config: Record<string, unknown>;
   connection_status: string;
   connection_runtime_mode: string;
+  connection_external_account_id: string | null;
 };
 
 function value(data: Record<string, unknown>, key: string): string | null {
@@ -67,7 +70,7 @@ async function projectCanonicalRecord(
   job: JobRow,
   record: CanonicalRecord,
 ) {
-  if (isWorkspaceViewOnly(job.connection_config)) return null;
+  if (isWorkspaceViewOnly(job.connection_config) || job.provider?.provider_key === "hubspot") return null;
   const { data: client } = await admin
     .from("client_businesses")
     .select("crm_operating_mode")
@@ -388,17 +391,19 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
       const { data: activeJob } = await admin.from("integration_sync_jobs").select("id").eq("id",job.id).eq("status","running").maybeSingle().throwOnError();
       if (!activeJob) throw new ConnectorExecutionCancelledError();
       const { data: current } = await admin.from("integration_connections")
-        .select("config,status,runtime_mode,credential_status,provider:integration_providers(provider_key)")
+        .select("config,status,runtime_mode,credential_status,external_account_id,provider:integration_providers(provider_key)")
         .eq("id", job.connection_id).eq("partner_id", job.partner_id).eq("client_id", job.client_id).maybeSingle().throwOnError();
       const provider = current?.provider as unknown as { provider_key?: string } | null;
       if (!current || current.status !== "connected" || current.runtime_mode === "paused" || current.credential_status === "invalid" ||
           provider?.provider_key !== job.provider?.provider_key || (job.direction === "push" && current.runtime_mode !== "live")) {
         throw new ConnectorExecutionCancelledError();
       }
-      job.connection_config = current.config ?? {};
+      if (provider?.provider_key === "hubspot" && (current.config?.hubspot_owner_crm !== true || current.config?.workspace_view_only !== true ||
+          !current.external_account_id || current.external_account_id !== job.connection_external_account_id)) throw new ConnectorExecutionCancelledError();
+      job.connection_config = provider?.provider_key === "hubspot" ? { ...current.config, hubspot_account_id: current.external_account_id } : current.config ?? {};
       job.connection_runtime_mode = current.runtime_mode;
       context.config = job.connection_config;
-      if (!allowsConnectorWork(context.config, job.direction, job.objectType)) throw new ConnectorExecutionCancelledError();
+      if (!allowsConnectorWork(context.config, job.direction, job.objectType, provider?.provider_key)) throw new ConnectorExecutionCancelledError();
       if (provider?.provider_key === "stripe" && !["invoice", "payment"].includes(job.objectType))
         throw new ConnectorExecutionCancelledError();
       if(job.direction==="pull" && !isWorkspaceViewOnly(current.config ?? {}) && ["google_workspace","microsoft_365"].includes(provider?.provider_key??"") && current.config?.activation_managed===true &&
@@ -407,7 +412,7 @@ function repositoryFor(admin: SupabaseClient, job: JobRow) {
       }
     },
     async saveCanonicalRecord(record: CanonicalRecord) {
-      if (isWorkspaceViewOnly(job.connection_config) || job.provider?.provider_key === "stripe") {
+      if (isWorkspaceViewOnly(job.connection_config) || ["stripe", "hubspot"].includes(job.provider?.provider_key ?? "")) {
         await persistOwnerImportRecord(admin, {
           partnerId: job.partner_id, clientId: job.client_id, connectionId: job.connection_id,
         }, record);
@@ -579,6 +584,13 @@ export async function enqueueInitialConnectorSync(
     ),
   );
   if (scope.providerKey === "stripe") objectTypes = ["invoice", "payment"];
+  if (scope.providerKey === "hubspot") {
+    const { data: connection } = await admin.from("integration_connections").select("config,external_account_id")
+      .eq("id", scope.connectionId).eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).single().throwOnError();
+    if (connection.config?.hubspot_owner_crm !== true || connection.config?.workspace_view_only !== true || !connection.external_account_id)
+      throw new Error("Reconnect HubSpot through the owner flow before importing authoritative customer records.");
+    objectTypes = ["customer", "lead", "note"];
+  }
   if(["google_workspace","microsoft_365"].includes(scope.providerKey)) {
     const {data:connection}=await admin.from("integration_connections").select("config").eq("id",scope.connectionId)
       .eq("partner_id",scope.partnerId).eq("client_id",scope.clientId).single().throwOnError();
@@ -718,12 +730,13 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
     // A batch may take minutes. Reload tenant-scoped connection state before
     // each claim, then assert it again immediately before the provider call.
     const { data: currentConnection } = await admin.from("integration_connections")
-      .select("config,status,runtime_mode,provider:integration_providers(provider_key)")
+      .select("config,status,runtime_mode,external_account_id,provider:integration_providers(provider_key)")
       .eq("id", raw.connection_id).eq("partner_id", raw.partner_id).eq("client_id", raw.client_id).maybeSingle().throwOnError();
     const connection = (currentConnection ?? {}) as unknown as {
       config?: Record<string, unknown>;
       status?: string;
       runtime_mode?: string;
+      external_account_id?: string | null;
       provider?: { provider_key: string };
     };
     const job: JobRow = {
@@ -738,9 +751,10 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
       client_id: raw.client_id,
       connection_id: raw.connection_id,
       provider: connection.provider ?? null,
-      connection_config: connection.config ?? {},
+      connection_config: connection.provider?.provider_key === "hubspot" ? { ...connection.config, hubspot_account_id: connection.external_account_id } : connection.config ?? {},
       connection_status: connection.status ?? "not_connected",
       connection_runtime_mode: connection.runtime_mode ?? "dry_run",
+      connection_external_account_id: connection.external_account_id ?? null,
     } as JobRow;
     const adapter = job.provider
       ? getConnectorAdapter(job.provider.provider_key)
@@ -756,7 +770,8 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
       failed += 1;
       continue;
     }
-    if (!allowsConnectorWork(job.connection_config, job.direction, job.objectType) || job.connection_status !== "connected" || job.connection_runtime_mode === "paused" ||
+    if (!allowsConnectorWork(job.connection_config, job.direction, job.objectType, job.provider?.provider_key) ||
+      (job.provider?.provider_key === "hubspot" && !job.connection_external_account_id) || job.connection_status !== "connected" || job.connection_runtime_mode === "paused" ||
       (job.direction === "push" && job.connection_runtime_mode !== "live")) {
       await admin
         .from("integration_sync_jobs")
@@ -796,6 +811,26 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
       admin,
       job.connection_id,
     );
+    if (job.provider?.provider_key === "hubspot") {
+      try {
+        const saved = credentials && typeof credentials === "object" ? credentials as Record<string, unknown> : {};
+        if (saved.authType === "oauth") credentials = await loadHubSpotOAuthCredentials(admin, { partnerId: job.partner_id, clientId: job.client_id }, job.connection_id);
+        else if (typeof saved.privateAppToken === "string" && saved.privateAppToken && job.connection_external_account_id)
+          credentials = { ...saved, accountId: job.connection_external_account_id };
+        else throw new HubSpotOAuthError("The exact HubSpot read authorization is unavailable. Reconnect the owner account.", true);
+      } catch (error) {
+        const reauth = error instanceof HubSpotOAuthError && error.reauth;
+        const detail = error instanceof HubSpotOAuthError ? error.message : "The scoped HubSpot read authorization could not be confirmed.";
+        await admin.from("integration_sync_jobs").update({ status: reauth ? "cancelled" : job.attempts + 1 < job.maxAttempts ? "failed" : "dead_letter",
+          attempts: job.attempts + 1, last_error: detail, locked_at: null, locked_by: null,
+          scheduled_for: new Date(Date.now() + connectorRetryDelayMinutes(job.attempts + 1) * 60_000).toISOString(),
+        }).eq("id", job.id).eq("partner_id", job.partner_id).eq("client_id", job.client_id).throwOnError();
+        await admin.from("integration_sync_states").update({ status: reauth ? "paused" : "failing", last_error: detail })
+          .eq("partner_id", job.partner_id).eq("client_id", job.client_id).eq("connection_id", job.connection_id).eq("stream_key", job.objectType).throwOnError();
+        failed += 1;
+        continue;
+      }
+    }
     if (
       [
         "jobber",
@@ -870,7 +905,7 @@ export async function processConnectorSyncJobs(limit = 20, options: { connection
     }
     let fieldMappings: ConnectorFieldMapping[];
     try {
-      fieldMappings = await fieldMappingsFor(admin, job);
+      fieldMappings = job.provider?.provider_key === "hubspot" ? [] : await fieldMappingsFor(admin, job);
     } catch (error) {
       const detail =
         error instanceof Error ? error.message : "Could not load field mappings.";

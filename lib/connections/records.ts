@@ -8,6 +8,7 @@ export type ImportedRow = {
   external_updated_at: string | null;
   native_object_id: string | null;
   updated_at?: string | null;
+  snapshot_observed_at?: string | null;
   created_at?: string | null;
   partner_id?: string;
   client_id?: string;

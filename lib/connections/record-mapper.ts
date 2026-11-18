@@ -1,3 +1,4 @@
+import type { ConnectedCustomer, ConnectedCrmDeal } from "../crm/provider-contract.ts";
 import type { ConnectedApp, ConnectedData, SyncedMessage, SyncedAppointment, SyncedLead, SyncedInvoice, SyncedPayment } from "./types.ts";
 import type { ImportedRow } from "./records.ts";
 import { knownCurrency, minorAmount } from "./money.ts";
@@ -10,7 +11,7 @@ export function safeProviderLink(value: unknown, provider: string, kind: string)
     const url = new URL(str(value));
     const hosts = provider === "google_workspace" ? kind === "appointment" ? ["calendar.google.com", "www.google.com"] : ["mail.google.com"]
       : provider === "microsoft_365" ? outlookHosts
-        : provider === "stripe" ? ["invoice.stripe.com", "pay.stripe.com", "receipt.stripe.com", "checkout.stripe.com", "dashboard.stripe.com"] : [];
+        : provider === "hubspot" ? ["app.hubspot.com"] : provider === "stripe" ? ["invoice.stripe.com", "pay.stripe.com", "receipt.stripe.com", "checkout.stripe.com", "dashboard.stripe.com"] : [];
     return url.protocol === "https:" && !url.username && !url.password && (!url.port || url.port === "443") && hosts.includes(url.hostname) ? url.href : null;
   } catch { return null; }
 }
@@ -39,10 +40,23 @@ export function mapConnectedData(apps: ConnectedApp[], rows: ImportedRow[], gene
   const accounts = new Map(apps.filter((app) => ["connected", "needs_attention"].includes(app.status)).map((app) => [app.id, app]));
   const messages = new Map<string, SyncedMessage>();
   const appointments: SyncedAppointment[] = [], leads: SyncedLead[] = [], invoices: SyncedInvoice[] = [], payments: SyncedPayment[] = [];
+  const customers: ConnectedCustomer[] = [], crmDeals: ConnectedCrmDeal[] = [];
   for (const row of latestImportedRows(rows)) {
     const app = accounts.get(row.connection_id), d = row.canonical_data;
-    if (!app || !d || d.deleted === true) continue;
+    if (!app || !d || (d.deleted === true && app.provider !== "hubspot")) continue;
     const account = app.account || app.name, provider = app.provider;
+    if (provider === "hubspot" && app.sourceAccountId && d.portal_id === app.sourceAccountId && /^[0-9]+$/.test(app.sourceAccountId) && /^[0-9]+$/.test(row.external_object_id)) {
+      const base = { id: row.id, connectionId: app.id, externalId: row.external_object_id, accountId: app.sourceAccountId, account,
+        archived: d.archived === true || d.deleted === true, sourceUpdatedAt: timestamp(row.external_updated_at),
+        observedAt: timestamp(row.snapshot_observed_at) ?? timestamp(d.observed_at) };
+      if (row.object_type === "customer") customers.push({ ...base, name: [str(d.first_name), str(d.last_name)].filter(Boolean).join(" ").slice(0, 250) || "Unnamed HubSpot contact",
+        email: str(d.email).slice(0, 254) || null, phone: str(d.phone).slice(0, 50) || null, lifecycleStage: str(d.lifecycle_stage).slice(0, 100) || null,
+        revision: row.updated_at || "", href: `https://app.hubspot.com/contacts/${app.sourceAccountId}/contact/${row.external_object_id}` });
+      if (row.object_type === "lead") crmDeals.push({ ...base, name: (str(d.title) || str(d.name)).slice(0, 250) || "Unnamed HubSpot deal",
+        stage: str(d.stage) || null, pipeline: str(d.pipeline) || null, amount: str(d.amount) || null, currency: str(d.currency) || null,
+        contactIds: Array.isArray(d.associated_contact_ids) ? d.associated_contact_ids.filter((id): id is string => typeof id === "string" && /^[0-9]+$/.test(id)).slice(0, 100) : [],
+        associationsPartial: d.associations_partial !== false, href: `https://app.hubspot.com/contacts/${app.sourceAccountId}/deal/${row.external_object_id}` });
+    }
     if (row.object_type === "message" && ["google_workspace", "microsoft_365"].includes(provider)) {
       const labels = Array.isArray(d.labels) ? d.labels : [];
       if (d.is_draft === true || labels.some((label) => ["TRASH", "SPAM", "DRAFT"].includes(str(label))) || ["deleteditems", "junkemail", "drafts"].includes(str(d.folder).toLowerCase())) continue;
@@ -91,5 +105,5 @@ export function mapConnectedData(apps: ConnectedApp[], rows: ImportedRow[], gene
     }
   }
   return { apps, messages: [...messages.values()].sort((a, b) => (b.receivedAt || "").localeCompare(a.receivedAt || "")),
-    appointments: appointments.sort((a, b) => a.startAt.localeCompare(b.startAt)), leads, invoices, payments, limited: false, errors: [], generatedAt };
+    customers, crmDeals, appointments: appointments.sort((a, b) => a.startAt.localeCompare(b.startAt)), leads, invoices, payments, limited: false, errors: [], generatedAt };
 }

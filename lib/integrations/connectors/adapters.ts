@@ -16,9 +16,11 @@ import { googleAdsAdapter } from "../providers/google-ads.ts";
 import { googleBusinessProfileAdapter } from "../providers/google-business-profile.ts";
 import { podiumAdapter } from "../providers/podium.ts";
 import { birdeyeAdapter } from "../providers/birdeye.ts";
+import { hubspotAdapter } from "../providers/hubspot.ts";
 import type { ConnectorAdapter, ConnectorCapability } from "./types.ts";
 
 const ADAPTERS: Record<string, ConnectorAdapter> = {
+  hubspot: hubspotAdapter as ConnectorAdapter,
   google_workspace: googleWorkspaceAdapter as ConnectorAdapter,
   microsoft_365: microsoft365Adapter as ConnectorAdapter,
   housecall_pro: housecallProAdapter as ConnectorAdapter,
@@ -59,9 +61,7 @@ export const NATIVE_CONNECTOR_CAPABILITIES = {
   generic_outbound_webhook: ["customer.create", "note.create"],
   universal_lead_email: ["lead.webhook"],
   hubspot: [
-    "customer.search",
     "customer.create",
-    "customer.update",
     "note.create",
   ],
   gohighlevel: [

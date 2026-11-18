@@ -1,7 +1,7 @@
 import { googleAccountCanAct } from "../../connections/google-permissions.ts";
 /** Imported records never enter generic CRM projection or connector writes. */
 export function isWorkspaceViewOnly(config: Record<string, unknown>) {
-  return config.workspace_view_only === true;
+  return config.workspace_view_only === true || config.hubspot_owner_crm === true;
 }
 
 /** The sole owner-import exception is a separately authorized and explicitly
@@ -33,7 +33,10 @@ export function allowsConnectorWork(
   config: Record<string, unknown>,
   direction: string,
   objectType: string,
+  providerKey?: string,
 ) {
+  if (providerKey === "hubspot" || config.hubspot_owner_crm === true)
+    return config.hubspot_owner_crm === true && config.workspace_view_only === true && direction === "pull" && ["customer", "lead", "note"].includes(objectType);
   return (
     !isWorkspaceViewOnly(config) ||
     (direction === "pull" && ["message", "appointment", "invoice", "payment"].includes(objectType))
@@ -42,6 +45,7 @@ export function allowsConnectorWork(
 
 /** A page continuation is not proof that the authoritative import completed. */
 export function connectorCursorIsPartial(cursor: Record<string, unknown> | null): boolean {
+  if (cursor?.version === 1 && ["active", "archived"].includes(String(cursor.phase))) return true;
   return !!cursor && ["pageToken", "nextLink", "after"].some((key) =>
     typeof cursor[key] === "string" && String(cursor[key]).length > 0);
 }

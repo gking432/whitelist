@@ -100,20 +100,18 @@ test("external actions recheck owner authority after asynchronous field discover
   assert.equal(outcome.attempted, false);
   assert.equal(submitted, false);
 });
-test("CRM contact creation is suppressed if policy changes during a contact lookup", async () => {
+test("legacy HubSpot inference cannot reach a lookup, create, update or note request", async () => {
   const original = globalThis.fetch;
-  let paused = false;
   const paths: string[] = [];
   globalThis.fetch = async (input) => {
     const path = new URL(String(input)).pathname; paths.push(path);
-    if (path.endsWith("/search")) { paused = true; return Response.json({ results: [] }); }
-    throw new Error("must not write a contact or note");
+    throw new Error("legacy HubSpot inference must not make a provider request");
   };
   try {
     await assert.rejects(syncContactWithNote({ privateAppToken: "fixture" },
       { email: "fixture@example.test", phone: null, firstname: null, lastname: null, address: null }, "Approved note",
-      () => runActionPreflight(async () => paused ? "Owner stopped sync." : null)), ActionSuppressedError);
-    assert.equal(paths.length, 1);
+      () => runActionPreflight(async () => null)), /explicit reviewed provider gateway/);
+    assert.equal(paths.length, 0);
   } finally { globalThis.fetch = original; }
 });
 test("stopping a CRM sync after contact acceptance prevents its subsequent note and preserves the contact result", async () => {

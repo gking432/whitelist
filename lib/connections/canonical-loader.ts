@@ -15,7 +15,7 @@ export type OwnerStreamRow = {
   status: string; last_error: string | null;
 };
 export const OWNER_STREAMS: Record<string, readonly string[]> = {
-  google_workspace: ["message", "appointment"], microsoft_365: ["message", "appointment"],
+  hubspot: ["customer", "lead", "note"], google_workspace: ["message", "appointment"], microsoft_365: ["message", "appointment"],
   stripe: ["invoice", "payment"], generic_inbound_webhook: ["lead"],
 };
 export const connectionProvider = (row: OwnerConnectionRow) => (Array.isArray(row.provider) ? row.provider[0] : row.provider)?.provider_key ?? "";
@@ -43,27 +43,30 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
   const scoped = (table: string, columns: string) => admin.from(table).select(columns)
     .eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).in("connection_id", ids);
   const empty: QueryResult = { data: [], error: null };
-  const canonicalColumns = "id,partner_id,client_id,connection_id,object_type,external_object_id,external_parent_id,canonical_data,external_updated_at,native_object_id,updated_at,created_at";
+  const canonicalColumns = "id,partner_id,client_id,connection_id,object_type,external_object_id,external_parent_id,canonical_data,external_updated_at,native_object_id,updated_at,created_at,snapshot_observed_at";
   const sourceIds = (type: string) => visible.filter((c) => OWNER_STREAMS[connectionProvider(c)]?.includes(type)).map((c) => c.id);
   const read = (type: string) => admin.from("integration_canonical_records").select(canonicalColumns)
     .eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).in("connection_id", sourceIds(type)).eq("object_type", type);
   const since = new Date(Date.parse(generatedAt) - 31 * 86400000).toISOString();
   const until = new Date(Date.parse(generatedAt) + 33 * 86400000).toISOString();
-  const [statesResult, jobsResult, mail, calendar, leads, invoices, payments, linkedCalendar] = await Promise.all([
+  const [statesResult, jobsResult, mail, calendar, leads, invoices, payments, linkedCalendar, customers, notes, business] = await Promise.all([
     ids.length ? scoped("integration_sync_states", "partner_id,client_id,connection_id,stream_key,cursor_value,last_completed_at,status,last_error").order("connection_id").order("stream_key").limit(1001) : Promise.resolve(empty),
-    ids.length ? scoped("integration_sync_jobs", "connection_id,status,object_type").in("status", ["queued", "running", "failed", "dead_letter"]).eq("direction", "pull").in("object_type", ["message", "appointment", "lead", "invoice", "payment"]).limit(1001) : Promise.resolve(empty),
+    ids.length ? scoped("integration_sync_jobs", "connection_id,status,object_type").in("status", ["queued", "running", "failed", "dead_letter"]).eq("direction", "pull").in("object_type", ["message", "appointment", "lead", "invoice", "payment", "customer", "note"]).limit(1001) : Promise.resolve(empty),
     sourceIds("message").length ? read("message").gte("external_updated_at", since).order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
     sourceIds("appointment").length ? read("appointment").gte("canonical_data->>start_at", since.slice(0, 10)).lt("canonical_data->>start_at", until.slice(0, 10)).order("canonical_data->>start_at").limit(limit + 1) : Promise.resolve(empty),
     sourceIds("lead").length ? read("lead").order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
     sourceIds("invoice").length ? read("invoice").order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
     sourceIds("payment").length ? read("payment").order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
     sourceIds("appointment").length && options.nativeAppointmentIds?.length ? read("appointment").in("native_object_id", options.nativeAppointmentIds.slice(0, 1000)).order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
+    sourceIds("customer").length ? read("customer").order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
+    sourceIds("note").length ? read("note").order("updated_at", { ascending: false }).limit(limit + 1) : Promise.resolve(empty),
+    admin.from("client_businesses").select("customer_system_connection_id").eq("id", scope.clientId).eq("partner_id", scope.partnerId).maybeSingle(),
   ]);
   const calendarRows = latestImportedRows([...list<ImportedRow>(linkedCalendar.data), ...list<ImportedRow>(calendar.data)]);
   const batches: Batch[] = [
     { objectType: "message", rows: list<ImportedRow>(mail.data), hasMore: list(mail.data).length > limit, limit },
     { objectType: "appointment", rows: calendarRows, hasMore: calendarRows.length > limit || list(calendar.data).length > limit || list(linkedCalendar.data).length > limit, limit },
-    ...[["lead", leads], ["invoice", invoices], ["payment", payments]].map(([objectType, result]) => ({ objectType: objectType as string, rows: list<ImportedRow>((result as QueryResult).data), hasMore: list((result as QueryResult).data).length > limit, limit })),
+    ...[["lead", leads], ["invoice", invoices], ["payment", payments], ["customer", customers], ["note", notes]].map(([objectType, result]) => ({ objectType: objectType as string, rows: list<ImportedRow>((result as QueryResult).data), hasMore: list((result as QueryResult).data).length > limit, limit })),
   ].map((batch) => ({ ...batch, rows: latestImportedRows(batch.rows).slice(0, limit) }));
   const rows = batches.flatMap((batch) => batch.rows);
   for (const row of rows) if (row.partner_id !== scope.partnerId || row.client_id !== scope.clientId) throw new Error("Imported records do not belong to this workspace.");
@@ -86,6 +89,7 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
     const completed = times.length === streams.length && streams.length ? times.sort()[0] : null;
     return { id: c.id, name: c.display_name || provider, provider, account: c.external_account_name ?? null,
       status: c.status, paused: c.runtime_mode === "paused", readOnly: c.config?.workspace_view_only === true || ["stripe", "generic_inbound_webhook"].includes(provider),
+      ...(provider === "hubspot" ? { sourceAccountId: c.external_account_id ?? null, selectedCrm: business.data?.customer_system_connection_id === c.id, actionsEnabled: c.config?.hubspot_actions_enabled === true, revision: typeof c.config?.hubspot_config_revision === "string" ? c.config.hubspot_config_revision : "", writePermissions: { calendarWrite: false, emailSend: false, contactCreate: Array.isArray(c.config?.hubspot_selected_permissions) && c.config.hubspot_selected_permissions.includes("contact.create"), noteCreate: Array.isArray(c.config?.hubspot_selected_permissions) && c.config.hubspot_selected_permissions.includes("note.create") } } : {}),
       ...(provider === "stripe" ? { sourceAccountId: c.external_account_id ?? null } : {}),
       ...(provider === "google_workspace" ? { writePermissions: { calendarWrite: googleAccountCanAct(c.config ?? {}, "calendar"), emailSend: googleAccountCanAct(c.config ?? {}, "email") } } : {}),
       lastSyncedAt: completed, stale: streams.some((s) => ["stale", "missing", "error", "paused"].includes(s.status)),
@@ -96,7 +100,7 @@ export async function loadConnectedRecords(admin: SupabaseClient, scope: Scope, 
   const data = mapConnectedData(apps, rows, generatedAt);
   data.limited = allConnections.length > 100 || list(statesResult.data).length > 1000 || list(jobsResult.data).length > 1000 || batches.some((b) => b.hasMore);
   data.errors = [connectionResult.error && "Connected apps could not be checked.", statesResult.error && "Sync status could not be checked.", jobsResult.error && "Import progress could not be checked.",
-    ...[[mail, "Email"], [calendar, "Calendar"], [linkedCalendar, "Linked calendar"], [leads, "Intake"], [invoices, "Invoices"], [payments, "Payments"]].map(([result, label]) => (result as QueryResult).error && `${label} could not be loaded.`)].filter((v): v is string => !!v);
+    ...[[mail, "Email"], [calendar, "Calendar"], [linkedCalendar, "Linked calendar"], [leads, "Intake"], [invoices, "Invoices"], [payments, "Payments"], [customers, "Customers"], [notes, "CRM notes"]].map(([result, label]) => (result as QueryResult).error && `${label} could not be loaded.`)].filter((v): v is string => !!v);
   return { data, apps, rows, states, batches, connections, generatedAt };
 }
 

@@ -42,6 +42,7 @@ export type DeliveryOutcome = {
   // calendar event id) when one exists.
   externalRef?: string | null;
   calendarMutationReceipt?: Record<string, unknown>;
+  crmGatewayReceipt?: import("../crm/provider-contract.ts").CrmGatewayReceipt;
 };
 
 type ApprovedMessage = {

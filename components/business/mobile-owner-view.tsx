@@ -1,6 +1,7 @@
 "use client";
 
 import { InvoiceFollowupPreview } from "@/components/approvals/invoice-followup-preview";
+import { CrmGatewayPreview } from "@/components/approvals/crm-gateway-preview";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -849,12 +850,13 @@ function CustomerDecision({
         ) : null}
         {approval.type === "appointment_change" ? <CalendarChangePreview payload={approval.proposed_payload} /> : null}
               {approval.proposed_payload?.invoice_followup_version === 1 ? <InvoiceFollowupPreview payload={approval.proposed_payload} /> : null}
+        {approval.type === "crm_change" ? <CrmGatewayPreview payload={approval.proposed_payload} /> : null}
         {canDecide ? (
           <ApprovalResolutionForm
             action={resolve}
             editableContent={approval.editable_content}
-                    allowEdit={approval.proposed_payload?.invoice_followup_version !== 1}
-            consequence="Approving authorizes this action and queues it for delivery. Check Recent for delivery status. Rejecting cancels the proposal."
+            allowEdit={!["crm_change", "appointment_change"].includes(approval.type) && approval.proposed_payload?.invoice_followup_version !== 1}
+            consequence={approval.type === "crm_change" ? "Approving authorizes only this exact HubSpot change. Current grants, source versions and pause controls are checked before execution. Check Recent for a verified provider result; approval is separate from completion." : "Approving authorizes this action and queues it for delivery. Check Recent for delivery status. Rejecting cancels the proposal."}
           />
         ) : (
           <p className="text-sm leading-6 text-muted-foreground">
