@@ -1,11 +1,13 @@
 # Effective owner conflict inventory
 
-Baseline: `eea134b3a4d9d17df7017d0ef5b3ae3ac671cdf6`. Static source evidence only; no database or HTTP acceptance claimed.
+Current selected foundation definitions are integrated in `supabase/migrations/20261119025924_owner_foundation_conflicts.sql`: five replaced functions plus one new private trigger function. The coordinator verified the four original semantic-raise bodies are preserved exactly except7/1/3/1 literals, and only the resolved-history clause changes in the fifth. Actual isolated six-function catalog/ACL proof is pending CI. The full baseline scan and historical stop limits below remain source evidence.
+
+Baseline scan: `eea134b3a4d9d17df7017d0ef5b3ae3ac671cdf6`; resumed review: `eb3fb374332204d6664cfbd8646b0fafae7d7f5d`. Static source evidence only; no database or HTTP acceptance claimed.
 
 - 194 effective function signatures; 29 contain126 explicit semantic40001 raises (123 public +3 private already behind prior wrappers).
-- Unapplied proposed foundation: 4 unchanged existing bodies,12 literal raises →PT409. Source-only draft; root integrates or discards.
+- Unapplied foundation: four effective bodies change twelve explicit semantic40001 literals to PT409; the existing INVOKER history guard changes only its resolved-history conflict, and one private authority decision trigger supplies nonblocking exact-scope locks. Root integrates/reviews the proposal.
 - Actual owner/ACL catalog verification remains CI work; source has no explicit ALTER OWNER.
-- Parked: generic stale-authority approval predicate, all unrelated preparer/lifecycle/OAuth domains, direct-PATCH zero-row transport semantics.
+- In resumed scope: generic stale-authority approval predicate and required decision conflicts. Parked: all unrelated preparer/lifecycle/OAuth changes; raw direct-PATCH zero-row remains HTTP200 and is classified409 only by the app adapter.
 
 | Function | Current source | Direct EXECUTE | Scope |
 |---|---|---|---|
@@ -45,8 +47,19 @@ Baseline: `eea134b3a4d9d17df7017d0ef5b3ae3ac671cdf6`. Static source evidence onl
 
 Details, exact raises/conditions, callers, last grants and RLS are in [2026-11-18-owner-conflict-inventory.json](2026-11-18-owner-conflict-inventory.json).
 Draft: [2026-11-18-owner-conflict-proposal.sql](2026-11-18-owner-conflict-proposal.sql).
-The inventory worker made no repository edits and performed no migration execution, grant change, new guard or backend termination. The coordinator saved these reference artifacts at the stop boundary.
+The original coordinator saved the reference artifacts at the stop boundary. The resumed worker updated only these evidence artifacts and the new isolated SQL acceptance asset; it performed no migration execution, database grant change, backend termination or provider action.
 
 ## Stop checkpoint limits
 
-The owner stopped this work at the worker-return boundary. This is a source inventory, not verified catalog or HTTP evidence. Four production caller mappings remain unresolved; actual catalog owners/ACLs still need isolated verification. The proposal is reference material outside the migration directory, not an executable or approved migration. It omits unresolved default-P0001 conflict policy and the generic stale-authority decision gap; do not apply it without completing that review.
+Historical checkpoint: the owner stopped this work at the earlier worker-return boundary. At that time four production caller mappings, catalog owners/ACLs, resolved-history policy and the generic stale-authority decision gap remained unresolved. Fresh authorization resumed the bounded foundation below; only actual catalog/SQL/HTTP execution proof remains pending after the source review. The proposal remains outside the migration directory and must be integrated by the coordinator.
+
+
+## Resumed foundation review
+
+Fresh authorization resumes only the context/authority and required approval boundary from `eb3fb374332204d6664cfbd8646b0fafae7d7f5d`. The historical stop notes above describe the earlier checkpoint. The updated source proposal now includes the narrowly scoped private decision-time authority trigger; execution remains the coordinator's responsibility.
+
+The four previously missing literal caller mappings are resolved: `save_intake_scheduling_offer`, `save_customer_rebooking_offer` use the dynamic service-role worker callback in `lib/agents/inquiry-progression.ts:195`; `propose_intake_booking`, `propose_customer_rebooking` use its adjacent callback at line196. Existing dynamic owner journey mappings are also explicit in JSON (`customer-journey-commands.ts:41,67,77,121`). These functions are reachable, remain service-only, and remain outside this foundation's SQL-code changes.
+
+The private trigger first takes exact OLD-business `FOR KEY SHARE NOWAIT`, then exact OLD-settings `FOR SHARE NOWAIT`. Settings-only locking would invert against a context command holding business `FOR UPDATE` because enqueue's business foreign key needs KEY SHARE. Both acquisitions must fail promptly as fixed PT409 when busy. Only 55P03 is caught; actual backend 40001/40P01 propagate unchanged. Authenticated has no settings UPDATE privilege, so PG17's row-lock privilege rule requires this service-only private definer lookup; no browser table grant is added. The existing INVOKER resolution guard, outer RLS, payload immutability and actor checks remain.
+
+Actual isolated SQL evidence is pending: `scripts/sql/owner-foundation-conflict-acceptance.sql` has nine rollback groups and a separate catalog report with actual signature, owner, security mode, configuration, role EXECUTE flags and enabled private trigger. The two-session race contract is `/tmp/owner-foundation-race-contract.sql`; root integrates bounded real-lock barriers. No local SQL, hosted write, provider call, retry bypass or migration execution was performed by this worker.

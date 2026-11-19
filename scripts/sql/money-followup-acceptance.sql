@@ -171,7 +171,7 @@ do $approval$ declare control jsonb; v_approval_id uuid; source_id uuid; job_id 
  check_result:=public.invoice_followup_action_check(p,c,v_approval_id,null);
  if check_result->>'allowed' is distinct from 'true' then raise exception 'Restored invoice positive control failed: %',check_result->>'reason'; end if;
  begin update public.approval_items set status='edited_and_approved',resolved_by=actor,resolved_content='Pay an invented balance of USD 999999 now' where id=v_approval_id;
- exception when sqlstate '40001' then denied:=true; end;
+ exception when sqlstate 'PT409' then denied:=true; end;
  if not denied or exists(select 1 from public.action_jobs where approval_id=v_approval_id) then raise exception 'Edited financial prose was approved or enqueued'; end if;
  update public.approval_items set status='approved',resolved_by=actor where id=v_approval_id;
  select j.id into job_id from public.action_jobs j where j.approval_id=v_approval_id and j.kind='email.send';
@@ -270,7 +270,7 @@ begin
   if check_result->>'allowed' is distinct from 'false' then raise exception 'Invoice final source/customer guard accepted interruption: %',label; end if;
   denied:=false;
   begin update public.approval_items set status='approved',resolved_by=actor where id=proposal;
-  exception when sqlstate '40001' then denied:=true; end;
+  exception when sqlstate 'PT409' then denied:=true; end;
   if not denied or exists(select 1 from public.action_jobs where approval_id=proposal) then raise exception 'Interrupted invoice approval enqueued: %',label; end if;
   -- Ordinary owner rejection retires this unsent decision; no resolved history
   -- is altered to manufacture a new positive control for the next case.
@@ -409,7 +409,7 @@ begin
    if check_result->>'allowed' is distinct from 'false' or check_result->>'reason' is distinct from reason then raise exception 'Unresolved same-thread generic % message did not block the invoice for the exact expected reason: %',saved_status,check_result->>'reason'; end if;
    denied:=false;
    begin update public.approval_items set status='approved',resolved_by=actor where id=money_proposal;
-   exception when sqlstate '40001' then if sqlerrm is distinct from reason then raise; end if; denied:=true; end;
+   exception when sqlstate 'PT409' then if sqlerrm is distinct from reason then raise; end if; denied:=true; end;
    if not denied or not exists(select 1 from public.approval_items where id=money_proposal and status='pending') or exists(select 1 from public.action_jobs where approval_id=money_proposal) then raise exception 'Invoice approval queued beside unresolved same-thread message: %',saved_status; end if;
   end if;
   if before_job is distinct from (select to_jsonb(j) from public.action_jobs j where j.id=legacy_job)

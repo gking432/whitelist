@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261118170156";
+export const EXPECTED_MIGRATION = "20261119025924";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -21,6 +21,7 @@ export const COVERAGE = [
   "rollback: source-backed invoice review, verified recipient, paid-invoice suppression and duplicate receipt protection",
   "rollback: customer-owned HubSpot OAuth, portal/grant/refresh CAS, source-owned CRM approval and uncertain POST suppression",
   "rollback: first-owner authenticated session, configured operator, isolated workspace, no implicit launch and replay/revocation gates",
+  "rollback: foundation conflict catalog/ACLs, exact context receipts, genuine native website authority decisions and rejected stale effects",
   "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease, two first-owner creation races and owner preference CAS (synthetic session claims; browser CAS remains separate)",
 ];
 export class Blocked extends Error {}
@@ -175,6 +176,47 @@ async function preflight(target) {
   assertPreflight(report, target);
   return report;
 }
+// Keep one real psql transaction open until the other session has completed.
+// The readiness line follows the actual lock acquisition, so these checks do
+// not infer overlap from a sleep or a successful sequential rerun.
+async function heldTransaction(target, setup, during, finish = "") {
+  let stdout = "", stderr = "", exceeded = false, readyResolve, readyReject;
+  const ready = new Promise((resolveReady, rejectReady) => { readyResolve = resolveReady; readyReject = rejectReady; });
+  const child = spawn("psql", ["--dbname", target.url, "--no-psqlrc", "--no-password", "--quiet", "--tuples-only", "--no-align", "--set", "ON_ERROR_STOP=1"], {
+    cwd: root, shell: false, stdio: ["pipe", "pipe", "pipe"],
+    env: Object.fromEntries(["PATH", "HOME", "TMPDIR", "SYSTEMROOT"].filter((key) => process.env[key]).map((key) => [key, process.env[key]])),
+  });
+  const timer = setTimeout(() => child.kill("SIGKILL"), 20000);
+  const completed = new Promise((resolveCompletion, rejectCompletion) => {
+    child.on("error", () => { readyReject(new Error("The held-lock psql session could not start.")); rejectCompletion(new Error("The held-lock psql session could not start.")); });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      if (stdout.includes("__FOUNDATION_LOCK_READY__")) readyResolve();
+      if (stdout.length > 2_000_000) { exceeded = true; child.kill("SIGKILL"); }
+    });
+    child.stderr.on("data", (chunk) => { stderr += chunk; if (stderr.length > 2_000_000) { exceeded = true; child.kill("SIGKILL"); } });
+    child.stdin.on("error", () => { /* Exit/error evidence is collected below. */ });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (!stdout.includes("__FOUNDATION_LOCK_READY__")) readyReject(new Error("The held-lock transaction did not reach its real lock barrier."));
+      resolveCompletion({ code, signal, exceeded, stdout, stderr });
+    });
+  });
+  // Attach the rejection handler before awaiting the separate readiness signal.
+  completed.catch(() => {});
+  child.stdin.write(`begin; set local statement_timeout='10s'; set local lock_timeout='5s'; set local idle_in_transaction_session_timeout='15s';\n${setup}\n\\echo __FOUNDATION_LOCK_READY__\n`);
+  let result, failure;
+  try { await ready; result = await during(); }
+  catch (error) { failure = error; }
+  finally {
+    child.stdin.end(failure ? "rollback;\n" : `${finish}\ncommit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','held_lock','committed',true) as cj_report;\n`);
+  }
+  const execution = await completed;
+  if (failure) throw failure;
+  const report = readReport(parsePsqlExecution(execution, target.url), "held_lock");
+  if (report.committed !== true) throw new Error("The held-lock transaction did not commit after the second session completed.");
+  return result;
+}
 async function applyMigrations(target, missing) {
   let body = `begin; set local statement_timeout='40s'; set local lock_timeout='5s'; select pg_advisory_xact_lock(1937402189); ${isolationAssertion(target.database)}\n`;
   for (const name of missing) {
@@ -191,9 +233,15 @@ async function rollbackAcceptance(target, asset = "customer-journey-acceptance.s
   const run = randomUUID();
   const source = await readFile(join(root, "scripts/sql", asset), "utf8");
   const sql = source.replaceAll("__RUN_ID__", run).replace("-- __ISOLATION_ASSERTION__", isolationAssertion(target.database));
-  const report = readReport(await query(target, sql), kind);
+  const output = await query(target, sql);
+  const report = readReport(output, kind);
   if (report.rolledBack !== true || report.remainingFixtures !== 0 || !Array.isArray(report.checks) || !report.checks.length) throw new Error("Rollback acceptance did not return complete evidence.");
   console.log(`PASS: ${report.checks.length} ${kind} rollback SQL assertion groups; synthetic fixtures rolled back.`);
+  if (kind === "owner_foundation_conflict_acceptance") {
+    const catalog = readReport(output, "owner_foundation_catalog");
+    if (!Array.isArray(catalog.functions) || catalog.functions.length !== 6 || catalog.trigger?.enabled !== "O") throw new Error("The foundation catalog evidence is incomplete.");
+    console.log(`CATALOG: ${JSON.stringify(catalog)}`);
+  }
 }
 async function concurrencyAcceptance(target) {
   const ids = Object.fromEntries(["run", "partner", "client", "owner", "approval", "work", "connection", "request", "hubspotGrant", "hubspotClaimA", "hubspotClaimB"].map((key) => [key, randomUUID()]));
@@ -347,6 +395,73 @@ async function firstOwnerConcurrencyAcceptance(target) {
   console.log("PASS: one actual two-session owner preference CAS case; synthetic actor/session claims, one revision-one winner and one PT409 conflict; authority unchanged and committed fixtures cleaned up. Browser CAS remains separately required.");
 }
 
+async function foundationLockConcurrencyAcceptance(target) {
+  const ids = Object.fromEntries(["run", "partner", "client", "owner", "session", "connection", "contact", "conversation", "approvalA", "approvalB", "approvalC"].map(key => [key, randomUUID()]));
+  const prefix = `cj-acceptance-${ids.run}-foundation-lock`;
+  const claims = `set local role authenticated; select set_config('request.jwt.claim.role','authenticated',true); select set_config('request.jwt.claim.sub','${ids.owner}',true); select set_config('request.jwt.claims',${literal(JSON.stringify({ sub: ids.owner, role: "authenticated", session_id: ids.session }))},true);`;
+  const command = operation => `select public.apply_business_context_command('${ids.partner}','${ids.client}','${ids.owner}',jsonb_build_object('action','manager_control','key',extensions.gen_random_uuid(),'expectedRevision',(select authority_revision from public.agent_team_settings where partner_id='${ids.partner}' and client_id='${ids.client}'),'operation','${operation}'));`;
+  const proposal = id => `insert into public.approval_items(id,partner_id,client_id,type,title,editable_content,proposed_payload) select '${id}','${ids.partner}','${ids.client}','customer_message','Synthetic website lock decision','Our team will review your service request.',jsonb_build_object('channel','website_chat','conversation_id','${ids.conversation}','conversation_revision',c.revision,'connection_id','${ids.connection}','human_authored',false,'authority_revision',s.authority_revision) from public.business_conversations c join public.agent_team_settings s on s.client_id=c.client_id and s.partner_id=c.partner_id where c.id='${ids.conversation}' and c.client_id='${ids.client}' and c.partner_id='${ids.partner}';`;
+  let failure, waitingControl;
+  try {
+    await query(target, `begin; ${isolationAssertion(target.database)}
+ insert into auth.users(id,email,email_confirmed_at) values('${ids.owner}','${prefix}@synthetic.invalid',now());
+ insert into auth.sessions(id,user_id,created_at,updated_at,not_after) values('${ids.session}','${ids.owner}',now(),now(),now()+interval '1 hour');
+ insert into public.partners(id,name,slug,status) values('${ids.partner}','Synthetic customer journey acceptance foundation locks','${prefix}','active');
+ insert into public.client_businesses(id,partner_id,name,slug,status,client_portal_enabled,default_runtime_mode) values('${ids.client}','${ids.partner}','Synthetic customer journey acceptance foundation locks','${prefix}','active',true,'sandbox');
+ insert into public.memberships(user_id,partner_id,client_id,role) values('${ids.owner}','${ids.partner}','${ids.client}','client_owner');
+ insert into public.business_workspace_profiles(partner_id,client_id,profile) values('${ids.partner}','${ids.client}','{"description":"Synthetic service business","services":"Consultation","hours":"By appointment","policies":"Owner review required"}');
+ insert into public.agent_team_settings(partner_id,client_id,status,conversations_enabled,channel_authority) values('${ids.partner}','${ids.client}','active',true,'{"website":"require_approval"}');
+ set local role service_role;
+ select public.apply_business_context_command('${ids.partner}','${ids.client}','${ids.owner}',jsonb_build_object('action','review_context','key',extensions.gen_random_uuid(),'expectedContextRevision',(select updated_at from public.business_workspace_profiles where client_id='${ids.client}')));
+ insert into public.integration_connections(id,partner_id,client_id,provider_id,display_name,status,runtime_mode,credential_status,config) select '${ids.connection}','${ids.partner}','${ids.client}',id,'Synthetic website lock source','connected','dry_run','configured','{"activation_managed":false}' from public.integration_providers where provider_key='northstar_web_chat' and is_active;
+ insert into public.crm_contacts(id,partner_id,client_id,first_name,source) values('${ids.contact}','${ids.partner}','${ids.client}','Synthetic website visitor','cj_acceptance');
+ insert into public.business_conversations(id,partner_id,client_id,connection_id,contact_id,channel,external_thread_id,identity_status,mode,state) values('${ids.conversation}','${ids.partner}','${ids.client}','${ids.connection}','${ids.contact}','website_chat','${prefix}','unverified','agent','open');
+ insert into public.business_conversation_messages(partner_id,client_id,conversation_id,external_key,direction,body,status) values('${ids.partner}','${ids.client}','${ids.conversation}','${prefix}','inbound','Synthetic customer inquiry about your service.','received');
+ do $eligible$ begin if public.business_channel_can_draft('${ids.partner}','${ids.client}','website_chat','${ids.connection}') is distinct from true or (public.conversation_action_check('${ids.conversation}',(select revision from public.business_conversations where id='${ids.conversation}'),false)->>'allowed') is distinct from 'true' then raise exception 'Real website lock fixture is not eligible'; end if; end $eligible$;
+ ${proposal(ids.approvalA)} commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','foundation_lock_fixture','created',true) as cj_report;`);
+    const blockedDecision = async id => {
+      const result = readReport(await query(target, `begin; set local statement_timeout='5s'; create temp table foundation_decision_result(code text); grant select,insert on foundation_decision_result to authenticated; ${claims}
+ do $decision$ begin begin update public.approval_items set status='approved',resolved_by='${ids.owner}' where id='${id}' and status='pending'; insert into foundation_decision_result values('unexpected_success'); exception when sqlstate 'PT409' then if sqlerrm is distinct from 'Business authority is changing; refresh before deciding' then raise; end if; insert into foundation_decision_result values(sqlstate); end; end $decision$;
+ commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','foundation_blocked_decision','code',(select code from foundation_decision_result),'pending',(select status='pending' from public.approval_items where id='${id}'),'jobs',(select count(*) from public.action_jobs where approval_id='${id}')) as cj_report;`), "foundation_blocked_decision");
+      if (result.code !== "PT409" || result.pending !== true || result.jobs !== 0) throw new Error("A held authority/business lock did not promptly reject the decision without effects.");
+    };
+    // Case 1: owner control already holds the business lock. The approval
+    // cannot wait behind it while holding the approval row.
+    await heldTransaction(target, `set local role service_role; select id from public.client_businesses where id='${ids.client}' and partner_id='${ids.partner}' for update;`, () => blockedDecision(ids.approvalA), command("pause"));
+    await query(target, `begin; set local role service_role; ${command("resume")} ${proposal(ids.approvalB)} commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','foundation_lock_reset','ready',true) as cj_report;`);
+    // Case 2: a settings mutation already owns the row independently of a
+    // business lock. The settings NOWAIT clause must also reject promptly.
+    await heldTransaction(target, `set local role service_role; select client_id from public.agent_team_settings where client_id='${ids.client}' and partner_id='${ids.partner}' for update;`, () => blockedDecision(ids.approvalB), command("pause"));
+    await query(target, `begin; set local role service_role; ${command("resume")} ${proposal(ids.approvalC)} commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','foundation_lock_reset','ready',true) as cj_report;`);
+    // Case 3: approval wins first and holds both read locks through its outbox
+    // insert. Observe the real manager transaction blocked, release approval,
+    // then require Pause to cancel that exact unsent job without a deadlock.
+    const application = `foundation-control-${ids.run}`;
+    await heldTransaction(target, `${claims} update public.approval_items set status='approved',resolved_by='${ids.owner}' where id='${ids.approvalC}' and status='pending';`, async () => {
+      waitingControl = query(target, `begin; set local statement_timeout='10s'; set local lock_timeout='8s'; set local application_name='${application}'; set local role service_role; ${command("pause")} commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','foundation_waited_control','committed',true) as cj_report;`);
+      waitingControl.catch(() => {});
+      let observed = false;
+      for (let attempt = 0; attempt < 30 && !observed; attempt++) {
+        const state = readReport(await query(target, `select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','foundation_wait_state','blocked',(select count(*) from pg_catalog.pg_stat_activity a where a.datname=current_database() and a.application_name='${application}' and cardinality(pg_catalog.pg_blocking_pids(a.pid))>0)) as cj_report;`), "foundation_wait_state");
+        observed = state.blocked === 1;
+        if (!observed) await new Promise(resolveWait => setTimeout(resolveWait, 50));
+      }
+      if (!observed) throw new Error("The manager transaction was not observed waiting on the still-open approval lock.");
+    });
+    const completed = readReport(await waitingControl, "foundation_waited_control");
+    if (completed.committed !== true) throw new Error("The waiting owner control did not commit.");
+    const final = readReport(await query(target, `select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','foundation_lock_final','status',(select status from public.approval_items where id='${ids.approvalC}'),'jobs',(select count(*) from public.action_jobs where approval_id='${ids.approvalC}'),'cancelled',(select count(*) from public.action_jobs where approval_id='${ids.approvalC}' and status='cancelled'),'team',(select status from public.agent_team_settings where client_id='${ids.client}'),'outbound',(select count(*) from public.business_conversation_messages where conversation_id='${ids.conversation}' and direction='outbound')) as cj_report;`), "foundation_lock_final");
+    if (final.status !== "approved" || final.jobs !== 1 || final.cancelled !== 1 || final.team !== "paused" || final.outbound !== 0) throw new Error("Approve-then-Pause did not preserve history and cancel exactly the unsent outbox job.");
+  } catch (error) { failure = error; }
+  finally {
+    if (waitingControl) await Promise.allSettled([waitingControl]);
+    const cleaned = readReport(await query(target, `begin; set local lock_timeout='5s'; delete from public.partners where id='${ids.partner}' and slug='${prefix}'; delete from auth.users where id='${ids.owner}' and email='${prefix}@synthetic.invalid'; commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','foundation_lock_cleanup','remaining',(select count(*) from public.partners where id='${ids.partner}')+(select count(*) from auth.users where id='${ids.owner}')) as cj_report;`), "foundation_lock_cleanup");
+    if (cleaned.remaining !== 0) throw new Error("Foundation lock fixture cleanup was incomplete.");
+  }
+  if (failure) throw failure;
+  console.log("PASS: three actual two-session authority/approval lock cases; business/settings contention returned PT409, approve-first Pause waited then cancelled exactly one unsent job; real lock barriers, no sleep inference, committed synthetic fixtures cleaned up.");
+}
+
 export async function main(args = process.argv.slice(2), env = process.env) {
   const options = parseOptions(args);
   if (options.plan) { console.log(`PLAN ONLY — SQL not executed.\n${COVERAGE.map((item) => `- ${item}`).join("\n")}`); return; }
@@ -363,7 +478,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await rollbackAcceptance(target, "hubspot-oauth-acceptance.sql", "hubspot_oauth_acceptance");
   await rollbackAcceptance(target, "first-owner-acceptance.sql", "first_owner_acceptance");
   await rollbackAcceptance(target, "owner-workspace-acceptance.sql", "owner_workspace_acceptance");
-  if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); }
+  await rollbackAcceptance(target, "owner-foundation-conflict-acceptance.sql", "owner_foundation_conflict_acceptance");
+  if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); await foundationLockConcurrencyAcceptance(target); }
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

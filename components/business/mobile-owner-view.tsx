@@ -26,8 +26,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { resolveMobileBusinessDecision } from "@/app/client/mobile/actions";
-import { resolveClientApproval } from "@/app/client/approvals/actions";
-import { ApprovalResolutionForm } from "@/components/approvals/approval-resolution-form";
+import { OwnerApprovalResolutionForm } from "@/components/approvals/owner-approval-resolution-form";
 import { CalendarChangePreview } from "@/components/approvals/calendar-change-preview";
 import { ExternalActionPreview } from "@/components/approvals/external-action-preview";
 import type { PortalBranding } from "@/lib/clients/portal";
@@ -36,7 +35,6 @@ import type {
   MobileCustomerApproval,
 } from "@/lib/business/mobile-types";
 import type { BusinessRecord } from "@/lib/business/types";
-import type { FormState } from "@/lib/forms/state";
 import { appShortcut, connectionLabel } from "@/lib/business/app-shortcuts";
 import { displayMoney } from "@/lib/business/rules";
 import { BusinessDialog } from "./record-editor";
@@ -821,22 +819,6 @@ function CustomerDecision({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  async function resolve(
-    previous: FormState,
-    form: FormData,
-  ): Promise<FormState> {
-    try {
-      const result = await resolveClientApproval(approval.id, previous, form);
-      if (result.status === "success") onSaved();
-      return result;
-    } catch {
-      return {
-        status: "error",
-        message:
-          "Connection interrupted. Close and refresh to check the decision before retrying.",
-      };
-    }
-  }
   return (
     <BusinessDialog title={approval.title} onClose={onClose}>
       <div className="space-y-5 [&_button]:min-h-12 [&_input]:text-base [&_textarea]:text-base">
@@ -852,8 +834,9 @@ function CustomerDecision({
               {approval.proposed_payload?.invoice_followup_version === 1 ? <InvoiceFollowupPreview payload={approval.proposed_payload} /> : null}
         {approval.type === "crm_change" ? <CrmGatewayPreview payload={approval.proposed_payload} /> : null}
         {canDecide ? (
-          <ApprovalResolutionForm
-            action={resolve}
+          <OwnerApprovalResolutionForm
+            approvalId={approval.id}
+            onSaved={onSaved}
             editableContent={approval.editable_content}
             allowEdit={!["crm_change", "appointment_change"].includes(approval.type) && approval.proposed_payload?.invoice_followup_version !== 1}
             consequence={approval.type === "crm_change" ? "Approving authorizes only this exact HubSpot change. Current grants, source versions and pause controls are checked before execution. Check Recent for a verified provider result; approval is separate from completion." : "Approving authorizes this action and queues it for delivery. Check Recent for delivery status. Rejecting cancels the proposal."}

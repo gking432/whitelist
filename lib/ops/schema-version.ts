@@ -1,4 +1,4 @@
-export const EXPECTED_SCHEMA_VERSION = "20261118170156_owner_rpc_conflict_response";
+export const EXPECTED_SCHEMA_VERSION = "20261119025924_owner_foundation_conflicts";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

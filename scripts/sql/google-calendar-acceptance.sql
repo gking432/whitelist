@@ -312,7 +312,7 @@ begin
  if check_result->>'allowed' is distinct from 'false' or check_result->>'reason' is distinct from 'Current reviewed business context and selected calendar authority do not permit this step.' then raise exception 'The old calendar action authority remained executable after a selected grant change'; end if;
  denied:=false;
  begin update public.approval_items set status='approved',resolved_by=actor where id=pending_proposal;
- exception when sqlstate '40001' then if sqlerrm not like '%Current reviewed business context and selected calendar authority%' then raise; end if; denied:=true; end;
+ exception when sqlstate 'PT409' then if sqlerrm is distinct from 'Business authority changed; refresh and prepare a new review' then raise; end if; denied:=true; end;
  if not denied or not exists(select 1 from public.approval_items where id=pending_proposal and status='pending' and proposed_payload=proposed)
   or exists(select 1 from public.action_jobs where approval_id=pending_proposal) then raise exception 'Stale calendar approval resolved or enqueued after the grant revision changed'; end if;
  check_result:=public.calendar_mutation_source_check(p,c,proposed||jsonb_build_object('authority_revision',after_revision),true);

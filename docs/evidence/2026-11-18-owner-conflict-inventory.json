@@ -22,13 +22,9 @@
     "backend_40P01": "Deadlock remains backend failure; no catch/translation proposed.",
     "source_scan": "No explicit40P01/deadlock_detected raises/catches in baseline migrations; true backend conditions can occur independently of textual literals."
   },
-  "scope_and_stop": {
-    "approved_current": "Owner context/authority + approval decisions only; no source prep/provider domain sweep.",
-    "stop": "Human stop: finish current inventory/temp proposal and remain idle. No new guard behavior, revision predicate, grants, locks or RPCs.",
-    "parked": "Intake, money prep, calendar/rebooking prep/lifecycle, HubSpot/OAuth/config, Google activation/check/reconciliation. guard_hubspot_approval semantic40001 exists only on INSERT source gate and is parked unless root explicitly includes shared approval-persistence scope."
-  },
+  "scope_and_stop": "Prior stop checkpoint preserved historically; fresh human resume authorizes ONLY the current context/authority/approval foundation. All unrelated domains remain parked.",
   "unfinished_risks": [
-    "Generic customer_message authority is stamped on INSERT but is not re-compared in current UPDATE guard/enqueue; final execution still checks authority. Adding a new approval-time revision predicate/lock is PARKED by stop instruction.",
+    "New generic approval authority guard is source-proposed in this resumed scope, not yet isolated SQL/HTTP/lock-order proof. Actual catalog owners/ACLs are reported only when CI executes.",
     "Authenticated status=pending conditional PATCH race loser is HTTP200 with zero rows; owner JSON/API may expose an application409. Do not claim raw PostgREST409 for zero-row PATCH.",
     "Default P0001 guard_approval_resolution/guard_external_action_edit history conflicts require explicit per-clause policy decision; not a global P0001 replacement.",
     "Earlier private3 raises are already wrapped by two public owner RPCs. Public source-prep/lifecycle semantic raises remain PostgREST14 pilot blockers outside approved scope.",
@@ -499,12 +495,12 @@
       "direct_literal_rpc_callers": [],
       "effective_sql_callers": [],
       "trigger_bindings": [],
-      "actual_transport": "dynamic caller below or no production caller resolved; not assumed unreachable",
+      "actual_transport": "Owner JSON API app/api/business/customer-journey/route.ts:31; authenticated fresh-owner context, actual RPC runs service_role via admin client. Generic lifecycle command selection; domain parked.",
       "default_approval_raises": [],
       "dynamic_rpc_caller": {
         "file": "lib/business/customer-journey-commands.ts",
-        "line": 125,
-        "role": "service_role; default rpc selected at line41"
+        "line": 41,
+        "transport": "Owner JSON API app/api/business/customer-journey/route.ts:31; authenticated fresh-owner context, actual RPC runs service_role via admin client. Generic lifecycle command selection; domain parked."
       }
     },
     {
@@ -1505,8 +1501,13 @@
       "direct_literal_rpc_callers": [],
       "effective_sql_callers": [],
       "trigger_bindings": [],
-      "actual_transport": "dynamic caller below or no production caller resolved; not assumed unreachable",
-      "default_approval_raises": []
+      "actual_transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=conversation; no browser direct EXECUTE; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 196,
+        "transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=conversation; no browser direct EXECUTE; domain parked."
+      }
     },
     {
       "signature": "public.propose_intake_booking(uuid,uuid,jsonb)",
@@ -1568,8 +1569,13 @@
       "direct_literal_rpc_callers": [],
       "effective_sql_callers": [],
       "trigger_bindings": [],
-      "actual_transport": "dynamic caller below or no production caller resolved; not assumed unreachable",
-      "default_approval_raises": []
+      "actual_transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=intake; no browser direct EXECUTE; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 196,
+        "transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=intake; no browser direct EXECUTE; domain parked."
+      }
     },
     {
       "signature": "public.provision_first_owner(uuid,jsonb)",
@@ -1846,12 +1852,12 @@
       "direct_literal_rpc_callers": [],
       "effective_sql_callers": [],
       "trigger_bindings": [],
-      "actual_transport": "dynamic caller below or no production caller resolved; not assumed unreachable",
+      "actual_transport": "Owner JSON customer-journey API; service_role admin RPC after fresh-owner scope/write checks. Also lib/scheduling/customer-rebooking.ts:111 dynamic repository selection; domain parked.",
       "default_approval_raises": [],
       "dynamic_rpc_caller": {
-        "file": "lib/scheduling/customer-rebooking.ts",
-        "line": 111,
-        "role": "service_role; qualify_rebooking branch"
+        "file": "lib/business/customer-journey-commands.ts",
+        "line": 67,
+        "transport": "Owner JSON customer-journey API; service_role admin RPC after fresh-owner scope/write checks. Also lib/scheduling/customer-rebooking.ts:111 dynamic repository selection; domain parked."
       }
     },
     {
@@ -1894,12 +1900,12 @@
       "direct_literal_rpc_callers": [],
       "effective_sql_callers": [],
       "trigger_bindings": [],
-      "actual_transport": "dynamic caller below or no production caller resolved; not assumed unreachable",
+      "actual_transport": "Owner JSON customer-journey API; service_role admin RPC after fresh-owner scope/write checks; domain parked.",
       "default_approval_raises": [],
       "dynamic_rpc_caller": {
         "file": "lib/business/customer-journey-commands.ts",
-        "line": 125,
-        "role": "service_role; action branch at line77"
+        "line": 77,
+        "transport": "Owner JSON customer-journey API; service_role admin RPC after fresh-owner scope/write checks; domain parked."
       }
     },
     {
@@ -2001,8 +2007,13 @@
       "direct_literal_rpc_callers": [],
       "effective_sql_callers": [],
       "trigger_bindings": [],
-      "actual_transport": "dynamic caller below or no production caller resolved; not assumed unreachable",
-      "default_approval_raises": []
+      "actual_transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=conversation; no browser direct EXECUTE; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 195,
+        "transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=conversation; no browser direct EXECUTE; domain parked."
+      }
     },
     {
       "signature": "public.save_intake_scheduling_offer(uuid,uuid,jsonb)",
@@ -2049,8 +2060,13 @@
       "direct_literal_rpc_callers": [],
       "effective_sql_callers": [],
       "trigger_bindings": [],
-      "actual_transport": "dynamic caller below or no production caller resolved; not assumed unreachable",
-      "default_approval_raises": []
+      "actual_transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=intake; no browser direct EXECUTE; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 195,
+        "transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=intake; no browser direct EXECUTE; domain parked."
+      }
     },
     {
       "signature": "public.save_owner_workspace_preferences(uuid,uuid,bigint,jsonb)",
@@ -2155,12 +2171,12 @@
       "direct_literal_rpc_callers": [],
       "effective_sql_callers": [],
       "trigger_bindings": [],
-      "actual_transport": "dynamic caller below or no production caller resolved; not assumed unreachable",
+      "actual_transport": "Owner JSON customer-journey API; service_role admin RPC selected by owner_conversation origin; also lib/scheduling/customer-rebooking.ts:111; domain parked.",
       "default_approval_raises": [],
       "dynamic_rpc_caller": {
-        "file": "lib/scheduling/customer-rebooking.ts",
-        "line": 111,
-        "role": "service_role; selection branch"
+        "file": "lib/business/customer-journey-commands.ts",
+        "line": 121,
+        "transport": "Owner JSON customer-journey API; service_role admin RPC selected by owner_conversation origin; also lib/scheduling/customer-rebooking.ts:111; domain parked."
       }
     },
     {
@@ -2217,5 +2233,36 @@
     "https://supabase.com/kb/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b",
     "https://docs.postgrest.org/en/v14/references/errors.html#raise-errors-with-http-status-codes",
     "https://raw.githubusercontent.com/supabase/cli/v2.107.0/apps/cli-go/pkg/config/templates/Dockerfile"
-  ]
+  ],
+  "resume_review": {
+    "baseline_head": "eb3fb374332204d6664cfbd8646b0fafae7d7f5d",
+    "scope": "Fresh authorized foundation only. Proposal adds private stale-authority decision trigger with business KEY SHARE NOWAIT then settings SHARE NOWAIT; no migration execution by worker.",
+    "catalog_proof": "Pending isolated CI; new owner_foundation_catalog tagged report emits actual owners, modes, configurations, ACLs and enabled trigger.",
+    "resolved_missing_literal_callers": [
+      {
+        "signature": "public.propose_customer_rebooking(uuid,uuid,jsonb)",
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 196,
+        "role": "service_role"
+      },
+      {
+        "signature": "public.propose_intake_booking(uuid,uuid,jsonb)",
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 196,
+        "role": "service_role"
+      },
+      {
+        "signature": "public.save_customer_rebooking_offer(uuid,uuid,jsonb)",
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 195,
+        "role": "service_role"
+      },
+      {
+        "signature": "public.save_intake_scheduling_offer(uuid,uuid,jsonb)",
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 195,
+        "role": "service_role"
+      }
+    ]
+  }
 }

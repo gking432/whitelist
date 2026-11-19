@@ -231,7 +231,7 @@ select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub',(select id::text from hf_fixture where key='owner-a'),true);
 do $stale_owner_resolution$ declare proposal record; denied boolean; begin
  for proposal in select id from hf_fixture where key in('gateway-source-version','gateway-archived','gateway-grant','gateway-authority') loop
-  denied:=false; begin update public.approval_items set status='approved',resolved_by=(select id from hf_fixture where key='owner-a') where id=proposal.id and status='pending'; exception when sqlstate '40001' then denied:=true; end;
+  denied:=false; begin update public.approval_items set status='approved',resolved_by=(select id from hf_fixture where key='owner-a') where id=proposal.id and status='pending'; exception when sqlstate 'PT409' then denied:=true; end;
   if not denied or not exists(select 1 from public.approval_items where id=proposal.id and status='pending') or exists(select 1 from public.action_jobs where approval_id=proposal.id) then raise exception 'Stale CRM approval escaped atomic owner resolution guard'; end if;
  end loop;
 end $stale_owner_resolution$;

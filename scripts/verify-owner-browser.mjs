@@ -14,6 +14,7 @@ import { combineChunks, stringFromBase64URL, stringToBase64URL } from "@supabase
 import { assertHostedCi, sanitizeCiFailure, SOURCE_CONTAINER } from "./ci-bootstrap-customer-journey-db.mjs";
 import { assertEmptyBrowserTarget, browserFixtureIdentity, cleanupBrowserFixtures, prepareBrowserCatalog, readCreatedOwner } from "./owner-browser-fixtures.mjs";
 import { assertOwnerWorkspaceNavigation, assertSavedWorkspacePreferences, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline } from "./owner-workspace-browser-scenarios.mjs";
+import { runOwnerFoundationConflictHttp } from "./owner-foundation-conflict-http.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
@@ -353,11 +354,11 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   if (installed.name !== "playwright" || installed.version !== PLAYWRIGHT_VERSION) throw new Error(`Use audited Playwright ${PLAYWRIGHT_VERSION} in the explicit CI-only module path.`);
   await mkdir(target.artifacts, { recursive: true });
   const fixture = browserFixtureIdentity(randomBytes(6).toString("hex")), checks = [], contexts = [], diagnostics = [];
-  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null;
+  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null;
   let activeStep = null, currentPhase = "preparing browser acceptance", failurePhase = null, cleanupStatus = "not_started", checkpointTail = Promise.resolve();
   const cleanupErrors = [];
   const report = (status) => ({ kind: "owner_browser_acceptance", status, updatedAt: new Date().toISOString(), playwrightVersion: PLAYWRIGHT_VERSION,
-    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization,
+    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp,
     limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately.", "Session proof reads only the project's cookies set by the normal email login, then verifies the exact token against the live current-session RPC; no cookie injection, session creation or token refresh is used."],
     ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) });
   const checkpoint = async (status = "in_progress") => {
@@ -432,6 +433,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     }
     const diagnoseAccess = (owner) => diagnoseOwnerWorkspaceAccess(owner, target, sessionTokens.get(owner.label), admin, fixture.partnerId);
     workspacePersonalization = await runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase, diagnoseAccess, env });
+    foundationHttp = await runOwnerFoundationConflictHttp({ admin, fixture, owners, target, readSession: readOwnerBrowserSession, verifySession: verifyObservedOwnerSession, diagnoseAccess, phase,
+      onProgress: async (progress) => { foundationHttp = progress; await checkpoint(); }, env });
     let signedOutToken;
     await step("phone: normal owner UI sign out", async () => { signedOutToken = sessionTokens.get("phone"); assert.ok(signedOutToken, "A genuine browser GoTrue session token must be observed for revocation proof."); await owners[1].page.goto(`${target.appUrl}/client/apps`); await signOutUi(owners[1].page, target); });
     await step("phone: stale signed session denied by real RPCs", async () => {

@@ -1,0 +1,11 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { BrowserCiEnvironment, OwnerBrowserTarget, OwnerWorkspaceAccessDiagnosis, readOwnerBrowserSession, verifyObservedOwnerSession } from "./verify-owner-browser.mjs";
+export type FoundationHttpResponse = { status(): number; json(): Promise<unknown> };
+export type FoundationOwner = { label: "desktop" | "phone"; userId: string; clientId: string; membershipId: string; receiptId: string; marker: string; page: object; context: Parameters<typeof readOwnerBrowserSession>[0] & { request: { get(url: string, options: { timeout: number }): Promise<FoundationHttpResponse>; post(url: string, options: { headers: { Origin: string }; data: unknown; timeout: number }): Promise<FoundationHttpResponse> } } };
+export type FoundationScope = { fixture: { prefix: string; partnerId: string }; owners: FoundationOwner[]; target: Pick<OwnerBrowserTarget, "appUrl" | "supabaseUrl" | "anonKey">; env: BrowserCiEnvironment };
+export type FoundationHttpReport = { version: number; status: "in_progress" | "passed" | "failed"; activeStep: string | null; checks: { key: string; status: "passed" | "failed" }[]; fixtureCleanup: "not_started" | "running" | "complete" | "failed"; providerWrites: false; limitations: string[] };
+export function assertFoundationHttpScope(options: FoundationScope): void;
+export function readFoundationHttpJson(action: () => Promise<FoundationHttpResponse>, trace: { operation: string; expected?: number[]; phase?(label: string): Promise<void>; diagnose403?(): Promise<OwnerWorkspaceAccessDiagnosis> }): Promise<{ status: number; body: unknown }>;
+export function collectFoundationHttpRace<T>(actions: (() => Promise<T>)[]): Promise<T[]>;
+export function assertFoundationApprovalDecision(response: { status: number; body: unknown }, success: boolean): void;
+export function runOwnerFoundationConflictHttp(options: FoundationScope & { admin: SupabaseClient; readSession: typeof readOwnerBrowserSession; verifySession: typeof verifyObservedOwnerSession; diagnoseAccess?(owner: FoundationOwner): Promise<OwnerWorkspaceAccessDiagnosis>; phase?(label: string): Promise<void>; onProgress?(report: FoundationHttpReport): Promise<void>; request?: typeof fetch }): Promise<FoundationHttpReport>;

@@ -174,7 +174,7 @@ begin
  get diagnostics affected=row_count; if affected<>1 then raise exception 'Owner booking resolution did not acquire pending decision'; end if;
  update public.approval_items set status='approved',resolved_by=(select id from cj_fixture where key='owner-a') where id=a and status='pending';
  get diagnostics affected=row_count; if affected<>0 then raise exception 'A second resolution acquired the same decision'; end if;
- begin update public.approval_items set status='rejected',resolved_by=(select id from cj_fixture where key='owner-a') where id=a; exception when raise_exception then denied:=true; end;
+ begin update public.approval_items set status='rejected',resolved_by=(select id from cj_fixture where key='owner-a') where id=a; exception when sqlstate 'PT409' then denied:=true; end;
  if not denied then raise exception 'Resolved approval was mutable'; end if;
  if (select count(*) from public.action_jobs where approval_id=a)<>1 then raise exception 'Booking approval did not enqueue exactly one action'; end if;
 end $cj_resolution$;

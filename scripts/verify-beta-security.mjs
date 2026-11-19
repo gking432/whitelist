@@ -59,6 +59,8 @@ do $$ declare n integer; begin
  if n<>1 then raise exception 'Owner edit was blocked'; end if;
 end $$;
 reset role;
+insert into public.agent_team_settings(partner_id,client_id)
+values((select id from fixture where key='partner'),(select id from fixture where key='client'));
 insert into public.approval_items(partner_id,client_id,type,title,editable_content,proposed_payload)
 values((select id from fixture where key='partner'),(select id from fixture where key='client'),'customer_message','Synthetic approval','Original body','{"channel":"sms","to":"synthetic-recipient"}');
 set local role authenticated;
@@ -68,7 +70,7 @@ do $$ declare blocked boolean:=false; begin
  if not blocked then raise exception 'Approval payload tampered'; end if;
  update public.approval_items set status='approved',resolved_by=auth.uid(),resolved_content='forged override';
  blocked:=false;
- begin update public.approval_items set status='rejected',resolved_by=auth.uid(); exception when raise_exception then blocked:=true; end;
+ begin update public.approval_items set status='rejected',resolved_by=auth.uid(); exception when sqlstate 'PT409' then blocked:=true; end;
  if not blocked then raise exception 'Resolved approval mutated'; end if;
 end $$;
 reset role;

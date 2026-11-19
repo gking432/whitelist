@@ -15,6 +15,8 @@ insert into public.memberships(user_id,partner_id,client_id,role)
 values((select id from voice_fixture where key='owner'),(select id from voice_fixture where key='partner'),(select id from voice_fixture where key='client'),'client_owner');
 insert into public.call_sessions(id,partner_id,client_id,status)
 select id,(select id from voice_fixture where key='partner'),(select id from voice_fixture where key='client'),'in_progress' from voice_fixture where key in('call-a','call-b');
+insert into public.agent_team_settings(partner_id,client_id)
+values((select id from voice_fixture where key='partner'),(select id from voice_fixture where key='client'));
 insert into public.approval_items(id,partner_id,client_id,type,title,editable_content,proposed_payload)
 select id,(select id from voice_fixture where key='partner'),(select id from voice_fixture where key='client'),'appointment_booking','Synthetic appointment','Approve this synthetic appointment',
  jsonb_build_object('provider',case when f.key='approval-wrong' then 'google_calendar' else 'northstar_internal' end,

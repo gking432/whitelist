@@ -28,6 +28,7 @@ try {
     insert into public.client_businesses(id,partner_id,name,slug,client_portal_enabled)
       values('${client}','${partner}','Synthetic concurrency business','concurrency-${client}',true);
     insert into public.memberships(user_id,partner_id,client_id,role) values('${owner}','${partner}','${client}','client_owner');
+    insert into public.agent_team_settings(partner_id,client_id) values('${partner}','${client}');
     insert into public.approval_items(id,partner_id,client_id,type,title,editable_content,proposed_payload)
       values('${approval}','${partner}','${client}','customer_message','Synthetic concurrency approval','Approved synthetic content','{"channel":"sms","to":"synthetic-recipient"}');
     commit;`);

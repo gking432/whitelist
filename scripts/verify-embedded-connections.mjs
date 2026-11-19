@@ -89,7 +89,8 @@ try {
       `insert into public.embedded_solution_bindings(partner_id,client_id,connection_id,direction,pack_key,event_type,action_key,action_title) values('${ids.partner}','${ids.otherClient}','${connection}','outbound','lead','lead.created','create','Create');`,
     ),
   );
-  sql(`insert into public.embedded_solution_bindings(id,partner_id,client_id,connection_id,direction,pack_key,event_type,action_key,action_title) values('${ids.binding}','${ids.partner}','${ids.client}','${connection}','outbound','lead','lead.created','create','Create');
+  sql(`insert into public.agent_team_settings(partner_id,client_id) values('${ids.partner}','${ids.client}');
+ insert into public.embedded_solution_bindings(id,partner_id,client_id,connection_id,direction,pack_key,event_type,action_key,action_title) values('${ids.binding}','${ids.partner}','${ids.client}','${connection}','outbound','lead','lead.created','create','Create');
  insert into public.approval_items(id,partner_id,client_id,embedded_binding_id,type,title,proposed_payload) values('${ids.approval}','${ids.partner}','${ids.client}','${ids.binding}','external_action','Test app action','{"input":{"note":"Approved exact content"}}');`);
   assert.throws(() =>
     sql(

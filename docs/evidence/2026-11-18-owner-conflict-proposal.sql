@@ -1,18 +1,16 @@
--- UNAPPLIED REFERENCE DRAFT. Not a migration and not approved for execution.
--- Owner stop boundary: complete effective-function/grant/caller/policy review before resuming.
--- TEMPORARY SOURCE-REVIEW PROPOSAL ONLY; DO NOT APPLY.
-
--- Baseline eea134b3a4d9d17df7017d0ef5b3ae3ac671cdf6
-
--- Four existing functions / twelve explicit semantic RAISE literals only.
-
--- No new behavior, guards, locks, ACLs, owners, search_path, RLS or marker.
-
--- True backend40001/40P01 propagate unchanged; no broad exception wrapper.
-
--- guard_hubspot_approval INSERT gate and all preparer domains remain parked.
-
--- Human stop: root owns any migration integration; this file is not DB proof.
+-- SOURCE-REVIEW PROPOSAL ONLY. Root owns migration integration.
+-- Resumed bounded foundation, baseline eb3fb374332204d6664cfbd8646b0fafae7d7f5d.
+-- No DB execution or catalog/HTTP proof is claimed by this source artifact.
+-- Four effective existing bodies change twelve explicit semantic RAISE codes.
+-- guard_approval_resolution changes only resolved-history conflict to PT409.
+-- Actual backend 40001/40P01 are not caught or relabelled.
+-- New private trigger supplies the previously missing decision-time authority pin.
+-- It needs definer-only row locks because authenticated has no settings UPDATE
+-- privilege (PG17 requires UPDATE privilege even for SELECT ... FOR SHARE).
+-- Exact OLD-scope read locks only; existing RLS+invoker actor/field guard remain.
+-- Both locks are NOWAIT: business FK KEY SHARE before settings SHARE avoids
+-- approval(settings)->context(business)->outbox FK(business) deadlock.
+-- No new tables, browser grants, public RPCs, runtime upgrade or retry.
 
 -- supabase/migrations/20261118030334_hubspot_customer_system.sql:316; literals=7
 create or replace function public.enqueue_approved_action()
@@ -173,3 +171,60 @@ begin
  end if;
  return new;
 end $$;
+
+-- Existing history guard: only the deliberate resolved-history conflict changes.
+create or replace function public.guard_approval_resolution()
+returns trigger language plpgsql security invoker set search_path='' as $$
+begin
+ if old.status<>'pending' then raise exception 'Resolved approvals are immutable' using errcode='PT409'; end if;
+ if (to_jsonb(new)-array['status','resolved_by','resolved_at','resolved_content','resolution_note','updated_at'])
+  is distinct from (to_jsonb(old)-array['status','resolved_by','resolved_at','resolved_content','resolution_note','updated_at']) then
+  raise exception 'Only approval resolution fields may change';
+ end if;
+ if new.status='expired' and current_user='service_role' and new.resolved_by is null and new.resolved_content is null and
+  (old.proposed_payload ? 'conversation_id'
+   or (old.type='appointment_booking' and old.proposed_payload->>'origin' in ('owner_intake','owner_conversation') and (old.proposed_payload ? 'intake_work_id' or old.proposed_payload ? 'customer_rebooking_work_id'))
+   or (old.type='appointment_change' and old.proposed_payload->'calendar_mutation_version'='1'::jsonb)
+   or (old.type='customer_message' and old.proposed_payload ? 'booking_approval_id' and
+    (old.proposed_payload->>'booking_lifecycle_version'='1' or old.proposed_payload->>'draft_source'='booking_confirmation_template'))) then
+  new.resolved_at:=now(); return new;
+ end if;
+ if new.status not in ('approved','edited_and_approved','rejected') or new.resolved_by is null then raise exception 'A human resolution is required'; end if;
+ if current_user<>'service_role' and new.resolved_by is distinct from auth.uid() then raise exception 'Resolution actor does not match authenticated user'; end if;
+ if old.type='appointment_change' and new.status='edited_and_approved' then raise exception 'Reject and prepare a fresh exact appointment change instead'; end if;
+ if new.status='approved' then new.resolved_content:=old.editable_content; end if;
+ if new.status='edited_and_approved' and nullif(btrim(new.resolved_content),'') is null then raise exception 'Edited content is required'; end if;
+ new.resolved_at:=now(); return new;
+end $$;
+
+-- Private internal trigger only. No generic RPC/direct authenticated EXECUTE.
+create function owner_onboarding.guard_approval_authority_decision()
+returns trigger language plpgsql security definer set search_path='' as $$
+declare revision integer;
+begin
+ if old.status<>'pending' or new.status not in ('approved','edited_and_approved')
+  or old.type not in ('customer_message','appointment_booking','appointment_change','external_action') then return new; end if;
+ -- Explicit actor binding supplements, and does not replace, the invoker guard.
+ if auth.jwt()->>'role'='authenticated' and (auth.uid() is null or new.resolved_by is distinct from auth.uid()) then
+  raise exception 'Resolution actor does not match authenticated user' using errcode='42501';
+ end if;
+ begin
+  perform 1 from public.client_businesses b
+   where b.id=old.client_id and b.partner_id=old.partner_id for key share nowait;
+  if not found then raise exception 'Business authority is unavailable; refresh and prepare a new review' using errcode='PT409'; end if;
+  select s.authority_revision into revision from public.agent_team_settings s
+   where s.client_id=old.client_id and s.partner_id=old.partner_id for share nowait;
+  if not found then raise exception 'Business authority is unavailable; refresh and prepare a new review' using errcode='PT409'; end if;
+ exception when lock_not_available then
+  raise exception 'Business authority is changing; refresh before deciding' using errcode='PT409';
+ end;
+ if jsonb_typeof(old.proposed_payload->'authority_revision') is distinct from 'number'
+  or old.proposed_payload->>'authority_revision' is distinct from revision::text then
+  raise exception 'Business authority changed; refresh and prepare a new review' using errcode='PT409';
+ end if;
+ return new;
+end $$;
+revoke all on function owner_onboarding.guard_approval_authority_decision() from public,anon,authenticated;
+grant execute on function owner_onboarding.guard_approval_authority_decision() to service_role;
+create trigger guard_approval_authority_decision before update on public.approval_items
+ for each row execute function owner_onboarding.guard_approval_authority_decision();
