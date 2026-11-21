@@ -10,5 +10,5 @@ export async function signOut(): Promise<void> {
   if (!supabase) throw new Error("Sign out is unavailable. Try again shortly.");
   const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) throw new Error("Sign out could not be completed. Try again.");
-  redirect("/login");
+  redirect("/preview");
 }
