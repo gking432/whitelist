@@ -1,0 +1,351 @@
+{
+  "version": 1,
+  "sourceSha": "b4c5d3cbc9fb883ff3af4c9cb5d3742bdb326b67",
+  "branch": "codex/v1-scenario-lab",
+  "repository": "gking432/whitelist",
+  "runId": 44942929563,
+  "runUrl": "https://github.com/gking432/whitelist/actions/runs/44942929563",
+  "databaseJobId": 136963885842,
+  "applicationJobId": 136963885701,
+  "artifactId": 14722158072,
+  "artifactDirectory": "/tmp/partner-entry-44942929563",
+  "ci": {
+    "allNineSucceeded": true,
+    "tests": 826,
+    "testFailures": 0,
+    "typecheck": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "migrations": 104,
+    "rollbackGroups": 81,
+    "realTwoSessionCases": 13,
+    "restoreTables": 103,
+    "security": "passed",
+    "restore": "passed",
+    "release": "passed",
+    "nativeInboundExternalActions": 0,
+    "finalStackStop": "passed"
+  },
+  "browser": {
+    "status": "passed",
+    "originalOwnerUiStages": 24,
+    "foundationHttpGroups": 16,
+    "personalAssistantGroups": 14,
+    "publicReviewGroups": 25,
+    "publicReviewStatus": "passed",
+    "normalEmailCookieAndCurrentSessionRpc": true,
+    "distinctReloginAndSwitchSessionProof": true,
+    "actualOnboardingToAppsLink": true,
+    "signOutTerminalPath": "/preview",
+    "layout": {
+      "desktopOnboardingEditUnobscured": true,
+      "phoneContentClearance": true,
+      "phoneMoneyUnobscured": true,
+      "phoneTabScrollReset": true
+    },
+    "cleanup": {
+      "cleanupStatus": "complete",
+      "remainingFixtures": 0,
+      "cleanupErrors": [],
+      "diagnostics": [],
+      "failurePhase": null
+    },
+    "publicCleanup": "complete",
+    "reviewedPngCount": 54,
+    "reviewAllocation": {
+      "coordinatorAssistantImages": 7,
+      "businessEvidencePublicImages": 25,
+      "ownerExperienceExistingPrivateImages": 22
+    }
+  },
+  "publicReview": {
+    "checks": [
+      {
+        "key": "desktop: anonymous root enters workstation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: anonymous client enters workstation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: anonymous login enters workstation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: today local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: messages local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: todo local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: calendar local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: money local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: manager local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: apps local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: local Apps disclosure and scroll",
+        "status": "passed"
+      },
+      {
+        "key": "desktop: explicit setup opens real owner sign in",
+        "status": "passed"
+      },
+      {
+        "key": "phone: anonymous root enters workstation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: anonymous client enters workstation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: anonymous login enters workstation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: today local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: messages local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: todo local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: calendar local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: money local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: manager local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: apps local empty navigation",
+        "status": "passed"
+      },
+      {
+        "key": "phone: local Apps disclosure and scroll",
+        "status": "passed"
+      },
+      {
+        "key": "phone: explicit setup opens real owner sign in",
+        "status": "passed"
+      },
+      {
+        "key": "anonymous protected APIs reveal no private data",
+        "status": "passed"
+      }
+    ],
+    "screenshots": [
+      "public-desktop-root.png",
+      "public-desktop-client.png",
+      "public-desktop-login.png",
+      "public-desktop-today.png",
+      "public-desktop-messages.png",
+      "public-desktop-todo.png",
+      "public-desktop-calendar.png",
+      "public-desktop-money.png",
+      "public-desktop-manager.png",
+      "public-desktop-apps.png",
+      "public-desktop-apps-expanded.png",
+      "public-desktop-setup-sign-in.png",
+      "public-phone-root.png",
+      "public-phone-client.png",
+      "public-phone-login.png",
+      "public-phone-today.png",
+      "public-phone-messages.png",
+      "public-phone-todo.png",
+      "public-phone-calendar.png",
+      "public-phone-more-navigation.png",
+      "public-phone-money.png",
+      "public-phone-manager.png",
+      "public-phone-apps.png",
+      "public-phone-apps-expanded.png",
+      "public-phone-setup-sign-in.png"
+    ],
+    "views": {
+      "desktop": {
+        "viewport": {
+          "width": 1280,
+          "height": 900
+        },
+        "network": {
+          "read": 80,
+          "non_read": 0,
+          "backend": 0,
+          "external": 0,
+          "invalid": 0,
+          "setup_without_intent": 0,
+          "pageErrors": 0
+        },
+        "anonymous": true,
+        "areas": [
+          "today",
+          "messages",
+          "todo",
+          "calendar",
+          "money",
+          "manager",
+          "apps"
+        ]
+      },
+      "phone": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "network": {
+          "read": 78,
+          "non_read": 0,
+          "backend": 0,
+          "external": 0,
+          "invalid": 0,
+          "setup_without_intent": 0,
+          "pageErrors": 0
+        },
+        "anonymous": true,
+        "areas": [
+          "today",
+          "messages",
+          "todo",
+          "calendar",
+          "money",
+          "manager",
+          "apps"
+        ]
+      }
+    },
+    "privateApi": {
+      "checks": [
+        {
+          "method": "GET",
+          "path": "/api/connections",
+          "status": 403,
+          "result": "denied"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business/context",
+          "status": 403,
+          "result": "denied"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business/personal-assistant",
+          "status": 403,
+          "result": "denied"
+        },
+        {
+          "method": "POST",
+          "path": "/api/business/personal-assistant",
+          "status": 403,
+          "result": "denied"
+        }
+      ],
+      "strictDenialPassed": true,
+      "configurationUnavailable": 0
+    },
+    "limits": [
+      "Fresh anonymous browser contexts only; no session/cookie injection, storageState, authentication creation or provider/model request.",
+      "View traffic is restricted to same-origin GET/HEAD; deliberate anonymous private API probes use a separate fresh context.",
+      "Network assertions describe browser-observed traffic, not an instrumented server egress trace.",
+      "Explicitly allowed configuration-unavailable503 responses reveal no data but do not establish a successful authorization-denial proof."
+    ]
+  },
+  "sourceFixtures": {
+    "executedJobs": 66,
+    "canonicalRows": 18,
+    "externalNetworkRequests": 0,
+    "ownerManagerSourcesMatch": true,
+    "sandboxAndPausedAuthorityPreserved": true,
+    "liveOAuth": false,
+    "liveProviderWrites": false
+  },
+  "previewDeployment": {
+    "id": "dpl_Dm3evvaVB2brevuHSgn6uYyxooBG",
+    "url": "https://partner-platform-6a0otbi6k-gking432s-projects.vercel.app",
+    "target": "preview",
+    "state": "READY",
+    "sourceSha": "b4c5d3cbc9fb883ff3af4c9cb5d3742bdb326b67",
+    "actualAnonymousAppDesktopRootAndClient": "both entered current /preview without app sign-in",
+    "platformProtection": "unchanged; supported temporary deployment share access only; token omitted",
+    "liveConnectedWorkspaceAccepted": false
+  },
+  "priorAttempt": {
+    "sourceSha": "8103c88e9843c7c44961d6059e2516c77cffb634",
+    "runId": 44941619939,
+    "databaseJobId": 136959939640,
+    "artifactId": 14721454850,
+    "artifactDirectory": "/tmp/partner-entry-44941619939",
+    "allNineSucceeded": false,
+    "publicPassed": 25,
+    "ownerUiPassedBeforeFailure": 18,
+    "foundationPassed": 16,
+    "assistantPassed": 14,
+    "failure": "Phone normal sign-out expected /preview but action navigated to /login; unchanged30-second wait failed. Later private stages/security/restore/release were not reached.",
+    "cleanupRemainingFixtures": 0,
+    "reviewedPngCount": 50,
+    "visualFinding": "The new tall onboarding card put desktop Edit details beneath the closed assistant launcher in the initial viewport.",
+    "corrections": [
+      "Successful local sign-out redirects directly to /preview, preserving Origin, revocation and error handling.",
+      "Compact onboarding app handoff row; an actual initial-view Edit details hit test is now required."
+    ],
+    "noRetriesTimeoutIncreasesOrAssertionDowngrades": true
+  },
+  "hostedStateReportedBySupervisor": {
+    "intendedExistingProject": "memyvqqlosoeqnpgxfvq",
+    "ownerRestoredAndReportedRunning": true,
+    "database": "ready",
+    "latencyMs": 389,
+    "actualSchema": "20260904200000_embedded_app_connections",
+    "expectedSchema": "20261121134633_personal_assistant_preferences",
+    "httpHealthStatus": 503,
+    "interpretation": "Database is reachable; remaining schema/release readiness is not a missing or paused database.",
+    "release": null,
+    "workers": "release_unavailable",
+    "pendingSourceMigrationsReported": 20,
+    "supabasePluginInstalled": true,
+    "managementSqlAccessConfirmed": false,
+    "hostedWriteByBuilder": false,
+    "ownerOnDifferentComputer": true
+  },
+  "remainingLiveGates": [
+    "Supervisor-owned hosted upgrade/catalog preflight, current Auth email delivery and exact HTTPS confirmation/allowlist, first_owner_signup_configuration operator/shared package and preserved billing/capacity checks.",
+    "Configured customer-owned supported OAuth connection, readback/import freshness and durable scheduler/worker recovery.",
+    "Narrow Google/HubSpot deliberate40001 transport failure/race repair or version/HTTP proof before live OAuth acceptance; first-owner provision already returns PT409.",
+    "A real scoped agent proposal, human approval and supported provider receipt; isolated fixtures do not establish that live story."
+  ],
+  "limits": [
+    "Public review is secondary presentation with no private records, persistence or app connection. Set up your business enters the genuine owner flow or a bounded safe availability gate.",
+    "Availability checks read only the existing global schema marker; they grant no identity, membership, provider permission or execution authority.",
+    "No new sign-in stack; existing email OTP remains the implemented identity route. App-provider OAuth is separate consent.",
+    "Personal assistant preference/setup is implemented; external assistant/MCP access, embedded conversation, live quote-status retrieval and subscription dollar caps remain unimplemented/unaccepted.",
+    "No local Docker/Colima, local install/build/server, hosted migration, resource/spend change, production promotion, provider/model/voice/billing/campaign operation.",
+    "Unrelated docs44 CMO work, gtm and output preserved. Final evidence-only descendant requires its own exact CI/deployment/anonymous review, authorized callback, then stop."
+  ]
+}
