@@ -236,7 +236,15 @@
       "supervisorOwnsNextSameChromeJourney": true,
       "builderSentEmailOrRequestedRetry": false
     },
-    "futureOwnerBrowserPreference": "Chrome"
+    "futureOwnerBrowserPreference": "Chrome",
+    "latestRealOwnerSignIn": {
+      "humanConfirmedSuccess": true,
+      "actualNewAuthSessionConfirmedBySupervisor": true,
+      "activeScopedOwnerMemberships": 1,
+      "connections": 0,
+      "actionJobs": 0,
+      "identityOrTokenValuesCommitted": false
+    }
   },
   "limits": [
     "No live OAuth consent, valid token, provider record import or customer effect is proved by synthetic envelopes/scopes.",
@@ -245,12 +253,13 @@
     "Preserve unrelated uncommitted docs44, gtm and output; callback exact source/CI and stop for review."
   ],
   "localVerification": {
-    "tests": 873,
+    "tests": 874,
     "failures": 0,
     "typecheck": "passed",
     "lint": "passed",
     "diffCheck": "passed",
-    "actualDatabaseAcceptance": "pending isolated CI"
+    "actualDatabaseAcceptance": "pending isolated CI",
+    "sourceCorrection": "Full874 suite passed after removing invalid activation fixture; production migration unchanged."
   },
   "independentSourceReviews": {
     "migrationExactEightLiteralChanges": "passed",
@@ -258,5 +267,30 @@
     "rootCatalogAndObservedLockRace": "passed",
     "httpScopeRolesNativeContractsCleanup": "passed",
     "finalPublicationPreservesOriginalFailure": "six focused tests passed"
+  },
+  "firstRuntimeAttempt": {
+    "sourceSha": "7e942ee47e36ece40ad9bb1ebabfee1aaec21ac2",
+    "runId": 44949963746,
+    "runUrl": "https://github.com/gking432/whitelist/actions/runs/44949963746",
+    "databaseJobId": 136985505393,
+    "otherJobsSucceeded": 8,
+    "allNineSucceeded": false,
+    "priorRollbackGroupsPassed": 81,
+    "newRollbackGroupsCompleted": 0,
+    "browserSecurityRestoreReleaseReached": false,
+    "browserArtifactProduced": false,
+    "failure": "New synthetic business_agent_activation fixture omitted required workspace_provider; its all-false selected-channel state also violates existing activation schema.",
+    "correction": "Remove the unnecessary activation fixture and explicitly assert zero activation rows. Preserve paused team and all channel-off fields, production constraints and eight literal-only RPC changes.",
+    "focusedCorrectionTests": 8,
+    "focusedFailures": 0,
+    "productionMigrationChangedForCorrection": false,
+    "blindRetry": false,
+    "stackStopped": true
+  },
+  "nextAuthorizedTask": {
+    "status": "queued; no UI edits before OAuth exact acceptance",
+    "ownerRequest": "Full-screen onboarding, one large bold centered question and focused answer per screen; clear Next, unobtrusive Back/progress, optional Skip, no app/sidebar/topnav/launcher.",
+    "scope": "Both /start required business name/description/timezone and commissioned-owner onboarding; preserve atomic provisioning/idempotency and existing authorized APIs/persisted answers/reviews.",
+    "acceptance": "Desktop/phone first question, answer, error, back/resume, OAuth return, unavailable connection, optional assistant, explicit review and finish; current Auth/tenant/permission guards and full existing gates."
   }
 }

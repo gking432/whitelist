@@ -34,7 +34,7 @@ insert into public.client_businesses(id,partner_id,package_id,name,slug,status,c
  select id,(select id from oc_fixture where key='partner'),(select id from oc_fixture where key='package'),'Synthetic OAuth conflict business','cj-acceptance-__RUN_ID__-oauth-client','active',true,'sandbox' from oc_fixture where key='client';
 insert into public.memberships(user_id,partner_id,client_id,role,status) values((select id from oc_fixture where key='owner'),(select id from oc_fixture where key='partner'),(select id from oc_fixture where key='client'),'client_owner','active');
 insert into public.agent_team_settings(partner_id,client_id,status,scheduling_enabled,conversations_enabled,channel_authority) values((select id from oc_fixture where key='partner'),(select id from oc_fixture where key='client'),'paused',false,false,'{"calendar":"off","email":"off","website":"off","sms":"off","instagram":"off"}');
-insert into public.business_agent_activation(partner_id,client_id,status,bookings,website,email) values((select id from oc_fixture where key='partner'),(select id from oc_fixture where key='client'),'paused',false,false,false);
+-- No activation plan is needed for token storage; authority remains paused/off above.
 insert into public.integration_connections(id,partner_id,client_id,provider_id,display_name,status,runtime_mode,credential_status,external_account_id,config)
  select f.id,(select id from oc_fixture where key='partner'),(select id from oc_fixture where key='client'),p.id,'Synthetic OAuth conflict '||f.key,'connected','dry_run','configured','synthetic-__RUN_ID__-'||f.key,'{"workspace_view_only":true,"owner_workspace_imports":true,"google_action_permissions":{"calendar_write":false,"email_send":false}}'
  from oc_fixture f join public.integration_providers p on p.provider_key=case when f.key='google' then 'google_workspace' else 'microsoft_365' end where f.key in('google','microsoft');
@@ -151,7 +151,7 @@ end $hubspot_conflicts$;
 -- system, schedules imports, creates approvals/jobs/agents or sends anything.
 do $effects$ begin
  if exists(select 1 from public.agent_team_settings where status<>'paused' or scheduling_enabled or conversations_enabled or channel_authority<>'{"calendar":"off","email":"off","website":"off","sms":"off","instagram":"off"}'::jsonb)
-  or exists(select 1 from public.business_agent_activation where status<>'paused' or bookings or website or email)
+  or exists(select 1 from public.business_agent_activation)
   or exists(select 1 from public.client_businesses where default_runtime_mode<>'sandbox' or customer_system_connection_id is not null)
   or exists(select 1 from public.action_jobs) or exists(select 1 from public.approval_items) or exists(select 1 from public.agent_work_items)
   or exists(select 1 from public.integration_canonical_records) or exists(select 1 from public.integration_sync_states)

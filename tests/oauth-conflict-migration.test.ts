@@ -65,3 +65,11 @@ test("existing assets update only the selected OAuth callback expectations", asy
   assert.match(hubspot, /hf_finish\(aid,[\s\S]*?exception when sqlstate 'PT409' then denied:=true; end;/);
   assert.match(hubspot, /configure_hubspot\([^\n]+exception when sqlstate '40001'/);
 });
+
+// A paused team/channel map suffices. An all-false activation plan is invalid
+// under the real provider/channel constraints and is not needed for OAuth.
+test("OAuth fixture preserves paused/off authority without inventing an activation selection", () => {
+  assert.doesNotMatch(asset, /insert into public\.business_agent_activation/i);
+  assert.match(asset, /or exists\(select 1 from public\.business_agent_activation\)/);
+  assert.match(asset, /agent_team_settings\(partner_id,client_id,status,scheduling_enabled,conversations_enabled,channel_authority\) values[^\n]+,'paused',false,false,'\{"calendar":"off","email":"off","website":"off","sms":"off","instagram":"off"\}'/);
+});
