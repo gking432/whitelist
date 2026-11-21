@@ -48,7 +48,7 @@ function FirstOwnerQuestions({ requestKey, draftScopeKey }: { requestKey: string
     <QuestionScreen question={questions[draft.step]} step={draft.step + 1} total={3} pending={pending} nextType={draft.step === 2 ? "submit" : "button"} nextLabel={draft.step === 2 ? "Create my business" : "Next"} onNext={draft.step < 2 ? next : undefined}
       onBack={draft.step > 0 ? () => { setLocalError(""); setEdited(true); keep({ ...draft, step: draft.step - 1 }); } : undefined}
       error={error} notice={kept === false ? "This browser could not keep a refresh draft. Your answers are still here in this page." : "Draft in this tab only. Your business is created when you finish."}
-      help={draft.step === 0 ? "Use the name your customers know." : draft.step === 1 ? "A sentence or two is enough." : "Use an IANA timezone, such as America/Chicago or Europe/London."}>
+      help={draft.step === 0 ? "Use the name your customers know." : draft.step === 1 ? "A sentence or two is enough." : "For example, America/Chicago or Europe/London."}>
       <label className="sr-only" htmlFor={control.id}>{labels[draft.step]}</label>
       {field === "description" ? <textarea {...control} rows={4} maxLength={2000} minLength={10} className={input} /> : <input {...control} type="text" maxLength={100} minLength={field === "name" ? 2 : 1} autoComplete={field === "name" ? "organization" : "off"} className={input} placeholder={field === "timezone" ? "America/Chicago" : undefined} />}
       {error ? <span id="first-owner-error" className="sr-only">{error}</span> : null}

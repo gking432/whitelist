@@ -215,6 +215,13 @@ export function PortalShell({
             icon: "settings",
             group: "Manage",
           },
+          ...(canReviewLaunch ? [{
+            label: "Workspace setup",
+            href: "/client/onboarding",
+            section: "settings" as const,
+            icon: "setup" as const,
+            group: "Manage",
+          }] : []),
           {
             label: "Detailed CRM",
             href: "/client/crm",

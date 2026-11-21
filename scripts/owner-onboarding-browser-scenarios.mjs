@@ -214,6 +214,12 @@ export async function runOwnerOnboardingBrowserScenarios({ admin, fixture, owner
         await page.reload(); await atStep(page, "done"); await assertOnboardingLayout(page); await screenshot(page, target, `onboarding-${owner.label}-finished`);
         same(await baseline(admin, fixture, owner), originals.get(owner.label), "Revisit, optional skips and preference progress must leave the exact profile, knowledge, review, authority and execution baseline intact.");
         await page.getByRole("button", { name: "Open workspace", exact: true }).click(); await page.waitForURL(url => url.pathname === "/client");
+        const menu = page.locator("summary").filter({ hasText: owner.label === "phone" ? /^\s*More\s*$/ : /^\s*More tools\s*$/ });
+        await menu.click();
+        await page.getByRole("link", { name: "Workspace setup", exact: true }).filter({ visible: true }).click();
+        await atStep(page, "done"); await assertOnboardingLayout(page);
+        assert.equal((await call()).body.progress.finished, true, "The owner's actual workspace menu must reopen saved setup without resetting it.");
+        await page.getByRole("button", { name: "Open workspace", exact: true }).click(); await page.waitForURL(url => url.pathname === "/client");
       });
     }
     report.businessStatePreserved = true; report.fixtureCleanup = "complete"; report.status = "passed"; await publish();
