@@ -27,7 +27,11 @@ export default async function FirstOwnerStartPage() {
     try { entry = await loadFirstOwnerEntry(supabase); } catch { /* Access checks fail closed. */ }
   }
   if (entry?.state === "existing") redirect(entry.destination);
-  if (entry?.state === "new") canCreate = true;
+  if (entry?.state === "new") {
+    const readiness = await readOwnerSetupReadiness(createSupabaseAdminClient());
+    canCreate = readiness.available;
+    if (!canCreate) message = readiness.message;
+  }
   else if (entry?.state === "setup_required") message = "New-business setup is not available on this site yet. Your sign-in is saved. Check again when setup is ready.";
   else if (entry?.state === "blocked") message = entry.reason;
   return <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900 [--primary:#1d4ed8] [--primary-foreground:#ffffff] [--ring:#2563eb] [--background:#f8fafc] [--foreground:#0f172a] [--muted-foreground:#64748b] [--border:#e2e8f0] [--input:#cbd5e1]"><section className="mx-auto w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
