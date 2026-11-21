@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261121134633";
+export const EXPECTED_MIGRATION = "20261121205414";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -22,7 +22,8 @@ export const COVERAGE = [
   "rollback: customer-owned HubSpot OAuth, portal/grant/refresh CAS, source-owned CRM approval and uncertain POST suppression",
   "rollback: first-owner authenticated session, configured operator, isolated workspace, no implicit launch and replay/revocation gates",
   "rollback: foundation conflict catalog/ACLs, exact context receipts, genuine native website authority decisions and rejected stale effects",
-  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease, two first-owner creation races, owner workspace preference CAS and personal-assistant preference CAS (synthetic session claims; browser CAS remains separate)",
+  "rollback: four service-only OAuth boundary catalogs, deterministic logical conflicts, preserved replay/validation and zero unauthorized effects",
+  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease, two first-owner creation races, owner workspace preference CAS, personal-assistant preference CAS and Google OAuth snapshot contention (synthetic session claims; browser CAS remains separate)",
 ];
 export class Blocked extends Error {}
 
@@ -256,6 +257,26 @@ export function assertPersonalAssistantCatalog(catalog) {
   return { table: { name: table.name, owner: table.owner, rls: table.rls, policies: table.policies, anonRead: table.anonRead,
     authenticatedRead: table.authenticatedRead, authenticatedWrite: table.authenticatedWrite, serviceReadWrite: table.serviceReadWrite }, functions };
 }
+export function assertOAuthConflictCatalog(catalog) {
+  const expected = new Set([
+    "finish_readonly_workspace_oauth(uuid,text,text,text,text)",
+    "finish_google_permission_upgrade(uuid,text,text,text,text,text[],text[])",
+    "begin_hubspot_oauth(uuid,uuid,uuid,uuid,text,text,text[],timestamptz)",
+    "finish_hubspot_oauth(uuid,text,text,text,text,text[],text[],timestamptz,uuid)",
+  ]), seen = new Set();
+  const fail = () => { throw new Error("The four OAuth boundary catalog entries must remain invoker, service-only and safely configured."); };
+  if (!Array.isArray(catalog?.functions) || catalog.functions.length !== expected.size) fail();
+  const functions = catalog.functions.map((entry) => {
+    const signature = typeof entry?.signature === "string" ? entry.signature.replace(/^public\./, "").replaceAll("timestamp with time zone", "timestamptz").replace(/\s+/g, "") : "";
+    if (!expected.has(signature) || seen.has(signature) || entry.owner !== "postgres" || entry.securityDefiner !== false ||
+        !Array.isArray(entry.configuration) || entry.configuration.length !== 1 || entry.configuration[0] !== 'search_path=""' ||
+        entry.publicExecute !== false || entry.anonExecute !== false || entry.authenticatedExecute !== false || entry.serviceExecute !== true ||
+        typeof entry.bodyHash !== "string" || !/^[a-f0-9]{32}$/.test(entry.bodyHash)) fail();
+    seen.add(signature);
+    return { signature, owner: entry.owner, securityDefiner: entry.securityDefiner, configuration: [...entry.configuration], publicExecute: false, anonExecute: false, authenticatedExecute: false, serviceExecute: true, bodyHash: entry.bodyHash };
+  });
+  return { functions };
+}
 async function rollbackAcceptance(target, asset = "customer-journey-acceptance.sql", kind = "acceptance") {
   const run = randomUUID();
   const source = await readFile(join(root, "scripts/sql", asset), "utf8");
@@ -266,11 +287,77 @@ async function rollbackAcceptance(target, asset = "customer-journey-acceptance.s
   const personalCatalog = kind === "personal_assistant_acceptance" ? assertPersonalAssistantCatalog(report.catalog) : null;
   console.log(`PASS: ${report.checks.length} ${kind} rollback SQL assertion groups; synthetic fixtures rolled back.`);
   if (personalCatalog) console.log(`CATALOG: ${JSON.stringify({ kind: "personal_assistant_catalog", ...personalCatalog })}`);
+  if (kind === "oauth_conflict_acceptance") console.log(`CATALOG: ${JSON.stringify({ kind: "oauth_conflict_catalog", ...assertOAuthConflictCatalog(report.catalog) })}`);
   if (kind === "owner_foundation_conflict_acceptance") {
     const catalog = readReport(output, "owner_foundation_catalog");
     if (!Array.isArray(catalog.functions) || catalog.functions.length !== 6 || catalog.trigger?.enabled !== "O") throw new Error("The foundation catalog evidence is incomplete.");
     console.log(`CATALOG: ${JSON.stringify(catalog)}`);
   }
+}
+
+// The second real transaction is observed waiting on the exact business lock.
+// Its original OAuth snapshot must conflict after the first transaction commits.
+async function oauthSnapshotConcurrencyAcceptance(target) {
+  const ids = Object.fromEntries(["run", "partner", "client", "owner", "connection", "attempt"].map(key => [key, randomUUID()]));
+  const prefix = `cj-acceptance-${ids.run}-oauth-snapshot`, application = `oauth-snapshot-${ids.run}`;
+  let failure, waitingFinish;
+  try {
+    const fixture = readReport(await query(target, `begin; ${isolationAssertion(target.database)}
+ insert into auth.users(id,email) values('${ids.owner}','${prefix}@synthetic.invalid');
+ insert into public.profiles(id,email) values('${ids.owner}','${prefix}@synthetic.invalid') on conflict(id) do nothing;
+ insert into public.partners(id,name,slug) values('${ids.partner}','Synthetic customer journey acceptance OAuth snapshot','${prefix}');
+ insert into public.client_businesses(id,partner_id,name,slug,status,client_portal_enabled) values('${ids.client}','${ids.partner}','Synthetic customer journey acceptance OAuth snapshot','${prefix}','active',true);
+ insert into public.agent_team_settings(partner_id,client_id,status,channel_authority) values('${ids.partner}','${ids.client}','paused','{"email":"off","calendar":"off"}');
+ insert into public.integration_connections(id,partner_id,client_id,provider_id,display_name,status,runtime_mode,credential_status,external_account_id,config)
+ select '${ids.connection}','${ids.partner}','${ids.client}',id,'Synthetic OAuth race','connected','dry_run','configured','synthetic-google-account',
+ '{"workspace_view_only":true,"owner_workspace_imports":true,"google_action_permissions":{"email_send":false,"calendar_write":false},"google_verified_scopes":["https://www.googleapis.com/auth/gmail.readonly","https://www.googleapis.com/auth/calendar.events.readonly"]}'::jsonb from public.integration_providers where provider_key='google_workspace';
+ insert into public.integration_secrets(partner_id,client_id,connection_id,secret_kind,encrypted_value,last_four) values('${ids.partner}','${ids.client}','${ids.connection}','provider_credentials','synthetic-envelope-no-provider-proof','test');
+ insert into public.business_connection_oauth_attempts(id,partner_id,client_id,connection_id,actor_id,provider_key,purpose,cookie_hash,encrypted_verifier,requested_permissions,expected_account_id,expected_connection_updated_at,expected_secret_updated_at,consumed_at,expires_at)
+ select '${ids.attempt}',c.partner_id,c.client_id,c.id,'${ids.owner}','google_workspace','permission_upgrade',repeat('a',64),'synthetic-nonce',array['email.send'],c.external_account_id,c.updated_at,s.updated_at,now(),now()+interval '15 minutes'
+ from public.integration_connections c join public.integration_secrets s on s.connection_id=c.id and s.secret_kind='provider_credentials' where c.id='${ids.connection}';
+ commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','oauth_snapshot_fixture','attempts',(select count(*) from public.business_connection_oauth_attempts where id='${ids.attempt}')) as cj_report;`), "oauth_snapshot_fixture");
+    if (fixture.attempts !== 1) throw new Error("The exact synthetic OAuth snapshot fixture was not confirmed.");
+    await heldTransaction(target, `set local role service_role;
+ select id from public.client_businesses where id='${ids.client}' and partner_id='${ids.partner}' for update;
+ update public.integration_connections set health_summary='Synthetic newer snapshot while old completion waits' where id='${ids.connection}' and partner_id='${ids.partner}' and client_id='${ids.client}';`, async () => {
+      waitingFinish = query(target, `begin; set local statement_timeout='10s'; set local lock_timeout='8s'; set local application_name='${application}';
+ create temp table oauth_snapshot_result(rejected boolean); grant insert,select on oauth_snapshot_result to service_role; set local role service_role;
+ do $oauth_finish$ begin
+  begin perform public.finish_google_permission_upgrade('${ids.attempt}','synthetic-new-envelope-must-not-save','test','synthetic-google-account','Synthetic OAuth race',array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/calendar.events.readonly','https://www.googleapis.com/auth/gmail.send'],array['email.send']);
+   insert into oauth_snapshot_result values(false);
+  exception when sqlstate 'PT409' then insert into oauth_snapshot_result values(true); end;
+ end $oauth_finish$;
+ commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','oauth_snapshot_waiter','rejected',(select rejected from oauth_snapshot_result)) as cj_report;`);
+      waitingFinish.catch(() => {});
+      let observed = false;
+      for (let attempt = 0; attempt < 30 && !observed; attempt++) {
+        const state = readReport(await query(target, `select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','oauth_snapshot_wait','blocked',(select count(*) from pg_catalog.pg_stat_activity a where a.datname=current_database() and a.application_name='${application}' and cardinality(pg_catalog.pg_blocking_pids(a.pid))>0)) as cj_report;`), "oauth_snapshot_wait");
+        observed = state.blocked === 1;
+        if (!observed) await new Promise(resolveWait => setTimeout(resolveWait, 50));
+      }
+      if (!observed) throw new Error("OAuth completion was not observed waiting on the still-open business transaction.");
+    });
+    const completed = readReport(await waitingFinish, "oauth_snapshot_waiter");
+    if (completed.rejected !== true) throw new Error("The waiting OAuth completion did not preserve its original stale-snapshot conflict.");
+    const final = readReport(await query(target, `select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','oauth_snapshot_final',
+ 'secretUnchanged',(select encrypted_value='synthetic-envelope-no-provider-proof' from public.integration_secrets where connection_id='${ids.connection}' and secret_kind='provider_credentials'),
+ 'attempts',(select count(*) from public.business_connection_oauth_attempts where id='${ids.attempt}'),
+ 'authorityUnchanged',(select status='paused' and authority_revision=0 and channel_authority='{"email":"off","calendar":"off"}'::jsonb from public.agent_team_settings where client_id='${ids.client}'),
+ 'grantsUnchanged',(select config->'google_action_permissions'='{"email_send":false,"calendar_write":false}'::jsonb from public.integration_connections where id='${ids.connection}'),
+ 'jobs',(select count(*) from public.action_jobs where client_id='${ids.client}')+(select count(*) from public.integration_sync_jobs where client_id='${ids.client}'),
+ 'approvals',(select count(*) from public.approval_items where client_id='${ids.client}')) as cj_report;`), "oauth_snapshot_final");
+    if (final.secretUnchanged !== true || final.attempts !== 1 || final.authorityUnchanged !== true || final.grantsUnchanged !== true || final.jobs !== 0 || final.approvals !== 0) throw new Error("The stale OAuth race changed a token, grant, attempt or execution effect.");
+  } catch (error) { failure = error; }
+  finally {
+    if (waitingFinish) await Promise.allSettled([waitingFinish]);
+    try {
+      const cleaned = readReport(await query(target, `begin; set local lock_timeout='5s'; delete from public.partners where id='${ids.partner}' and slug='${prefix}'; delete from auth.users where id='${ids.owner}' and email='${prefix}@synthetic.invalid';
+ commit; select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','oauth_snapshot_cleanup','remaining',(select count(*) from public.partners where id='${ids.partner}')+(select count(*) from auth.users where id='${ids.owner}')) as cj_report;`), "oauth_snapshot_cleanup");
+      if (cleaned.remaining !== 0) throw new Error("OAuth snapshot race fixture cleanup was incomplete.");
+    } catch (error) { if (failure) console.error("FAIL: OAuth snapshot race cleanup also failed."); else failure = error; }
+  }
+  if (failure) throw failure;
+  console.log("PASS: one actual two-session OAuth snapshot race; observed business lock wait, stale Google completion returned PT409, secret/grants/authority/jobs unchanged and synthetic fixtures cleaned up.");
 }
 async function concurrencyAcceptance(target) {
   const ids = Object.fromEntries(["run", "partner", "client", "owner", "approval", "work", "connection", "request", "hubspotGrant", "hubspotClaimA", "hubspotClaimB"].map((key) => [key, randomUUID()]));
@@ -542,7 +629,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await rollbackAcceptance(target, "owner-workspace-acceptance.sql", "owner_workspace_acceptance");
   await rollbackAcceptance(target, "owner-foundation-conflict-acceptance.sql", "owner_foundation_conflict_acceptance");
   await rollbackAcceptance(target, "personal-assistant-acceptance.sql", "personal_assistant_acceptance");
-  if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); await foundationLockConcurrencyAcceptance(target); }
+  await rollbackAcceptance(target, "oauth-conflict-acceptance.sql", "oauth_conflict_acceptance");
+  if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); await foundationLockConcurrencyAcceptance(target); await oauthSnapshotConcurrencyAcceptance(target); }
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

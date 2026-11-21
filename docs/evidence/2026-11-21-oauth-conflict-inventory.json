@@ -1,0 +1,262 @@
+{
+  "version": 1,
+  "status": "source inventory and focused tests; actual SQL/catalog/HTTP CI pending",
+  "scope": "four existing production service-role OAuth RPC boundaries only",
+  "baseline": {
+    "sourceSha": "35e594c20d1c2f94906d0d861da86e359685fe94",
+    "runId": 44947211377,
+    "allNineSucceeded": true,
+    "tests": 852
+  },
+  "migration": {
+    "path": "supabase/migrations/20261121205414_oauth_conflict_transport.sql",
+    "version": "20261121205414",
+    "sha256": "f7aee4550d1f98a740bf573c9013d37182f84b521c08a6d59b1a4d01ddfb7c63",
+    "functionCount": 4,
+    "logicalRaisesChanged": 8,
+    "newTables": 0,
+    "newPrivileges": false,
+    "changedReturnTypes": false,
+    "bodyLockOrderChanged": false,
+    "blanketExceptionTranslation": false,
+    "runtimeUpgrade": false,
+    "hostedAppliedByBuilder": false
+  },
+  "functions": [
+    {
+      "name": "finish_readonly_workspace_oauth",
+      "effectiveSource": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+      "caller": "lib/connections/oauth.ts",
+      "returnType": "void",
+      "logicalRaisesChanged": 2,
+      "bodyBeforeSha256": "ba9d4142cbce6ce2c2d8a6b74754dda8eea49d407b49a94d71f077262ea653f2",
+      "bodyAfterSha256": "44daa7149d1ba0c885fef9fed6b1f41692be336448c17e292909a7d83937c3bf",
+      "bodyAfterMd5": "31bb6b1808932335313cb53c08822ec7",
+      "onlyChangedErrcodeLiterals": true,
+      "declaredSecurity": "invoker",
+      "expectedOwner": "postgres",
+      "expectedConfiguration": [
+        "search_path=\"\""
+      ],
+      "sourceExecuteAcl": {
+        "public": false,
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "nativeHttpSuccess": {
+        "status": 204,
+        "body": "completed empty body"
+      },
+      "consumedAttemptReplay": "strict missing-row P0002; native500 JSON, no successful replay receipt"
+    },
+    {
+      "name": "finish_google_permission_upgrade",
+      "effectiveSource": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+      "caller": "lib/connections/oauth.ts",
+      "returnType": "void",
+      "logicalRaisesChanged": 3,
+      "bodyBeforeSha256": "658578729ffc982b3be26bb386d5ee1e3141d38334d1b1e37e1a276aacfa8b95",
+      "bodyAfterSha256": "7a00135a37987d2df9f9edad453e00c2bac5f43ed71f8a501a484c65270fc700",
+      "bodyAfterMd5": "fb3527723833f4c280ed1b64d08a4f29",
+      "onlyChangedErrcodeLiterals": true,
+      "declaredSecurity": "invoker",
+      "expectedOwner": "postgres",
+      "expectedConfiguration": [
+        "search_path=\"\""
+      ],
+      "sourceExecuteAcl": {
+        "public": false,
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "nativeHttpSuccess": {
+        "status": 204,
+        "body": "completed empty body"
+      },
+      "consumedAttemptReplay": "strict missing-row P0002; native500 JSON, no successful replay receipt"
+    },
+    {
+      "name": "begin_hubspot_oauth",
+      "effectiveSource": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+      "caller": "lib/connections/hubspot-oauth.ts",
+      "returnType": "jsonb",
+      "logicalRaisesChanged": 1,
+      "bodyBeforeSha256": "850e7abadb70d53ae197576c5fc94326b680acfb56d7cc72dbff083928afa01b",
+      "bodyAfterSha256": "c917336a67fceb5e6833f8282dc08a86fc8fdf6125d10733c1dee0a9c87ca634",
+      "bodyAfterMd5": "48c4a3b518d8cf0b8554c8c03c532918",
+      "onlyChangedErrcodeLiterals": true,
+      "declaredSecurity": "invoker",
+      "expectedOwner": "postgres",
+      "expectedConfiguration": [
+        "search_path=\"\""
+      ],
+      "sourceExecuteAcl": {
+        "public": false,
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "nativeHttpSuccess": {
+        "status": 200,
+        "body": "complete JSON object"
+      },
+      "consumedAttemptReplay": "strict missing-row P0002; native500 JSON, no successful replay receipt"
+    },
+    {
+      "name": "finish_hubspot_oauth",
+      "effectiveSource": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+      "caller": "lib/connections/hubspot-oauth.ts",
+      "returnType": "void",
+      "logicalRaisesChanged": 2,
+      "bodyBeforeSha256": "ae066bb109f9128512800aa531428f2069b5304db17eb9c9d370018786c3e630",
+      "bodyAfterSha256": "680dc4fa939a99dbf1acf273b4f59c282a54ba6c040e7d0f24746928f049fedb",
+      "bodyAfterMd5": "0cced8bb8c1dd4636a0bd7e3bb8c78ee",
+      "onlyChangedErrcodeLiterals": true,
+      "declaredSecurity": "invoker",
+      "expectedOwner": "postgres",
+      "expectedConfiguration": [
+        "search_path=\"\""
+      ],
+      "sourceExecuteAcl": {
+        "public": false,
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "nativeHttpSuccess": {
+        "status": 204,
+        "body": "completed empty body"
+      },
+      "consumedAttemptReplay": "strict missing-row P0002; native500 JSON, no successful replay receipt"
+    }
+  ],
+  "guardLayers": {
+    "serverEntry": "fresh authenticated user plus writable exact business portal and no impersonation",
+    "begin": "server-derived actor/business, exact connection/provider and additive selected rights",
+    "callbackConsumption": "exact actor/business/provider/connection/cookie hash, not consumed, not expired; single conditional update",
+    "providerInspection": "existing app binding and verified account/scopes checked before storage",
+    "databaseFinish": "active business, exact attempt/connection/provider/account and original connection/secret snapshots; verified grants and permission union",
+    "execution": "OAuth storage does not activate business authority, approve work or authorize provider effects",
+    "serviceRoleLimit": "Database service-only RPC ACL is not independent actor authentication. Fresh actor and callback consumption are verified in the server protocol; no new RPC grant is added."
+  },
+  "preservedErrors": {
+    "P0001": "unchanged validation/default raises",
+    "22023": "incomplete verified Google scopes",
+    "P0002": "deleted/missing attempt replay fails closed",
+    "40001": "genuine backend serialization remains distinct; no catch translates it",
+    "40P01": "genuine backend deadlock remains distinct"
+  },
+  "directDmlTriggerInventory": [
+    {
+      "function": "set_updated_at",
+      "source": "20260621180500_goal_1_tenant_auth_foundation.sql"
+    },
+    {
+      "function": "require_beta_acceptance_for_live",
+      "source": "20260904170000_beta_launch_acceptance.sql"
+    },
+    {
+      "function": "notify_client_integration_health -> upsert_client_notification",
+      "source": "20260725210000_client_notifications.sql"
+    },
+    {
+      "function": "revise_business_authority / cancel_changed_business_authority",
+      "source": "20261117030202_reviewed_business_authority.sql"
+    }
+  ],
+  "directTriggerFinding": "No reached deliberate40001 identified. Selected authority revision bumps preserve channel/status fields, so cancellation branch is not invoked.",
+  "isolatedAcceptancePlan": {
+    "rollbackGroups": 8,
+    "exactCatalogFunctions": 4,
+    "existingConcurrencyCases": 13,
+    "newConcurrencyCases": 1,
+    "newRace": "Observed two-session business-row lock wait; Google completion must reject original stale snapshot PT409 with unchanged secret/grants/authority/jobs.",
+    "http": "Actual pinned PostgREST service-role success/conflict/stale/replay and denied owner/anon roles; original scopes and provider exchanges remain fixture-only.",
+    "browser": "Preserve existing25 public +24 owner UI +16 foundation HTTP +14 assistant groups and all security/restore/release gates."
+  },
+  "officialTransportSources": [
+    "https://raw.githubusercontent.com/PostgREST/postgrest/v14.1/src/PostgREST/Response.hs",
+    "https://raw.githubusercontent.com/PostgREST/postgrest/v14.1/src/PostgREST/Error.hs"
+  ],
+  "hostedReceiptReportedBySupervisor": {
+    "builderPerformedHostedAction": false,
+    "backup": {
+      "fullTableDataEntries": 119,
+      "rolesIncluded": true,
+      "hashArchiveListAndFullSqlDecodeValidated": true,
+      "restoreRehearsed": false,
+      "location": "private ignored backup directory; contents omitted"
+    },
+    "upgrade": {
+      "pendingOriginalMigrationsAppliedAtomically": 20,
+      "registryVersions": 104,
+      "publicTables": 103,
+      "schema": "20261121134633_personal_assistant_preferences",
+      "oldPublicTablesPreserved": 81,
+      "priorBusinessAuthMembershipFingerprintsPreserved": true,
+      "rlsAndApprovalGuardsPreserved": true,
+      "functionBodySettingRestored": true
+    },
+    "commissioning": {
+      "realWorkspaceName": "Gunnar\u2019s workspace",
+      "separateFirstPartyInternalOperator": true,
+      "sharedPackageCapabilities": "empty",
+      "branding": "blue Workstation",
+      "verifiedUserPreserved": true,
+      "globalPlatformOwnerPreserved": true,
+      "separateScopedClientOwnerRole": true,
+      "existingTrialAgencyAndTestClientsPreserved": true,
+      "existingProfileAndBillingRowsPreserved": true,
+      "facts": "empty and unreviewed",
+      "runtime": "sandbox",
+      "team": "paused; all flags false and channels off",
+      "firstSignupReceiptFabricated": false,
+      "publicSignupConfigurationFabricated": false,
+      "reviewOrBetaAcceptanceFabricated": false,
+      "connectionsOrJobsCreated": false
+    },
+    "deployedHealthAt104": {
+      "status": 200,
+      "databaseAndSchema": "ready",
+      "releaseAndWorkers": "unavailable; no heartbeat proof"
+    },
+    "branchAppUrl": "set by supervisor for preview branch; activates on next deployment",
+    "authCallbackAllowlist": "owner reported exact entries saved",
+    "providerOAuthCredentials": "not configured at receipt time",
+    "new105Migration": "source-only; supervisor must review/back up/apply before new deployment is pilot-ready",
+    "realEmailDelivered": true,
+    "firstHumanCallback": {
+      "errorCategory": "missing PKCE code verifier",
+      "humanConfirmedCause": "initiated in Safari; email opened in Chrome",
+      "interpretation": "browser-bound verifier cookie did not transfer",
+      "sameBrowserProductRegressionProved": false,
+      "authSourceChanged": false,
+      "supervisorOwnsNextSameChromeJourney": true,
+      "builderSentEmailOrRequestedRetry": false
+    },
+    "futureOwnerBrowserPreference": "Chrome"
+  },
+  "limits": [
+    "No live OAuth consent, valid token, provider record import or customer effect is proved by synthetic envelopes/scopes.",
+    "Original preference403 from run44944139643 remains unexplained; preserve diagnostic requirement and never infer causal repair from this package.",
+    "No hosted fixtures/probes/mutations, local Docker recreation, runtime upgrades, worker/release expansion, model/voice/billing action or unrelated feature scope.",
+    "Preserve unrelated uncommitted docs44, gtm and output; callback exact source/CI and stop for review."
+  ],
+  "localVerification": {
+    "tests": 873,
+    "failures": 0,
+    "typecheck": "passed",
+    "lint": "passed",
+    "diffCheck": "passed",
+    "actualDatabaseAcceptance": "pending isolated CI"
+  },
+  "independentSourceReviews": {
+    "migrationExactEightLiteralChanges": "passed",
+    "callerNoRetryOrImportOnUnknownEffects": "passed",
+    "rootCatalogAndObservedLockRace": "passed",
+    "httpScopeRolesNativeContractsCleanup": "passed",
+    "finalPublicationPreservesOriginalFailure": "six focused tests passed"
+  }
+}

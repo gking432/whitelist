@@ -70,7 +70,7 @@ begin
   elsif label='wrong-purpose' then update public.business_connection_oauth_attempts set purpose='read_only' where id=aid; end if;
   denied:=false;
   begin perform pg_temp.hf_finish(aid,case when label='wrong-portal' then '820001' else '810001' end,'{}',case when label='missing-grants' then array['oauth'] else array['oauth','crm.objects.contacts.read','crm.objects.deals.read'] end);
-  exception when sqlstate '40001' then denied:=true; end;
+  exception when sqlstate 'PT409' then denied:=true; end;
   if not denied or before_c is distinct from (select to_jsonb(c) from public.integration_connections c where id=conn) or before_s is distinct from (select to_jsonb(s) from public.integration_secrets s where connection_id=conn) then raise exception 'Rejected HubSpot % reconnect changed saved access',label; end if;
   delete from public.business_connection_oauth_attempts where id=aid;
  end loop;

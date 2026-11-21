@@ -1,4 +1,4 @@
-export const EXPECTED_SCHEMA_VERSION = "20261121134633_personal_assistant_preferences";
+export const EXPECTED_SCHEMA_VERSION = "20261121205414_oauth_conflict_transport";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

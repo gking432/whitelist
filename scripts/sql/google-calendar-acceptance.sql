@@ -71,16 +71,16 @@ begin
  select to_jsonb(snapshot) into before_secret from public.integration_secrets snapshot where connection_id=conn and secret_kind='provider_credentials';
  select to_jsonb(snapshot) into before_settings from public.agent_team_settings snapshot where partner_id=p and client_id=c;
  attempt:=pg_temp.ga_attempt(array['calendar.write']); denied:=false;
- begin perform public.finish_google_permission_upgrade(attempt,'synthetic-wrong','test','wrong-account','Synthetic wrong account',scopes,array['calendar.write']); exception when sqlstate '40001' then denied:=true; end;
+ begin perform public.finish_google_permission_upgrade(attempt,'synthetic-wrong','test','wrong-account','Synthetic wrong account',scopes,array['calendar.write']); exception when sqlstate 'PT409' then denied:=true; end;
  if not denied then raise exception 'Permission callback accepted another Google account'; end if;
  denied:=false;
  begin perform public.finish_google_permission_upgrade(attempt,'synthetic-wrong','test',before_connection->>'external_account_id','Synthetic account',array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/calendar.events.readonly'],array['calendar.write']); exception when sqlstate '22023' then denied:=true; end;
  if not denied then raise exception 'Permission callback accepted insufficient actual scopes'; end if;
  update public.business_connection_oauth_attempts set expected_connection_updated_at=(before_connection->>'updated_at')::timestamptz-interval '1 second' where id=attempt; denied:=false;
- begin perform public.finish_google_permission_upgrade(attempt,'synthetic-wrong','test',before_connection->>'external_account_id','Synthetic account',scopes,array['calendar.write']); exception when sqlstate '40001' then denied:=true; end;
+ begin perform public.finish_google_permission_upgrade(attempt,'synthetic-wrong','test',before_connection->>'external_account_id','Synthetic account',scopes,array['calendar.write']); exception when sqlstate 'PT409' then denied:=true; end;
  if not denied then raise exception 'Permission callback ignored the connection CAS'; end if;
  update public.business_connection_oauth_attempts set expected_connection_updated_at=(before_connection->>'updated_at')::timestamptz,expected_secret_updated_at=(before_secret->>'updated_at')::timestamptz-interval '1 second' where id=attempt; denied:=false;
- begin perform public.finish_google_permission_upgrade(attempt,'synthetic-wrong','test',before_connection->>'external_account_id','Synthetic account',scopes,array['calendar.write']); exception when sqlstate '40001' then denied:=true; end;
+ begin perform public.finish_google_permission_upgrade(attempt,'synthetic-wrong','test',before_connection->>'external_account_id','Synthetic account',scopes,array['calendar.write']); exception when sqlstate 'PT409' then denied:=true; end;
  if not denied then raise exception 'Permission callback ignored the credential CAS'; end if;
  if before_connection is distinct from (select to_jsonb(snapshot) from public.integration_connections snapshot where id=conn) or before_secret is distinct from (select to_jsonb(snapshot) from public.integration_secrets snapshot where connection_id=conn and secret_kind='provider_credentials')
   or before_settings is distinct from (select to_jsonb(snapshot) from public.agent_team_settings snapshot where partner_id=p and client_id=c) then raise exception 'Rejected permission callback changed saved access, pause or authority'; end if;
@@ -126,14 +126,14 @@ begin
  select to_jsonb(s) into upgraded_secret from public.integration_secrets s where connection_id=conn and secret_kind='provider_credentials';
  select to_jsonb(s) into upgraded_settings from public.agent_team_settings s where partner_id=p and client_id=c;
  denied:=false;
- begin perform public.finish_readonly_workspace_oauth(readonly_attempt,'synthetic-forbidden-downgrade','test',account,'Synthetic read-only callback'); exception when sqlstate '40001' then denied:=true; end;
+ begin perform public.finish_readonly_workspace_oauth(readonly_attempt,'synthetic-forbidden-downgrade','test',account,'Synthetic read-only callback'); exception when sqlstate 'PT409' then denied:=true; end;
  if not denied then raise exception 'A pre-upgrade read-only callback downgraded selected Google permissions'; end if;
  -- now() is stable in this outer transaction. Pin CURRENT timestamps as a
  -- separate control so rejection must also enforce the upgraded-map guard.
  update public.business_connection_oauth_attempts set expected_connection_updated_at=(upgraded_connection->>'updated_at')::timestamptz,expected_secret_updated_at=(upgraded_secret->>'updated_at')::timestamptz where id=readonly_attempt;
  denied:=false;
  begin perform public.finish_readonly_workspace_oauth(readonly_attempt,'synthetic-forbidden-downgrade','test',account,'Synthetic read-only callback');
- exception when sqlstate '40001' then if sqlerrm not like '%Reconnect the existing selected Google permissions%' then raise; end if; denied:=true; end;
+ exception when sqlstate 'PT409' then if sqlerrm not like '%Reconnect the existing selected Google permissions%' then raise; end if; denied:=true; end;
  if not denied or upgraded_connection is distinct from (select to_jsonb(cn) from public.integration_connections cn where id=conn)
   or upgraded_secret is distinct from (select to_jsonb(s) from public.integration_secrets s where connection_id=conn and secret_kind='provider_credentials')
   or upgraded_settings is distinct from (select to_jsonb(s) from public.agent_team_settings s where partner_id=p and client_id=c) then raise exception 'Rejected read-only downgrade changed credentials, config, pause or authority'; end if;

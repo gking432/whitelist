@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 const harnessUrl = new URL("../scripts/verify-customer-journey-db.mjs", import.meta.url);
-const { validateTarget, parseOptions, redact, parseCliRows, parsePsqlRows, parsePsqlExecution, REPORT_PREFIX, readReport, preflightSql, assertPreflight, migrationPlan, preferenceCasWinner, CONFIRMATION, EXPECTED_MIGRATION } = await import(harnessUrl.href);
+const { validateTarget, parseOptions, redact, parseCliRows, parsePsqlRows, parsePsqlExecution, REPORT_PREFIX, readReport, preflightSql, assertPreflight, migrationPlan, preferenceCasWinner, assertOAuthConflictCatalog, CONFIRMATION, EXPECTED_MIGRATION } = await import(harnessUrl.href);
 const bootstrapUrl = new URL("../scripts/ci-bootstrap-customer-journey-db.mjs", import.meta.url);
 const { assertHostedCi, assertToolchain, isolatedUrl, assertBaseline, sanitizeCiFailure, PINNED_CLI_VERSION, ACCEPTANCE_DATABASE, CATALOG_TABLES } = await import(bootstrapUrl.href);
 const configured = (values: Record<string, string> = {}) => ({ ISOLATED_DATABASE_URL: "postgresql://synthetic:secret%40word@127.0.0.1:5432/customer_journey_test", ISOLATED_DATABASE_CONFIRMATION: CONFIRMATION, ...values });
@@ -145,7 +145,7 @@ test("the broader security schema clone includes only its real static provider c
 });
 
 test("HubSpot SQL acceptance remains required with six real concurrency cases and no policy bypass", async () => {
-  assert.equal(EXPECTED_MIGRATION, "20261121134633");
+  assert.equal(EXPECTED_MIGRATION, "20261121205414");
   const verifier = await readFile(harnessUrl, "utf8");
   assert.match(verifier, /rollbackAcceptance\(target, "hubspot-oauth-acceptance.sql", "hubspot_oauth_acceptance"\)/);
   assert.match(verifier, /rollbackAcceptance\(target, "owner-workspace-acceptance.sql", "owner_workspace_acceptance"\)/);
@@ -161,6 +161,22 @@ test("HubSpot SQL acceptance remains required with six real concurrency cases an
   assert.match(sql, /__CUSTOMER_JOURNEY_REPORT__'::text/);
   assert.match(sql, /rollback;[\s\S]*hubspot_oauth_acceptance/);
   assert.doesNotMatch(sql, /disable\s+trigger|session_replication_role|create\s+(?:or\s+replace\s+)?function\s+auth\./i);
+});
+
+test("OAuth catalog evidence rejects privilege expansion, unsafe metadata and incomplete signatures", () => {
+  const signatures = [
+    "finish_readonly_workspace_oauth(uuid,text,text,text,text)",
+    "finish_google_permission_upgrade(uuid,text,text,text,text,text[],text[])",
+    "begin_hubspot_oauth(uuid,uuid,uuid,uuid,text,text,text[],timestamp with time zone)",
+    "finish_hubspot_oauth(uuid,text,text,text,text,text[],text[],timestamp with time zone,uuid)",
+  ];
+  const functions = signatures.map(signature => ({ signature, owner: "postgres", securityDefiner: false, configuration: ['search_path=""'], publicExecute: false, anonExecute: false, authenticatedExecute: false, serviceExecute: true, bodyHash: "a".repeat(32), secret: "must-not-serialize" }));
+  const safe = assertOAuthConflictCatalog({ functions, actorId: "must-not-serialize" });
+  assert.equal(safe.functions.length, 4); assert.equal(JSON.stringify(safe).includes("must-not-serialize"), false);
+  for (const patch of [{ owner: "service_role" }, { securityDefiner: true }, { configuration: ["search_path=public"] }, { publicExecute: true }, { anonExecute: true }, { authenticatedExecute: true }, { serviceExecute: false }, { signature: "unrelated(uuid)" }, { bodyHash: "private-message" }])
+    assert.throws(() => assertOAuthConflictCatalog({ functions: [{ ...functions[0], ...patch }, ...functions.slice(1)] }));
+  for (const changed of [[], functions.slice(1), [...functions, functions[0]], [functions[0], functions[0], ...functions.slice(2)]])
+    assert.throws(() => assertOAuthConflictCatalog({ functions: changed }));
 });
 
 test("preference database CAS accepts only one revision-one winner and the public PT409 conflict", () => {
