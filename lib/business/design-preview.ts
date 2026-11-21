@@ -27,6 +27,8 @@ export function emptyDesignPreview(
     workspace: {
       clientName: "",
       clientId: "",
+      workspaceScopeKey: "",
+      profileRevision: null,
       profile: { ...EMPTY_PROFILE, goals: [] },
       records: [],
       installs: [],

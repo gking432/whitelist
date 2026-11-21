@@ -1,19 +1,57 @@
 "use client";
-import { useActionState } from "react";
+import { useActionState, useState, useSyncExternalStore } from "react";
 import { createFirstOwnerBusiness } from "./actions";
 import { initialFirstOwnerFormState } from "./state";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-export function FirstOwnerForm({ requestKey }: { requestKey: string }) {
-  const [state, action, pending] = useActionState(createFirstOwnerBusiness, initialFirstOwnerFormState);
-  return <form action={action} className="mt-8 space-y-5">
-    <input type="hidden" name="key" value={requestKey} />
-    <div className="space-y-2"><Label htmlFor="business-name">Business name</Label><Input id="business-name" name="name" autoComplete="organization" minLength={2} maxLength={100} required disabled={pending} aria-invalid={Boolean(state.fields?.name)} aria-describedby={state.fields?.name ? "name-error" : undefined} />{state.fields?.name ? <p id="name-error" className="text-sm text-destructive">{state.fields.name}</p> : null}</div>
-    <div className="space-y-2"><Label htmlFor="business-description">Business description</Label><Textarea id="business-description" name="description" minLength={10} maxLength={2000} placeholder="What do you do, and who do you help?" required disabled={pending} aria-invalid={Boolean(state.fields?.description)} aria-describedby={state.fields?.description ? "description-error" : undefined} />{state.fields?.description ? <p id="description-error" className="text-sm text-destructive">{state.fields.description}</p> : null}</div>
-    <div className="space-y-2"><Label htmlFor="business-timezone">Timezone</Label><Input id="business-timezone" name="timezone" defaultValue="America/Chicago" maxLength={100} required disabled={pending} autoComplete="off" aria-invalid={Boolean(state.fields?.timezone)} aria-describedby="timezone-help" /><p id="timezone-help" className="text-xs text-muted-foreground">Use a timezone such as America/Chicago, America/New_York or Europe/London.</p>{state.fields?.timezone ? <p className="text-sm text-destructive">{state.fields.timezone}</p> : null}</div>
-    {state.message ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">{state.message}</p> : null}
-    <Button type="submit" disabled={pending} className="min-h-11 w-full">{pending ? "Creating your business…" : "Create my business"}</Button>
+import { QuestionScreen } from "@/components/onboarding/question-screen";
+import { FIRST_OWNER_FIELDS, firstOwnerDraftErrors, firstOwnerErrorStep, newFirstOwnerDraft, readFirstOwnerDraft, writeFirstOwnerDraft, type FirstOwnerDraft } from "@/components/onboarding/first-owner-draft";
+
+const questions = ["What is your business called?", "What does your business do?", "What timezone does your business use?"];
+const labels = ["Business name", "Business description", "Timezone"];
+const subscribe = () => () => {};
+const input = "w-full rounded-xl border border-slate-200 bg-white px-4 py-4 text-lg leading-7 text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:opacity-50";
+function draftStorage() { try { return window.sessionStorage; } catch { return undefined; } }
+
+export function FirstOwnerForm({ requestKey, draftScopeKey }: { requestKey: string; draftScopeKey: string }) {
+  const hydrated = useSyncExternalStore(subscribe, () => true, () => false);
+  return hydrated ? <FirstOwnerQuestions key={draftScopeKey} requestKey={requestKey} draftScopeKey={draftScopeKey} /> : <QuestionScreen question={questions[0]} step={1} total={3} nextDisabled><label className="sr-only" htmlFor="business-name">Business name</label><input id="business-name" className={input} disabled /></QuestionScreen>;
+}
+
+function FirstOwnerQuestions({ requestKey, draftScopeKey }: { requestKey: string; draftScopeKey: string }) {
+  const [draft, setDraft] = useState<FirstOwnerDraft>(() => readFirstOwnerDraft(draftStorage(), draftScopeKey) ?? newFirstOwnerDraft(draftScopeKey, requestKey));
+  const [localError, setLocalError] = useState("");
+  const [edited, setEdited] = useState(false), [kept, setKept] = useState<boolean | null>(null);
+  function keep(next: FirstOwnerDraft) { setDraft(next); setKept(writeFirstOwnerDraft(draftStorage(), next)); }
+  const [state, action, pending] = useActionState(async (previous: typeof initialFirstOwnerFormState, data: FormData) => {
+    const result = await createFirstOwnerBusiness(previous, data);
+    const step = firstOwnerErrorStep(result.fields);
+    if (step !== null) keep({ ...draft, step });
+    setEdited(false); setLocalError("");
+    return result;
+  }, initialFirstOwnerFormState);
+  const field = FIRST_OWNER_FIELDS[draft.step];
+  const error = localError || (!edited ? state.fields?.[field] || state.message : "") || "";
+  function next() {
+    const errors = firstOwnerDraftErrors(draft);
+    if (errors[field] || errors.key) { setLocalError(errors[field] || errors.key); return; }
+    setLocalError(""); setEdited(true); keep({ ...draft, step: Math.min(2, draft.step + 1) });
+  }
+  const control = { id: `business-${field}`, value: draft.values[field], disabled: pending, required: true, "aria-invalid": !!error, "aria-describedby": error ? "first-owner-error" : undefined,
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => { setLocalError(""); setEdited(true); keep({ ...draft, values: { ...draft.values, [field]: event.target.value } }); } };
+  return <form action={action} noValidate data-first-owner-questions onSubmit={(event) => {
+    if (draft.step < 2) { event.preventDefault(); next(); return; }
+    const errors = firstOwnerDraftErrors(draft), step = firstOwnerErrorStep(errors);
+    if (step !== null) { event.preventDefault(); keep({ ...draft, step }); setLocalError(errors[FIRST_OWNER_FIELDS[step]] || errors.key); }
+  }} onKeyDown={(event) => { if (event.key === "Enter" && draft.step < 2 && event.target instanceof HTMLInputElement) { event.preventDefault(); next(); } }}>
+    <input type="hidden" name="key" value={draft.requestKey} />
+    <input type="hidden" name="expectedActor" value={draftScopeKey} />
+    {FIRST_OWNER_FIELDS.map((name) => <input type="hidden" key={name} name={name} value={draft.values[name]} />)}
+    <QuestionScreen question={questions[draft.step]} step={draft.step + 1} total={3} pending={pending} nextType={draft.step === 2 ? "submit" : "button"} nextLabel={draft.step === 2 ? "Create my business" : "Next"} onNext={draft.step < 2 ? next : undefined}
+      onBack={draft.step > 0 ? () => { setLocalError(""); setEdited(true); keep({ ...draft, step: draft.step - 1 }); } : undefined}
+      error={error} notice={kept === false ? "This browser could not keep a refresh draft. Your answers are still here in this page." : "Draft in this tab only. Your business is created when you finish."}
+      help={draft.step === 0 ? "Use the name your customers know." : draft.step === 1 ? "A sentence or two is enough." : "Use an IANA timezone, such as America/Chicago or Europe/London."}>
+      <label className="sr-only" htmlFor={control.id}>{labels[draft.step]}</label>
+      {field === "description" ? <textarea {...control} rows={4} maxLength={2000} minLength={10} className={input} /> : <input {...control} type="text" maxLength={100} minLength={field === "name" ? 2 : 1} autoComplete={field === "name" ? "organization" : "off"} className={input} placeholder={field === "timezone" ? "America/Chicago" : undefined} />}
+      {error ? <span id="first-owner-error" className="sr-only">{error}</span> : null}
+    </QuestionScreen>
   </form>;
 }

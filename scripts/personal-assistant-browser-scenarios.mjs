@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { assertFoundationHttpScope, collectFoundationHttpRace, readFoundationHttpJson } from "./owner-foundation-conflict-http.mjs";
 import { withOwnerBrowserDeadline } from "./owner-workspace-browser-scenarios.mjs";
+import { onboardingApi, observeOnboardingPost } from "./owner-onboarding-browser-scenarios.mjs";
 
 const path = "/api/business/personal-assistant";
 const labels = { muse: "Muse", chatgpt_dot: "ChatGPT Dot", grok: "Grok", other: "Another assistant", workstation: "Workstation assistant (ours)" };
@@ -111,6 +112,58 @@ async function saveUi(page, target, container, reset = false) {
   await container.getByRole("status").filter({ hasText: reset ? "Assistant preference reset." : "Assistant preference saved." }).waitFor();
   await container.locator("form[data-personal-assistant-form][aria-busy=false]").waitFor(); return value;
 }
+export function assertWizardAssistantSkip(before, after, snapshot) {
+  assertPersonalAssistantSnapshot(before); assertPersonalAssistantSnapshot(after);
+  same(after.preferences, before.preferences, "Skipping the wizard must retain the exact existing private preference, including its revision.");
+  assert.ok(snapshot?.progress?.step === "review" && snapshot.progress.skipped?.includes("assistant"), "The real saved progress must record the optional skip instead of manufacturing a private preference.");
+}
+async function wizardStep(page, step) {
+  const panel = page.locator(`[data-business-onboarding][data-onboarding-step="${step}"]`);
+  await panel.locator('[data-question-screen][aria-busy="false"]').waitFor({ state: "visible" }); return panel;
+}
+async function wizardCommand(page, target, from, to, label, command) {
+  const panel = await wizardStep(page, from);
+  await observeOnboardingPost(page, target.appUrl, command, () => panel.getByRole("button", { name: label, exact: true }).click());
+  return wizardStep(page, to);
+}
+async function visitWizardAssistant(owner, target, phase) {
+  // Presentation navigation uses the same real scoped owner API. It does not
+  // write a business fact, context review or action permission.
+  const scopeKey = `${owner.userId}:${owner.clientId}`;
+  const current = (await onboardingApi(owner.context, target, scopeKey, undefined, { phase, operation: "assistant wizard current progress" })).body;
+  await onboardingApi(owner.context, target, scopeKey, { action: "navigate", step: "assistant", key: randomUUID(), revision: current.progress.revision }, { phase, operation: "assistant wizard revisit optional question" });
+  await owner.page.goto(`${target.appUrl}/client/onboarding`);
+  const panel = await wizardStep(owner.page, "assistant");
+  assert.equal(await owner.page.locator("[data-personal-assistant-launcher],nav,aside").count(), 0, "The exact onboarding question must stay free of workspace and assistant chrome.");
+  return panel;
+}
+async function chooseWizardAssistant(owner, target, assistant, phase) {
+  const { page } = owner;
+  let panel = await wizardStep(page, "assistant"); await panel.getByRole("radio", { name: "Yes", exact: true }).check();
+  panel = await wizardCommand(page, target, "assistant", "assistant_choice", "Next", { action: "navigate", step: "assistant_choice" });
+  await panel.getByRole("radio", { name: labels[assistant], exact: true }).check();
+  const value = await observePersonalAssistantSave(page, target.appUrl, () => panel.getByRole("button", { name: "Next", exact: true }).click());
+  await wizardStep(page, "review");
+  const progress = (await onboardingApi(owner.context, target, `${owner.userId}:${owner.clientId}`, undefined, { phase, operation: "assistant wizard consumed saved choice" })).body;
+  assert.equal(progress.progress.step, "review");
+  same(value.preferences, (await personalAssistantApi(owner.context, target, owner, undefined, { phase, operation: "assistant wizard saved private choice" })).body.preferences, "The new question must consume the actual saved preference before moving on.");
+  return value;
+}
+async function finishAssistantWizard(owner, target, report) {
+  const { page } = owner;
+  const panel = await wizardCommand(page, target, "review", "permissions", "Skip for now", { action: "skip", step: "review" });
+  if (owner.label === "desktop") {
+    // The old card's Edit details control is now this genuine permissions
+    // detail escape. Keep the report's historical field, with current proof.
+    const edit = panel.getByRole("link", { name: "Review permissions in detail", exact: true });
+    await edit.scrollIntoViewIfNeeded();
+    assert.equal(await edit.evaluate((node) => { const r = node.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.top >= 0 && r.bottom <= innerHeight && (hit === node || node.contains(hit)); }), true, "The real onboarding permissions detail link must remain visible and unobscured.");
+    assert.equal(await edit.getAttribute("href"), "/client/onboarding/details"); report.desktopOnboardingEditUnobscured = true;
+  }
+  await panel.getByRole("radio", { name: "Keep current permissions", exact: true }).check();
+  await wizardCommand(page, target, "permissions", "done", "Finish setup", { action: "navigate", step: "done" });
+  await page.getByRole("button", { name: "Open workspace", exact: true }).click(); await page.waitForURL(url => url.pathname === "/client");
+}
 export function assertAssistantContentClearance({ viewport, content, dock, summary, target, unobscured }) {
   const valid = (rect) => rect && [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) && rect.width > 0 && rect.height > 0;
   assert.ok(viewport && Number.isFinite(viewport.width) && Number.isFinite(viewport.height) && viewport.width > 0 && viewport.height > 0 && [content, dock, summary].every(valid), "Phone assistant clearance requires real viewport, content, dock and summary geometry.");
@@ -198,20 +251,27 @@ export async function runPersonalAssistantBrowserScenarios({ admin, fixture, own
         await personalAssistantRpc(target, token, "get_owner_personal_assistant", { p_client: other.clientId }, [403], request);
       });
       await stage(`${owner.label}: skip save reload and explicit assistant choices`, async () => {
-        const page = owner.page; await page.goto(`${target.appUrl}/client/onboarding`);
-        let form = page.locator("[data-personal-assistant-onboarding]"); await form.getByRole("group", { name: "Do you use a personal AI assistant?", exact: true }).waitFor();
-        await form.getByRole("radio", { name: "Skip for now", exact: true }).check(); let value = await saveUi(page, target, form);
-        assert.equal(value.preferences.answer, "skipped"); await assertStored(admin, fixture, owner, value);
-        if (owner.label === "desktop") {
-          const edit = page.getByRole("link", { name: "Edit details", exact: true }); await edit.waitFor({ state: "visible" });
-          assert.equal(await edit.evaluate((node) => { const r = node.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.top >= 0 && r.bottom <= innerHeight && (hit === node || node.contains(hit)); }), true, "The initial desktop onboarding Edit details control must remain visible and unobscured by the closed assistant launcher.");
-          report.desktopOnboardingEditUnobscured = true;
-        }
-        await screenshot(page, target, `${owner.label}-personal-assistant-onboarding`); await page.reload(); form = page.locator("[data-personal-assistant-onboarding]");
-        await page.waitForFunction(() => [...document.querySelectorAll("[data-personal-assistant-onboarding] input[type=radio]")].some((node) => node.value === "skipped" && node.checked));
-        await form.getByRole("radio", { name: "Yes", exact: true }).check(); await form.getByRole("radio", { name: owner.label === "desktop" ? "Muse" : "Grok", exact: true }).check(); value = await saveUi(page, target, form); await assertStored(admin, fixture, owner, value);
-        await page.goto(`${target.appUrl}/client`); let panel = await launcher(page); await panel.getByText("Integration unavailable", { exact: true }).waitFor(); await panel.getByText(labels[value.preferences.assistant], { exact: true }).first().waitFor();
+        const page = owner.page, beforeSkip = (await call()).body;
+        await visitWizardAssistant(owner, target, phase);
+        await screenshot(page, target, `${owner.label}-personal-assistant-onboarding`);
+        await wizardCommand(page, target, "assistant", "review", "Skip for now", { action: "skip", step: "assistant" });
+        await page.reload(); await wizardStep(page, "review");
+        const progress = (await onboardingApi(owner.context, target, `${owner.userId}:${owner.clientId}`, undefined, { phase, operation: "assistant skipped question survives reload" })).body;
+        assertWizardAssistantSkip(beforeSkip, (await call()).body, progress);
+        await wizardCommand(page, target, "review", "assistant", "Back", { action: "navigate", step: "assistant" });
+        assert.equal(await page.getByRole("radio", { name: "Yes", exact: true }).isChecked(), false);
+        assert.equal(await page.getByRole("radio", { name: "No", exact: true }).isChecked(), false);
+        let value = await chooseWizardAssistant(owner, target, owner.label === "desktop" ? "muse" : "grok", phase); await assertStored(admin, fixture, owner, value);
+        await finishAssistantWizard(owner, target, report);
+        let panel = await launcher(page); await panel.getByText("Integration unavailable", { exact: true }).waitFor(); await panel.getByText(labels[value.preferences.assistant], { exact: true }).first().waitFor();
         await assertPersonalAssistantGeometry(page); await screenshot(page, target, `${owner.label}-personal-assistant-launcher`);
+        // Wizard Skip deliberately preserves an existing choice. The launcher
+        // still supports explicitly saving "Skipped for now" as a preference;
+        // retain that separate save/reload proof from the original 14 groups.
+        await panel.getByRole("radio", { name: "Skip for now", exact: true }).check(); value = await saveUi(page, target, panel);
+        assert.equal(value.preferences.answer, "skipped"); await assertStored(admin, fixture, owner, value);
+        await page.reload(); panel = await launcher(page); await page.waitForFunction(() => document.querySelector("[data-personal-assistant-selected]")?.textContent?.trim() === "Skipped for now");
+        await assertSavedPersonalAssistant(owner.context, target, owner, value.preferences, phase);
         value = await saveUi(page, target, panel, true); assert.equal(value.preferences.answer, "unanswered"); await assertStored(admin, fixture, owner, value);
         await panel.getByRole("radio", { name: "No", exact: true }).check(); await panel.getByRole("checkbox", { name: "Prefer the Workstation assistant", exact: true }).check(); value = await saveUi(page, target, panel);
         assert.equal(value.connection.state, "setup_needed"); await panel.getByText("Setup needed", { exact: true }).waitFor(); await assertStored(admin, fixture, owner, value);
@@ -268,9 +328,10 @@ export async function runPersonalAssistantBrowserScenarios({ admin, fixture, own
         same(await stored(admin, fixture, owner), original, "Denied membership or role requests must preserve the saved private row.");
       });
       await stage(`${owner.label}: explicit final choice retained for re-login`, async () => {
-        await owner.page.goto(`${target.appUrl}/client/onboarding`); const form = owner.page.locator("[data-personal-assistant-onboarding]");
-        await form.getByRole("radio", { name: "Yes", exact: true }).check(); await form.getByRole("radio", { name: owner.label === "desktop" ? "Muse" : "Grok", exact: true }).check();
-        const value = await saveUi(owner.page, target, form); owner.personalAssistantPreferences = value.preferences; await assertStored(admin, fixture, owner, value); report.owners.push({ label: owner.label, preferences: value.preferences });
+        await visitWizardAssistant(owner, target, phase);
+        const value = await chooseWizardAssistant(owner, target, owner.label === "desktop" ? "muse" : "grok", phase);
+        await finishAssistantWizard(owner, target, report);
+        owner.personalAssistantPreferences = value.preferences; await assertStored(admin, fixture, owner, value); report.owners.push({ label: owner.label, preferences: value.preferences });
       });
     }
     await stage("shared business membership keeps each actor's private choice separate", async () => {

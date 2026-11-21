@@ -1,4 +1,4 @@
-export const EXPECTED_SCHEMA_VERSION = "20261121205414_oauth_conflict_transport";
+export const EXPECTED_SCHEMA_VERSION = "20261121212831_owner_onboarding_progress";
 
 export function schemaVersionIsCompatible(
   actual: string | null | undefined,

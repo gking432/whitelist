@@ -12,6 +12,9 @@ import { OWNER_PROVIDERS } from "@/lib/connections/types";
 import { readOwnerProviderOptions } from "@/lib/connections/provider-options";
 import { prepareOwnerIntake } from "@/lib/connections/intake-setup";
 import { prepareStripeSetup } from "@/lib/connections/provider-setup";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { OnboardingSnapshotSchema } from "@/lib/business/onboarding-contract";
+import { onboardingReturnHintForAuthCookie } from "@/lib/connections/onboarding-return";
 import {
   enqueueInitialConnectorSync,
   processConnectorSyncJobs,
@@ -22,7 +25,7 @@ const Input = z.discriminatedUnion("action", [
   z.object({ action: z.literal("upgrade_hubspot_permissions"), connectionId: z.uuid(), permissions: z.array(z.enum(["contact.create", "note.create"])).max(2).refine((a)=>new Set(a).size===a.length) }).strict(),
   z.object({ action: z.literal("configure_hubspot"), connectionId: z.uuid(), expectedRevision: z.string().min(1).max(100), selectedCrm: z.boolean(), actionsEnabled: z.boolean() }).strict(),
   z.object({ action: z.literal("upgrade_google_permissions"), connectionId: z.uuid(), permissions: z.array(z.enum(["calendar.write", "email.send"])).min(1).max(2).refine((items) => new Set(items).size === items.length) }).strict(),
-  z.object({ action: z.literal("connect"), provider: z.enum(OWNER_PROVIDERS).default("google_workspace"), connectionId: z.uuid().optional(), permissions: z.array(z.enum(["contact.create", "note.create"])).max(2).optional() }).strict(),
+  z.object({ action: z.literal("connect"), provider: z.enum(OWNER_PROVIDERS).default("google_workspace"), connectionId: z.uuid().optional(), permissions: z.array(z.enum(["contact.create", "note.create"])).max(2).optional(), returnTo: z.literal("onboarding").optional() }).strict(),
   z.object({ action: z.literal("prepare_intake"), key: z.uuid() }).strict(),
   z
     .object({
@@ -31,9 +34,17 @@ const Input = z.discriminatedUnion("action", [
     })
     .strict(),
 ]);
-export async function GET() {
+function scopeMatches(request: NextRequest | undefined, ctx: NonNullable<Awaited<ReturnType<typeof connectionsContext>>>) {
+  const supplied = request?.headers.get("X-Workstation-Scope");
+  return supplied === null || supplied === undefined || (supplied === `${ctx.user.id}:${ctx.scope.clientId}` && ctx.portal.user.id === ctx.user.id);
+}
+function saveReturnHint(response: NextResponse, request: NextRequest, authCookie: string, enabled: boolean) {
+  const name = enabled ? onboardingReturnHintForAuthCookie(authCookie) : null;
+  if (name) response.cookies.set(name, "onboarding", { httpOnly: true, secure: request.nextUrl.protocol === "https:", sameSite: "lax", path: "/", maxAge: 900 });
+}
+export async function GET(request: NextRequest) {
   const ctx = await connectionsContext();
-  if (!ctx)
+  if (!ctx || !scopeMatches(request, ctx))
     return NextResponse.json(
       { error: "Sign in with business owner access." },
       { status: 403 },
@@ -45,7 +56,7 @@ export async function GET() {
       { status: 503 },
     );
   return NextResponse.json({ ...(await readConnectedData(admin, ctx.scope)), providers: readOwnerProviderOptions(), canWrite: canWriteBusinessWorkspace(ctx.portal.access) && !ctx.portal.access.isImpersonating }, {
-    headers: { "Cache-Control": "private, no-store" },
+    headers: { "Cache-Control": "private, no-store", Vary: "Cookie, X-Workstation-Scope" },
   });
 }
 export async function POST(request: NextRequest) {
@@ -55,7 +66,7 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     );
   const ctx = await connectionsContext(true);
-  if (!ctx)
+  if (!ctx || !scopeMatches(request, ctx))
     return NextResponse.json(
       { error: "Sign in with business owner access." },
       { status: 403 },
@@ -84,6 +95,22 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   const input = parsed.data;
+  const onboardingReturn = input.action === "connect" && input.returnTo === "onboarding";
+  if (onboardingReturn) {
+    if (!["google_workspace", "microsoft_365", "hubspot"].includes(input.provider))
+      return NextResponse.json({ error: "Choose a supported app connection in setup." }, { status: 422 });
+    if (request.headers.get("X-Workstation-Scope") !== `${ctx.user.id}:${ctx.scope.clientId}` || ctx.portal.access.role !== "client_owner" || ctx.portal.access.isImpersonating)
+      return NextResponse.json({ error: "Return to your saved setup before connecting an app." }, { status: 403 });
+    try {
+      const client = await createSupabaseServerClient();
+      const saved = client ? await client.rpc("get_owner_onboarding", { p_client: ctx.scope.clientId }) : null;
+      if (saved?.error?.code === "42501") return NextResponse.json({ error: "Your owner access changed. Reload setup before continuing." }, { status: 403 });
+      const snapshot = saved && !saved.error ? OnboardingSnapshotSchema.safeParse(saved.data) : null;
+      if (!snapshot?.success) return NextResponse.json({ error: "Your saved setup is temporarily unavailable." }, { status: 503 });
+      if (snapshot.data.progress.step !== "connections" || snapshot.data.progress.finished)
+        return NextResponse.json({ error: "Return to the app connection question before continuing." }, { status: 409 });
+    } catch { return NextResponse.json({ error: "Your saved setup is temporarily unavailable." }, { status: 503 }); }
+  }
   try {
     if (input.action === "configure_hubspot") {
       const result = await admin.rpc("configure_hubspot", { p_partner: ctx.scope.partnerId, p_client: ctx.scope.clientId, p_connection: input.connectionId, p_expected_revision: input.expectedRevision, p_selected: input.selectedCrm, p_enabled: input.actionsEnabled });
@@ -94,6 +121,7 @@ export async function POST(request: NextRequest) {
       const auth = await startHubSpotOAuth(admin, ctx.scope, ctx.user.id, input.connectionId, input.permissions ?? []);
       const response = NextResponse.json({ url: auth.url }, { headers: { "Cache-Control": "no-store" } });
       response.cookies.set(auth.cookieName, auth.cookie, { httpOnly: true, secure: request.nextUrl.protocol === "https:", sameSite: "lax", path: "/", maxAge: 900 });
+      saveReturnHint(response, request, auth.cookieName, onboardingReturn);
       return response;
     }
     if (input.action === "upgrade_google_permissions") {
@@ -138,6 +166,7 @@ export async function POST(request: NextRequest) {
         path: "/",
         maxAge: 900,
       });
+      saveReturnHint(response, request, auth.cookieName, onboardingReturn);
       return response;
     }
     const { data: conn } = await admin

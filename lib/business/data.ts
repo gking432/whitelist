@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isAIConfigured } from "@/lib/ai/provider";
 import type { ClientPortal } from "@/lib/clients/portal";
@@ -12,6 +13,7 @@ import {
   type BusinessContact,
   type BusinessConnection,
 } from "./types";
+const ProfileSnapshot = z.object({ profile: z.record(z.string(), z.unknown()), revision: z.string().min(1).max(80) }).strict();
 
 export async function readBusinessData(
   admin: SupabaseClient,
@@ -19,12 +21,7 @@ export async function readBusinessData(
   clientId: string,
 ) {
   const results = await Promise.all([
-    admin
-      .from("business_workspace_profiles")
-      .select("profile")
-      .eq("partner_id", partnerId)
-      .eq("client_id", clientId)
-      .maybeSingle(),
+    admin.rpc("get_business_profile_snapshot", { p_partner: partnerId, p_client: clientId }),
     admin
       .from("business_records")
       .select(
@@ -69,16 +66,25 @@ export async function readBusinessData(
   ]);
   const [profile, records, installs, events, contacts, connections, approvals] =
     results;
+  const parsed = ProfileSnapshot.safeParse(profile.data);
+  const raw = !profile.error && parsed.success ? parsed.data.profile : null;
+  // These are form display defaults only. The short wizard never saves this DTO.
+  const displayProfile = { ...EMPTY_PROFILE };
+  if (raw) for (const key of Object.keys(EMPTY_PROFILE) as (keyof typeof EMPTY_PROFILE)[]) {
+    if (key === "goals") { if (Array.isArray(raw.goals) && raw.goals.every(value => typeof value === "string")) displayProfile.goals = raw.goals; }
+    else if (typeof raw[key] === "string") displayProfile[key] = raw[key];
+  }
   return {
-    profile: { ...EMPTY_PROFILE, ...profile.data?.profile },
+    profile: displayProfile,
+    profileRevision: !profile.error && parsed.success ? parsed.data.revision : null,
     records: (records.data ?? []) as BusinessRecord[],
     installs: (installs.data ?? []) as BusinessInstall[],
     events: (events.data ?? []) as BusinessEvent[],
     contacts: (contacts.data ?? []) as BusinessContact[],
     connections: (connections.data ?? []) as unknown as BusinessConnection[],
     pendingCustomerApprovals: approvals.count ?? 0,
-    setupRequired: !profile.data,
-    error: results.some((r) => r.error)
+    setupRequired: raw !== null && Object.keys(raw).length === 0,
+    error: !parsed.success || results.some((r) => r.error)
       ? "Business data could not be fully loaded. Check the database connection and apply the business workspace migration."
       : null,
   };
@@ -100,6 +106,7 @@ export async function loadBusinessSnapshot(
     )),
     clientName: portal.client.name,
     clientId: portal.client.id,
+    workspaceScopeKey: `${portal.user.id}:${portal.client.id}`,
     aiConfigured: isAIConfigured(),
     canWrite: canWriteBusinessWorkspace(portal.access),
     isTestAccount: portal.client.is_test_account,

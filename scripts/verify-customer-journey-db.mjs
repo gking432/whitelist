@@ -6,9 +6,10 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { runOwnerOnboardingConcurrency } from "./owner-onboarding-concurrency.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261121205414";
+export const EXPECTED_MIGRATION = "20261121212831";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -23,6 +24,7 @@ export const COVERAGE = [
   "rollback: first-owner authenticated session, configured operator, isolated workspace, no implicit launch and replay/revocation gates",
   "rollback: foundation conflict catalog/ACLs, exact context receipts, genuine native website authority decisions and rejected stale effects",
   "rollback: four service-only OAuth boundary catalogs, deterministic logical conflicts, preserved replay/validation and zero unauthorized effects",
+  "rollback: private owner onboarding progress, raw known/unknown facts, atomic legacy/wizard combined CAS, exact receipts, session revocation and preserved authority",
   "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease, two first-owner creation races, owner workspace preference CAS, personal-assistant preference CAS and Google OAuth snapshot contention (synthetic session claims; browser CAS remains separate)",
 ];
 export class Blocked extends Error {}
@@ -288,6 +290,11 @@ async function rollbackAcceptance(target, asset = "customer-journey-acceptance.s
   console.log(`PASS: ${report.checks.length} ${kind} rollback SQL assertion groups; synthetic fixtures rolled back.`);
   if (personalCatalog) console.log(`CATALOG: ${JSON.stringify({ kind: "personal_assistant_catalog", ...personalCatalog })}`);
   if (kind === "oauth_conflict_acceptance") console.log(`CATALOG: ${JSON.stringify({ kind: "oauth_conflict_catalog", ...assertOAuthConflictCatalog(report.catalog) })}`);
+  if (kind === "owner_onboarding_acceptance") {
+    const catalog = report.catalog;
+    if (catalog?.table?.name !== "owner_onboarding_progress" || catalog.table.owner !== "postgres" || catalog.table.rls !== true || catalog.table.policies !== 0 || catalog.table.anonRead !== false || catalog.table.authenticatedRead !== false || catalog.table.authenticatedWrite !== false || catalog.table.serviceReadWrite !== true || !Array.isArray(catalog.functions) || catalog.functions.length !== 7) throw new Error("The onboarding catalog evidence is incomplete.");
+    console.log(`CATALOG: ${JSON.stringify({ kind: "owner_onboarding_catalog", ...catalog })}`);
+  }
   if (kind === "owner_foundation_conflict_acceptance") {
     const catalog = readReport(output, "owner_foundation_catalog");
     if (!Array.isArray(catalog.functions) || catalog.functions.length !== 6 || catalog.trigger?.enabled !== "O") throw new Error("The foundation catalog evidence is incomplete.");
@@ -630,7 +637,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await rollbackAcceptance(target, "owner-foundation-conflict-acceptance.sql", "owner_foundation_conflict_acceptance");
   await rollbackAcceptance(target, "personal-assistant-acceptance.sql", "personal_assistant_acceptance");
   await rollbackAcceptance(target, "oauth-conflict-acceptance.sql", "oauth_conflict_acceptance");
-  if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); await foundationLockConcurrencyAcceptance(target); await oauthSnapshotConcurrencyAcceptance(target); }
+  await rollbackAcceptance(target, "owner-onboarding-acceptance.sql", "owner_onboarding_acceptance");
+  if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); await foundationLockConcurrencyAcceptance(target); await oauthSnapshotConcurrencyAcceptance(target); await runOwnerOnboardingConcurrency(target, { query, readReport, heldTransaction, isolationAssertion, literal, reportPrefix: REPORT_PREFIX }); }
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

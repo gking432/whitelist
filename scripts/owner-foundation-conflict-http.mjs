@@ -134,7 +134,12 @@ export async function runOwnerFoundationConflictHttp({ admin, fixture, owners, t
         assert.ok(value?.version === 1 && value.canWrite === true && value.scope?.partnerId === scope.partnerId && value.scope?.clientId === scope.clientId && typeof value.revision === "string" && Number.isSafeInteger(value.authority?.revision), "The context snapshot must be complete and scoped to the real owner."); return value;
       };
       const command = (body, expected, operation) => call(contextPath, body, expected, operation);
-      const profile = (value, operation) => call("/api/business/workspace", { action: "save_profile", profile: value }, [200], operation);
+      const profile = async (value, operation) => {
+        const headers = { "X-Workstation-Scope": `${owner.userId}:${owner.clientId}` };
+        const loaded = await readFoundationHttpJson(() => owner.context.request.get(`${target.appUrl}/api/business/workspace`, { headers, timeout: 15000 }), { operation: ownerPhase(`${operation}: original revision`), phase, diagnose403 });
+        assert.ok(loaded.body?.workspaceScopeKey === headers["X-Workstation-Scope"] && /^[a-f0-9]{32}$/.test(loaded.body.profileRevision), "Full settings must use this genuine owner's loaded combined source revision.");
+        return readFoundationHttpJson(() => owner.context.request.post(`${target.appUrl}/api/business/workspace`, { headers: { ...headers, Origin: target.appUrl }, data: { action: "save_profile", profile: value, requestKey: randomUUID(), expectedRevision: loaded.body.profileRevision }, timeout: 15000 }), { operation: ownerPhase(operation), phase, diagnose403 });
+      };
       const approval = (id, resolution, expected, operation, extra = {}) => call(`/api/business/approvals/${id}`, { resolution, ...extra }, expected, operation);
       const unchanged = async (action, operation) => { const before = await controlState(admin, scope), work = await effects(admin, scope); await action(); same(await controlState(admin, scope), before, `${operation} must not change controls or receipts.`); same(await effects(admin, scope), work, `${operation} must not create execution work.`); };
       let originalProfile, baselineEffects, token;
@@ -144,13 +149,18 @@ export async function runOwnerFoundationConflictHttp({ admin, fixture, owners, t
         const current = await snapshot(); originalProfile = current.profile; baselineEffects = await effects(admin, scope);
         const settings = await admin.from("agent_team_settings").select("status,channel_authority,conversations_enabled,sales_enabled,scheduling_enabled").eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).single(); assert.equal(settings.error, null);
         const knowledge = await admin.from("client_knowledge_profiles").select("business_description,services_offered,business_hours,booking_rules").eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).maybeSingle(); assert.equal(knowledge.error, null);
-        const review = await admin.from("business_context_reviews").select("profile_revision").eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).maybeSingle(); assert.equal(review.error, null); assert.equal(review.data, null, "This new-owner foundation must start without a fabricated context review.");
-        originals.push({ ...scope, profile: originalProfile, settings: settings.data, knowledge: knowledge.data, baselineEffects });
+        const rawProfile = await admin.from("business_workspace_profiles").select("profile,updated_at").eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).single(); assert.equal(rawProfile.error, null);
+        const review = await admin.from("business_context_reviews").select("*").eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).single(); assert.equal(review.error, null); assert.equal(review.data.actor_id, owner.userId, "The initial review must come from the owner's explicit onboarding confirmation.");
+        const reviewedCommand = await admin.from("business_owner_commands").select("id,command").eq("partner_id", scope.partnerId).eq("client_id", scope.clientId).eq("actor_id", owner.userId).contains("command", { action: "review_context" }).limit(20); assert.equal(reviewedCommand.error, null); assert.ok(reviewedCommand.data.some(row => Date.parse(row.command.expectedContextRevision) === Date.parse(review.data.profile_revision)), "A real explicit review receipt must back the saved onboarding review.");
+        originals.push({ ...scope, profile: rawProfile.data.profile, profileUpdatedAt: rawProfile.data.updated_at, review: review.data, settings: settings.data, knowledge: knowledge.data, baselineEffects });
         assert.ok(current.authority.status === "paused" && Object.values(current.authority.channels).every((mode) => mode === "off"), "Foundation evidence begins with the genuine stopped workspace.");
         const scoped = await call(`${contextPath}?clientId=${other.clientId}`, undefined, [200], "foreign context query");
         assert.ok(scoped.body.scope.clientId === owner.clientId, "A query string cannot switch the real owner's context.");
       });
       await stage(`${owner.label}: reviewed context receipt and stale source`, async () => {
+        // Invalidate the genuine initial review through the normal CAS writer,
+        // so the retained unreviewed-authority denial remains a real check.
+        await profile({ ...originalProfile, description: `${originalProfile.description}\nSynthetic unreviewed source prerequisite.` }, "change facts before unreviewed authority check");
         let current = await snapshot();
         await unchanged(() => command({ action: "set_authority", key: randomUUID(), expectedRevision: current.authority.revision, channel: "website", mode: "draft" }, [422], "unreviewed drafting denied"), "Unreviewed authority");
         const review = { action: "review_context", key: randomUUID(), expectedContextRevision: current.revision };
@@ -288,9 +298,10 @@ export async function runOwnerFoundationConflictHttp({ admin, fixture, owners, t
       try {
         await withOwnerBrowserDeadline("restore original scoped foundation state", async () => {
         const scoped = { partner_id: original.partnerId, client_id: original.clientId };
-        const profile = await admin.from("business_workspace_profiles").upsert({ ...scoped, profile: original.profile }, { onConflict: "client_id" }); assert.equal(profile.error, null);
+        const profile = await admin.from("business_workspace_profiles").upsert({ ...scoped, profile: original.profile, updated_at: original.profileUpdatedAt }, { onConflict: "client_id" }); assert.equal(profile.error, null);
         const knowledge = original.knowledge ? await admin.from("client_knowledge_profiles").upsert({ ...scoped, ...original.knowledge }, { onConflict: "client_id" }) : await admin.from("client_knowledge_profiles").delete().eq("partner_id", original.partnerId).eq("client_id", original.clientId); assert.equal(knowledge.error, null);
         const review = await admin.from("business_context_reviews").delete().eq("partner_id", original.partnerId).eq("client_id", original.clientId); assert.equal(review.error, null);
+        if (original.review) { const restoredReview = await admin.from("business_context_reviews").insert(original.review); assert.equal(restoredReview.error, null); }
         const settings = await admin.from("agent_team_settings").update(original.settings).eq("partner_id", original.partnerId).eq("client_id", original.clientId); assert.equal(settings.error, null);
         const checked = await admin.from("agent_team_settings").select("status,channel_authority,conversations_enabled,sales_enabled,scheduling_enabled").eq("partner_id", original.partnerId).eq("client_id", original.clientId).single(); assert.equal(checked.error, null); same(checked.data, original.settings, "Every original team flag must be restored.");
         same(await effects(admin, original), original.baselineEffects, "Foundation fixture cleanup cannot leave execution effects.");

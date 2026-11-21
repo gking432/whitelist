@@ -13,6 +13,8 @@ export async function createFirstOwnerBusiness(_previous: FirstOwnerFormState, f
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user || data.user.is_anonymous || !data.user.email_confirmed_at)
     return { status: "error", message: "Sign in with a verified email before creating your business." };
+  if (formData.get("expectedActor") !== data.user.id)
+    return { status: "error", message: "Your sign-in changed. Reload setup before continuing." };
   let destination: string;
   try {
     const result = await provisionFirstOwner(supabase, { key: formData.get("key"), business: { name: formData.get("name"), description: formData.get("description"), timezone: formData.get("timezone") } });

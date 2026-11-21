@@ -11,6 +11,7 @@ import { isOwnerArea, OWNER_AREAS } from "@/lib/business/owner-navigation";
 import type { WorkspaceNavItem } from "@/components/layout/workspace-navigation";
 import type { PortalBranding } from "@/lib/clients/portal";
 import { brandStyleVariables } from "@/lib/branding";
+import { clearFirstOwnerDraftAfterProvision } from "@/components/onboarding/first-owner-draft";
 import type { ClientExperienceMode } from "@/lib/clients/constants";
 import type { ClientSectionKey } from "@/lib/permissions/client-sections";
 
@@ -47,6 +48,17 @@ export function PortalShell({
   const pathname = usePathname();
   const assistantViewport = useRef<HTMLDivElement>(null);
   useEffect(() => { if (assistantViewport.current) assistantViewport.current.scrollTop = 0; }, [pathname]);
+  const onboarding = pathname === "/client/onboarding";
+  useEffect(() => {
+    if (!onboarding || !businessWorkspace || !personalAssistantScopeKey) return;
+    try { clearFirstOwnerDraftAfterProvision(window.sessionStorage, personalAssistantScopeKey); } catch { /* Storage may be unavailable; server access remains authoritative. */ }
+  }, [onboarding, businessWorkspace, personalAssistantScopeKey]);
+  if (onboarding) {
+    const content = <div data-business-onboarding-layout className="min-h-dvh bg-white text-slate-900">{children}</div>;
+    return businessWorkspace && personalAssistantScopeKey
+      ? <PersonalAssistantPreferencesProvider key={personalAssistantScopeKey} scopeKey={personalAssistantScopeKey}>{content}</PersonalAssistantPreferencesProvider>
+      : content;
+  }
   const simpleView = pathname === "/client/mobile";
   const crm = experienceMode === "northstar_crm";
   const legacyNavigation: (WorkspaceNavItem & { section: ClientSectionKey })[] =

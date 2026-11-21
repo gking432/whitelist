@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest, NextResponse } from "next/server";
+import { connectionCallbackPath, onboardingReturnHintName } from "./onboarding-return.ts";
 import { getAppUrl, getSecretsEncryptionKey } from "../env.ts";
 import {
   buildHubSpotAuthorizationUrl, exchangeHubSpotOAuthCode, getHubSpotOAuthClient, HubSpotOAuthError,
@@ -137,10 +138,12 @@ export async function completeHubSpotOAuth(request: NextRequest): Promise<NextRe
   const { NextResponse, after } = await import("next/server");
   const state = readHubSpotOAuthState(request.nextUrl.searchParams.get("state"));
   const finish = (outcome: string) => {
-    const url = new URL("/client/apps", getAppUrl()); url.searchParams.set("connection", outcome); url.searchParams.set("provider", "hubspot");
+    const returnCookie = onboardingReturnHintName(state?.attemptId);
+    const url = new URL(connectionCallbackPath(returnCookie ? request.cookies.get(returnCookie)?.value : undefined), getAppUrl()); url.searchParams.set("connection", outcome); url.searchParams.set("provider", "hubspot");
     const response = NextResponse.redirect(url);
     response.headers.set("Cache-Control", "no-store"); response.headers.set("Referrer-Policy", "no-referrer");
     if (state) response.cookies.delete(cookieName(state.attemptId));
+    if (returnCookie) response.cookies.delete(returnCookie);
     return response;
   };
   if (!state) return finish("expired");

@@ -18,6 +18,7 @@ import { runOwnerFoundationConflictHttp } from "./owner-foundation-conflict-http
 import { assertDisplayedPersonalAssistant, assertPersonalAssistantDenied, assertSavedPersonalAssistant, personalAssistantApi, personalAssistantRpc, runPersonalAssistantBrowserScenarios } from "./personal-assistant-browser-scenarios.mjs";
 import { runPublicReviewBrowserScenarios } from "./public-review-browser-scenarios.mjs";
 import { runOAuthConflictHttp } from "./oauth-conflict-http.mjs";
+import { finishInitialOwnerOnboarding, runOwnerOnboardingBrowserScenarios } from "./owner-onboarding-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
@@ -28,6 +29,7 @@ BROWSER_COVERAGE.push("deliberate owner-scoped Today preferences, source-backed 
 BROWSER_COVERAGE.push("optional private assistant preference UI, unavailable/setup-needed launcher, genuine-cookie HTTP CAS and actor/business isolation without model or provider effects");
 BROWSER_COVERAGE.push("anonymous clean workstation entry and real owner setup handoff, seven read-only areas, no private data or writes, and protected API denial");
 BROWSER_COVERAGE.push("production service-role OAuth RPC wire contracts, logical409 JSON, denied browser roles, stale/replay/race isolation and zero unauthorized token/job effects");
+BROWSER_COVERAGE.push("one centered onboarding question, actual saved Back/refresh/resume, unknown facts, deliberate review, private optional assistant choice and unchanged permissions on desktop and phone");
 export function browserOptions(args) {
   if (args.length > 1 || args.some((arg) => !["--plan", "--preflight"].includes(arg))) throw new Error("Use no arguments, --plan, or --preflight.");
   return { plan: args[0] === "--plan", preflight: args[0] === "--preflight" };
@@ -361,11 +363,11 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   if (installed.name !== "playwright" || installed.version !== PLAYWRIGHT_VERSION) throw new Error(`Use audited Playwright ${PLAYWRIGHT_VERSION} in the explicit CI-only module path.`);
   await mkdir(target.artifacts, { recursive: true });
   const fixture = browserFixtureIdentity(randomBytes(6).toString("hex")), checks = [], contexts = [], diagnostics = [];
-  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null, personalAssistant = null, publicReview = null, oauthConflictHttp = null;
+  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null, personalAssistant = null, publicReview = null, oauthConflictHttp = null, ownerOnboarding = null;
   let activeStep = null, currentPhase = "preparing browser acceptance", failurePhase = null, cleanupStatus = "not_started", checkpointTail = Promise.resolve();
   const cleanupErrors = [];
   const report = (status) => ({ kind: "owner_browser_acceptance", status, updatedAt: new Date().toISOString(), playwrightVersion: PLAYWRIGHT_VERSION,
-    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp, personalAssistant, publicReview, oauthConflictHttp,
+    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp, personalAssistant, publicReview, oauthConflictHttp, ownerOnboarding,
     limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately.", "Session proof reads only the project's cookies set by the normal email login, then verifies the exact token against the live current-session RPC; no cookie injection, session creation or token refresh is used."],
     ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) });
   const checkpoint = async (status = "in_progress") => {
@@ -396,19 +398,30 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       page.on("pageerror", (error) => diagnostics.push(redactBrowserFailure(error.message, [target.anonKey, target.serviceKey])));
       await context.route("**/*", async (route) => { const origin = new URL(route.request().url()).origin; if (![target.appUrl, target.supabaseUrl].includes(origin)) { diagnostics.push("An external browser request was blocked."); await route.abort(); } else await route.continue(); });
       await step(`${owner.label}: real email login`, async () => {
-        await loginUi(page, target, owner.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/start"); await page.getByRole("button", { name: "Create my business", exact: true }).waitFor({ state: "visible" });
+        await loginUi(page, target, owner.email); await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/start"); await page.getByLabel("Business name", { exact: true }).waitFor({ state: "visible" });
         await phase(`${owner.label}: read session cookie from this initial normal login`); const token = await readOwnerBrowserSession(context, target);
         await phase(`${owner.label}: verify initial live session actor`); await verifyObservedOwnerSession(target, token); sessionTokens.set(owner.label, token);
       });
       let created;
       await step(`${owner.label}: visible create once`, async () => {
-        await page.getByLabel("Business name", { exact: true }).fill(owner.name); await page.getByLabel("Business description", { exact: true }).fill("Synthetic browser acceptance business: project planning and customer coordination."); await page.getByLabel("Timezone", { exact: true }).fill("America/Chicago");
+        assert.equal(await page.locator("[data-question-answer] input:not([type=hidden]), [data-question-answer] textarea").count(), 1);
+        await page.getByLabel("Business name", { exact: true }).fill(owner.name);
+        await screenshot(page, target, `onboarding-${owner.label}-first-name`);
+        await page.getByRole("button", { name: "Next", exact: true }).click();
+        await page.getByLabel("Business description", { exact: true }).fill("Synthetic browser acceptance business: project planning and customer coordination.");
+        await screenshot(page, target, `onboarding-${owner.label}-first-description`);
+        await page.reload();
+        assert.equal(await page.getByLabel("Business description", { exact: true }).inputValue(), "Synthetic browser acceptance business: project planning and customer coordination.");
+        await page.getByRole("button", { name: "Back", exact: true }).click();
+        assert.equal(await page.getByLabel("Business name", { exact: true }).inputValue(), owner.name);
+        await page.getByRole("button", { name: "Next", exact: true }).click();
+        await page.getByRole("button", { name: "Next", exact: true }).click();
+        await page.getByLabel("Timezone", { exact: true }).fill("America/Chicago");
         await screenshot(page, target, `${owner.label}-filled-create-form`);
         await page.getByRole("button", { name: "Create my business", exact: true }).click(); await page.waitForURL((url) => url.pathname === "/client/onboarding");
-        const connectApps = page.getByRole("link", { name: "Connect apps", exact: true });
-        await connectApps.waitFor({ state: "visible" });
-        assert.equal(await connectApps.getAttribute("href"), "/client/apps");
-        await connectApps.click(); await page.waitForURL((url) => url.pathname === "/client/apps");
+        created = await readCreatedOwner(admin, fixture, owner);
+        await finishInitialOwnerOnboarding({ page, target, scopeKey: `${created.userId}:${created.clientId}`, businessName: owner.name, phase });
+        await page.goto(`${target.appUrl}/client/apps`);
         await page.getByRole("heading", { name: "Apps & connections", exact: true }).waitFor();
         created = await readCreatedOwner(admin, fixture, owner); assert.ok(observedOwnerSessionIdentity(sessionTokens.get(owner.label))?.userId === created.userId, "The browser-created workspace must belong to the observed real session actor."); await page.goto(`${target.appUrl}/start`); await page.waitForURL((url) => url.pathname === "/client"); assert.equal((await readCreatedOwner(admin, fixture, owner)).clientId, created.clientId);
       });
@@ -423,6 +436,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       });
       owners.push({ ...created, context, page });
     }
+    ownerOnboarding = await runOwnerOnboardingBrowserScenarios({ admin, fixture, owners, target, screenshot, phase,
+      onProgress: async (progress) => { ownerOnboarding = progress; await checkpoint(); }, env });
     for (const owner of owners) await step(`${owner.label}: actual queued source import`, async () => { owner.sources = await sourceImport(env, target, fixture, owner); });
     for (const owner of owners) {
       const other = owners.find((candidate) => candidate.userId !== owner.userId);

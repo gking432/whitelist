@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertAssistantContentClearance, assertPersonalAssistantSnapshot, observePersonalAssistantSave, personalAssistantApi, personalAssistantRpc, personalAssistantScopeHeader, runPersonalAssistantBrowserScenarios, type AssistantBrowserContext, type AssistantObservedRequest, type AssistantObservedResponse } from "../scripts/personal-assistant-browser-scenarios.mjs";
+import { assertAssistantContentClearance, assertPersonalAssistantSnapshot, assertWizardAssistantSkip, observePersonalAssistantSave, personalAssistantApi, personalAssistantRpc, personalAssistantScopeHeader, runPersonalAssistantBrowserScenarios, type AssistantBrowserContext, type AssistantObservedRequest, type AssistantObservedResponse } from "../scripts/personal-assistant-browser-scenarios.mjs";
 
 const snapshot = { version: 1, preferences: { answer: "yes", assistant: "muse", revision: 3 }, connection: { state: "unavailable", label: "Muse", detail: "Preference saved; connection unavailable.", canChat: false }, available: true, canEdit: true };
 const owner = { userId: "synthetic-user", clientId: "synthetic-business" }, target = { appUrl: "http://127.0.0.1:3000", supabaseUrl: "http://127.0.0.1:54321", anonKey: "synthetic-public-key" };
@@ -8,6 +8,12 @@ test("assistant acceptance requires complete versioned preferences and never pro
   assertPersonalAssistantSnapshot(snapshot);
   for (const value of [{ ...snapshot, connected: true }, { ...snapshot, preferences: { ...snapshot.preferences, revision: -1 } }, { ...snapshot, preferences: { answer: "no", assistant: "muse", revision: 1 } }, { ...snapshot, connection: { ...snapshot.connection, canChat: true } }, { ...snapshot, connection: { ...snapshot.connection, state: "setup_needed" } }, { ...snapshot, connection: { ...snapshot.connection, label: "Other account" } }, { ...snapshot, connection: { ...snapshot.connection, detail: "x".repeat(1001) } }]) assert.throws(() => assertPersonalAssistantSnapshot(value));
   assertPersonalAssistantSnapshot({ ...snapshot, preferences: { answer: "no", assistant: "workstation", revision: 4 }, connection: { ...snapshot.connection, state: "setup_needed", label: "Workstation assistant (ours)" } });
+});
+test("new wizard Skip retains the exact existing private choice and records only real presentation progress", () => {
+  const skipped = { progress: { step: "review", skipped: ["assistant"] } };
+  assertWizardAssistantSkip(snapshot, structuredClone(snapshot), skipped);
+  for (const after of [{ ...snapshot, preferences: { ...snapshot.preferences, revision: 4 } }, { ...snapshot, preferences: { answer: "skipped", assistant: null, revision: 4 }, connection: { ...snapshot.connection, state: "not_selected", label: "Personal assistant" } }]) assert.throws(() => assertWizardAssistantSkip(snapshot, after, skipped), /retain the exact existing private preference/);
+  for (const progress of [{ progress: { step: "assistant", skipped: ["assistant"] } }, { progress: { step: "review", skipped: [] } }, {}]) assert.throws(() => assertWizardAssistantSkip(snapshot, snapshot, progress), /record the optional skip/);
 });
 test("assistant HTTP uses genuine cookie context once, with explicit current rendered scope and complete JSON", async () => {
   const calls: { method: string; url: string; options: unknown }[] = [];

@@ -33,6 +33,8 @@ function data(records: BusinessRecord[] = []): DailyBriefData {
     workspace: {
       clientName: "Test",
       clientId: "client",
+      workspaceScopeKey: "owner:client",
+      profileRevision: null,
       profile: EMPTY_PROFILE,
       records,
       installs: [],

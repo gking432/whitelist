@@ -5,12 +5,18 @@ import { canWriteBusinessWorkspace } from "./access";
 import { BUSINESS_RECIPES } from "./catalog";
 import { PROFILE_SCHEMA, RECORD_SCHEMA } from "./rules";
 import { createBusinessRecord, runBusinessRecipe } from "./engine";
-import type { MutationResult } from "./types";
+import { parseBusinessProfileSaveReceipt, type MutationResult } from "./types";
 import { validateGoalLink } from "./record-links";
 
 const uuid = z.uuid();
+const profileKeys = Object.keys(PROFILE_SCHEMA.shape);
+export const SaveBusinessProfileCommandSchema = z.object({ action: z.literal("save_profile"), requestKey: uuid, expectedRevision: z.string().min(1).max(80), profile: z.record(z.string(), z.unknown()).refine(value => Object.keys(value).length === profileKeys.length && profileKeys.every(key => Object.hasOwn(value, key)), "Review the complete business settings.").pipe(PROFILE_SCHEMA) }).strict();
+export class BusinessProfileSaveError extends Error {
+  readonly status: 403 | 409 | 422 | 503;
+  constructor(status: 403 | 409 | 422 | 503, message: string) { super(message); this.name = "BusinessProfileSaveError"; this.status = status; }
+}
 const commandSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("save_profile"), profile: PROFILE_SCHEMA }),
+  SaveBusinessProfileCommandSchema,
   z.object({
     action: z.literal("save_record"),
     record: RECORD_SCHEMA,
@@ -67,8 +73,10 @@ export async function mutateBusinessWorkspace(
   portal: Extract<ClientPortal, { kind: "ok" }>,
   input: unknown,
 ): Promise<MutationResult> {
+  const profileSave = input !== null && typeof input === "object" && "action" in input && input.action === "save_profile";
   if (!canWriteBusinessWorkspace(portal.access))
-    throw new Error("You do not have permission to change this workspace.");
+    throw profileSave ? new BusinessProfileSaveError(403, "You do not have permission to change these business settings.") : new Error("You do not have permission to change this workspace.");
+  if (profileSave && !SaveBusinessProfileCommandSchema.safeParse(input).success) throw new BusinessProfileSaveError(422, "Reload the current settings and check the complete profile before saving.");
   const command = commandSchema.parse(input);
   const scope = {
     partnerId: portal.client.partner_id,
@@ -76,38 +84,19 @@ export async function mutateBusinessWorkspace(
     actorId: portal.user.id,
   };
   if (command.action === "save_profile") {
-    const { error } = await admin.from("business_workspace_profiles").upsert(
-      {
-        client_id: scope.clientId,
-        partner_id: scope.partnerId,
-        profile: command.profile,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "client_id" },
-    );
-    if (error) throw new Error("Business settings could not be saved.");
-    const { error: knowledgeError } = await admin
-      .from("client_knowledge_profiles")
-      .upsert(
-        {
-          client_id: scope.clientId,
-          partner_id: scope.partnerId,
-          business_description: command.profile.description,
-          services_offered: command.profile.services,
-          business_hours: command.profile.hours,
-          booking_rules: command.profile.policies,
-        },
-        { onConflict: "client_id" },
-      );
-    if (knowledgeError)
-      throw new Error(
-        "Business settings were saved, but assistant knowledge could not be updated. Save again to retry.",
-      );
-    return {
-      ok: true,
-      message:
-        "Business settings saved. Assistant knowledge and recommendations are updated.",
-    };
+    try {
+      const result = await admin.rpc("save_business_profile", { p_partner: scope.partnerId, p_client: scope.clientId, p_actor: scope.actorId, p_key: command.requestKey, p_revision: command.expectedRevision, p_profile: command.profile });
+      if (result.error) {
+        const code = result.error.code;
+        if (code === "PT409") throw new BusinessProfileSaveError(409, "Business facts changed elsewhere. Reload saved settings before saving again.");
+        if (code === "42501") throw new BusinessProfileSaveError(403, "You do not have permission to change these business settings.");
+        if (code === "22023") throw new BusinessProfileSaveError(422, "Check the complete business settings before saving.");
+        throw new BusinessProfileSaveError(503, "The save could not be confirmed. Retry the same change or reload saved settings.");
+      }
+      const receipt = parseBusinessProfileSaveReceipt(result.data, command.requestKey);
+      if (!receipt) throw new BusinessProfileSaveError(503, "The saved receipt could not be confirmed. Retry the same change or reload saved settings.");
+      return { ok: true, profileReceipt: receipt, message: receipt.replayed ? "The original business settings save was confirmed. Current facts are shown." : "Business settings and assistant knowledge saved together." };
+    } catch (error) { if (error instanceof BusinessProfileSaveError) throw error; throw new BusinessProfileSaveError(503, "The save could not be confirmed. Retry the same change or reload saved settings."); }
   }
   if (command.action === "save_record") {
     if (command.id) {

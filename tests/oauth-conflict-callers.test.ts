@@ -9,9 +9,11 @@ type Scenario = {
   denied?: boolean; missingCode?: boolean; wrongProvider?: boolean; wrongAccount?: boolean; missingScope?: boolean;
   staleSource?: boolean; consumeError?: boolean; cleanupError?: boolean; enqueueError?: boolean;
   reconnect?: boolean; selected?: string[]; requestPermissions?: string[]; tamperedState?: boolean;
+  returnHint?: string; hintAttemptId?: string; callbackAttemptId?: string; returnQuery?: string;
 };
 type Observation = {
   outcomes: string[]; thrown: boolean; cookieCleared: boolean[]; grantCommits: number;
+  destinations: { origin: string; pathname: string; queryKeys: string[] }[]; deletedCookies: string[][];
   order: string[];
   effects: { enqueue: number; scheduled: number; processed: number; retired: number; encrypted: number };
   transport: { host: string; path: string; method: string; grant: string | null }[];
@@ -29,7 +31,7 @@ function caller(scenario: Scenario): Observation {
     const scenario=${JSON.stringify(scenario)},root=process.cwd(),cache=new Map();
     const ids={partner:'11111111-1111-4111-8111-111111111111',client:'22222222-2222-4222-8222-222222222222',actor:'33333333-3333-4333-8333-333333333333',connection:'44444444-4444-4444-8444-444444444444',attempt:'55555555-5555-4555-8555-555555555555'};
     const hubspot=scenario.flow.startsWith('hubspot'),upgrade=scenario.flow==='google_upgrade',provider=hubspot?'hubspot':scenario.flow==='readonly_microsoft'?'microsoft_365':'google_workspace';
-    const out={outcomes:[],thrown:false,cookieCleared:[],grantCommits:0,order:[],effects:{enqueue:0,scheduled:0,processed:0,retired:0,encrypted:0},transport:[],rpc:[],consumption:[]};
+    const out={outcomes:[],thrown:false,cookieCleared:[],grantCommits:0,destinations:[],deletedCookies:[],order:[],effects:{enqueue:0,scheduled:0,processed:0,retired:0,encrypted:0},transport:[],rpc:[],consumption:[]};
     const cookie='browser-fixture',digest=v=>require('node:crypto').createHash('sha256').update(v).digest('hex');
     const at=new Date().toISOString(),account=hubspot?'12345':'immutable-account-fixture',selected=scenario.selected||[],requested=scenario.requestPermissions||(upgrade?['calendar.write']:selected);
     let consumed=false,retired=false;
@@ -92,12 +94,16 @@ function caller(scenario: Scenario): Observation {
       if(scenario.flow==='hubspot_begin'){
         try{const result=await module.startHubSpotOAuth(admin,{partnerId:ids.partner,clientId:ids.client},ids.actor,scenario.reconnect?ids.connection:undefined,scenario.requestPermissions||[]);const u=new URL(result.url),s=module.readHubSpotOAuthState(u.searchParams.get('state'));out.begin={accountPinned:u.pathname==='/oauth/'+account+'/authorize',selected:(u.searchParams.get('scope')||'').split(' ').sort(),stateBound:s?.attemptId===ids.attempt&&s?.connectionId===ids.connection,cookieBound:result.cookieName==='hubspot_oauth_'+ids.attempt&&!!result.cookie,secretsInUrl:u.href.includes(client.clientSecret)||u.href.includes(result.cookie)};}catch{out.thrown=true;}
       }else{
-        const state=hubspot?{provider:'hubspot',attemptId:ids.attempt,connectionId:ids.connection}:{providerKey:provider,connectionId:ids.connection,setupSessionId:null,...(upgrade?{permissionAttemptId:ids.attempt}:{readOnlyAttemptId:ids.attempt})};
+        const callbackAttempt=scenario.callbackAttemptId||ids.attempt;const state=hubspot?{provider:'hubspot',attemptId:callbackAttempt,connectionId:ids.connection}:{providerKey:provider,connectionId:ids.connection,setupSessionId:null,...(upgrade?{permissionAttemptId:callbackAttempt}:{readOnlyAttemptId:callbackAttempt})};
         const u=new URL('https://app.synthetic.invalid/api/oauth/'+provider+'/callback');if(!scenario.missingCode)u.searchParams.set('code','code-fixture');if(scenario.denied)u.searchParams.set('error','access_denied');if(hubspot){const signed=module.signHubSpotOAuthState(state);u.searchParams.set('state',scenario.tamperedState?signed+'.tampered':signed);}
-        const cookieName=(hubspot?'hubspot_oauth_':upgrade?'workspace_permissions_':'workspace_read_')+ids.attempt;
-        const request=new actualNext.NextRequest(u,{headers:scenario.missingCookie?{}:{cookie:cookieName+'='+cookie}});
+        const cookieName=(hubspot?'hubspot_oauth_':upgrade?'workspace_permissions_':'workspace_read_')+callbackAttempt;
+        if(scenario.returnQuery!==undefined)u.searchParams.set('returnTo',scenario.returnQuery);
+        const cookieParts=scenario.missingCookie?[]:[cookieName+'='+cookie];
+        if(scenario.returnHint!==undefined)cookieParts.push('onboarding_return_'+(scenario.hintAttemptId||callbackAttempt)+'='+scenario.returnHint);
+        cookieParts.push('onboarding_return_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa=onboarding');
+        const request=new actualNext.NextRequest(u,{headers:{cookie:cookieParts.join('; ')}});
         const invoke=()=>hubspot?module.completeHubSpotOAuth(request):upgrade?module.completeGooglePermissionUpgrade(request,state):module.completeReadOnlyOAuth(request,state);
-        for(let i=0;i<(scenario.replay?2:1);i++){try{const response=await invoke();out.outcomes.push(new URL(response.headers.get('location')).searchParams.get('connection'));out.cookieCleared.push(/1970|Max-Age=0/.test(response.headers.get('set-cookie')||''));}catch{out.thrown=true;}}
+        for(let i=0;i<(scenario.replay?2:1);i++){try{const response=await invoke();const destination=new URL(response.headers.get('location'));out.outcomes.push(destination.searchParams.get('connection'));out.destinations.push({origin:destination.origin,pathname:destination.pathname,queryKeys:[...destination.searchParams.keys()].sort()});out.deletedCookies.push(response.cookies.getAll().map(v=>v.name).sort());out.cookieCleared.push(/1970|Max-Age=0/.test(response.headers.get('set-cookie')||''));}catch{out.thrown=true;}}
         for(const work of queued)await work();
       }
       process.stdout.write(JSON.stringify(out));
@@ -181,5 +187,68 @@ test("a committed read-only connection whose initial sync enqueue fails reports 
   for (const flow of ["readonly_google", "readonly_microsoft", "hubspot"] as const) {
     const result = caller({ flow, enqueueError: true, replay: true }); assert.deepEqual(result.outcomes, ["sync_pending", "expired"]);
     assert.equal(result.grantCommits, 1); assert.equal(exchanges(result), 1); assert.equal(result.rpc.length, 1); assert.equal(result.effects.enqueue, 1); assert.equal(result.effects.scheduled, 0); assert.equal(result.effects.processed, 0);
+  }
+});
+
+const currentHint = "onboarding_return_55555555-5555-4555-8555-555555555555";
+const unrelatedHint = "onboarding_return_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+function fixedDestination(result: Observation, path: "/client/onboarding" | "/client/apps") {
+  assert.equal(result.thrown, false);
+  assert.ok(result.destinations.length > 0);
+  for (const destination of result.destinations) {
+    assert.equal(destination.origin, "https://app.synthetic.invalid");
+    assert.equal(destination.pathname, path);
+    assert.ok(destination.queryKeys.every((key) => ["connection", "provider"].includes(key)), "Neither OAuth code nor arbitrary return query may reach the destination.");
+  }
+  assert.ok(result.deletedCookies.every((names) => !names.includes(unrelatedHint)), "Finishing one attempt must leave unrelated attempt hints untouched.");
+}
+
+test("only an exact attempt UUID hint selects the fixed onboarding destination and only its own hint is retired", () => {
+  for (const flow of completedFlows) {
+    const own = caller({ flow, returnHint: "onboarding" }); fixedDestination(own, "/client/onboarding");
+    assert.deepEqual(own.outcomes, [successful(flow)]); assert.equal(own.grantCommits, 1);
+    assert.ok(own.deletedCookies[0].includes(currentHint));
+    const absent = caller({ flow }); fixedDestination(absent, "/client/apps");
+    const other = caller({ flow, returnHint: "onboarding", hintAttemptId: "99999999-9999-4999-8999-999999999999" }); fixedDestination(other, "/client/apps");
+    assert.ok(other.deletedCookies[0].includes(currentHint));
+    assert.ok(!other.deletedCookies[0].includes("onboarding_return_99999999-9999-4999-8999-999999999999"));
+  }
+  for (const returnHint of ["https://evil.synthetic.invalid/start", "//evil.synthetic.invalid", "/client/onboarding", "ONBOARDING", "onboarding?next=https://evil.synthetic.invalid"])
+    fixedDestination(caller({ flow: "readonly_google", returnHint }), "/client/apps");
+  fixedDestination(caller({ flow: "hubspot", returnQuery: "https://evil.synthetic.invalid/start" }), "/client/apps");
+  fixedDestination(caller({ flow: "google_upgrade", returnHint: "onboarding", hintAttemptId: "not-a-uuid" }), "/client/apps");
+  const malformed = caller({ flow: "readonly_google", callbackAttemptId: "not-a-uuid", returnHint: "onboarding" });
+  fixedDestination(malformed, "/client/apps"); assert.deepEqual(malformed.outcomes, ["expired"]);
+  assert.ok(!malformed.deletedCookies[0].includes("onboarding_return_not-a-uuid")); assert.equal(malformed.rpc.length, 0); assert.equal(malformed.transport.length, 0);
+});
+
+test("onboarding navigation hints cannot bypass fresh actor, browser, attempt consumption or actual grant checks", () => {
+  for (const flow of completedFlows) for (const boundary of ["signedOut", "viewOnlyActor", "impersonating", "missingCookie", "consumeError", "denied"] as const) {
+    const result = caller({ flow, returnHint: "onboarding", [boundary]: true }); fixedDestination(result, "/client/onboarding");
+    assert.notEqual(result.outcomes[0], successful(flow)); assert.equal(exchanges(result), 0); assert.equal(result.rpc.length, 0); assert.equal(result.grantCommits, 0); noImport(result);
+    assert.ok(result.deletedCookies[0].includes(currentHint));
+  }
+  for (const flow of ["google_upgrade", "hubspot"] as const) for (const boundary of ["wrongAccount", "missingScope"] as const) {
+    const result = caller({ flow, returnHint: "onboarding", selected: flow === "hubspot" ? ["note.create"] : undefined, [boundary]: true });
+    fixedDestination(result, "/client/onboarding"); assert.notEqual(result.outcomes[0], successful(flow)); assert.equal(result.rpc.length, 0); assert.equal(result.grantCommits, 0); noImport(result);
+  }
+  const tampered = caller({ flow: "hubspot", returnHint: "onboarding", tamperedState: true }); fixedDestination(tampered, "/client/apps");
+  assert.deepEqual(tampered.outcomes, ["expired"]); assert.equal(tampered.consumption.length, 0); assert.equal(tampered.transport.length, 0);
+  assert.ok(!tampered.deletedCookies[0].includes(currentHint), "Untrusted state must not consume another attempt's navigation hint.");
+});
+
+test("onboarding return hints leave uncertain commits, PT409, replay and import-pending behavior unchanged", () => {
+  for (const flow of completedFlows) {
+    for (const condition of [{ rpcError: "PT409" as const }, { commitThenError: true }]) {
+      const result = caller({ flow, returnHint: "onboarding", replay: true, ...condition }); fixedDestination(result, "/client/onboarding");
+      assert.deepEqual(result.outcomes, [failed(flow), "expired"]); assert.equal(exchanges(result), 1); assert.equal(result.rpc.length, 1); assert.equal(result.transport.length, verifiedRequests(flow)); noImport(result);
+      assert.ok(result.deletedCookies.every((names) => names.includes(currentHint)));
+      assert.equal(result.grantCommits, "commitThenError" in condition ? 1 : 0);
+    }
+  }
+  for (const flow of ["readonly_google", "readonly_microsoft", "hubspot"] as const) {
+    const result = caller({ flow, returnHint: "onboarding", enqueueError: true }); fixedDestination(result, "/client/onboarding");
+    assert.deepEqual(result.outcomes, ["sync_pending"]); assert.equal(result.grantCommits, 1); assert.equal(exchanges(result), 1); assert.equal(result.rpc.length, 1);
+    assert.equal(result.effects.enqueue, 1); assert.equal(result.effects.scheduled, 0); assert.equal(result.effects.processed, 0);
   }
 });

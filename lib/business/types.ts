@@ -111,6 +111,9 @@ export type BusinessSnapshot = {
   clientName: string;
   clientId: string;
   profile: BusinessProfile;
+  /** Opaque combined raw-profile/knowledge CAS token. Null means unavailable. */
+  profileRevision: string | null;
+  workspaceScopeKey: string;
   records: BusinessRecord[];
   installs: BusinessInstall[];
   events: BusinessEvent[];
@@ -127,4 +130,14 @@ export type MutationResult = {
   ok: boolean;
   message: string;
   recordId?: string;
+  profileReceipt?: BusinessProfileSaveReceipt;
 };
+export type BusinessProfileSaveReceipt = { id: string; key: string; revision: string; replayed: boolean; cancelledWork: number };
+export type BusinessProfileSaveCommand = { action: "save_profile"; requestKey: string; expectedRevision: string; profile: BusinessProfile };
+/** No raw RPC diagnostic or undocumented field becomes a saved receipt. */
+export function parseBusinessProfileSaveReceipt(value: unknown, expectedKey: string): BusinessProfileSaveReceipt | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>, uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+  if (Object.keys(row).length !== 5 || !["id", "key", "revision", "replayed", "cancelledWork"].every(key => Object.hasOwn(row, key)) || typeof row.id !== "string" || !uuid.test(row.id) || row.key !== expectedKey || !uuid.test(expectedKey) || typeof row.revision !== "string" || row.revision.length < 1 || row.revision.length > 80 || typeof row.replayed !== "boolean" || !Number.isSafeInteger(row.cancelledWork) || Number(row.cancelledWork) < 0) return null;
+  return { id: row.id, key: expectedKey, revision: row.revision, replayed: row.replayed, cancelledWork: Number(row.cancelledWork) };
+}

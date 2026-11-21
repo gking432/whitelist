@@ -24,8 +24,11 @@ import type {
   BusinessArea,
   BusinessRecord,
   BusinessSnapshot,
+  BusinessProfile,
+  BusinessProfileSaveCommand,
   RecordKind,
 } from "@/lib/business/types";
+import { parseBusinessProfileSaveReceipt } from "@/lib/business/types";
 import { displayMoney, opportunityEconomics } from "@/lib/business/rules";
 import { BusinessSetup } from "./setup";
 import { Capabilities } from "./capabilities";
@@ -108,8 +111,33 @@ function shortDate(value: string) {
     timeZone: "UTC",
   }).format(new Date(value));
 }
+type ProfileSaveOutcome = { kind: "saved"; snapshot: BusinessSnapshot; message: string } | { kind: "stale" | "denied" | "invalid" | "uncertain"; message: string };
+const uncertainProfileSave: ProfileSaveOutcome = { kind: "uncertain", message: "The save could not be confirmed. Retry the same change or reload saved settings." };
+const object = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+export function readProfileWorkspaceSnapshot(value: unknown, scopeKey: string, clientId: string): BusinessSnapshot | null {
+  const row = object(value), profile = object(row?.profile);
+  if (!row || !profile || row.clientId !== clientId || row.workspaceScopeKey !== scopeKey || typeof row.profileRevision !== "string" || row.profileRevision.length < 1 || row.profileRevision.length > 80 || typeof row.clientName !== "string" || typeof row.canWrite !== "boolean" || typeof row.aiConfigured !== "boolean" || typeof row.isTestAccount !== "boolean" || typeof row.setupRequired !== "boolean" || !(row.error === null || typeof row.error === "string") || !Number.isSafeInteger(row.pendingCustomerApprovals) || ![row.records, row.installs, row.events, row.contacts, row.connections].every(Array.isArray) || !Array.isArray(profile.goals) || !profile.goals.every(goal => typeof goal === "string") || !["description", "industry", "services", "audience", "tone", "hours", "policies", "currency", "website"].every(key => typeof profile[key] === "string")) return null;
+  return row as unknown as BusinessSnapshot;
+}
+export async function requestBusinessProfileSave(command: BusinessProfileSaveCommand, scopeKey: string, clientId: string, request: typeof fetch = fetch): Promise<ProfileSaveOutcome> {
+  try {
+    const response = await request("/api/business/workspace", { method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "Content-Type": "application/json", "X-Workstation-Scope": scopeKey }, body: JSON.stringify(command), signal: AbortSignal.timeout(15000) });
+    if (!response.ok) return response.status === 409 ? { kind: "stale", message: "Business facts changed elsewhere. Reload saved settings before saving again." }
+      : response.status === 403 ? { kind: "denied", message: "Your access to these settings changed. Reload this workspace before continuing." }
+        : [400, 413, 422].includes(response.status) ? { kind: "invalid", message: "Check the complete business settings before saving." } : uncertainProfileSave;
+    const result = object(await response.json()), receipt = parseBusinessProfileSaveReceipt(result?.profileReceipt, command.requestKey);
+    const current = readProfileWorkspaceSnapshot(result?.snapshot, scopeKey, clientId);
+    if (result?.ok !== true || !receipt || !current || current.error) return uncertainProfileSave;
+    return { kind: "saved", snapshot: current, message: receipt.replayed ? "The original save was confirmed. Current business settings are shown." : "Business settings and assistant knowledge saved together." };
+  } catch { return uncertainProfileSave; }
+}
 
 export function BusinessWorkspace({
+  initialSnapshot, area = "home", initialRecordId,
+}: { initialSnapshot: BusinessSnapshot; area?: BusinessArea; initialRecordId?: string }) {
+  return <BusinessWorkspaceSession key={initialSnapshot.workspaceScopeKey} initialSnapshot={initialSnapshot} area={area} initialRecordId={initialRecordId} />;
+}
+function BusinessWorkspaceSession({
   initialSnapshot,
   area = "home",
   initialRecordId,
@@ -119,6 +147,9 @@ export function BusinessWorkspace({
   initialRecordId?: string;
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [profileSource, setProfileSource] = useState({ profile: initialSnapshot.profile, revision: initialSnapshot.profileRevision });
+  const [profileEpoch, setProfileEpoch] = useState(0), [profileReloadRequired, setProfileReloadRequired] = useState(false), [profileUncertain, setProfileUncertain] = useState(false), [profileDenied, setProfileDenied] = useState(false);
+  const profilePending = useRef<BusinessProfileSaveCommand | null>(null);
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const [notice, setNotice] = useState<{
@@ -147,7 +178,7 @@ export function BusinessWorkspace({
     try {
       const response = await fetch("/api/business/workspace", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Workstation-Scope": snapshot.workspaceScopeKey },
         body: JSON.stringify(input),
       });
       const result = await response.json();
@@ -171,18 +202,19 @@ export function BusinessWorkspace({
       setBusy(false);
     }
   }
-  async function refresh() {
+  async function refresh(reloadProfile = false) {
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
     try {
       const response = await fetch("/api/business/workspace", {
-        cache: "no-store",
+        cache: "no-store", headers: { "X-Workstation-Scope": snapshot.workspaceScopeKey }, redirect: "error", signal: AbortSignal.timeout(15000),
       });
-      const state = await response.json();
-      if (!response.ok)
-        throw new Error(state.error || "Records could not be refreshed.");
+      if (!response.ok) throw new Error("Saved records could not be reloaded. Your unsaved settings are kept.");
+      const state = readProfileWorkspaceSnapshot(await response.json(), snapshot.workspaceScopeKey, snapshot.clientId);
+      if (!state || reloadProfile && state.error) throw new Error("Saved settings could not be confirmed. Your unsaved settings are kept.");
       setSnapshot(state);
+      if (reloadProfile) { setProfileSource({ profile: state.profile, revision: state.profileRevision }); setProfileEpoch(value => value + 1); profilePending.current = null; setProfileReloadRequired(false); setProfileUncertain(false); setProfileDenied(false); }
       setNotice(null);
     } catch (error) {
       setNotice({
@@ -196,6 +228,19 @@ export function BusinessWorkspace({
       lock.current = false;
       setBusy(false);
     }
+  }
+  async function saveProfile(profile: BusinessProfile): Promise<boolean> {
+    if (lock.current || !snapshot.canWrite || !profileSource.revision || profileReloadRequired && !profileUncertain) return false;
+    lock.current = true; setBusy(true); setNotice(null);
+    profilePending.current ??= { action: "save_profile", requestKey: crypto.randomUUID(), expectedRevision: profileSource.revision, profile: { ...profile, goals: [...profile.goals] } };
+    try {
+      const outcome = await requestBusinessProfileSave(profilePending.current, snapshot.workspaceScopeKey, snapshot.clientId);
+      if (outcome.kind === "saved") {
+        profilePending.current = null; setSnapshot(outcome.snapshot); setProfileSource({ profile: outcome.snapshot.profile, revision: outcome.snapshot.profileRevision }); setProfileEpoch(value => value + 1); setProfileReloadRequired(false); setProfileUncertain(false); setProfileDenied(false); setNotice({ message: outcome.message, error: false }); return true;
+      }
+      if (outcome.kind !== "uncertain") profilePending.current = null;
+      setProfileReloadRequired(outcome.kind !== "invalid"); setProfileUncertain(outcome.kind === "uncertain"); setProfileDenied(outcome.kind === "denied"); setNotice({ message: outcome.message, error: true }); return false;
+    } finally { lock.current = false; setBusy(false); }
   }
   const active = snapshot.records.filter((r) => r.status !== "archived");
   const pending = active.filter((r) => r.status === "needs_approval");
@@ -298,16 +343,18 @@ export function BusinessWorkspace({
         </div>
       ) : null}
       {area === "business" || (area === "home" && snapshot.setupRequired) ? (
+        <div className="space-y-4">
+        {profileDenied ? <p className="rounded-xl border p-4 text-sm">Your access changed. Reload this workspace before viewing or editing these settings.</p> : <fieldset disabled={busy || profileReloadRequired || !snapshot.canWrite || !profileSource.revision || Boolean(snapshot.error)} className="min-w-0">
         <BusinessSetup
-          key={snapshot.setupRequired ? "new" : "saved"}
-          profile={snapshot.profile}
-          busy={busy || !snapshot.canWrite || Boolean(snapshot.error)}
+          key={profileEpoch}
+          profile={profileSource.profile}
+          busy={busy || profileReloadRequired || !snapshot.canWrite || !profileSource.revision || Boolean(snapshot.error)}
           isNew={snapshot.setupRequired}
-          onSave={async (profile) => {
-            const ok = await mutate({ action: "save_profile", profile });
-            return ok;
-          }}
+          onSave={saveProfile}
         />
+        </fieldset>}
+        {profileReloadRequired || !profileSource.revision ? <div className="flex flex-wrap items-center gap-3"><button type="button" className={secondaryClass} disabled={busy} onClick={() => void refresh(true)}>Reload saved settings</button>{profileUncertain ? <button type="button" className={secondaryClass} disabled={busy || !snapshot.canWrite} onClick={() => { const command = profilePending.current; if (command) void saveProfile(command.profile); }}>Retry saved change</button> : null}<p className="w-full text-xs leading-6 text-muted-foreground">Reload replaces your unsaved detailed settings. Retry sends the exact same saved request.</p></div> : null}
+        </div>
       ) : null}
       {area === "home" && !snapshot.setupRequired ? (
         <>

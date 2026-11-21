@@ -30,7 +30,7 @@ function startPage(scenario: Scenario) {
   const forms=[],headings=[],statuses=[],gates=[];
   const text=node=>typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node&&typeof node==='object'?text(node.props?.children):'';
   const walk=node=>{if(Array.isArray(node)){node.forEach(walk);return;}if(!node||typeof node!=='object')return;
-   if(node.type==='FirstOwnerForm')forms.push({requestKey:node.props.requestKey});
+   if(node.type==='FirstOwnerForm')forms.push({requestKey:node.props.requestKey,draftScopeKey:node.props.draftScopeKey});
    if(node.type==='h1')headings.push(text(node));
    if(node.props?.role==='status')statuses.push(text(node));
    if(node.type==='SetupUnavailable')gates.push(node.props.message);
@@ -43,7 +43,7 @@ function startPage(scenario: Scenario) {
  });
  `;
   return JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "--eval", program], { encoding: "utf8", timeout: 15000, maxBuffer: 100000 })) as {
-    redirect: string | null; forms: { requestKey: string }[]; headings: string[]; statuses: string[]; gates: string[];
+    redirect: string | null; forms: { requestKey: string; draftScopeKey: string }[]; headings: string[]; statuses: string[]; gates: string[];
     calls: { auth: number; userClient: number; entry: number; adminClient: number; readiness: number };
   };
 }
@@ -60,7 +60,8 @@ test("authenticated eligible new owner sees exactly one real create form after t
   const result = startPage({ authenticated: true, ready: true, entry: { state: "new" } });
   assert.equal(result.redirect, null); assert.equal(result.forms.length, 1);
   assert.match(result.forms[0].requestKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-  assert.deepEqual(result.headings, ["Set up your business"]);
+  assert.equal(result.forms[0].draftScopeKey, "synthetic-authenticated-owner");
+  assert.deepEqual(result.headings, []); // The shared question screen owns the sole heading.
   assert.equal(result.calls.entry, 1); assert.equal(result.calls.readiness, 1);
 });
 

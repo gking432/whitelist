@@ -23,6 +23,7 @@ import {
 } from "@/lib/integrations/connectors/sync-runner";
 import { assertGooglePermissionAttempt, googlePermissionScopes, parseGooglePermissions, selectedGooglePermissions, verifyGooglePermissionUpgrade } from "./google-permissions.ts";
 import type { WorkspaceCredentials } from "@/lib/integrations/providers/workspace-oauth";
+import { connectionCallbackPath, onboardingReturnHintName } from "./onboarding-return.ts";
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const cookieName = (id: string) => `workspace_read_${id}`;
@@ -60,8 +61,14 @@ export async function startGooglePermissionUpgrade(admin: SupabaseClient, scope:
 export async function completeGooglePermissionUpgrade(request: NextRequest, state: WorkspaceOAuthState) {
   const id = state.permissionAttemptId;
   const finish = (outcome: string) => {
-    const response = NextResponse.redirect(new URL(`/client/apps?connection=${outcome}`, request.url));
+    const returnCookie = onboardingReturnHintName(id);
+    const destination = new URL(connectionCallbackPath(returnCookie ? request.cookies.get(returnCookie)?.value : undefined), request.url);
+    destination.searchParams.set("connection", outcome);
+    const response = NextResponse.redirect(destination);
     if (id) response.cookies.delete(permissionCookieName(id));
+    if (returnCookie) response.cookies.delete(returnCookie);
+    response.headers.set("Cache-Control", "no-store");
+    response.headers.set("Referrer-Policy", "no-referrer");
     return response;
   };
   if (!id || state.providerKey !== "google_workspace" || state.activationAttemptId || state.readOnlyAttemptId || state.setupSessionId) return finish("permissions_failed");
@@ -216,10 +223,14 @@ export async function completeReadOnlyOAuth(
 ) {
   const id = state.readOnlyAttemptId!;
   const finish = (outcome: string) => {
-    const response = NextResponse.redirect(
-      new URL(`/client/apps?connection=${outcome}`, request.url),
-    );
+    const returnCookie = onboardingReturnHintName(id);
+    const destination = new URL(connectionCallbackPath(returnCookie ? request.cookies.get(returnCookie)?.value : undefined), request.url);
+    destination.searchParams.set("connection", outcome);
+    const response = NextResponse.redirect(destination);
     response.cookies.delete(cookieName(id));
+    if (returnCookie) response.cookies.delete(returnCookie);
+    response.headers.set("Cache-Control", "no-store");
+    response.headers.set("Referrer-Policy", "no-referrer");
     return response;
   };
   if (!["google_workspace", "microsoft_365"].includes(state.providerKey) || !id || state.activationAttemptId) return finish("failed");

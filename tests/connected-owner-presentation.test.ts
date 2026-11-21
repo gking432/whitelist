@@ -72,7 +72,7 @@ test("Today includes populated imported money and intake sections with safe navi
   source.invoices = [invoice({ href: "javascript:alert(1)" })];
   source.leads = [{ id: "lead", externalId: "source-1", nativeId: null, connectionId: "form", account: "Website", provider: "generic_inbound_webhook", title: "Consultation inquiry", status: "new", receivedAt: source.generatedAt, href: null }];
   const data: DailyBriefData = {
-    workspace: { clientName: "Business", clientId: "client", profile: EMPTY_PROFILE, records: [], installs: [], events: [], contacts: [], connections: [], pendingCustomerApprovals: 0, aiConfigured: false, canWrite: true, isTestAccount: true, setupRequired: false, error: null },
+    workspace: { clientName: "Business", clientId: "client", workspaceScopeKey: "owner:client", profileRevision: null, profile: EMPTY_PROFILE, records: [], installs: [], events: [], contacts: [], connections: [], pendingCustomerApprovals: 0, aiConfigured: false, canWrite: true, isTestAccount: true, setupRequired: false, error: null },
     connectedData: source, displayName: null, timeZone: "UTC", generatedAt: source.generatedAt, tasks: [], appointments: [], approvals: [], conversations: [], work: [], teamStatus: "paused",
     counts: { tasks: 0, approvals: 0, conversations: 0, blockedWork: 0 }, errors: [], limited: false,
   };
