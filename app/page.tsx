@@ -1,140 +1,143 @@
 import Link from "next/link";
 import {
-  Activity,
   ArrowRight,
-  CheckCircle2,
-  DatabaseZap,
-  KeyRound,
-  ShieldCheck,
-  Workflow,
+  Check,
+  Layers3,
+  Megaphone,
+  Search,
+  ShoppingBag,
+  Sparkles,
 } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const readinessItems = [
-  {
-    label: "Secure access",
-    detail:
-      "Partner, client, and platform users enter through the same auth-ready boundary.",
-    icon: KeyRound,
-  },
-  {
-    label: "Partner workspace",
-    detail: "Navigation is organized around client operations and tenant-scoped work.",
-    icon: ShieldCheck,
-  },
-  {
-    label: "Operational visibility",
-    detail:
-      "The shell is ready for integrations, workflows, approvals, runs, and reports.",
-    icon: Workflow,
-  },
-];
-
-export default function HomePage() {
+import { NorthstarMark } from "@/components/brand/northstar-mark";
+import { getAuthState } from "@/lib/auth/session";
+import { isAccessError, requirePlatformRole } from "@/lib/permissions/access";
+export default async function HomePage() {
+  const { user } = await getAuthState();
+  let canTest = false;
+  if (user) {
+    try {
+      await requirePlatformRole(user.id, ["platform_owner", "platform_admin"]);
+      canTest = true;
+    } catch (error) {
+      if (!isAccessError(error) || error.code !== "ACCESS_DENIED") throw error;
+    }
+  }
   return (
-    <main className="min-h-screen px-6 py-8 sm:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
-        <header className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-center sm:justify-between">
+    <main className="min-h-screen bg-background">
+      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-10">
+        <header className="flex items-center justify-between">
+          <NorthstarMark
+            surface="light"
+            subtitle="Your business, working together"
+          />
+          <span className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
+            Business workspace · Prototype
+          </span>
+        </header>
+        <section className="grid min-h-[75vh] items-center gap-12 py-16 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
-            <Badge variant="secondary" className="mb-3">
-              Partner Operations
-            </Badge>
-            <h1 className="text-3xl font-semibold tracking-normal text-foreground">
-              Partner Portal
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+              More time for the business you love
+            </p>
+            <h1 className="mt-5 text-5xl font-semibold leading-[1.1] tracking-tight sm:text-6xl">
+              Your next chapter.
+              <br />
+              <span className="text-primary">A little less busy.</span>
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Manage client integrations, workflow operations, approval queues,
-              and operational health from a partner-branded workspace.
+            <p className="mt-6 max-w-lg text-base leading-8 text-muted-foreground">
+              One place for your customers, marketing, purchasing, and everyday
+              operations. Choose what gets handled. Stay in charge of the
+              decisions.
+            </p>
+            <div className="mt-8">
+              <Link
+                href={
+                  user
+                    ? "/workspaces/client"
+                    : "/login?next=%2Fstart"
+                }
+                className="inline-flex items-center gap-4 rounded-xl bg-primary px-6 py-3.5 text-sm font-medium text-white"
+              >
+                {user ? "Open your business" : "Get started"}
+                <ArrowRight className="size-4" />
+              </Link>
+            </div>
+            <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+              {[
+                "Shared business records",
+                "Approvals on your phone",
+                "Your tools, connected",
+              ].map((s) => (
+                <span key={s} className="inline-flex items-center gap-1.5">
+                  <Check className="size-3 text-primary" />
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-3xl border bg-card p-6 shadow-sm sm:p-8">
+            <div className="flex items-center gap-3 border-b pb-6">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Sparkles className="size-5" />
+              </span>
+              <div>
+                <h2 className="font-semibold">Built around your business</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Start with the work that matters to you.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 space-y-5">
+              {[
+                {
+                  name: "Marketing",
+                  text: "Prepare campaigns and useful content.",
+                  icon: Megaphone,
+                },
+                {
+                  name: "Sourcing",
+                  text: "Compare suppliers and buying opportunities.",
+                  icon: Search,
+                },
+                {
+                  name: "Purchasing",
+                  text: "Plan, approve, and track what you buy.",
+                  icon: ShoppingBag,
+                },
+                {
+                  name: "Operations",
+                  text: "Keep jobs, people, and next steps together.",
+                  icon: Layers3,
+                },
+              ].map((item) => (
+                <div key={item.name} className="flex items-center gap-4">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-primary">
+                    <item.icon className="size-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-medium">{item.name}</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {item.text}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-7 border-t pt-5 text-xs leading-6 text-muted-foreground">
+              Describe your business, see your recommended capabilities, and
+              connect the tools you need.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Button asChild>
-              <Link href="/login">
-                <KeyRound aria-hidden="true" />
-                Sign in
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/partner">
-                <Activity aria-hidden="true" />
-                Partner area
-              </Link>
-            </Button>
-          </div>
-        </header>
-
-        <section className="grid gap-4 md:grid-cols-3">
-          {readinessItems.map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <Card key={item.label}>
-                <CardHeader>
-                  <div className="mb-3 flex size-9 items-center justify-center rounded-md bg-secondary text-primary">
-                    <Icon className="size-5" aria-hidden="true" />
-                  </div>
-                  <CardTitle>{item.label}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    {item.detail}
-                  </p>
-                </CardContent>
-              </Card>
-            );
-          })}
         </section>
-
-        <section className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
-          <div className="rounded-lg border bg-card p-5">
-            <div className="flex items-start gap-3">
-              <div className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <DatabaseZap className="size-5" aria-hidden="true" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold">Operations entry</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Sign in to reach the partner workspace. Client records,
-                  connection health, workflow runs, and approvals remain scoped
-                  to authenticated access.
-                </p>
-              </div>
+        <footer className="flex flex-wrap justify-between gap-3 border-t py-5 text-xs text-muted-foreground">
+          <span>A single workspace for the work of running a business.</span>
+          {canTest ? (
+            <div className="flex gap-5">
+              <Link href="/control">Account administration</Link>
+              <Link href="/partner">Partner administration</Link>
             </div>
-          </div>
-
-          <div className="rounded-lg border bg-card p-5">
-            <div className="flex items-start gap-3">
-              <CheckCircle2
-                className="mt-1 size-5 shrink-0 text-primary"
-                aria-hidden="true"
-              />
-              <div>
-                <h2 className="text-lg font-semibold">Partner area</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  The protected workspace is ready for partner tenancy,
-                  memberships, and audit-backed operations.
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  <Button asChild variant="link" className="mt-3 h-auto px-0">
-                    <Link href="/partner">
-                      Open partner area
-                      <ArrowRight aria-hidden="true" />
-                    </Link>
-                  </Button>
-                  <Button asChild variant="link" className="mt-3 h-auto px-0">
-                    <Link href="/client">
-                      Client portal
-                      <ArrowRight aria-hidden="true" />
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+          ) : null}
+        </footer>
       </div>
     </main>
   );

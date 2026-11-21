@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,13 +12,16 @@ type ApprovalResolutionFormProps = {
   action: (previousState: FormState, formData: FormData) => Promise<FormState>;
   editableContent: string | null;
   consequence: string;
+  allowEdit?: boolean;
 };
 
 export function ApprovalResolutionForm({
   action,
   editableContent,
   consequence,
+  allowEdit = true,
 }: ApprovalResolutionFormProps) {
+  const formId = useId();
   const [state, formAction, isPending] = useActionState(
     action,
     initialFormState,
@@ -48,24 +51,25 @@ export function ApprovalResolutionForm({
 
       {editableContent !== null ? (
         <div>
-          <Label htmlFor="edited_content">Message content</Label>
+          <Label htmlFor={`${formId}-content`}>Message content</Label>
           <Textarea
-            id="edited_content"
+            id={`${formId}-content`}
             name="edited_content"
             className="mt-1.5"
             defaultValue={editableContent}
+            readOnly={!allowEdit}
             rows={4}
           />
           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-            Use “Edit &amp; approve” to approve your edited version above.
+            {allowEdit ? "Use “Edit & approve” to approve your edited version above." : "Review this exact source-backed proposal. To change its content, reject it and prepare a fresh review."}
           </p>
         </div>
       ) : null}
 
       <div>
-        <Label htmlFor="note">Resolution note (optional)</Label>
+        <Label htmlFor={`${formId}-note`}>Resolution note (optional)</Label>
         <Input
-          id="note"
+          id={`${formId}-note`}
           name="note"
           className="mt-1.5"
           placeholder="Reason or context for this decision"
@@ -85,7 +89,7 @@ export function ApprovalResolutionForm({
         >
           Approve
         </Button>
-        {editableContent !== null ? (
+        {editableContent !== null && allowEdit ? (
           <Button
             type="submit"
             name="resolution"

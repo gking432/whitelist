@@ -19,6 +19,14 @@ export const CRM_OPERATING_MODES = [
 
 export type CrmOperatingMode = (typeof CRM_OPERATING_MODES)[number];
 
+export const CLIENT_EXPERIENCE_MODES = [
+  "background_only",
+  "northstar_crm",
+] as const;
+
+export type ClientExperienceMode =
+  (typeof CLIENT_EXPERIENCE_MODES)[number];
+
 export const RUNTIME_MODES = ["sandbox", "dry_run", "live", "paused"] as const;
 
 export type RuntimeMode = (typeof RUNTIME_MODES)[number];
@@ -41,6 +49,7 @@ export type ClientBusinessRecord = {
   status: ClientStatus;
   industry: string | null;
   crm_operating_mode: CrmOperatingMode;
+  client_experience_mode: ClientExperienceMode;
   default_runtime_mode: RuntimeMode;
   website_url: string | null;
   primary_contact_name: string | null;
@@ -49,6 +58,10 @@ export type ClientBusinessRecord = {
   timezone: string;
   client_portal_enabled: boolean;
   partner_can_edit_client_data: boolean;
+  lead_source_profile: Record<string, unknown> | null;
+  package_id: string | null;
+  account_kind: "managed_client" | "partner_agency";
+  is_test_account: boolean;
   created_at: string;
   updated_at: string;
 };

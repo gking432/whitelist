@@ -4,6 +4,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSupabasePublicEnv } from "@/lib/env";
 
 export async function proxy(request: NextRequest) {
+  // Public design pages contain only empty, read-only UI state. Their rendering
+  // must not depend on a business session or database availability.
+  if (
+    request.nextUrl.pathname === "/preview" ||
+    request.nextUrl.pathname.startsWith("/preview/")
+  ) {
+    return NextResponse.next();
+  }
   let response = NextResponse.next({
     request,
   });

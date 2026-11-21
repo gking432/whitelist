@@ -11,7 +11,6 @@ import { Select } from "@/components/ui/select";
 import { RUNTIME_MODES } from "@/lib/clients/constants";
 import { formatEnum } from "@/lib/format";
 import {
-  INBOUND_WEBHOOK_PROVIDER_KEY,
   OUTBOUND_WEBHOOK_PROVIDER_KEY,
   type IntegrationProviderRecord,
 } from "@/lib/integrations/types";
@@ -48,8 +47,7 @@ export function ConnectionForm({
   const selectedProvider = providers.find(
     (provider) => provider.id === providerId,
   );
-  const isInbound =
-    selectedProvider?.provider_key === INBOUND_WEBHOOK_PROVIDER_KEY;
+  const isInbound = Boolean(selectedProvider?.supports_inbound);
   const isOutbound =
     selectedProvider?.provider_key === OUTBOUND_WEBHOOK_PROVIDER_KEY;
   const errors = state.fieldErrors ?? {};
@@ -193,14 +191,8 @@ export function ConnectionForm({
       {isOutbound ? (
         <p className="rounded-md border bg-secondary/40 px-4 py-3 text-xs leading-5 text-muted-foreground">
           A signing secret is generated and stored encrypted. Outbound delivery
-          is not enabled in this release; the connection is tracked and
-          configured ahead of that capability.
-        </p>
-      ) : null}
-      {!isInbound && !isOutbound ? (
-        <p className="rounded-md border bg-secondary/40 px-4 py-3 text-xs leading-5 text-muted-foreground">
-          This provider&apos;s adapter is not yet available. The connection is
-          recorded for planning and appears as not connected.
+          sends additive CRM contact and AI-note payloads in live mode. The
+          receiver must verify the signature before accepting them.
         </p>
       ) : null}
 

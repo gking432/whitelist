@@ -2,6 +2,10 @@ import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 
 import { requireAuthenticatedUser } from "@/lib/auth/session";
+import {
+  DEFAULT_BRAND_COLORS,
+  normalizeBrandColor,
+} from "@/lib/branding";
 import type { ClientBusinessRecord } from "@/lib/clients/constants";
 import {
   isAccessError,
@@ -12,6 +16,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type PortalBranding = {
   partnerName: string;
+  productName: string;
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
   supportLabel: string;
   supportEmail: string | null;
   supportPhone: string | null;
@@ -67,7 +76,9 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
       .maybeSingle(),
     supabase
       .from("partner_branding")
-      .select("support_label, report_footer_text")
+      .select(
+        "product_name, logo_url, primary_color, secondary_color, accent_color, support_label, report_footer_text",
+      )
       .eq("partner_id", access.partnerId)
       .maybeSingle(),
   ]);
@@ -86,6 +97,22 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
     client: clientResult.data as ClientBusinessRecord,
     branding: {
       partnerName: partner?.name ?? "Your service partner",
+      productName:
+        branding?.product_name ??
+        `${partner?.name ?? "Your service partner"} CRM`,
+      logoUrl: branding?.logo_url ?? null,
+      primaryColor: normalizeBrandColor(
+        branding?.primary_color,
+        DEFAULT_BRAND_COLORS.primary,
+      ),
+      secondaryColor: normalizeBrandColor(
+        branding?.secondary_color,
+        DEFAULT_BRAND_COLORS.secondary,
+      ),
+      accentColor: normalizeBrandColor(
+        branding?.accent_color,
+        DEFAULT_BRAND_COLORS.accent,
+      ),
       supportLabel: branding?.support_label ?? partner?.name ?? "Support",
       supportEmail: partner?.support_email ?? null,
       supportPhone: partner?.support_phone ?? null,

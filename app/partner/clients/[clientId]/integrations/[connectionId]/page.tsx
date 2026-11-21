@@ -1,14 +1,18 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { ChatWidgetSetup } from "@/components/partner/chat-widget-setup";
 import { ConnectionControls } from "@/components/partner/connection-controls";
+import {
+  FieldMappingEditor,
+  type FieldMappingRow,
+} from "@/components/partner/field-mapping-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { loadClientWorkspace } from "@/lib/clients/workspace";
 import { getAppUrl } from "@/lib/env";
 import { formatDateTime, formatEnum } from "@/lib/format";
 import {
-  INBOUND_WEBHOOK_PROVIDER_KEY,
   inboundWebhookPath,
   type IntegrationConnectionRecord,
   type IntegrationEventRecord,
@@ -30,6 +34,7 @@ type ConnectionRow = IntegrationConnectionRecord & {
     provider_key: string;
     display_name: string;
     category: string;
+    supports_inbound: boolean;
   } | null;
 };
 
@@ -48,11 +53,11 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
     return null;
   }
 
-  const [connectionResult, secretResult, eventsResult] = await Promise.all([
+  const [connectionResult, secretResult, eventsResult, mappingsResult] = await Promise.all([
     supabase
       .from("integration_connections")
       .select(
-        "*, provider:integration_providers(provider_key, display_name, category)",
+        "*, provider:integration_providers(provider_key, display_name, category, supports_inbound)",
       )
       .eq("id", connectionId)
       .eq("client_id", clientId)
@@ -71,6 +76,13 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
       .eq("connection_id", connectionId)
       .order("created_at", { ascending: false })
       .limit(25),
+    supabase
+      .from("integration_field_mappings")
+      .select("id, object_type, direction, native_field, external_field, transform_key, default_value, is_required, is_active")
+      .eq("connection_id", connectionId)
+      .eq("client_id", clientId)
+      .order("object_type")
+      .order("native_field"),
   ]);
 
   const connection = connectionResult.data as ConnectionRow | null;
@@ -94,8 +106,9 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
 
   const secret = secretResult.data;
   const events = (eventsResult.data ?? []) as IntegrationEventRecord[];
+  const mappings = (mappingsResult.data ?? []) as FieldMappingRow[];
   const isInbound =
-    connection.provider?.provider_key === INBOUND_WEBHOOK_PROVIDER_KEY;
+    Boolean(connection.provider?.supports_inbound);
   const endpointUrl = isInbound
     ? `${getAppUrl()}${inboundWebhookPath(connection.id)}`
     : null;
@@ -124,6 +137,23 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]">
         <div className="space-y-5">
+          {connection.provider?.provider_key === "northstar_web_chat" ? (
+            <ChatWidgetSetup
+              clientId={clientId}
+              connectionId={connection.id}
+              widgetKey={
+                typeof (connection.config as Record<string, unknown>)
+                  ?.widget_public_key === "string"
+                  ? String(
+                      (connection.config as Record<string, unknown>)
+                        .widget_public_key,
+                    )
+                  : null
+              }
+              appUrl={getAppUrl()}
+              canManage={access.canManageIntegrations}
+            />
+          ) : null}
           <section className="rounded-lg border bg-card p-5">
             <h3 className="text-sm font-semibold">Connection summary</h3>
             <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
@@ -223,6 +253,13 @@ export default async function ConnectionDetailPage({ params }: PageProps) {
               </div>
             )}
           </section>
+
+          <FieldMappingEditor
+            clientId={clientId}
+            connectionId={connection.id}
+            mappings={mappings}
+            canManage={access.canManageIntegrations}
+          />
         </div>
 
         <aside className="rounded-lg border bg-card p-5">

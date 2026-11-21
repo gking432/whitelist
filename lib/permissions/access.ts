@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getActiveImpersonation } from "@/lib/impersonation/session";
 import type {
   AccessContext,
   ClientRole,
@@ -20,6 +21,8 @@ type MembershipRecord = {
   client_id: string | null;
   role: MembershipRole;
   status: string;
+  client_job_role: string | null;
+  client_permissions: Record<string, unknown> | null;
 };
 
 type ClientScopeRecord = {
@@ -27,6 +30,8 @@ type ClientScopeRecord = {
   partner_id: string;
   client_portal_enabled: boolean;
   partner_can_edit_client_data: boolean;
+  account_kind: "managed_client" | "partner_agency";
+  is_test_account: boolean;
 };
 
 type AccessErrorCode =
@@ -88,7 +93,9 @@ async function fetchClientScope(
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("client_businesses")
-    .select("id, partner_id, client_portal_enabled, partner_can_edit_client_data")
+    .select(
+      "id, partner_id, client_portal_enabled, partner_can_edit_client_data, account_kind, is_test_account",
+    )
     .eq("id", clientId)
     .maybeSingle();
 
@@ -115,7 +122,73 @@ function toAccessContext(
     clientId: membership.client_id ?? clientScope?.id,
     clientPortalEnabled: clientScope?.client_portal_enabled,
     partnerCanEditClientData: clientScope?.partner_can_edit_client_data,
+    accountKind: clientScope?.account_kind,
+    clientJobRole: membership.client_job_role,
+    clientPermissions: membership.client_permissions,
   });
+}
+
+function impersonatedPartnerAccess(
+  userId: string,
+  session: Awaited<ReturnType<typeof getActiveImpersonation>>,
+  clientScope?: ClientScopeRecord,
+): AccessContext {
+  if (!session || session.targetKind !== "partner") {
+    denied("Partner access required.");
+  }
+
+  return buildAccessContext({
+    userId,
+    role: "partner_owner",
+    membershipId: session.id,
+    partnerId: session.targetPartnerId,
+    clientId: clientScope?.id,
+    clientPortalEnabled: clientScope?.client_portal_enabled,
+    partnerCanEditClientData: clientScope?.partner_can_edit_client_data,
+    accountKind: clientScope?.account_kind,
+    impersonation: { id: session.id, mode: session.mode },
+  });
+}
+
+function impersonatedClientAccess(
+  userId: string,
+  session: Awaited<ReturnType<typeof getActiveImpersonation>>,
+  clientScope: ClientScopeRecord,
+): AccessContext {
+  if (
+    !session ||
+    session.targetKind !== "client" ||
+    session.targetClientId !== clientScope.id
+  ) {
+    denied("Client access required.");
+  }
+
+  return buildAccessContext({
+    userId,
+    role: "client_owner",
+    membershipId: session.id,
+    partnerId: session.targetPartnerId,
+    clientId: session.targetClientId,
+    clientPortalEnabled: true,
+    partnerCanEditClientData: false,
+    accountKind: clientScope.account_kind,
+    clientJobRole: "owner",
+    impersonation: { id: session.id, mode: session.mode },
+  });
+}
+
+function partnerImpersonationAllows(
+  mode: "read_only" | "sandbox_full",
+  allowedRoles: readonly PartnerRole[],
+) {
+  return mode === "sandbox_full" || allowedRoles.includes("partner_viewer");
+}
+
+function clientImpersonationAllows(
+  mode: "read_only" | "sandbox_full",
+  allowedRoles: readonly ClientRole[],
+) {
+  return mode === "sandbox_full" || allowedRoles.includes("client_viewer");
 }
 
 export async function requirePlatformRole(
@@ -126,7 +199,7 @@ export async function requirePlatformRole(
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("status", "active")
     .is("partner_id", null)
@@ -151,10 +224,23 @@ export async function requirePartnerAccess(
   allowedRoles: readonly PartnerRole[] = PARTNER_ROLES,
 ): Promise<AccessContext> {
   const roles = requireNonEmptyRoles(allowedRoles);
+  const impersonation = await getActiveImpersonation(userId);
+
+  if (
+    impersonation?.targetKind === "partner" &&
+    impersonation.targetPartnerId === partnerId
+  ) {
+    if (!partnerImpersonationAllows(impersonation.mode, roles)) {
+      denied("This support session is read-only.");
+    }
+
+    return impersonatedPartnerAccess(userId, impersonation);
+  }
+
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("partner_id", partnerId)
     .is("client_id", null)
@@ -178,10 +264,20 @@ export async function requirePrimaryPartnerAccess(
   allowedRoles: readonly PartnerRole[] = PARTNER_ROLES,
 ): Promise<AccessContext> {
   const roles = requireNonEmptyRoles(allowedRoles);
+  const impersonation = await getActiveImpersonation(userId);
+
+  if (impersonation?.targetKind === "partner") {
+    if (!partnerImpersonationAllows(impersonation.mode, roles)) {
+      denied("This support session is read-only.");
+    }
+
+    return impersonatedPartnerAccess(userId, impersonation);
+  }
+
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("status", "active")
     .not("partner_id", "is", null)
@@ -211,10 +307,23 @@ export async function requireClientWorkspaceAccess(
 ): Promise<AccessContext> {
   const roles = requireNonEmptyRoles(allowedRoles);
   const clientScope = await fetchClientScope(clientId);
+  const impersonation = await getActiveImpersonation(userId);
+
+  if (
+    impersonation?.targetKind === "partner" &&
+    impersonation.targetPartnerId === clientScope.partner_id
+  ) {
+    if (!partnerImpersonationAllows(impersonation.mode, roles)) {
+      denied("This support session is read-only.");
+    }
+
+    return impersonatedPartnerAccess(userId, impersonation, clientScope);
+  }
+
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("partner_id", clientScope.partner_id)
     .is("client_id", null)
@@ -240,10 +349,21 @@ export async function requirePrimaryClientAccess(
   allowedRoles: readonly ClientRole[] = CLIENT_ROLES,
 ): Promise<AccessContext> {
   const roles = requireNonEmptyRoles(allowedRoles);
+  const impersonation = await getActiveImpersonation(userId);
+
+  if (impersonation?.targetKind === "client" && impersonation.targetClientId) {
+    if (!clientImpersonationAllows(impersonation.mode, roles)) {
+      denied("This client support session is read-only.");
+    }
+
+    const clientScope = await fetchClientScope(impersonation.targetClientId);
+    return impersonatedClientAccess(userId, impersonation, clientScope);
+  }
+
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("status", "active")
     .not("client_id", "is", null)
@@ -276,10 +396,23 @@ export async function requireClientAccess(
 ): Promise<AccessContext> {
   const roles = requireNonEmptyRoles(allowedRoles);
   const clientScope = await fetchClientScope(clientId);
+  const impersonation = await getActiveImpersonation(userId);
+
+  if (
+    impersonation?.targetKind === "client" &&
+    impersonation.targetClientId === clientId
+  ) {
+    if (!clientImpersonationAllows(impersonation.mode, roles)) {
+      denied("This client support session is read-only.");
+    }
+
+    return impersonatedClientAccess(userId, impersonation, clientScope);
+  }
+
   const supabase = await getSupabaseOrThrow();
   const { data, error } = await supabase
     .from("memberships")
-    .select("id, user_id, partner_id, client_id, role, status")
+    .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
     .eq("partner_id", clientScope.partner_id)
     .eq("client_id", clientId)
@@ -326,7 +459,7 @@ export async function requirePartnerClientAccess(
   if (partnerRoles.length > 0) {
     const { data, error } = await supabase
       .from("memberships")
-      .select("id, user_id, partner_id, client_id, role, status")
+      .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
       .eq("user_id", userId)
       .eq("partner_id", partnerId)
       .is("client_id", null)
@@ -346,7 +479,7 @@ export async function requirePartnerClientAccess(
   if (clientRoles.length > 0 && clientScope.client_portal_enabled) {
     const { data, error } = await supabase
       .from("memberships")
-      .select("id, user_id, partner_id, client_id, role, status")
+      .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
       .eq("user_id", userId)
       .eq("partner_id", partnerId)
       .eq("client_id", clientId)

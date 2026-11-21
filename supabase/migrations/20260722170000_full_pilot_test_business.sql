@@ -1,0 +1,2 @@
+-- Reserved migration. The previous version modified a seeded pilot business.
+-- Product migrations must not create or mutate demonstration accounts.

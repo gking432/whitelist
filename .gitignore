@@ -8,10 +8,12 @@ out/
 
 # production
 build/
+release/
 
-# local env files
+# local env files and credentials
 .env
-.env*.local
+.env.*
+!.env.example
 
 # logs
 npm-debug.log*
@@ -21,6 +23,7 @@ pnpm-debug.log*
 
 # system files
 .DS_Store
+.vercel/
 
 # supabase local state
 supabase/.branches/

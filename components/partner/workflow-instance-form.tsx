@@ -72,9 +72,9 @@ export function WorkflowInstanceForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label htmlFor="runtime_mode">Runtime mode</Label>
+          <Label htmlFor={`runtime_mode_${instanceId}`}>Run setting</Label>
           <Select
-            id="runtime_mode"
+            id={`runtime_mode_${instanceId}`}
             name="runtime_mode"
             className="mt-1.5"
             defaultValue={runtimeMode}
@@ -86,24 +86,26 @@ export function WorkflowInstanceForm({
             ))}
           </Select>
           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-            Sandbox and dry run never produce external side effects. Paused
-            suppresses runs entirely.
+            Test mode and Preview only do not send messages or change connected
+            apps. Paused stops this automation.
           </p>
         </div>
         <div>
-          <Label htmlFor="approval_policy">Approval policy</Label>
+          <Label htmlFor={`approval_policy_${instanceId}`}>
+            When to ask for approval
+          </Label>
           <Select
-            id="approval_policy"
+            id={`approval_policy_${instanceId}`}
             name="approval_policy"
             className="mt-1.5"
             defaultValue={approvalDefaultValue}
           >
             <option value="template_default">
-              Template default (
+              Solution default (
               {templateRequiresApproval ? "approval required" : "no approval"})
             </option>
             <option value="always">Always require approval</option>
-            <option value="never">Never require approval</option>
+            <option value="never">Skip approval when allowed</option>
           </Select>
           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
             High-risk workflows always require approval in live mode.
@@ -114,7 +116,7 @@ export function WorkflowInstanceForm({
       {settingsFields.length > 0 ? (
         <fieldset className="space-y-4">
           <legend className="text-sm font-semibold">
-            Client-specific settings
+            Make it fit this business
           </legend>
           {settingsFields.map((field) => {
             const value =
@@ -124,17 +126,19 @@ export function WorkflowInstanceForm({
 
             return (
               <div key={field.key}>
-                <Label htmlFor={`setting_${field.key}`}>{field.label}</Label>
+                <Label htmlFor={`setting_${instanceId}_${field.key}`}>
+                  {field.label}
+                </Label>
                 {field.type === "textarea" ? (
                   <Textarea
-                    id={`setting_${field.key}`}
+                    id={`setting_${instanceId}_${field.key}`}
                     name={`setting_${field.key}`}
                     className="mt-1.5"
                     defaultValue={value}
                   />
                 ) : (
                   <Input
-                    id={`setting_${field.key}`}
+                    id={`setting_${instanceId}_${field.key}`}
                     name={`setting_${field.key}`}
                     className="mt-1.5"
                     defaultValue={value}
@@ -152,7 +156,7 @@ export function WorkflowInstanceForm({
       ) : null}
 
       <Button type="submit" disabled={isPending}>
-        {isPending ? "Saving…" : "Save configuration"}
+        {isPending ? "Saving…" : "Save settings"}
       </Button>
     </form>
   );

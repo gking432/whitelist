@@ -22,54 +22,63 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-gold: var(--brand-gold);
+
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
+  --color-status-urgent: var(--status-urgent);
+  --color-status-info: var(--status-info);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
 }
 
 :root {
-  --background: #f7f8f5;
-  --foreground: #17201d;
+  /* Northstar 2026: neutral, calm app chrome with a faint warm cast.
+     Deep green + gold stay as the brand, but only as accents — active
+     states, icons, primary actions — never as large surfaces. */
+  --background: #f8f8f6;
+  --foreground: #191d1a;
   --card: #ffffff;
-  --card-foreground: #17201d;
+  --card-foreground: #191d1a;
   --popover: #ffffff;
-  --popover-foreground: #17201d;
-  --primary: #16685b;
-  --primary-foreground: #f8fffc;
-  --secondary: #e7eee9;
-  --secondary-foreground: #25322e;
-  --muted: #edf0eb;
-  --muted-foreground: #5f6d67;
-  --accent: #b85f24;
-  --accent-foreground: #fff8f3;
+  --popover-foreground: #191d1a;
+  --primary: #1e4735;
+  --primary-foreground: #f7f6f2;
+  --secondary: #f0f0ec;
+  --secondary-foreground: #2a2f2b;
+  --muted: #f2f2ef;
+  --muted-foreground: #60685f;
+  --accent: #c79a3b;
+  --accent-foreground: #1c1608;
   --destructive: #b42318;
-  --destructive-foreground: #fff8f8;
-  --border: #d9dfd8;
-  --input: #d1d9d2;
-  --ring: #218c78;
-  --radius: 0.5rem;
-}
+  --destructive-foreground: #ffffff;
+  --border: #e6e5e0;
+  --input: #d9d8d2;
+  --ring: #2c6a4f;
+  --radius: 0.75rem;
 
-.dark {
-  --background: #121715;
-  --foreground: #eef4ef;
-  --card: #18201d;
-  --card-foreground: #eef4ef;
-  --popover: #18201d;
-  --popover-foreground: #eef4ef;
-  --primary: #60c5ad;
-  --primary-foreground: #0d1714;
-  --secondary: #26312d;
-  --secondary-foreground: #eef4ef;
-  --muted: #26312d;
-  --muted-foreground: #aab6b0;
-  --accent: #e29a55;
-  --accent-foreground: #180e07;
-  --destructive: #ff6b5f;
-  --destructive-foreground: #180505;
-  --border: #33413b;
-  --input: #3d4a45;
-  --ring: #60c5ad;
+  /* Deep-green surface tokens: reserved for small brand moments (the
+     assistant window bar), never for full app chrome. */
+  --sidebar: #12291d;
+  --sidebar-foreground: #e6efe8;
+  --brand-deep: #12291d;
+  --brand-gold: #c79a3b;
+
+  --status-success: #157347;
+  --status-warning: #b45309;
+  --status-urgent: #b42318;
+  --status-info: #1d4ed8;
 }
 
 * {
@@ -83,14 +92,11 @@ html {
 
 body {
   min-height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(247, 248, 245, 0.98), rgba(241, 244, 239, 0.98)),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
-  font-family:
-    Arial,
-    Helvetica,
-    sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -98,5 +104,90 @@ a {
 }
 
 ::selection {
-  background: rgba(22, 104, 91, 0.18);
+  background: rgba(30, 71, 53, 0.16);
+}
+
+/* Two-tier elevation: hairline borders carry structure; shadows stay
+   nearly invisible. */
+.ns-surface {
+  box-shadow: 0 1px 2px rgba(25, 29, 26, 0.04);
+}
+
+.ns-surface-raised {
+  box-shadow:
+    0 1px 2px rgba(25, 29, 26, 0.05),
+    0 8px 24px -16px rgba(25, 29, 26, 0.12);
+}
+
+/* Restrained scrollbars for the command-center feel. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(23, 33, 27, 0.22) transparent;
+}
+
+/* Soft entrance for page content — calm, not showy. */
+@keyframes ns-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ns-fade-up {
+  animation: ns-fade-up 240ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ns-fade-up {
+    animation: none;
+  }
+}
+
+/* Keyboard navigation stays visible across every workspace. */
+a:focus-visible,
+summary:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.ns-skip-link {
+  position: fixed;
+  top: -6rem;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.ns-skip-link:focus {
+  top: 1rem;
+}
+.ns-disclosure > summary {
+  cursor: pointer;
+  padding: 1rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.ns-disclosure[open] > summary {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+.ns-disclosure {
+  scroll-margin-top: 8rem;
+}
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+dialog::backdrop {
+  background: rgb(15 23 18 / 40%);
+  backdrop-filter: blur(2px);
 }
