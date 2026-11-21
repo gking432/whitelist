@@ -217,5 +217,26 @@
     "Source transport, accounts and layout-call DOM collision fixture are synthetic; no illustrative quote/follow-up customer history was seeded.",
     "The earlier unrelated phone preference403 did not recur; no causal repair or healing is claimed.",
     "Owner personal review, hosted authorized connections/background sync and a real proposal-to-approved-provider-receipt journey remain separate live gates."
-  ]
+  ],
+  "evidenceCheckpoint": {
+    "sourceSha": "b23cc37ad4348ad6ba499da52f805267df5f5cff",
+    "runId": 44915834051,
+    "runUrl": "https://github.com/gking432/whitelist/actions/runs/44915834051",
+    "firstAttempt": {
+      "databaseJobId": 136881121175,
+      "otherEightJobs": "passed",
+      "database": "image-registry failure before migrations",
+      "diagnostic": "Data limit exceeded",
+      "sqlAndBrowserRan": false
+    },
+    "targetedDatabaseRerun": {
+      "databaseJobId": 136882551428,
+      "status": "passed",
+      "allNineSucceeded": true,
+      "artifactId": 14711654262,
+      "artifactDirectory": "/tmp/partner-personal-assistant-44915834051",
+      "sourcePinsTimeoutsAndAssertionsUnchanged": true
+    },
+    "interpretation": "Infrastructure recovery only; original failure retained. Application implementation and inspected visual evidence are the source run recorded above."
+  }
 }
