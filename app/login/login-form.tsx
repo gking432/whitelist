@@ -39,7 +39,7 @@ export function LoginForm({
             name="email"
             type="email"
             autoComplete="email"
-            placeholder="partner@example.com"
+            placeholder="you@business.com"
             disabled={isDisabled}
             className="pl-9"
             required
@@ -53,8 +53,8 @@ export function LoginForm({
       </Button>
 
       {!isSupabaseConfigured ? (
-        <p className="rounded-lg border border-brand-gold/35 bg-brand-gold/10 px-3 py-2 text-sm text-foreground">
-          Authentication is not configured for this environment yet.
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          Sign-in is unavailable right now. You can still browse the workspace.
         </p>
       ) : null}
 

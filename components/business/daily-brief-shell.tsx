@@ -17,7 +17,7 @@ export function DailyBriefShell({ children, brandName, clientName, email, naviga
   const pathname = usePathname();
   const menu = useRef<HTMLDetailsElement>(null);
   const home = preview ? "/preview" : "/client";
-  const businessName = clientName.trim() || (preview ? "Design preview" : "Your business");
+  const businessName = clientName.trim() || (preview ? "Business workspace" : "Your business");
   const mainPaths = new Set<string>(OWNER_AREAS.map((area) => preview ? area.href.replace("/client", "/preview") : area.href));
   // The caller has already filtered every item against this user's sections.
   const primary = OWNER_AREAS.flatMap((area) => { const item = navigation.find((candidate) => candidate.href === (preview ? area.href.replace("/client", "/preview") : area.href)); return item ? [item] : []; });
@@ -35,7 +35,7 @@ export function DailyBriefShell({ children, brandName, clientName, email, naviga
       <aside className="hidden border-r border-slate-200 bg-white lg:block">
         <div className="sticky top-0 flex h-dvh flex-col px-4 py-6">
           <Link href={home} className={`min-h-11 rounded-lg px-3 py-2 ${focusStyle}`} title={businessName}>
-            <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">Your business</span>
+            <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">{preview ? "Preview" : "Your business"}</span>
             <span className="mt-1 block break-words text-lg font-semibold leading-6 tracking-tight text-slate-900">{businessName}</span>
           </Link>
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -57,7 +57,7 @@ export function DailyBriefShell({ children, brandName, clientName, email, naviga
       <div className="min-w-0">
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 pt-3 backdrop-blur lg:hidden">
           <div className="flex items-start justify-between gap-4">
-            <Link href={home} title={businessName} className={`min-h-11 min-w-0 rounded-md py-1 ${focusStyle}`}><span className="block text-[10px] font-medium uppercase tracking-wider text-slate-400">Your business</span><span className="block break-words text-base font-semibold leading-6 tracking-tight">{businessName}</span></Link>
+            <Link href={home} title={businessName} className={`min-h-11 min-w-0 rounded-md py-1 ${focusStyle}`}><span className="block text-[10px] font-medium uppercase tracking-wider text-slate-400">{preview ? "Preview" : "Your business"}</span><span className="block break-words text-base font-semibold leading-6 tracking-tight">{businessName}</span></Link>
             <details ref={menu} className="group relative shrink-0">
               <summary className={`flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-lg px-3 text-xs ${moreActive ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-600 hover:bg-slate-50"} ${focusStyle}`}>More<ChevronDown aria-hidden="true" className="size-3.5 transition group-open:rotate-180" /></summary>
               <div className="absolute right-0 top-full z-50 mt-2 max-h-[70dvh] w-[min(18rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg shadow-slate-900/10">

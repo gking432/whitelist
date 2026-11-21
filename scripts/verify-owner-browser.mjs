@@ -16,6 +16,7 @@ import { assertEmptyBrowserTarget, browserFixtureIdentity, cleanupBrowserFixture
 import { assertOwnerWorkspaceNavigation, assertSavedWorkspacePreferences, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline } from "./owner-workspace-browser-scenarios.mjs";
 import { runOwnerFoundationConflictHttp } from "./owner-foundation-conflict-http.mjs";
 import { assertDisplayedPersonalAssistant, assertPersonalAssistantDenied, assertSavedPersonalAssistant, personalAssistantApi, personalAssistantRpc, runPersonalAssistantBrowserScenarios } from "./personal-assistant-browser-scenarios.mjs";
+import { runPublicReviewBrowserScenarios } from "./public-review-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
@@ -24,6 +25,7 @@ export const OWNER_BROWSER_CONFIRMATION = "owner-browser-disposable";
 export const BROWSER_COVERAGE = ["real login UI and fresh one-use GoTrue/Mailpit verification", "visible first-owner creation and reload without duplicate business", "empty Today and current Apps for the same business", "queued source imports rendered on desktop and phone", "two-owner source and endpoint isolation", "normal UI sign-out and stale signed user token denial", "real re-login preserves business, membership and creation receipt", "same-browser account switch replaces prior business access without provisioning", "revoked membership denies both current sessions and cannot create another business", "synthetic-only cleanup"];
 BROWSER_COVERAGE.push("deliberate owner-scoped Today preferences, source-backed usage suggestions, CAS, reset and exact retry");
 BROWSER_COVERAGE.push("optional private assistant preference UI, unavailable/setup-needed launcher, genuine-cookie HTTP CAS and actor/business isolation without model or provider effects");
+BROWSER_COVERAGE.push("anonymous clean workstation entry and real owner setup handoff, seven read-only areas, no private data or writes, and protected API denial");
 export function browserOptions(args) {
   if (args.length > 1 || args.some((arg) => !["--plan", "--preflight"].includes(arg))) throw new Error("Use no arguments, --plan, or --preflight.");
   return { plan: args[0] === "--plan", preflight: args[0] === "--preflight" };
@@ -341,8 +343,9 @@ async function signOutUi(page, target) {
   }
   button = page.getByRole("button", { name: "Sign out", exact: true });
   await button.first().click();
-  await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/login", { timeout: 30000 });
-  await page.getByRole("button", { name: "Send sign-in link", exact: true }).waitFor({ state: "visible" });
+  await page.waitForURL((url) => url.origin === target.appUrl && url.pathname === "/preview", { timeout: 30000 });
+  await page.locator("[data-public-review]").waitFor({ state: "visible" });
+  assert.equal(await page.getByRole("button", { name: "Send sign-in link", exact: true }).count(), 0);
   assert.equal((await page.request.get(`${target.appUrl}/api/connections`)).status(), 403);
 }
 export async function main(args = process.argv.slice(2), env = process.env) {
@@ -356,11 +359,11 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   if (installed.name !== "playwright" || installed.version !== PLAYWRIGHT_VERSION) throw new Error(`Use audited Playwright ${PLAYWRIGHT_VERSION} in the explicit CI-only module path.`);
   await mkdir(target.artifacts, { recursive: true });
   const fixture = browserFixtureIdentity(randomBytes(6).toString("hex")), checks = [], contexts = [], diagnostics = [];
-  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null, personalAssistant = null;
+  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null, personalAssistant = null, publicReview = null;
   let activeStep = null, currentPhase = "preparing browser acceptance", failurePhase = null, cleanupStatus = "not_started", checkpointTail = Promise.resolve();
   const cleanupErrors = [];
   const report = (status) => ({ kind: "owner_browser_acceptance", status, updatedAt: new Date().toISOString(), playwrightVersion: PLAYWRIGHT_VERSION,
-    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp, personalAssistant,
+    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp, personalAssistant, publicReview,
     limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately.", "Session proof reads only the project's cookies set by the normal email login, then verifies the exact token against the live current-session RPC; no cookie injection, session creation or token refresh is used."],
     ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) });
   const checkpoint = async (status = "in_progress") => {
@@ -380,6 +383,9 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     app = await startApp(env, target);
     const playwright = await import(pathToFileURL(target.modulePath).href);
     browser = await playwright.chromium.launch({ headless: true });
+    await phase("public workstation: anonymous entry and owner setup handoff");
+    publicReview = await runPublicReviewBrowserScenarios({ browser, appUrl: target.appUrl, artifacts: target.artifacts, phase });
+    await checkpoint();
     const owners = [], sessionTokens = new Map();
     for (const owner of fixture.owners) {
       const context = await browser.newContext({ viewport: owner.label === "phone" ? { width: 390, height: 844 } : { width: 1280, height: 900 }, isMobile: owner.label === "phone", hasTouch: owner.label === "phone", locale: "en-US", timezoneId: "America/Chicago" });
@@ -397,6 +403,11 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         await page.getByLabel("Business name", { exact: true }).fill(owner.name); await page.getByLabel("Business description", { exact: true }).fill("Synthetic browser acceptance business: project planning and customer coordination."); await page.getByLabel("Timezone", { exact: true }).fill("America/Chicago");
         await screenshot(page, target, `${owner.label}-filled-create-form`);
         await page.getByRole("button", { name: "Create my business", exact: true }).click(); await page.waitForURL((url) => url.pathname === "/client/onboarding");
+        const connectApps = page.getByRole("link", { name: "Connect apps", exact: true });
+        await connectApps.waitFor({ state: "visible" });
+        assert.equal(await connectApps.getAttribute("href"), "/client/apps");
+        await connectApps.click(); await page.waitForURL((url) => url.pathname === "/client/apps");
+        await page.getByRole("heading", { name: "Apps & connections", exact: true }).waitFor();
         created = await readCreatedOwner(admin, fixture, owner); assert.ok(observedOwnerSessionIdentity(sessionTokens.get(owner.label))?.userId === created.userId, "The browser-created workspace must belong to the observed real session actor."); await page.goto(`${target.appUrl}/start`); await page.waitForURL((url) => url.pathname === "/client"); assert.equal((await readCreatedOwner(admin, fixture, owner)).clientId, created.clientId);
       });
       await step(`${owner.label}: empty Today and Apps reload`, async () => {

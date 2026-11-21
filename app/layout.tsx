@@ -10,11 +10,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "Northstar",
-    template: "%s | Northstar",
+    default: "Business workspace",
+    template: "%s | Business workspace",
   },
   description:
-    "One business workspace for customers, marketing, sourcing, purchasing, operations, and owner approvals.",
+    "Your business workspace for daily work, connected apps and decisions.",
 };
 
 export default function RootLayout({
