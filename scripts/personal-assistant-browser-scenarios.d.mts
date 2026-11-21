@@ -8,7 +8,7 @@ export type AssistantBrowserContext = Parameters<typeof readOwnerBrowserSession>
   post(url: string, options: { headers: Record<string, string>; data: unknown; timeout: number }): Promise<AssistantHttpResponse>;
 } };
 export type AssistantOwner = AssistantScope & { label: "desktop" | "phone"; membershipId: string; receiptId: string; marker: string; page: object; context: AssistantBrowserContext; personalAssistantPreferences?: PersonalAssistantPreferences };
-export type AssistantReport = { version: 1; status: "in_progress" | "passed" | "failed"; activeStep: string | null; checks: { key: string; status: "passed" | "failed" }[]; fixtureCleanup: "not_started" | "running" | "complete" | "failed"; retainedPreferencesForRelogin: true; modelCalls: false; providerWrites: false; owners: { label: string; preferences: PersonalAssistantPreferences }[]; limitations: string[] };
+export type AssistantReport = { version: 1; status: "in_progress" | "passed" | "failed"; activeStep: string | null; checks: { key: string; status: "passed" | "failed" }[]; fixtureCleanup: "not_started" | "running" | "complete" | "failed"; retainedPreferencesForRelogin: true; modelCalls: false; providerWrites: false; phoneContentClearance: boolean; phoneMoneyUnobscured: boolean; phoneTabScrollReset: boolean; owners: { label: string; preferences: PersonalAssistantPreferences }[]; limitations: string[] };
 export function personalAssistantScopeHeader(owner: AssistantScope): { "X-Workstation-Scope": string };
 export function assertPersonalAssistantSnapshot(value: unknown): PersonalAssistantSnapshot;
 export function personalAssistantApi(context: AssistantBrowserContext, target: Pick<OwnerBrowserTarget, "appUrl">, owner: AssistantScope, body?: unknown, options?: { expected?: number[]; phase?(label: string): Promise<void>; operation?: string; origin?: string; scope?: AssistantScope }): Promise<{ status: number; body: unknown }>;
@@ -23,5 +23,9 @@ export function observePersonalAssistantSave(page: {
   waitForResponse(predicate: (response: AssistantObservedResponse) => boolean, options: { timeout: number }): Promise<AssistantObservedResponse>;
 }, appUrl: string, action: () => Promise<unknown>): Promise<PersonalAssistantSnapshot>;
 export function assertPersonalAssistantGeometry(page: object): Promise<void>;
+export type AssistantRect = { x: number; y: number; width: number; height: number };
+export function assertAssistantContentClearance(geometry: { viewport: { width: number; height: number }; content: AssistantRect | null; dock: AssistantRect | null; summary: AssistantRect | null; target?: AssistantRect | null; unobscured?: boolean }): void;
+export function assertPhoneMoneyReadable(page: object, target: OwnerBrowserTarget, screenshot: (page: object, target: OwnerBrowserTarget, name: string) => Promise<void>): Promise<void>;
+export function assertMobileAssistantTabReset(page: object): Promise<void>;
 export function assertDisplayedPersonalAssistant(page: object, expected: PersonalAssistantPreferences): Promise<void>;
 export function runPersonalAssistantBrowserScenarios(options: { admin: SupabaseClient; fixture: { prefix: string; partnerId: string }; owners: AssistantOwner[]; target: OwnerBrowserTarget; readSession: typeof readOwnerBrowserSession; verifySession: typeof verifyObservedOwnerSession; screenshot(page: object, target: OwnerBrowserTarget, name: string): Promise<void>; phase?(label: string): Promise<void>; onProgress?(report: AssistantReport): Promise<void>; env?: BrowserCiEnvironment; request?: typeof fetch }): Promise<AssistantReport>;

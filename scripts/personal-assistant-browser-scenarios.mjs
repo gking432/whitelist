@@ -111,18 +111,73 @@ async function saveUi(page, target, container, reset = false) {
   await container.getByRole("status").filter({ hasText: reset ? "Assistant preference reset." : "Assistant preference saved." }).waitFor();
   await container.locator("form[data-personal-assistant-form][aria-busy=false]").waitFor(); return value;
 }
+export function assertAssistantContentClearance({ viewport, content, dock, summary, target, unobscured }) {
+  const valid = (rect) => rect && [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) && rect.width > 0 && rect.height > 0;
+  assert.ok(viewport && Number.isFinite(viewport.width) && Number.isFinite(viewport.height) && viewport.width > 0 && viewport.height > 0 && [content, dock, summary].every(valid), "Phone assistant clearance requires real viewport, content, dock and summary geometry.");
+  const right = (rect) => rect.x + rect.width, bottom = (rect) => rect.y + rect.height;
+  const within = (inner, outer) => inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5 && right(inner) <= right(outer) + 0.5 && bottom(inner) <= bottom(outer) + 0.5;
+  const screen = { x: 0, y: 0, ...viewport };
+  assert.ok(within(content, screen) && within(dock, screen) && within(summary, dock), "The phone content and assistant dock must fit the actual screen.");
+  assert.ok(bottom(content) <= dock.y + 0.5 && bottom(content) <= summary.y + 0.5, "The phone scroll-content region must end above the assistant dock; a floating launcher over content is not acceptable.");
+  if (target !== undefined) {
+    assert.ok(valid(target) && within(target, content) && bottom(target) <= dock.y + 0.5, "The complete payment/refund amount must be inside the visible content region above the dock.");
+    assert.equal(unobscured, true, "The actual payment/refund amount must pass browser hit-testing without any covering surface.");
+  }
+}
+async function phoneClearance(page, target) {
+  const geometry = { viewport: page.viewportSize(), content: await page.locator("[data-personal-assistant-viewport]").boundingBox(), dock: await page.locator("[data-personal-assistant-dock]").boundingBox(), summary: await page.locator("[data-personal-assistant-launcher] summary").boundingBox() };
+  if (target) {
+    geometry.target = await target.boundingBox();
+    geometry.unobscured = await target.evaluate((node) => {
+      const rect = node.getBoundingClientRect(), inset = Math.min(2, rect.width / 4, rect.height / 4);
+      const points = [[rect.left + rect.width / 2, rect.top + rect.height / 2], [rect.left + inset, rect.top + inset], [rect.right - inset, rect.top + inset], [rect.left + inset, rect.bottom - inset], [rect.right - inset, rect.bottom - inset]];
+      return points.every(([x, y]) => { const top = document.elementFromPoint(x, y); return top === node || node.contains(top); });
+    });
+  }
+  assertAssistantContentClearance(geometry);
+}
 export async function assertPersonalAssistantGeometry(page) {
   const viewport = page.viewportSize(); assert.ok(viewport, "The real browser viewport must be explicit.");
   const summary = await page.locator("[data-personal-assistant-launcher] summary").boundingBox();
   assert.ok(summary && summary.width >= 44 && summary.height >= 44 && summary.x >= 0 && summary.y >= 0 && summary.x + summary.width <= viewport.width && summary.y + summary.height <= viewport.height, "The launcher must be visible, unclipped and touch accessible.");
   const panel = await page.locator("[data-personal-assistant-panel]").boundingBox();
   assert.ok(panel && panel.x >= 0 && panel.y >= 0 && panel.x + panel.width <= viewport.width && panel.y + panel.height <= viewport.height, "The open assistant preference panel must fit the actual viewport.");
+  if (viewport.width < 1024) await phoneClearance(page);
   const nav = page.getByRole("navigation", { name: "Simple business navigation", exact: true });
   if (await nav.count()) { const box = await nav.boundingBox(); assert.ok(!box || summary.y + summary.height <= box.y || summary.y >= box.y + box.height, "The assistant launcher must not cover the mobile bottom navigation."); }
 }
+export async function assertPhoneMoneyReadable(page, target, screenshot) {
+  await page.goto(`${target.appUrl}/client/money`); await page.getByRole("heading", { name: "Money", exact: true }).waitFor();
+  const assistant = page.locator("[data-personal-assistant-launcher]");
+  if (await assistant.evaluate((node) => node.open)) await assistant.getByRole("button", { name: "Close personal assistant", exact: true }).click();
+  // These are the existing queued Stripe fixture amounts, not new business
+  // records or a claim about a real payment or bank balance.
+  const payments = page.getByRole("region", { name: "Recent payment records", exact: true });
+  const amount = payments.getByText("$12.50", { exact: true }), refund = payments.getByText("Refunded $1.00", { exact: true });
+  await refund.scrollIntoViewIfNeeded();
+  await phoneClearance(page, amount); await phoneClearance(page, refund);
+  await screenshot(page, target, "phone-personal-assistant-money-readable");
+}
+export async function assertMobileAssistantTabReset(page) {
+  const panel = page.locator("[data-personal-assistant-panel]");
+  await panel.getByRole("button", { name: "Close personal assistant", exact: true }).click();
+  const nav = page.getByRole("navigation", { name: "Simple business navigation", exact: true });
+  const apps = nav.getByRole("button", { name: "Apps", exact: true }); await apps.click();
+  await page.waitForFunction(() => document.querySelector('nav[aria-label="Simple business navigation"] button[aria-current="page"]')?.textContent?.trim() === "Apps");
+  const scroller = page.locator("[data-personal-assistant-viewport]");
+  const previous = await scroller.evaluate((node) => { node.scrollTop = node.scrollHeight; return node.scrollTop; });
+  assert.ok(previous > 0, "The existing imported Apps list must genuinely scroll before testing the mobile tab reset.");
+  // Tap the same active tab: the content retains its height, so a shorter new
+  // tab cannot accidentally pass by clamping a previously nonzero scrollTop.
+  await apps.click();
+  await page.waitForFunction(() => document.querySelector("[data-personal-assistant-viewport]")?.scrollTop === 0);
+  assert.equal(await scroller.evaluate((node) => node.scrollTop), 0, "A real mobile tab click must reset the actual assistant content scroller.");
+  await nav.getByRole("button", { name: "Recent", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('nav[aria-label="Simple business navigation"] button[aria-current="page"]')?.textContent?.trim() === "Recent");
+}
 export async function runPersonalAssistantBrowserScenarios({ admin, fixture, owners, target, readSession, verifySession, screenshot, phase = async () => {}, onProgress = async () => {}, env = process.env, request = fetch }) {
   assertFoundationHttpScope({ fixture, owners, target, env });
-  const report = { version: 1, status: "in_progress", activeStep: null, checks: [], fixtureCleanup: "not_started", retainedPreferencesForRelogin: true, modelCalls: false, providerWrites: false, owners: [], limitations: ["Preferences and unavailable/setup-needed launchers only; no assistant conversation, OAuth connection, voice, model or billing operation.", "Private-schema HTTP rejection proves the schema is not exposed; public wrappers are exercised with the genuine signed-in user's JWT.", "The call-surface collision check uses a labelled presentation-only DOM fixture, not a live call.", "Temporary membership/role fixtures are cleaned here; primary private preferences remain for re-login and are removed by the runner's exact business/user cleanup."] };
+  const report = { version: 1, status: "in_progress", activeStep: null, checks: [], fixtureCleanup: "not_started", retainedPreferencesForRelogin: true, modelCalls: false, providerWrites: false, phoneContentClearance: false, phoneMoneyUnobscured: false, phoneTabScrollReset: false, owners: [], limitations: ["Preferences and unavailable/setup-needed launchers only; no assistant conversation, OAuth connection, voice, model or billing operation.", "Private-schema HTTP rejection proves the schema is not exposed; public wrappers are exercised with the genuine signed-in user's JWT.", "The call-surface collision check uses a labelled presentation-only DOM fixture, not a live call.", "Temporary membership/role fixtures are cleaned here; primary private preferences remain for re-login and are removed by the runner's exact business/user cleanup."] };
   const temporaryMemberships = [], roleRestores = [];
   const publish = () => onProgress({ ...report, checks: report.checks.map((check) => ({ ...check })), owners: report.owners.map((owner) => ({ ...owner })), limitations: [...report.limitations] });
   const stage = async (key, action) => {
@@ -163,7 +218,12 @@ export async function runPersonalAssistantBrowserScenarios({ admin, fixture, own
         try { await page.waitForFunction(() => document.querySelector("[data-personal-assistant-launcher]")?.hidden === true); }
         finally { await page.evaluate(() => document.querySelector("[data-personal-assistant-call-fixture]")?.remove()); }
         await page.locator("[data-personal-assistant-launcher]").waitFor({ state: "visible" }); panel = await launcher(page);
-        if (owner.label === "phone") { await panel.getByRole("button", { name: "Close personal assistant", exact: true }).click(); await page.goto(`${target.appUrl}/client/mobile`); await launcher(page); await assertPersonalAssistantGeometry(page); }
+        if (owner.label === "phone") {
+          await panel.getByRole("button", { name: "Close personal assistant", exact: true }).click(); await page.goto(`${target.appUrl}/client/mobile`); await launcher(page); await assertPersonalAssistantGeometry(page);
+          await assertMobileAssistantTabReset(page); report.phoneTabScrollReset = true;
+          await assertPhoneMoneyReadable(page, target, screenshot);
+          report.phoneContentClearance = true; report.phoneMoneyUnobscured = true;
+        }
       });
       await stage(`${owner.label}: actual compare-and-swap exact replay and stale tab denial`, async () => {
         const current = (await call()).body, settings = [{ answer: "yes", assistant: "muse" }, { answer: "yes", assistant: "grok" }];

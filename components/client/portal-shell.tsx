@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { LiveCallOverlay } from "@/components/assistant/live-call-overlay";
 import { PersonalAssistantLauncher } from "@/components/personal-assistant/launcher";
@@ -44,6 +45,8 @@ export function PortalShell({
   personalAssistantScopeKey,
 }: Props) {
   const pathname = usePathname();
+  const assistantViewport = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (assistantViewport.current) assistantViewport.current.scrollTop = 0; }, [pathname]);
   const simpleView = pathname === "/client/mobile";
   const crm = experienceMode === "northstar_crm";
   const legacyNavigation: (WorkspaceNavItem & { section: ClientSectionKey })[] =
@@ -310,7 +313,10 @@ export function PortalShell({
       {!simpleView && visibleSections.includes("assistant") ? (
         <LiveCallOverlay productName={branding.productName} />
       ) : null}
-      {businessWorkspace && personalAssistantScopeKey ? <PersonalAssistantLauncher mobileNavigation={simpleView} /> : null}
     </>;
-  return <div style={brandStyleVariables(branding)}>{businessWorkspace && personalAssistantScopeKey ? <PersonalAssistantPreferencesProvider key={personalAssistantScopeKey} scopeKey={personalAssistantScopeKey}>{content}</PersonalAssistantPreferencesProvider> : content}</div>;
+  const personalAssistant = businessWorkspace && personalAssistantScopeKey;
+  return <div style={brandStyleVariables(branding)} className={personalAssistant ? "flex h-dvh flex-col overflow-hidden lg:block lg:h-auto lg:overflow-visible" : undefined}>{personalAssistant ? <PersonalAssistantPreferencesProvider key={personalAssistant} scopeKey={personalAssistant}>
+    <div ref={assistantViewport} className="min-h-0 flex-1 overflow-y-auto lg:contents" data-personal-assistant-viewport onClickCapture={(event) => { if (simpleView && event.target instanceof Element && event.target.closest('nav[aria-label="Simple business navigation"] button')) event.currentTarget.scrollTop = 0; }}>{content}</div>
+    <PersonalAssistantLauncher mobileNavigation={simpleView} />
+  </PersonalAssistantPreferencesProvider> : content}</div>;
 }

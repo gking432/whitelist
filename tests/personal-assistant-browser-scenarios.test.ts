@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertPersonalAssistantSnapshot, observePersonalAssistantSave, personalAssistantApi, personalAssistantRpc, personalAssistantScopeHeader, runPersonalAssistantBrowserScenarios, type AssistantBrowserContext, type AssistantObservedRequest, type AssistantObservedResponse } from "../scripts/personal-assistant-browser-scenarios.mjs";
+import { assertAssistantContentClearance, assertPersonalAssistantSnapshot, observePersonalAssistantSave, personalAssistantApi, personalAssistantRpc, personalAssistantScopeHeader, runPersonalAssistantBrowserScenarios, type AssistantBrowserContext, type AssistantObservedRequest, type AssistantObservedResponse } from "../scripts/personal-assistant-browser-scenarios.mjs";
 
 const snapshot = { version: 1, preferences: { answer: "yes", assistant: "muse", revision: 3 }, connection: { state: "unavailable", label: "Muse", detail: "Preference saved; connection unavailable.", canChat: false }, available: true, canEdit: true };
 const owner = { userId: "synthetic-user", clientId: "synthetic-business" }, target = { appUrl: "http://127.0.0.1:3000", supabaseUrl: "http://127.0.0.1:54321", anonKey: "synthetic-public-key" };
@@ -52,4 +52,21 @@ test("personal assistant acceptance refuses non-hosted targets before auth, data
   let touched = false;
   await assert.rejects(runPersonalAssistantBrowserScenarios({ env: {}, readSession: async () => { touched = true; return ""; } } as unknown as Parameters<typeof runPersonalAssistantBrowserScenarios>[0]), /disposable GitHub-hosted/);
   assert.equal(touched, false);
+});
+test("phone clearance rejects the actual floating-over-content regression even without a bottom-navigation collision", () => {
+  const docked = { viewport: { width: 390, height: 844 }, content: { x: 0, y: 0, width: 390, height: 768 }, dock: { x: 0, y: 768, width: 390, height: 76 }, summary: { x: 206, y: 780, width: 168, height: 44 } };
+  assertAssistantContentClearance(docked);
+  // The earlier launcher and even its panel fit the screen, and there is no
+  // fixed nav here. Content still runs behind the launcher: that must fail.
+  assert.throws(() => assertAssistantContentClearance({ ...docked, content: { ...docked.content, height: 844 } }), /scroll-content region must end above/);
+  assert.throws(() => assertAssistantContentClearance({ ...docked, dock: null }), /real viewport, content, dock/);
+  assert.throws(() => assertAssistantContentClearance({ ...docked, summary: { ...docked.summary, x: 360 } }), /fit the actual screen/);
+});
+test("phone Money proof requires whole visible amounts plus hit-testing, not just a matching text node", () => {
+  const geometry = { viewport: { width: 390, height: 844 }, content: { x: 0, y: 64, width: 390, height: 704 }, dock: { x: 0, y: 768, width: 390, height: 76 }, summary: { x: 206, y: 780, width: 168, height: 44 }, target: { x: 270, y: 720, width: 90, height: 24 }, unobscured: true };
+  assertAssistantContentClearance(geometry);
+  assert.throws(() => assertAssistantContentClearance({ ...geometry, target: { ...geometry.target, y: 756 } }), /complete payment\/refund amount/);
+  assert.throws(() => assertAssistantContentClearance({ ...geometry, target: { ...geometry.target, y: 45 } }), /complete payment\/refund amount/);
+  assert.throws(() => assertAssistantContentClearance({ ...geometry, unobscured: false }), /hit-testing/);
+  assert.throws(() => assertAssistantContentClearance({ ...geometry, unobscured: undefined }), /hit-testing/);
 });
