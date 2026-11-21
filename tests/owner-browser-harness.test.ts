@@ -340,6 +340,36 @@ test("JSON, diagnosis and phase failures cannot replace the original preference4
   }
 });
 
+test("preference failure preserves sanitized original response evidence before later diagnosis", async () => {
+  for (const status of [403, 503]) {
+    const phases: string[] = [], operation = `phone: original ${status} snapshot GET`;
+    const original = { stage: "session_actor", kind: status === 403 ? "denied" : "unavailable", status: 503, code: "PGRST003", possibleSessionCookie: true };
+    let headers = 0;
+    await assert.rejects(inspectWorkspacePreferenceResponse({ status: () => status, headers: async () => { headers++; return {
+      "x-workspace-context": JSON.stringify({ ...original, token: "private-token", user: "private-user" }), "set-cookie": "private-cookie",
+    }; }, json: async () => ({ error: status === 403 ? "Business workspace access is required." : "Your preferences could not be loaded. Try again." }) }, {
+      operation, phase: async label => { phases.push(label); }, diagnose403: async () => { phases.push("later-diagnosis"); return { actorVerified: true }; },
+    }, true), (error: unknown) => {
+      assert.ok(error instanceof assert.AssertionError); assert.equal(error.actual, status); assert.equal(error.expected, 200); return true;
+    });
+    assert.equal(headers, 1);
+    const index = phases.findIndex(label => label.includes("; original_context=")); assert.ok(index >= 0);
+    assert.deepEqual(JSON.parse(phases[index].split("; original_context=")[1]), original);
+    if (status === 403) assert.ok(index < phases.indexOf("later-diagnosis"));
+    assert.doesNotMatch(phases.join("\n"), /private-token|private-user|private-cookie|set-cookie/);
+  }
+  for (const raw of ["not JSON", JSON.stringify({ stage: "secret", kind: "denied", status: 403, code: null }), "x".repeat(769)]) {
+    const phases: string[] = [];
+    await assert.rejects(inspectWorkspacePreferenceResponse({ status: () => 403, headers: () => ({ "x-workspace-context": raw }), json: async () => ({}) }, {
+      operation: "phone: malformed original metadata", phase: async label => { phases.push(label); },
+    }), error => originalPreference403(error, "phone: malformed original metadata"));
+    assert.ok(phases.some(label => label.endsWith("; original_context=null"))); assert.equal(phases.join("\n").includes("secret"), false);
+  }
+  await assert.rejects(inspectWorkspacePreferenceResponse({ status: () => 403, headers: () => { throw Error("private-header"); }, json: async () => ({}) }, {
+    operation: "phone: broken headers",
+  }), error => originalPreference403(error, "phone: broken headers"));
+});
+
 test("snapshotGET makes one actual request on403 and requires complete valid200 JSON", async () => {
   const operation = "phone: before suggestion snapshot GET", appUrl = "http://127.0.0.1:3000";
   let gets = 0, jsonReads = 0, diagnoses = 0;

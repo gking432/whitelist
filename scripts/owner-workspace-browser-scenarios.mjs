@@ -59,11 +59,37 @@ function safeAccessDiagnosis(value) {
     actorVerified: flag("actorVerified"), goTrueStatus: Number.isSafeInteger(status) && status >= 100 && status <= 599 ? status : null,
     goTrueUserMatches: flag("goTrueUserMatches"), membershipStatus: ["active", "invited", "disabled", "missing"].includes(membership) ? membership : "unknown", ownerRole: flag("ownerRole") };
 }
+// Independent wire validation: this runner must remain plain Node22 JavaScript
+// and must never print arbitrary response headers, messages or credentials.
+function originalContextDiagnostic(raw) {
+  if (typeof raw !== "string" || raw.length > 768) return null;
+  const value = JSON.parse(raw);
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      !["configuration", "auth_user", "session_actor", "primary_membership", "client_scope", "portal_access", "portal_client", "workspace_sections", "impersonation"].includes(value.stage) ||
+      !["denied", "unavailable"].includes(value.kind) ||
+      (value.status !== null && (!Number.isInteger(value.status) || value.status < 100 || value.status > 599))) return null;
+  const codes = ["42501", "40001", "40P01", "53300", "53400", "57014", "08000", "08001", "08003", "08006", "57P01", "57P02", "57P03",
+    "PGRST000", "PGRST001", "PGRST002", "PGRST003", "PGRST100", "PGRST102", "PGRST116", "PGRST202", "PGRST203", "PGRST204", "PGRST300", "PGRST301", "PGRST302", "PGRST303",
+    "bad_jwt", "invalid_jwt", "jwt_expired", "invalid_token", "no_authorization", "user_not_found", "session_not_found", "refresh_token_not_found", "refresh_token_already_used", "invalid_credentials", "user_banned",
+    "unexpected_failure", "request_timeout", "over_request_rate_limit", "over_email_send_rate_limit", "validation_failed"];
+  if (value.code !== null && !codes.includes(value.code)) return null;
+  return { stage: value.stage, kind: value.kind, status: value.status, code: value.code, possibleSessionCookie: typeof value.possibleSessionCookie === "boolean" ? value.possibleSessionCookie : null };
+}
 export async function inspectWorkspacePreferenceResponse(response, { operation, phase = async () => {}, diagnose403 }, requireJson = false) {
   const status = response.status(); let body, bodyFailed = false;
   // A failure's evidence must never replace the original HTTP assertion.
   const record = async (text) => { if (status === 200) await phase(text); else try { await phase(text); } catch { /* Preserve the actual failed response. */ } };
   await record(`${operation}: response HTTP ${status}`);
+  if (status !== 200) {
+    let originalContext = null;
+    try {
+      originalContext = await withOwnerBrowserDeadline("read original preference context", async () => {
+        const headers = await response.headers?.();
+        return originalContextDiagnostic(headers?.["x-workspace-context"]);
+      }, 5000);
+    } catch { /* Header diagnostics cannot mask the original HTTP failure. */ }
+    await record(`${operation}: HTTP ${status}; original_context=${JSON.stringify(originalContext)}`);
+  }
   if (requireJson || status !== 200) {
     await record(`${operation}: read response JSON`);
     try { body = await withOwnerBrowserDeadline("read preference response JSON", () => response.json(), 10000); }

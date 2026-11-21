@@ -2,7 +2,9 @@ import { isSameOrigin } from "@/lib/auth/same-origin";
 import { getAppUrl } from "@/lib/env";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { connectionsContext } from "@/lib/connections/context";
+import { connectionsContextDecision, type ConnectionsContextDecision } from "@/lib/connections/context";
+import { notifyContextFailure, sanitizeContextDiagnostic } from "@/lib/auth/context-diagnostics";
+import { hasPossibleSessionCookie } from "@/lib/auth/public-review-entry";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { loadWorkspacePersonalization } from "@/lib/business/workspace-preferences-data";
 import { defaultWorkspacePreferences } from "@/lib/business/workspace-preferences";
@@ -23,20 +25,38 @@ const command = z.discriminatedUnion("action", [
 ]);
 function error(message: string, status: number) { return NextResponse.json({ error: message }, { status, headers }); }
 async function context() {
-  const ctx = await connectionsContext();
-  return ctx && !ctx.portal.access.isImpersonating ? ctx : null;
+  // Personal preferences require the existing read scope, never business-write
+  // authority. Impersonation remains explicitly excluded for both methods.
+  const decision = await connectionsContextDecision(false);
+  return decision.kind === "ok" && decision.context.portal.access.isImpersonating
+    ? { kind: "denied" as const, diagnostic: notifyContextFailure(undefined, "impersonation", "denied") }
+    : decision;
 }
-export async function GET() {
-  const ctx = await context();
-  if (!ctx) return error("Business workspace access is required.", 403);
+function contextFailure(request: NextRequest, decision: Exclude<ConnectionsContextDecision, { kind: "ok" }>, method: "GET" | "POST") {
+  const response = decision.kind === "denied"
+    ? error("Business workspace access is required.", 403)
+    : error(method === "GET" ? "Your preferences could not be loaded. Try again." : "The data service is unavailable.", 503);
+  const diagnostic = sanitizeContextDiagnostic(decision.diagnostic) ?? notifyContextFailure(undefined, "configuration", decision.kind);
+  // This is evidence from this response, not a later healthy probe. Fixed
+  // categories and a carrier hint only: no cookie/token/actor/tenant contents.
+  let possibleSessionCookie: boolean | null = null;
+  try { possibleSessionCookie = hasPossibleSessionCookie(request.cookies.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL); } catch { /* Diagnostics cannot replace the access result. */ }
+  response.headers.set("X-Workspace-Context", JSON.stringify({ ...diagnostic, possibleSessionCookie }));
+  return response;
+}
+export async function GET(request: NextRequest) {
+  const decision = await context();
+  if (decision.kind !== "ok") return contextFailure(request, decision, "GET");
+  const ctx = decision.context;
   const snapshot = await loadWorkspacePersonalization(ctx.portal);
   return snapshot.available ? NextResponse.json(snapshot, { headers }) : error("Your preferences could not be loaded. Try again.", 503);
 }
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request.headers.get("origin"), getAppUrl())) return error("Invalid request origin.", 403);
   if (Number(request.headers.get("content-length") ?? 0) > 4096) return error("Request too large.", 413);
-  const ctx = await context();
-  if (!ctx) return error("Business workspace access is required.", 403);
+  const decision = await context();
+  if (decision.kind !== "ok") return contextFailure(request, decision, "POST");
+  const ctx = decision.context;
   const client = await createSupabaseServerClient();
   if (!client) return error("The data service is unavailable.", 503);
   try {

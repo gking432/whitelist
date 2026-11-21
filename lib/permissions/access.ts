@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getActiveImpersonation } from "@/lib/impersonation/session";
+import { notifyContextFailure, type ContextDiagnosticObserver, type ContextDiagnosticStage } from "../auth/context-diagnostics.ts";
 import type {
   AccessContext,
   ClientRole,
@@ -65,10 +66,11 @@ function requireNonEmptyRoles<T extends MembershipRole>(
   return roles;
 }
 
-async function getSupabaseOrThrow() {
+async function getSupabaseOrThrow(observer?: ContextDiagnosticObserver) {
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
+    notifyContextFailure(observer, "configuration", "unavailable");
     throw new AccessError(
       "Supabase is not configured for this environment.",
       "SUPABASE_NOT_CONFIGURED",
@@ -77,6 +79,14 @@ async function getSupabaseOrThrow() {
   }
 
   return supabase;
+}
+
+async function observeAccessQuery<T>(query: PromiseLike<T>, observer: ContextDiagnosticObserver | undefined, stage: ContextDiagnosticStage): Promise<T> {
+  try { return await query; }
+  catch (error) {
+    notifyContextFailure(observer, stage, "unavailable", error);
+    throw error;
+  }
 }
 
 function denied(message = "You do not have access to this resource."): never {
@@ -89,21 +99,24 @@ function lookupFailed(message: string): never {
 
 async function fetchClientScope(
   clientId: string,
+  observer?: ContextDiagnosticObserver,
 ): Promise<ClientScopeRecord> {
-  const supabase = await getSupabaseOrThrow();
-  const { data, error } = await supabase
+  const supabase = await getSupabaseOrThrow(observer);
+  const { data, error, status } = await observeAccessQuery(supabase
     .from("client_businesses")
     .select(
       "id, partner_id, client_portal_enabled, partner_can_edit_client_data, account_kind, is_test_account",
     )
     .eq("id", clientId)
-    .maybeSingle();
+    .maybeSingle(), observer, "client_scope");
 
   if (error) {
+    notifyContextFailure(observer, "client_scope", "unavailable", error, status);
     lookupFailed(error.message);
   }
 
   if (!data) {
+    notifyContextFailure(observer, "client_scope", "denied", undefined, status);
     denied("Client business not found or inaccessible.");
   }
 
@@ -347,21 +360,23 @@ export async function requireClientWorkspaceAccess(
 export async function requirePrimaryClientAccess(
   userId: string,
   allowedRoles: readonly ClientRole[] = CLIENT_ROLES,
+  observer?: ContextDiagnosticObserver,
 ): Promise<AccessContext> {
   const roles = requireNonEmptyRoles(allowedRoles);
   const impersonation = await getActiveImpersonation(userId);
 
   if (impersonation?.targetKind === "client" && impersonation.targetClientId) {
     if (!clientImpersonationAllows(impersonation.mode, roles)) {
+      notifyContextFailure(observer, "portal_access", "denied");
       denied("This client support session is read-only.");
     }
 
-    const clientScope = await fetchClientScope(impersonation.targetClientId);
+    const clientScope = await fetchClientScope(impersonation.targetClientId, observer);
     return impersonatedClientAccess(userId, impersonation, clientScope);
   }
 
-  const supabase = await getSupabaseOrThrow();
-  const { data, error } = await supabase
+  const supabase = await getSupabaseOrThrow(observer);
+  const { data, error, status } = await observeAccessQuery(supabase
     .from("memberships")
     .select("id, user_id, partner_id, client_id, role, status, client_job_role, client_permissions")
     .eq("user_id", userId)
@@ -370,19 +385,22 @@ export async function requirePrimaryClientAccess(
     .in("role", [...roles])
     .order("created_at", { ascending: true })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle(), observer, "primary_membership");
 
   if (error) {
+    notifyContextFailure(observer, "primary_membership", "unavailable", error, status);
     lookupFailed(error.message);
   }
 
   if (!data || !data.client_id) {
+    notifyContextFailure(observer, "primary_membership", "denied", undefined, status);
     denied("Client access required.");
   }
 
-  const clientScope = await fetchClientScope(data.client_id);
+  const clientScope = await fetchClientScope(data.client_id, observer);
 
   if (!clientScope.client_portal_enabled) {
+    notifyContextFailure(observer, "client_scope", "denied");
     denied("The client portal is not enabled for this business.");
   }
 

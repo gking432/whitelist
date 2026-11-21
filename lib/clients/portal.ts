@@ -13,6 +13,7 @@ import {
 } from "@/lib/permissions/access";
 import type { AccessContext } from "@/lib/permissions/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { notifyContextFailure, type ContextDiagnosticObserver } from "../auth/context-diagnostics.ts";
 
 export type PortalBranding = {
   partnerName: string;
@@ -40,15 +41,16 @@ export type ClientPortal =
 
 // Memoized per request; the portal layout and pages share one access check.
 // The client scope always comes from the signed-in user's membership.
-export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
-  const user = await requireAuthenticatedUser("/client");
+export const loadClientPortal = cache(async (observer?: ContextDiagnosticObserver): Promise<ClientPortal> => {
+  const user = await requireAuthenticatedUser("/client", observer);
 
   let access: AccessContext;
 
   try {
-    access = await requirePrimaryClientAccess(user.id);
+    access = await requirePrimaryClientAccess(user.id, undefined, observer);
   } catch (error) {
     if (isAccessError(error)) {
+      notifyContextFailure(observer, "portal_access", error.code === "ACCESS_DENIED" ? "denied" : "unavailable", error, error.status);
       return error.code === "ACCESS_DENIED"
         ? { kind: "denied" }
         : { kind: "unavailable" };
@@ -60,6 +62,7 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
   const supabase = await createSupabaseServerClient();
 
   if (!supabase || !access.clientId || !access.partnerId) {
+    notifyContextFailure(observer, "configuration", "unavailable");
     return { kind: "unavailable" };
   }
 
@@ -68,7 +71,11 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
       .from("client_businesses")
       .select("*")
       .eq("id", access.clientId)
-      .maybeSingle(),
+      .maybeSingle()
+      .then((result) => result, (error: unknown) => {
+        notifyContextFailure(observer, "portal_client", "unavailable", error);
+        throw error;
+      }),
     supabase
       .from("partners")
       .select("name, support_email, support_phone")
@@ -84,6 +91,7 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
   ]);
 
   if (clientResult.error || !clientResult.data) {
+    notifyContextFailure(observer, "portal_client", clientResult.error ? "unavailable" : "denied", clientResult.error, clientResult.status);
     return { kind: "unavailable" };
   }
 

@@ -14,8 +14,9 @@ export type WorkspacePreferencePostOutcome =
   | { complete: false; status: number | null; body: null; failedAt: "headers" | "json_body"; reason: "timeout" | "invalid_json" | "request_failed" };
 export function collectWorkspacePreferencePosts(input: { path: string; bodies: readonly unknown[] }, request?: typeof fetch): Promise<WorkspacePreferencePostOutcome[]>;
 export type WorkspacePreferenceTrace = { operation: string; phase?(label: string): Promise<void>; diagnose403?(): Promise<unknown> };
-export function inspectWorkspacePreferenceResponse(response: { status(): number; json(): Promise<unknown> }, trace: WorkspacePreferenceTrace, requireJson?: boolean): Promise<unknown>;
-export function readWorkspacePreferenceSnapshot(page: { request: { get(url: string, options?: { timeout: number }): Promise<{ status(): number; json(): Promise<unknown> }> } }, appUrl: string, trace?: WorkspacePreferenceTrace): Promise<import("../lib/business/workspace-preferences-contract.ts").WorkspacePersonalization>;
+export type WorkspacePreferenceResponse = { status(): number; json(): Promise<unknown>; headers?(): Record<string, string> | Promise<Record<string, string>> };
+export function inspectWorkspacePreferenceResponse(response: WorkspacePreferenceResponse, trace: WorkspacePreferenceTrace, requireJson?: boolean): Promise<unknown>;
+export function readWorkspacePreferenceSnapshot(page: { request: { get(url: string, options?: { timeout: number }): Promise<WorkspacePreferenceResponse> } }, appUrl: string, trace?: WorkspacePreferenceTrace): Promise<import("../lib/business/workspace-preferences-contract.ts").WorkspacePersonalization>;
 export type WorkspaceActivityRequest = { url(): string; method(): string; postDataJSON(): unknown };
 export type WorkspaceActivityResponse = { request(): WorkspaceActivityRequest; status(): number };
 export function observeNewWorkspaceActivity(page: {

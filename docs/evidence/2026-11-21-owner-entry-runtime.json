@@ -330,9 +330,46 @@
     "workers": "release_unavailable",
     "pendingSourceMigrationsReported": 20,
     "supabasePluginInstalled": true,
-    "managementSqlAccessConfirmed": false,
+    "managementSqlAccessConfirmed": true,
     "hostedWriteByBuilder": false,
-    "ownerOnDifferentComputer": true
+    "ownerOnDifferentComputer": true,
+    "directReadOnlySqlAccessConfirmed": true,
+    "readOnlyTransaction": "BEGIN READ ONLY / ROLLBACK; TLS and hostname verified",
+    "postgresVersion": "17.6",
+    "appliedRegistryVersions": 84,
+    "sourceMigrationFiles": 104,
+    "unknownAppliedVersions": 0,
+    "publicTables": 81,
+    "missingNewOwnerAndAssistantSchema": true,
+    "counts": {
+      "partners": 1,
+      "businesses": 2,
+      "memberships": 1,
+      "verifiedAuthUsers": 1,
+      "connections": 0,
+      "secrets": 0,
+      "canonicalRecords": 0,
+      "approvals": 0,
+      "actionJobs": 0
+    },
+    "apiGrantedPublicTableWithoutRls": false,
+    "soleMembership": "active platform_owner",
+    "businessPortalStates": [
+      "active / disabled",
+      "onboarding / enabled"
+    ],
+    "operatorStatus": "trial",
+    "nonarchivedSharedPackages": 1,
+    "operatorCanBeSilentlyActivated": false,
+    "migrationAloneEnablesSignup": false,
+    "authSettings": {
+      "version": "2.198.0",
+      "emailEnabled": true,
+      "signupEnabled": true,
+      "emailConfirmationRequired": true,
+      "googleAuthProviderEnabled": false
+    },
+    "hostedWriteBySupervisorReported": false
   },
   "remainingLiveGates": [
     "Supervisor-owned hosted upgrade/catalog preflight, current Auth email delivery and exact HTTPS confirmation/allowlist, first_owner_signup_configuration operator/shared package and preserved billing/capacity checks.",
@@ -346,6 +383,85 @@
     "No new sign-in stack; existing email OTP remains the implemented identity route. App-provider OAuth is separate consent.",
     "Personal assistant preference/setup is implemented; external assistant/MCP access, embedded conversation, live quote-status retrieval and subscription dollar caps remain unimplemented/unaccepted.",
     "No local Docker/Colima, local install/build/server, hosted migration, resource/spend change, production promotion, provider/model/voice/billing/campaign operation.",
-    "Unrelated docs44 CMO work, gtm and output preserved. Final evidence-only descendant requires its own exact CI/deployment/anonymous review, authorized callback, then stop."
-  ]
+    "Unrelated docs44 CMO work, gtm and output preserved. Final6936 exact CI failed; bounded diagnostic source now requires exact CI/deployment review and authorized callback, then stop. No causal repair inferred from a green attempt."
+  ],
+  "finalEvidenceCheckpoint": {
+    "sourceSha": "6936ca5b40ae8c9d0b7b218df3632407c996348b",
+    "runId": 44944139643,
+    "runUrl": "https://github.com/gking432/whitelist/actions/runs/44944139643",
+    "databaseJobId": 136967601565,
+    "artifactId": 14723400352,
+    "artifactDirectory": "/tmp/partner-entry-44944139643",
+    "allNineSucceeded": false,
+    "otherJobsSucceeded": 8,
+    "publicReviewPassed": 25,
+    "ownerUiPassedBeforeFailure": 16,
+    "failureStage": "phone: preference CAS and exact retry",
+    "originalFailure": {
+      "operation": "saved snapshot GET after acknowledged restore Save POST200",
+      "status": 403,
+      "category": "access_denied",
+      "requiredActualStatus": 200,
+      "originalContextSubread": "unknown; no original-request diagnostic in this source"
+    },
+    "laterReadOnlyDiagnosis": {
+      "cookieReadable": true,
+      "cookieSubjectMatches": true,
+      "sameInitialSession": true,
+      "actorVerified": true,
+      "goTrueStatus": 200,
+      "goTrueUserMatches": true,
+      "membershipStatus": "active",
+      "ownerRole": true
+    },
+    "laterDiagnosisIsOriginalRequestProof": false,
+    "foundationAssistantAndLaterOwnerStagesReached": false,
+    "cleanup": {
+      "status": "complete",
+      "remainingFixtures": 0,
+      "errors": [],
+      "diagnostics": []
+    },
+    "causalFixEstablished": false,
+    "noRetriesTimeoutIncreasesOrAssertionDowngrades": true,
+    "deployment": {
+      "id": "dpl_DBiEwaeeq5pKP4M2u2izFee3aeAn",
+      "url": "https://partner-platform-mre5vmck9-gking432s-projects.vercel.app",
+      "state": "READY",
+      "sourceSha": "6936ca5b40ae8c9d0b7b218df3632407c996348b",
+      "actualAnonymousDesktopRootAndClient": "/preview",
+      "actualAnonymousPhoneClientMoreApps": "usable current workstation",
+      "actualDesktopAndPhoneSetupClick": "/start: Business setup unavailable",
+      "viewportPhone": {
+        "width": 390,
+        "height": 844
+      },
+      "platformProtection": "unchanged; supported temporary share access; token omitted",
+      "appSessionInjected": false,
+      "liveConnectedWorkspaceAccepted": false
+    }
+  },
+  "boundedDiagnosticContinuation": {
+    "status": "local source verified; exact pushed CI pending",
+    "localTests": 852,
+    "testFailures": 0,
+    "typecheck": "passed",
+    "lint": "passed",
+    "independentIntegrationReview": "no material blocker",
+    "provedDefect": "Temporary Auth/session-RPC/portal service failures collapse into a preference-route403 before any preferenceRPC.",
+    "change": "Opt-in denied/unavailable context decision and optional fixed-field observers; unavailable503, genuine denial403; original response metadata independently sanitized by browser harness.",
+    "wireFields": [
+      "stage",
+      "kind",
+      "status",
+      "code",
+      "possibleSessionCookie"
+    ],
+    "noExtraAuthOrQueryRequests": true,
+    "noPermissionFallback": true,
+    "noRetryCacheCoalescingOrHealing": true,
+    "originalIntermittentCause": "unknown",
+    "greenAttemptWouldEstablishCausalFix": false,
+    "continuation": "Inspect original_context if the actual request fails. Keep exact HTTP200 acceptance and genuine browser-cookie proof; report exact checkpoint then stop for review. Hosted work belongs to supervisor."
+  }
 }
