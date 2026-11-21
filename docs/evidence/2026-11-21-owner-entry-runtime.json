@@ -383,7 +383,7 @@
     "No new sign-in stack; existing email OTP remains the implemented identity route. App-provider OAuth is separate consent.",
     "Personal assistant preference/setup is implemented; external assistant/MCP access, embedded conversation, live quote-status retrieval and subscription dollar caps remain unimplemented/unaccepted.",
     "No local Docker/Colima, local install/build/server, hosted migration, resource/spend change, production promotion, provider/model/voice/billing/campaign operation.",
-    "Unrelated docs44 CMO work, gtm and output preserved. Final6936 exact CI failed; bounded diagnostic source now requires exact CI/deployment review and authorized callback, then stop. No causal repair inferred from a green attempt."
+    "Unrelated docs44 CMO work, gtm and output preserved. Original6936 exact CI failure remains; instrumented d83 exact CI passed with unknown intermittent cause. Final evidence-only descendant requires its own exact CI and review callback before dependent OAuth work."
   ],
   "finalEvidenceCheckpoint": {
     "sourceSha": "6936ca5b40ae8c9d0b7b218df3632407c996348b",
@@ -442,7 +442,7 @@
     }
   },
   "boundedDiagnosticContinuation": {
-    "status": "local source verified; exact pushed CI pending",
+    "status": "exact source accepted in isolated runtime; original intermittent cause remains unknown",
     "localTests": 852,
     "testFailures": 0,
     "typecheck": "passed",
@@ -462,6 +462,65 @@
     "noRetryCacheCoalescingOrHealing": true,
     "originalIntermittentCause": "unknown",
     "greenAttemptWouldEstablishCausalFix": false,
-    "continuation": "Inspect original_context if the actual request fails. Keep exact HTTP200 acceptance and genuine browser-cookie proof; report exact checkpoint then stop for review. Hosted work belongs to supervisor."
+    "continuation": "If original request fails again inspect original_context, preserve exact HTTP200 and genuine-cookie assertion, repair only demonstrated cause. Complete final evidence-only exact CI/callback and stop for review before directly dependent OAuth task. No blind rerun, weaker guard, hosted builder action or unrelated slice.",
+    "sourceSha": "d83cedbbbe6dc49b80439e6ff4f3255504e58fc7",
+    "runId": 44946392942,
+    "runUrl": "https://github.com/gking432/whitelist/actions/runs/44946392942",
+    "databaseJobId": 136974546483,
+    "applicationJobId": 136974546723,
+    "artifactId": 14723509056,
+    "artifactDirectory": "/tmp/partner-context-44946392942",
+    "allNineSucceeded": true,
+    "migrations": 104,
+    "rollbackGroups": 81,
+    "actualTwoSessionCases": 13,
+    "restoreTables": 103,
+    "securityRestoreRelease": "passed",
+    "nativeExternalActions": 0,
+    "finalStackStop": "passed",
+    "browser": {
+      "publicGroups": 25,
+      "ownerUiStages": 24,
+      "foundationHttpGroups": 16,
+      "assistantGroups": 14,
+      "genuineEmailCookieAndSessionProof": true,
+      "signOutStaleSessionReloginSwitchRevocation": true,
+      "allFourLayoutFlags": true,
+      "reviewedPngCount": 54,
+      "reviewAllocation": {
+        "public": 25,
+        "private": 22,
+        "assistant": 7
+      },
+      "visualBlocker": false,
+      "cleanup": "complete",
+      "remainingFixtures": 0,
+      "cleanupErrors": [],
+      "diagnostics": []
+    },
+    "sources": {
+      "jobs": 66,
+      "canonical": 18,
+      "ownerManagerSourcesMatch": true,
+      "externalRequests": 0,
+      "liveOAuth": false,
+      "liveProviderWrites": false,
+      "teamPaused": true,
+      "sandboxPreserved": true
+    },
+    "deployment": {
+      "id": "dpl_FwYn9fVPJ5CbZmHRFvAEMZ8chHgn",
+      "url": "https://partner-platform-4wppgvok9-gking432s-projects.vercel.app",
+      "state": "READY",
+      "sourceSha": "d83cedbbbe6dc49b80439e6ff4f3255504e58fc7",
+      "actualAnonymousDesktopRootAndClient": "/preview without app sign-in",
+      "actualPhoneClientMoreAppsDisclosure": "passed at390x844",
+      "actualDesktopAndPhoneSetupClick": "/start: Business setup unavailable",
+      "viewportReset": true,
+      "platformProtection": "unchanged; supported temporary share access; token omitted",
+      "appSessionInjected": false,
+      "liveConnectedWorkspaceAccepted": false
+    },
+    "nextScope": "Fresh human authorization covers real onboarding and app connections. Supervisor owns hosted backup/upgrade/operator/Auth setup. After current final evidence checkpoint and supervisor review only, narrow Google/HubSpot four-function deterministic conflict transport with actual role/HTTP stale/replay/race proof."
   }
 }
