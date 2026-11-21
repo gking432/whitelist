@@ -15,6 +15,7 @@ import { assertHostedCi, sanitizeCiFailure, SOURCE_CONTAINER } from "./ci-bootst
 import { assertEmptyBrowserTarget, browserFixtureIdentity, cleanupBrowserFixtures, prepareBrowserCatalog, readCreatedOwner } from "./owner-browser-fixtures.mjs";
 import { assertOwnerWorkspaceNavigation, assertSavedWorkspacePreferences, runOwnerWorkspaceScenarios, withOwnerBrowserDeadline } from "./owner-workspace-browser-scenarios.mjs";
 import { runOwnerFoundationConflictHttp } from "./owner-foundation-conflict-http.mjs";
+import { assertDisplayedPersonalAssistant, assertPersonalAssistantDenied, assertSavedPersonalAssistant, personalAssistantApi, personalAssistantRpc, runPersonalAssistantBrowserScenarios } from "./personal-assistant-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
@@ -22,6 +23,7 @@ export const MAILPIT_VERSION = "1.22.3";
 export const OWNER_BROWSER_CONFIRMATION = "owner-browser-disposable";
 export const BROWSER_COVERAGE = ["real login UI and fresh one-use GoTrue/Mailpit verification", "visible first-owner creation and reload without duplicate business", "empty Today and current Apps for the same business", "queued source imports rendered on desktop and phone", "two-owner source and endpoint isolation", "normal UI sign-out and stale signed user token denial", "real re-login preserves business, membership and creation receipt", "same-browser account switch replaces prior business access without provisioning", "revoked membership denies both current sessions and cannot create another business", "synthetic-only cleanup"];
 BROWSER_COVERAGE.push("deliberate owner-scoped Today preferences, source-backed usage suggestions, CAS, reset and exact retry");
+BROWSER_COVERAGE.push("optional private assistant preference UI, unavailable/setup-needed launcher, genuine-cookie HTTP CAS and actor/business isolation without model or provider effects");
 export function browserOptions(args) {
   if (args.length > 1 || args.some((arg) => !["--plan", "--preflight"].includes(arg))) throw new Error("Use no arguments, --plan, or --preflight.");
   return { plan: args[0] === "--plan", preflight: args[0] === "--preflight" };
@@ -354,11 +356,11 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   if (installed.name !== "playwright" || installed.version !== PLAYWRIGHT_VERSION) throw new Error(`Use audited Playwright ${PLAYWRIGHT_VERSION} in the explicit CI-only module path.`);
   await mkdir(target.artifacts, { recursive: true });
   const fixture = browserFixtureIdentity(randomBytes(6).toString("hex")), checks = [], contexts = [], diagnostics = [];
-  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null;
+  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null, personalAssistant = null;
   let activeStep = null, currentPhase = "preparing browser acceptance", failurePhase = null, cleanupStatus = "not_started", checkpointTail = Promise.resolve();
   const cleanupErrors = [];
   const report = (status) => ({ kind: "owner_browser_acceptance", status, updatedAt: new Date().toISOString(), playwrightVersion: PLAYWRIGHT_VERSION,
-    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp,
+    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp, personalAssistant,
     limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately.", "Session proof reads only the project's cookies set by the normal email login, then verifies the exact token against the live current-session RPC; no cookie injection, session creation or token refresh is used."],
     ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) });
   const checkpoint = async (status = "in_progress") => {
@@ -435,6 +437,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     workspacePersonalization = await runOwnerWorkspaceScenarios({ admin, fixture, owners, target, step, screenshot, phase, diagnoseAccess, env });
     foundationHttp = await runOwnerFoundationConflictHttp({ admin, fixture, owners, target, readSession: readOwnerBrowserSession, verifySession: verifyObservedOwnerSession, diagnoseAccess, phase,
       onProgress: async (progress) => { foundationHttp = progress; await checkpoint(); }, env });
+    personalAssistant = await runPersonalAssistantBrowserScenarios({ admin, fixture, owners, target, readSession: readOwnerBrowserSession, verifySession: verifyObservedOwnerSession, screenshot, phase,
+      onProgress: async (progress) => { personalAssistant = progress; await checkpoint(); }, env });
     let signedOutToken;
     await step("phone: normal owner UI sign out", async () => { signedOutToken = sessionTokens.get("phone"); assert.ok(signedOutToken, "A genuine browser GoTrue session token must be observed for revocation proof."); await owners[1].page.goto(`${target.appUrl}/client/apps`); await signOutUi(owners[1].page, target); });
     await step("phone: stale signed session denied by real RPCs", async () => {
@@ -442,6 +446,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         const response = await fetch(`${target.supabaseUrl}/rest/v1/rpc/${rpc}`, { method: "POST", headers: { apikey: target.anonKey, Authorization: `Bearer ${signedOutToken}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) });
         assert.ok([401, 403].includes(response.status), "The real logged-out signed user token cannot resolve an actor or provision again.");
       }
+      await assertPersonalAssistantDenied({ context: owners[1].context, target, owner: owners[1], token: signedOutToken, phase });
     });
     await step("phone: real re-login preserves original workspace", async () => {
       const owner = owners[1];
@@ -451,6 +456,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       assert.equal(await owner.page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       const persisted = await readCreatedOwner(admin, fixture, owner); assert.equal(persisted.clientId, owner.clientId); assert.equal(persisted.membershipId, owner.membershipId); assert.equal(persisted.receiptId, owner.receiptId);
       await assertSavedWorkspacePreferences(owner.page, target.appUrl, owner.workspacePreferences, { operation: "phone: re-login saved preference snapshot GET", phase, diagnose403: () => diagnoseAccess(owner) });
+      await assertSavedPersonalAssistant(owner.context, target, owner, owner.personalAssistantPreferences, phase);
+      await assertDisplayedPersonalAssistant(owner.page, owner.personalAssistantPreferences);
       await owner.page.goto(`${target.appUrl}/client/apps`); await revealCustomerContext(owner.page); await visible(owner.page, owner.sources.expected.customerName); await screenshot(owner.page, target, "phone-relogin-persisted");
     });
     await step("phone: normal account switch replaces prior business access", async () => {
@@ -465,6 +472,13 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       const persisted = await readCreatedOwner(admin, fixture, current); assert.equal(persisted.clientId, current.clientId); assert.equal(persisted.membershipId, current.membershipId); assert.equal(persisted.receiptId, current.receiptId);
       await assertSavedWorkspacePreferences(page, target.appUrl, current.workspacePreferences, { operation: "phone: switched account preference snapshot GET", phase, diagnose403: () => diagnoseAccess({ ...current, page, context: prior.context }) });
       assert.notDeepEqual(current.workspacePreferences, prior.workspacePreferences, "Distinct account preferences must not be substituted during the same-browser switch.");
+      await personalAssistantApi(prior.context, target, prior, undefined, { expected: [403], phase, operation: "switched session stale prior assistant scope denied" });
+      await personalAssistantApi(prior.context, target, prior, { key: randomUUID(), revision: prior.personalAssistantPreferences.revision, settings: { answer: "skipped", assistant: null } }, { expected: [403], phase, operation: "switched session stale prior assistant save denied" });
+      await assertSavedPersonalAssistant(prior.context, target, current, current.personalAssistantPreferences, phase);
+      await assertDisplayedPersonalAssistant(page, current.personalAssistantPreferences);
+      assert.notDeepEqual(current.personalAssistantPreferences, prior.personalAssistantPreferences, "Account switching must replace the prior actor's private assistant choice.");
+      await personalAssistantRpc(target, token, "get_owner_personal_assistant", { p_client: prior.clientId }, [403]);
+      await personalAssistantRpc(target, token, "save_owner_personal_assistant", { p_client: prior.clientId, p_key: randomUUID(), p_revision: prior.personalAssistantPreferences.revision, p_settings: { answer: "skipped", assistant: null } }, [403]);
       const scoped = await page.request.get(`${target.appUrl}/api/connections?clientId=${prior.clientId}`); assert.equal(scoped.status(), 200);
       const data = JSON.stringify(await scoped.json()); assert.ok(data.includes(current.marker)); assert.equal(data.includes(prior.marker), false, "The same browser must no longer read the previous account's sources.");
       await page.goto(`${target.appUrl}/client/apps`); await revealCustomerContext(page); await visible(page, current.sources.expected.customerName); assert.equal((await page.locator("body").innerText()).includes(prior.marker), false);
@@ -477,10 +491,12 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     });
     await step("desktop: revoked membership and no re-provision", async () => {
       const owner = owners[0], disabled = await admin.from("memberships").update({ status: "disabled" }).eq("id", owner.membershipId).eq("user_id", owner.userId).eq("client_id", owner.clientId); assert.equal(disabled.error, null);
+      const token = await readOwnerBrowserSession(owner.context, target); await assertPersonalAssistantDenied({ context: owner.context, target, owner, token, phase });
       assert.equal((await owner.page.request.get(`${target.appUrl}/api/connections`)).status(), 403); await owner.page.goto(`${target.appUrl}/client`); await visible(owner.page, "Business setup unavailable"); assert.equal(await owner.page.getByRole("button", { name: "Create my business", exact: true }).count(), 0); await screenshot(owner.page, target, "desktop-revoked-access"); await signOutUi(owner.page, target);
     });
     await step("phone: switched session loses revoked business access", async () => {
       const page = owners[1].page;
+      const token = await readOwnerBrowserSession(owners[1].context, target); await assertPersonalAssistantDenied({ context: owners[1].context, target, owner: owners[0], token, phase });
       assert.equal((await page.request.get(`${target.appUrl}/api/connections`)).status(), 403);
       await page.goto(`${target.appUrl}/client`); await visible(page, "Business setup unavailable"); assert.equal(await page.getByRole("button", { name: "Create my business", exact: true }).count(), 0);
       await screenshot(page, target, "phone-switched-revoked-access"); await signOutUi(page, target);

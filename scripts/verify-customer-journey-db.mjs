@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const EXPECTED_MIGRATION = "20261119025924";
+export const EXPECTED_MIGRATION = "20261121134633";
 export const CONFIRMATION = "customer-journey-disposable";
 export const COVERAGE = [
   "rollback: reviewed context and enforceable authority",
@@ -22,7 +22,7 @@ export const COVERAGE = [
   "rollback: customer-owned HubSpot OAuth, portal/grant/refresh CAS, source-owned CRM approval and uncertain POST suppression",
   "rollback: first-owner authenticated session, configured operator, isolated workspace, no implicit launch and replay/revocation gates",
   "rollback: foundation conflict catalog/ACLs, exact context receipts, genuine native website authority decisions and rejected stale effects",
-  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease, two first-owner creation races and owner preference CAS (synthetic session claims; browser CAS remains separate)",
+  "concurrency (opt-in): two-session approval resolution, outbox claim, leased assignment claim, adoption dedupe, HubSpot callback consume, refresh lease, two first-owner creation races, owner workspace preference CAS and personal-assistant preference CAS (synthetic session claims; browser CAS remains separate)",
 ];
 export class Blocked extends Error {}
 
@@ -229,6 +229,33 @@ async function applyMigrations(target, missing) {
   const result = readReport(await query(target, body), "migration_apply");
   if (result.committed !== true) throw new Error("Migration commit was not confirmed.");
 }
+// Validate and emit only the fixed metadata fields supplied by this isolated
+// asset. No actor choices, credentials or business contents enter catalog logs.
+export function assertPersonalAssistantCatalog(catalog) {
+  const fail = () => { throw new Error("The personal-assistant catalog evidence is incomplete or violates its security boundary."); };
+  const table = catalog?.table;
+  if (!table || table.name !== "owner_personal_assistant_preferences" || table.owner !== "postgres" || table.rls !== true || table.policies !== 0 ||
+      table.anonRead !== false || table.authenticatedRead !== false || table.authenticatedWrite !== false || table.serviceReadWrite !== true) fail();
+  const expected = new Map([
+    ["get_owner_personal_assistant(uuid)", false],
+    ["save_owner_personal_assistant(uuid,uuid,bigint,jsonb)", false],
+    ["owner_onboarding.personal_assistant(uuid)", true],
+    ["owner_onboarding.save_personal_assistant(uuid,uuid,bigint,jsonb)", true],
+  ]);
+  if (!Array.isArray(catalog.functions) || catalog.functions.length !== expected.size) fail();
+  const seen = new Set();
+  const functions = catalog.functions.map((entry) => {
+    const signature = typeof entry?.signature === "string" ? entry.signature.replace(/^public\./, "") : "";
+    if (!expected.has(signature) || seen.has(signature) || entry.owner !== table.owner || entry.securityDefiner !== expected.get(signature) ||
+        !Array.isArray(entry.configuration) || entry.configuration.length !== 1 || entry.configuration[0] !== 'search_path=""' ||
+        entry.publicExecute !== false || entry.anonExecute !== false || entry.authenticatedExecute !== true || entry.serviceExecute !== true) fail();
+    seen.add(signature);
+    return { signature: entry.signature, owner: entry.owner, securityDefiner: entry.securityDefiner, configuration: entry.configuration,
+      publicExecute: entry.publicExecute, anonExecute: entry.anonExecute, authenticatedExecute: entry.authenticatedExecute, serviceExecute: entry.serviceExecute };
+  });
+  return { table: { name: table.name, owner: table.owner, rls: table.rls, policies: table.policies, anonRead: table.anonRead,
+    authenticatedRead: table.authenticatedRead, authenticatedWrite: table.authenticatedWrite, serviceReadWrite: table.serviceReadWrite }, functions };
+}
 async function rollbackAcceptance(target, asset = "customer-journey-acceptance.sql", kind = "acceptance") {
   const run = randomUUID();
   const source = await readFile(join(root, "scripts/sql", asset), "utf8");
@@ -236,7 +263,9 @@ async function rollbackAcceptance(target, asset = "customer-journey-acceptance.s
   const output = await query(target, sql);
   const report = readReport(output, kind);
   if (report.rolledBack !== true || report.remainingFixtures !== 0 || !Array.isArray(report.checks) || !report.checks.length) throw new Error("Rollback acceptance did not return complete evidence.");
+  const personalCatalog = kind === "personal_assistant_acceptance" ? assertPersonalAssistantCatalog(report.catalog) : null;
   console.log(`PASS: ${report.checks.length} ${kind} rollback SQL assertion groups; synthetic fixtures rolled back.`);
+  if (personalCatalog) console.log(`CATALOG: ${JSON.stringify({ kind: "personal_assistant_catalog", ...personalCatalog })}`);
   if (kind === "owner_foundation_conflict_acceptance") {
     const catalog = readReport(output, "owner_foundation_catalog");
     if (!Array.isArray(catalog.functions) || catalog.functions.length !== 6 || catalog.trigger?.enabled !== "O") throw new Error("The foundation catalog evidence is incomplete.");
@@ -314,7 +343,7 @@ export function preferenceCasWinner(results) {
   return winners[0];
 }
 async function firstOwnerConcurrencyAcceptance(target) {
-  const ids = Object.fromEntries(["run","partner","package","actorA","actorB","sessionA","sessionB","keyA","keyB","conflictKey","preferenceKeyA","preferenceKeyB"].map((key) => [key, randomUUID()]));
+  const ids = Object.fromEntries(["run","partner","package","actorA","actorB","sessionA","sessionB","keyA","keyB","conflictKey","preferenceKeyA","preferenceKeyB","personalKeyA","personalKeyB"].map((key) => [key, randomUUID()]));
   const prefix = `cj-acceptance-${ids.run}-first-owner-race`;
   const business = (name) => literal(JSON.stringify({ name, description: "Synthetic first owner concurrency declaration", timezone: "America/Chicago" }));
   const claims = (actor, session) => `set local role authenticated; select set_config('request.jwt.claim.role','authenticated',true); select set_config('request.jwt.claim.sub','${actor}',true); select set_config('request.jwt.claims',${literal(JSON.stringify({ sub: actor, role: "authenticated", session_id: session }))},true);`;
@@ -384,15 +413,48 @@ async function firstOwnerConcurrencyAcceptance(target) {
     if (final.rows !== 1 || final.scopedRows !== 1 || final.revision !== 1 || final.requestKey !== winningKey ||
         final.settings?.displayName !== expectedSettings.displayName || JSON.stringify(final.settings?.order) !== JSON.stringify(expectedSettings.order) || JSON.stringify(final.settings?.pinned) !== JSON.stringify(expectedSettings.pinned)) throw new Error("Preference CAS did not persist exactly the winning owner's revision-one settings and request key.");
     if (JSON.stringify(final.authority) !== JSON.stringify(before.authority)) throw new Error("Preference CAS changed business authority, membership or execution state.");
+    // Case 4: a separate preference type, same genuine synthetic Auth session
+    // and first-owner business. These SQL claims do not replace browser proof.
+    const workspacePreferencesSql = `(select jsonb_agg(to_jsonb(p) order by p.user_id,p.client_id) from public.owner_workspace_preferences p where p.partner_id='${ids.partner}')`;
+    const personalBefore = readReport(await query(target, `select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','personal_assistant_cas_baseline',
+ 'rows',(select count(*) from public.owner_personal_assistant_preferences where partner_id='${ids.partner}'),
+ 'authority',${authoritySql},'workspacePreferences',${workspacePreferencesSql}) as cj_report;`), "personal_assistant_cas_baseline");
+    if (personalBefore.rows !== 0) throw new Error("Personal-assistant CAS requires an unsaved revision-zero fixture.");
+    const personalSettingsFor = (worker) => worker === "a" ? { answer: "yes", assistant: "muse" } : { answer: "no", assistant: "workstation" };
+    const personalResults = await pair((worker) => `begin; set local statement_timeout='15s'; set local lock_timeout='5s';
+ create temp table fo_personal_assistant_result(result jsonb); grant insert,select on fo_personal_assistant_result to authenticated; ${claims(ids.actorA, ids.sessionA)}
+ do $personal_assistant_race$ declare snapshot jsonb; begin
+  begin snapshot:=public.save_owner_personal_assistant('${clientA}','${worker === "a" ? ids.personalKeyA : ids.personalKeyB}',0,${literal(JSON.stringify(personalSettingsFor(worker)))}::jsonb);
+   if snapshot is distinct from jsonb_build_object('preferences',${literal(JSON.stringify(personalSettingsFor(worker)))}::jsonb||jsonb_build_object('revision',1),'available',true,'canEdit',true) then raise exception 'Personal-assistant race winner did not return its exact revision-one preference'; end if;
+   insert into fo_personal_assistant_result values(jsonb_build_object('won',true,'revision',(snapshot->'preferences'->>'revision')::bigint));
+  exception when sqlstate 'PT409' then insert into fo_personal_assistant_result values(jsonb_build_object('won',false,'errorCode',sqlstate)); end;
+ end $personal_assistant_race$;
+ select pg_sleep(0.2); commit; select '${REPORT_PREFIX}'::text || (jsonb_build_object('kind','worker','worker','${worker}')||result) as cj_report from fo_personal_assistant_result;`);
+    const personalWinner = preferenceCasWinner(personalResults);
+    const personalFinal = readReport(await query(target, `select '${REPORT_PREFIX}'::text || jsonb_build_object('kind','personal_assistant_cas_final',
+ 'rows',(select count(*) from public.owner_personal_assistant_preferences where partner_id='${ids.partner}'),
+ 'scopedRows',(select count(*) from public.owner_personal_assistant_preferences where user_id='${ids.actorA}' and client_id='${clientA}' and partner_id='${ids.partner}'),
+ 'revision',(select revision from public.owner_personal_assistant_preferences where user_id='${ids.actorA}' and client_id='${clientA}' and partner_id='${ids.partner}'),
+ 'requestRevision',(select request_revision from public.owner_personal_assistant_preferences where user_id='${ids.actorA}' and client_id='${clientA}' and partner_id='${ids.partner}'),
+ 'requestKey',(select request_key from public.owner_personal_assistant_preferences where user_id='${ids.actorA}' and client_id='${clientA}' and partner_id='${ids.partner}'),
+ 'settings',(select settings from public.owner_personal_assistant_preferences where user_id='${ids.actorA}' and client_id='${clientA}' and partner_id='${ids.partner}'),
+ 'authority',${authoritySql},'workspacePreferences',${workspacePreferencesSql}) as cj_report;`), "personal_assistant_cas_final");
+    const personalWinningKey = personalWinner.worker === "a" ? ids.personalKeyA : ids.personalKeyB;
+    const personalExpectedSettings = personalSettingsFor(personalWinner.worker);
+    if (personalFinal.rows !== 1 || personalFinal.scopedRows !== 1 || personalFinal.revision !== 1 || personalFinal.requestRevision !== 0 || personalFinal.requestKey !== personalWinningKey ||
+        !personalFinal.settings || Object.keys(personalFinal.settings).sort().join(",") !== "answer,assistant" ||
+        personalFinal.settings.answer !== personalExpectedSettings.answer || personalFinal.settings.assistant !== personalExpectedSettings.assistant) throw new Error("Personal-assistant CAS did not persist exactly the scoped winner's revision-one settings and request key.");
+    if (JSON.stringify(personalFinal.authority) !== JSON.stringify(personalBefore.authority) || JSON.stringify(personalFinal.workspacePreferences) !== JSON.stringify(personalBefore.workspacePreferences)) throw new Error("Personal-assistant CAS changed business authority, membership, execution state or workspace preferences.");
   } catch (error) { failure = error; }
   finally {
     const cleaned = readReport(await query(target, `begin; set local lock_timeout='5s'; delete from public.first_owner_signup_configuration where partner_id='${ids.partner}'; delete from public.partners where id='${ids.partner}' and slug='${prefix}'; delete from auth.users where id in('${ids.actorA}','${ids.actorB}') and email in('${prefix}-a@synthetic.invalid','${prefix}-b@synthetic.invalid'); commit;
- select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','first_owner_race_cleanup','remaining',(select count(*) from public.partners where id='${ids.partner}')+(select count(*) from auth.users where id in('${ids.actorA}','${ids.actorB}'))+(select count(*) from public.first_owner_signup_configuration where partner_id='${ids.partner}')) as cj_report;`), "first_owner_race_cleanup");
+ select '__CUSTOMER_JOURNEY_REPORT__'::text || jsonb_build_object('kind','first_owner_race_cleanup','remaining',(select count(*) from public.partners where id='${ids.partner}')+(select count(*) from auth.users where id in('${ids.actorA}','${ids.actorB}'))+(select count(*) from public.first_owner_signup_configuration where partner_id='${ids.partner}')+(select count(*) from public.owner_personal_assistant_preferences where partner_id='${ids.partner}')) as cj_report;`), "first_owner_race_cleanup");
     if (cleaned.remaining !== 0) throw new Error("First-owner race cleanup was incomplete.");
   }
   if (failure) throw failure;
   console.log("PASS: two actual two-session first-owner signup races; committed synthetic session/workspace fixtures cleaned up.");
   console.log("PASS: one actual two-session owner preference CAS case; synthetic actor/session claims, one revision-one winner and one PT409 conflict; authority unchanged and committed fixtures cleaned up. Browser CAS remains separately required.");
+  console.log("PASS: one actual two-session personal-assistant preference CAS case; synthetic actor/session claims, one revision-one winner and one PT409 conflict; exact owner/business settings and request key, authority/workspace preferences unchanged and committed fixtures cleaned up.");
 }
 
 async function foundationLockConcurrencyAcceptance(target) {
@@ -479,6 +541,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   await rollbackAcceptance(target, "first-owner-acceptance.sql", "first_owner_acceptance");
   await rollbackAcceptance(target, "owner-workspace-acceptance.sql", "owner_workspace_acceptance");
   await rollbackAcceptance(target, "owner-foundation-conflict-acceptance.sql", "owner_foundation_conflict_acceptance");
+  await rollbackAcceptance(target, "personal-assistant-acceptance.sql", "personal_assistant_acceptance");
   if (options.concurrency) { await concurrencyAcceptance(target); await firstOwnerConcurrencyAcceptance(target); await foundationLockConcurrencyAcceptance(target); }
   else console.log("NOT RUN: committed-fixture concurrency checks (use --concurrency on the same validated disposable target).");
 }

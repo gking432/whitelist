@@ -2,6 +2,8 @@
 
 import { usePathname } from "next/navigation";
 import { LiveCallOverlay } from "@/components/assistant/live-call-overlay";
+import { PersonalAssistantLauncher } from "@/components/personal-assistant/launcher";
+import { PersonalAssistantPreferencesProvider } from "@/components/personal-assistant/preferences-provider";
 import { WorkspaceChrome } from "@/components/layout/workspace-chrome";
 import { DailyBriefShell } from "@/components/business/daily-brief-shell";
 import { isOwnerArea, OWNER_AREAS } from "@/lib/business/owner-navigation";
@@ -24,6 +26,7 @@ type Props = {
   canManageConnections?: boolean;
   canReviewLaunch?: boolean;
   businessWorkspace?: boolean;
+  personalAssistantScopeKey?: string;
 };
 export function PortalShell({
   children,
@@ -38,6 +41,7 @@ export function PortalShell({
   canManageConnections = false,
   canReviewLaunch = false,
   businessWorkspace = false,
+  personalAssistantScopeKey,
 }: Props) {
   const pathname = usePathname();
   const simpleView = pathname === "/client/mobile";
@@ -239,8 +243,7 @@ export function PortalShell({
       </span>
     </div>
   );
-  return (
-    <div style={brandStyleVariables(branding)}>
+  const content = <>
       {businessWorkspace && isOwnerArea(pathname) ? (
         <DailyBriefShell
           brandName={
@@ -307,6 +310,7 @@ export function PortalShell({
       {!simpleView && visibleSections.includes("assistant") ? (
         <LiveCallOverlay productName={branding.productName} />
       ) : null}
-    </div>
-  );
+      {businessWorkspace && personalAssistantScopeKey ? <PersonalAssistantLauncher mobileNavigation={simpleView} /> : null}
+    </>;
+  return <div style={brandStyleVariables(branding)}>{businessWorkspace && personalAssistantScopeKey ? <PersonalAssistantPreferencesProvider key={personalAssistantScopeKey} scopeKey={personalAssistantScopeKey}>{content}</PersonalAssistantPreferencesProvider> : content}</div>;
 }

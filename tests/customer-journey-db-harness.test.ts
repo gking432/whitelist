@@ -145,7 +145,7 @@ test("the broader security schema clone includes only its real static provider c
 });
 
 test("HubSpot SQL acceptance remains required with six real concurrency cases and no policy bypass", async () => {
-  assert.equal(EXPECTED_MIGRATION, "20261119025924");
+  assert.equal(EXPECTED_MIGRATION, "20261121134633");
   const verifier = await readFile(harnessUrl, "utf8");
   assert.match(verifier, /rollbackAcceptance\(target, "hubspot-oauth-acceptance.sql", "hubspot_oauth_acceptance"\)/);
   assert.match(verifier, /rollbackAcceptance\(target, "owner-workspace-acceptance.sql", "owner_workspace_acceptance"\)/);

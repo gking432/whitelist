@@ -114,6 +114,7 @@ export default async function ClientPortalLayout({
     <PortalShell
       accountActions={<SignOutButton />}
       businessWorkspace={canReadBusinessWorkspace(portal.access)}
+      personalAssistantScopeKey={canReadBusinessWorkspace(portal.access) && !portal.access.isImpersonating ? `${portal.user.id}:${portal.client.id}` : undefined}
       clientName={portal.client.name}
       branding={portal.branding}
       experienceMode={portal.client.client_experience_mode}
