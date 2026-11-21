@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "source inventory and focused tests; actual SQL/catalog/HTTP CI pending",
+  "status": "Exact code accepted in isolated SQL/HTTP/browser runtime; final evidence descendant requires its own exact CI.",
   "scope": "four existing production service-role OAuth RPC boundaries only",
   "baseline": {
     "sourceSha": "35e594c20d1c2f94906d0d861da86e359685fe94",
@@ -258,7 +258,7 @@
     "typecheck": "passed",
     "lint": "passed",
     "diffCheck": "passed",
-    "actualDatabaseAcceptance": "pending isolated CI",
+    "actualDatabaseAcceptance": "Passed105 migrations/89 rollback groups/14 actual two-session cases and7 HTTP groups on exact cd351974 run44950504788.",
     "sourceCorrection": "Full874 suite passed after removing invalid activation fixture; production migration unchanged."
   },
   "independentSourceReviews": {
@@ -292,5 +292,6 @@
     "ownerRequest": "Full-screen onboarding, one large bold centered question and focused answer per screen; clear Next, unobtrusive Back/progress, optional Skip, no app/sidebar/topnav/launcher.",
     "scope": "Both /start required business name/description/timezone and commissioned-owner onboarding; preserve atomic provisioning/idempotency and existing authorized APIs/persisted answers/reviews.",
     "acceptance": "Desktop/phone first question, answer, error, back/resume, OAuth return, unavailable connection, optional assistant, explicit review and finish; current Auth/tenant/permission guards and full existing gates."
-  }
+  },
+  "actualRuntimeEvidence": "2026-11-21-oauth-conflict-runtime.json"
 }

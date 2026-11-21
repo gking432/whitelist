@@ -1,0 +1,223 @@
+{
+  "version": 1,
+  "sourceSha": "cd351974379ef22084fb4404d931b40e8ab8dec6",
+  "branch": "codex/v1-scenario-lab",
+  "repository": "gking432/whitelist",
+  "runId": 44950504788,
+  "runUrl": "https://github.com/gking432/whitelist/actions/runs/44950504788",
+  "databaseJobId": 136987159916,
+  "applicationJobId": 136987159694,
+  "artifactId": 14724763904,
+  "artifactDirectory": "/tmp/partner-oauth-44950504788",
+  "ci": {
+    "allNineSucceeded": true,
+    "tests": 874,
+    "failures": 0,
+    "migrations": 105,
+    "rollbackGroups": 89,
+    "actualTwoSessionCases": 14,
+    "restoreTables": 103,
+    "security": "passed",
+    "restore": "passed",
+    "release": "passed",
+    "nativeExternalActions": 0,
+    "finalStackStop": "passed"
+  },
+  "catalog": {
+    "kind": "oauth_conflict_catalog",
+    "functions": [
+      {
+        "signature": "begin_hubspot_oauth(uuid,uuid,uuid,uuid,text,text,text[],timestamptz)",
+        "owner": "postgres",
+        "securityDefiner": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceExecute": true,
+        "bodyHash": "48c4a3b518d8cf0b8554c8c03c532918"
+      },
+      {
+        "signature": "finish_google_permission_upgrade(uuid,text,text,text,text,text[],text[])",
+        "owner": "postgres",
+        "securityDefiner": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceExecute": true,
+        "bodyHash": "fb3527723833f4c280ed1b64d08a4f29"
+      },
+      {
+        "signature": "finish_hubspot_oauth(uuid,text,text,text,text,text[],text[],timestamptz,uuid)",
+        "owner": "postgres",
+        "securityDefiner": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceExecute": true,
+        "bodyHash": "0cced8bb8c1dd4636a0bd7e3bb8c78ee"
+      },
+      {
+        "signature": "finish_readonly_workspace_oauth(uuid,text,text,text,text)",
+        "owner": "postgres",
+        "securityDefiner": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceExecute": true,
+        "bodyHash": "31bb6b1808932335313cb53c08822ec7"
+      }
+    ]
+  },
+  "originalFailure": {
+    "sourceSha": "7e942ee47e36ece40ad9bb1ebabfee1aaec21ac2",
+    "runId": 44949963746,
+    "databaseJobId": 136985505393,
+    "allNineSucceeded": false,
+    "otherJobsSucceeded": 8,
+    "priorRollbackGroupsPassed": 81,
+    "newGroupsCompleted": 0,
+    "browserReached": false,
+    "failure": "Unnecessary new activation fixture violated required provider and selected-channel constraints.",
+    "correction": "Removed unnecessary activation fixture; explicitly require no activation rows. Production migration and all constraints unchanged.",
+    "blindRetry": false
+  },
+  "deployment": {
+    "id": "dpl_ABvdEepSqpJsTNuxBgbq9yusbKnM",
+    "url": "https://partner-platform-3uiq11vln-gking432s-projects.vercel.app",
+    "state": "READY",
+    "sourceSha": "cd351974379ef22084fb4404d931b40e8ab8dec6",
+    "meaning": "Exact source publishing metadata only; hosted105 readiness and application are supervisor-owned."
+  },
+  "limits": [
+    "Actual service-role HTTP/catalog/transaction acceptance uses isolated disposable synthetic ciphertexts and scopes; no live provider consent or valid token claimed.",
+    "Existing function invoker mode, owner, search path, privileges, return types, guards and locks preserved; only eight deliberate error-code literals changed.",
+    "Native void successes are204 empty, begin200 JSON, logical409 PT409 JSON, deleted missing-attempt replay500 P0002 JSON; no invented success or retry.",
+    "Original preference403 from run44944139643 remains unexplained and must fail with original-request diagnostics if it recurs.",
+    "No hosted builder writes/probes, local Docker recreation, runtime upgrade, provider/model/voice/billing action or UI change in this package.",
+    "Fresh one-question-per-screen onboarding is queued after final evidence checkpoint; preserve explicit review/authority and actual persisted raw facts."
+  ],
+  "artifactZipSha256": "2944b29f23fc6ba9982ebc27040f4fde3df18bd88dbaeeda3e2c2755011a05a1",
+  "browser": {
+    "status": "passed",
+    "ownerUiStages": 24,
+    "foundationHttpGroups": 16,
+    "personalAssistantGroups": 14,
+    "publicGroups": 25,
+    "oauthHttpGroups": 7,
+    "normalEmailCookieAndCurrentSessionRpc": true,
+    "signOutStaleSessionReloginSwitchRevocation": true,
+    "layout": {
+      "desktopOnboardingEditUnobscured": true,
+      "phoneContentClearance": true,
+      "phoneMoneyUnobscured": true,
+      "phoneTabScrollReset": true
+    },
+    "cleanupStatus": "complete",
+    "remainingFixtures": 0,
+    "cleanupErrors": [],
+    "diagnostics": [],
+    "failurePhase": null,
+    "reviewedPngCount": 54,
+    "reviewAllocation": {
+      "public": 25,
+      "private": 22,
+      "assistant": 7
+    },
+    "materialVisualRegression": false
+  },
+  "oauthHttp": {
+    "version": 1,
+    "status": "passed",
+    "activeStep": null,
+    "checks": [
+      {
+        "key": "guarded temporary scope and genuine sessions",
+        "status": "passed"
+      },
+      {
+        "key": "service-only RPC denial leaves every row unchanged",
+        "status": "passed"
+      },
+      {
+        "key": "read-only stale CAS and native void success replay denial",
+        "status": "passed"
+      },
+      {
+        "key": "Google account grants CAS and anti-downgrade conflicts",
+        "status": "passed"
+      },
+      {
+        "key": "HubSpot exact consume CAS and native completion",
+        "status": "passed"
+      },
+      {
+        "key": "HubSpot grant downgrade supersession account and stale conflicts",
+        "status": "passed"
+      },
+      {
+        "key": "unchanged original owner data and zero execution effects",
+        "status": "passed"
+      }
+    ],
+    "fixtureCleanup": "complete",
+    "cleanupRemaining": {
+      "client_businesses": 0,
+      "integration_connections": 0,
+      "integration_secrets": 0,
+      "business_connection_oauth_attempts": 0,
+      "agent_team_settings": 0,
+      "business_agent_activation": 0,
+      "action_jobs": 0,
+      "approval_items": 0,
+      "agent_work_items": 0,
+      "integration_sync_jobs": 0,
+      "integration_canonical_records": 0,
+      "ai_call_usage": 0,
+      "usage_events": 0,
+      "voice_usage_events": 0,
+      "memberships": 0,
+      "client_beta_acceptances": 0,
+      "business_context_reviews": 0,
+      "hubspot_oauth_refresh_leases": 0
+    },
+    "wire": {
+      "begin": "200 JSON",
+      "finish": "204 empty",
+      "conflict": "409 PT409 JSON",
+      "deletedAttempt": "500 P0002 JSON",
+      "consume": "200 JSON row array; one winner"
+    },
+    "serviceRoleOnly": true,
+    "originalOwnerStateUnchanged": true,
+    "providerRequests": 0,
+    "modelCalls": 0,
+    "limitations": [
+      "Synthetic isolated-CI ciphertexts/scopes test database HTTP policy, not valid credentials, provider consent or account ownership.",
+      "Finish RPCs intentionally trust the service callback; browser actor/provider verification occurs before these RPCs and is not established by this fixture.",
+      "Successful finishes delete attempts. Exact and changed missing-attempt replays fail closed; begin supersedes an older attempt and is not an idempotent receipt.",
+      "One temporary sandbox client has no membership, team settings, context review or live acceptance and is fully removed before the owner journey continues."
+    ]
+  },
+  "sources": {
+    "executedJobs": 66,
+    "canonicalRecords": 18,
+    "ownerManagerSourcesMatch": true,
+    "externalNetworkRequests": 0,
+    "liveOAuth": false,
+    "liveProviderWrites": false,
+    "teamPaused": true,
+    "sandboxPreserved": true
+  }
+}
