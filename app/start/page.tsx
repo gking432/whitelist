@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { parseCookieHeader } from "@supabase/ssr";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getAuthState } from "@/lib/auth/session";
 import { loadFirstOwnerEntry, type FirstOwnerEntry } from "@/lib/auth/first-owner";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -15,6 +16,8 @@ import { GoogleWorkspaceHandoff } from "./google-handoff";
 import { loadClientPortal } from "@/lib/clients/portal";
 import { canWriteBusinessWorkspace } from "@/lib/business/access";
 import { OnboardingSnapshotSchema } from "@/lib/business/onboarding-contract";
+import { firstOwnerSameOrigin } from "@/lib/auth/first-owner-rules";
+import { getAppUrl } from "@/lib/env";
 export const dynamic = "force-dynamic";
 export const metadata = { title: { absolute: "Set up your business" } };
 const notices: Record<string, string> = {
@@ -41,7 +44,20 @@ export default async function FirstOwnerStartPage(props: { searchParams: Promise
   }
   let handoff = null;
   if (query.google === "return" && query.restart !== "1" && supabase) {
-    const carrier = (await cookies()).get(GOOGLE_ONBOARDING_HANDOFF_COOKIE)?.value;
+    let carrier = (await cookies()).get(GOOGLE_ONBOARDING_HANDOFF_COOKIE)?.value;
+    if (!carrier) {
+      const incoming = await headers();
+      // Cookie deletion rerenders this same Server Action request. Preserve
+      // its navigation UI until the client receives the successful result;
+      // the browser still receives the actual cookie deletion. This marker
+      // grants no access: the original carrier must pass fresh actor/SID/TTL
+      // checks below. Never recover an Auth cookie or use this on a plain GET.
+      if (incoming.get("next-action") && firstOwnerSameOrigin(incoming.get("origin"), getAppUrl())) {
+        // Count before parsing: the SDK's cookie parser collapses duplicates.
+        const original = (incoming.get("cookie") ?? "").split(";").map(part => part.trim()).filter(part => part.indexOf("=") > 0 && part.slice(0, part.indexOf("=")).trim() === GOOGLE_ONBOARDING_HANDOFF_COOKIE);
+        if (original.length === 1) carrier = parseCookieHeader(original[0]).find(cookie => cookie.name === GOOGLE_ONBOARDING_HANDOFF_COOKIE)?.value;
+      }
+    }
     const sessionId = carrier ? await readGoogleOnboardingSessionId(supabase, user.id).catch(() => null) : null;
     handoff = sessionId ? readGoogleOnboardingHandoff(carrier, user.id, sessionId) : null;
   }

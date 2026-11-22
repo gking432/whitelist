@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
 
+type HandoffKind = "valid" | "invalid" | "tampered" | "expired" | "other_actor" | "other_session";
 type Scenario = {
   authenticated?: boolean; configured?: boolean; ready?: boolean; missingClient?: boolean; entryFailure?: boolean; forbidReadiness?: boolean; authFailure?: boolean;
   entry?: { state: "new" } | { state: "existing"; destination: "/client" | "/partner" | "/control" } | { state: "blocked" | "setup_required"; reason: string };
-  query?: { google?: string; restart?: string }; handoff?: "valid" | "invalid" | "expired" | "other_actor" | "other_session"; platformOwner?: boolean; sameActorRelogin?: boolean; unverifiedSession?: boolean;
+  query?: { google?: string; restart?: string }; handoff?: HandoffKind; platformOwner?: boolean; sameActorRelogin?: boolean; unverifiedSession?: boolean;
+  mutableHandoffAbsent?: boolean; originalHandoff?: HandoffKind | "duplicate" | "duplicate_distinct"; actionMarker?: string | null; requestOrigin?: string | null;
   portalKind?: string; portalRole?: string; portalActorMismatch?: boolean; portalClient?: string; impersonating?: boolean; viewOnly?: boolean;
   progressError?: boolean; progressMalformed?: boolean; progressRevision?: number;
 };
@@ -13,11 +15,15 @@ const actorId = "11111111-1111-4111-8111-111111111111", clientId = "22222222-222
 function startPage(scenario: Scenario) {
   const program = `
  const Module=require('node:module'),original=Module._load,scenario=${JSON.stringify(scenario)},calls={auth:0,userClient:0,entry:0,adminClient:0,readiness:0};
- const actorId=${JSON.stringify(actorId)},clientId=${JSON.stringify(clientId)},otherId=${JSON.stringify(otherId)},sessionId='88888888-8888-4888-8888-888888888888',otherSessionId='77777777-7777-4777-8777-777777777777',googleCalls={cookie:0,handoff:0,sessionVerification:0,portal:0,rpcs:[],network:0};
+ const actorId=${JSON.stringify(actorId)},clientId=${JSON.stringify(clientId)},otherId=${JSON.stringify(otherId)},sessionId='88888888-8888-4888-8888-888888888888',otherSessionId='77777777-7777-4777-8777-777777777777',googleCalls={cookie:0,headers:0,handoff:0,sessionVerification:0,portal:0,rpcs:[],network:0};
+ process.env.APP_URL='https://workstation.synthetic.invalid';
  process.env.SECRETS_ENCRYPTION_KEY=Buffer.alloc(32,17).toString('base64');
  const google=require('./lib/auth/google-onboarding.ts'),{encryptSecret}=require('./lib/integrations/secrets.ts');
- const now=Date.now(),issuedAt=now-(scenario.handoff==='expired'?600001:1000),handoffValue={version:1,actorId:scenario.handoff==='other_actor'?otherId:actorId,sessionId:scenario.handoff==='other_session'?otherSessionId:sessionId,attemptId:'44444444-4444-4444-8444-444444444444',draftId:'55555555-5555-4555-8555-555555555555',requestKey:'66666666-6666-4666-8666-666666666666',issuedAt,expiresAt:issuedAt+600000};
- const carrier=!scenario.handoff?undefined:scenario.handoff==='invalid'?'invalid-private-carrier-must-not-render':encryptSecret(JSON.stringify(handoffValue));
+ const makeCarrier=(kind,attemptId='44444444-4444-4444-8444-444444444444')=>{if(!kind)return undefined;if(kind==='invalid')return'invalid-private-carrier-must-not-render';const issuedAt=Date.now()-(kind==='expired'?600001:1000),value={version:1,actorId:kind==='other_actor'?otherId:actorId,sessionId:kind==='other_session'?otherSessionId:sessionId,attemptId,draftId:'55555555-5555-4555-8555-555555555555',requestKey:'66666666-6666-4666-8666-666666666666',issuedAt,expiresAt:issuedAt+600000};return encryptSecret(JSON.stringify(value))+(kind==='tampered'?'.tampered':'')};
+ const duplicate=scenario.originalHandoff==='duplicate'||scenario.originalHandoff==='duplicate_distinct',carrier=makeCarrier(scenario.handoff),originalCarrier=makeCarrier(duplicate?'valid':scenario.originalHandoff),secondCarrier=scenario.originalHandoff==='duplicate_distinct'?makeCarrier('valid','99999999-9999-4999-8999-999999999999'):originalCarrier,requestHeaders=new Headers();
+ if(scenario.actionMarker!==undefined&&scenario.actionMarker!==null)requestHeaders.set('next-action',scenario.actionMarker);
+ if(scenario.requestOrigin!==undefined&&scenario.requestOrigin!==null)requestHeaders.set('origin',scenario.requestOrigin);
+ requestHeaders.set('cookie','unrelated=synthetic-unrelated-cookie'+(originalCarrier?'; '+google.GOOGLE_ONBOARDING_HANDOFF_COOKIE+'='+originalCarrier:'')+(duplicate?'; '+google.GOOGLE_ONBOARDING_HANDOFF_COOKIE+'='+secondCarrier:''));
  global.fetch=async()=>{googleCalls.network++;throw new Error('Unexpected real network blocked')};
  const userClient={kind:'authenticated-user-client',rpc:async(name,input)=>{googleCalls.rpcs.push({name,input});if(name!=='get_owner_onboarding')throw new Error('Unexpected mutation blocked');return{error:scenario.progressError?{code:'SYNTHETIC_UNAVAILABLE',message:'private-backend-text-must-not-render'}:null,data:scenario.progressMalformed?{available:true}:{available:true,canEdit:true,profileRevision:'a'.repeat(32),answers:{description:'private-business-answers-must-not-render'},progress:{revision:scenario.progressRevision??7,step:'done',skipped:[],finished:true}}}}},adminClient={kind:'server-admin-client'};
  const jsx=(type,props)=>({type,props:props||{}});
@@ -25,7 +31,7 @@ function startPage(scenario: Scenario) {
   'react/jsx-runtime':{jsx,jsxs:jsx,Fragment:'Fragment'},
   'next/link':{__esModule:true,default:'Link'},
   'next/navigation':{redirect:destination=>{throw Object.assign(new Error('Synthetic Next redirect'),{destination});}},
-  'next/headers':{cookies:async()=>{googleCalls.cookie++;return{get:name=>carrier&&name===google.GOOGLE_ONBOARDING_HANDOFF_COOKIE?{name,value:carrier}:undefined}}},
+  'next/headers':{cookies:async()=>{googleCalls.cookie++;return{get:name=>!scenario.mutableHandoffAbsent&&carrier&&name===google.GOOGLE_ONBOARDING_HANDOFF_COOKIE?{name,value:carrier}:undefined}},headers:async()=>{googleCalls.headers++;return requestHeaders}},
   '@/lib/auth/session':{getAuthState:async()=>{calls.auth++;if(scenario.authFailure)throw Error('Synthetic Auth unavailable');return{user:scenario.authenticated?{id:actorId,app_metadata:scenario.platformOwner?{role:'platform_owner'}:{}}:null,isSupabaseConfigured:scenario.configured!==false};}},
   '@/lib/supabase/server':{createSupabaseServerClient:async()=>{calls.userClient++;return scenario.missingClient?null:userClient;}},
   '@/lib/auth/first-owner':{loadFirstOwnerEntry:async client=>{calls.entry++;if(client!==userClient)throw new Error('Wrong entry client');if(scenario.entryFailure)throw new Error('Synthetic entry lookup failed');return scenario.entry||{state:'new'};}},
@@ -63,7 +69,7 @@ function startPage(scenario: Scenario) {
     redirect: string | null; forms: { requestKey: string; draftScopeKey: string }[]; guests: {googleAvailable:boolean}[]; headings: string[]; statuses: string[]; gates: string[];
     handoffs: { mode: string; actorId: string; attemptId: string; draftId: string; requestKey: string; clientId?: string; businessName?: string; revision?: number; startAtDescription?: boolean }[];
     calls: { auth: number; userClient: number; entry: number; adminClient: number; readiness: number };
-    googleCalls: { cookie: number; handoff: number; sessionVerification: number; portal: number; network: number; rpcs: { name: string; input: Record<string, unknown> }[] };
+    googleCalls: { cookie: number; headers: number; handoff: number; sessionVerification: number; portal: number; network: number; rpcs: { name: string; input: Record<string, unknown> }[] };
   };
 }
 
@@ -172,4 +178,66 @@ test("a valid handoff cannot override blocked/setup-required entry or unauthoriz
     assert.equal(result.redirect, "/client"); assert.deepEqual(result.handoffs, []); assert.deepEqual(result.forms, []);
     assert.ok(result.googleCalls.rpcs.every(call => call.name === "get_owner_onboarding")); assert.equal(result.googleCalls.network, 0);
   }
+});
+
+// These fixtures model the two views of one real Server Action request: Next
+// synchronizes the deleted mutable cookie before rerendering, while headers()
+// retains the original incoming Cookie header. The real encrypted carrier and
+// current actor/SID validator are used; no Auth session or workspace is seeded.
+const actionRerender: Scenario = {
+  authenticated: true, forbidReadiness: true, query: { google: "return" },
+  mutableHandoffAbsent: true, originalHandoff: "valid", actionMarker: "synthetic-server-action",
+  requestOrigin: "https://workstation.synthetic.invalid", entry: { state: "existing", destination: "/client" },
+};
+test("action rerender preserves the original verified attempt after create becomes existing at progress0 or1", () => {
+  const initial = startPage({ authenticated: true, ready: true, query: { google: "return" }, handoff: "valid", entry: { state: "new" } });
+  assert.equal(initial.handoffs[0].mode, "create");
+  for (const progressRevision of [0, 1]) {
+    const result = startPage({ ...actionRerender, progressRevision });
+    assert.equal(result.redirect, null); assert.deepEqual(result.forms, []); assert.equal(result.handoffs.length, 1);
+    const handoff = result.handoffs[0];
+    assert.equal(handoff.mode, "connect"); assert.equal(handoff.actorId, initial.handoffs[0].actorId);
+    assert.equal(handoff.attemptId, initial.handoffs[0].attemptId); assert.equal(handoff.draftId, initial.handoffs[0].draftId); assert.equal(handoff.requestKey, initial.handoffs[0].requestKey);
+    assert.equal(handoff.revision, progressRevision); assert.equal(handoff.startAtDescription, progressRevision === 0 ? true : undefined);
+    assert.equal(result.googleCalls.headers, 1); assert.equal(result.googleCalls.sessionVerification, 1); assert.equal(result.googleCalls.handoff, 1); assert.equal(result.googleCalls.portal, 1);
+    assert.deepEqual(result.googleCalls.rpcs, [{ name: "get_owner_onboarding", input: { p_client: clientId } }]);
+    assert.equal(result.calls.readiness, 0); assert.equal(result.googleCalls.network, 0);
+    assert.doesNotMatch(JSON.stringify(result), /private-business-answers|provider_token|sessionId|issuedAt|expiresAt/);
+  }
+});
+test("existing connect action rerender retains the exact attempt and freshly read current progress", () => {
+  const initial = startPage({ authenticated: true, forbidReadiness: true, query: { google: "return" }, handoff: "valid", entry: { state: "existing", destination: "/client" }, progressRevision: 18 });
+  const result = startPage({ ...actionRerender, progressRevision: 19 });
+  assert.equal(result.redirect, null); assert.deepEqual(result.handoffs, [{ ...initial.handoffs[0], revision: 19 }]);
+  assert.equal(result.googleCalls.sessionVerification, 1); assert.equal(result.googleCalls.handoff, 1);
+  assert.deepEqual(result.googleCalls.rpcs, [{ name: "get_owner_onboarding", input: { p_client: clientId } }]);
+  assert.equal(result.calls.readiness, 0); assert.equal(result.googleCalls.network, 0);
+});
+test("an original header carrier is not a normalGET fallback and requires explicit action marker and canonical Origin", () => {
+  for (const patch of [
+    { actionMarker: null }, { actionMarker: "" }, { requestOrigin: null }, { requestOrigin: "https://foreign.invalid" },
+    { query: {} }, { query: { google: "failed" } }, { query: { google: "return", restart: "1" } }, { originalHandoff: undefined },
+  ] satisfies Scenario[]) {
+    const result = startPage({ ...actionRerender, ...patch });
+    assert.equal(result.redirect, "/client"); assert.deepEqual(result.handoffs, []); assert.deepEqual(result.forms, []);
+    assert.equal(result.googleCalls.sessionVerification, 0); assert.equal(result.googleCalls.handoff, 0); assert.equal(result.googleCalls.portal, 0); assert.deepEqual(result.googleCalls.rpcs, []); assert.equal(result.googleCalls.network, 0);
+  }
+});
+test("duplicate, tampered, expired, wrong-actor and wrong-session original carriers cannot read private setup", () => {
+  for (const patch of [
+    { originalHandoff: "duplicate" }, { originalHandoff: "duplicate_distinct" }, { originalHandoff: "invalid" }, { originalHandoff: "tampered" },
+    { originalHandoff: "expired" }, { originalHandoff: "other_actor" }, { originalHandoff: "other_session" }, { sameActorRelogin: true }, { unverifiedSession: true },
+  ] satisfies Scenario[]) {
+    const result = startPage({ ...actionRerender, ...patch });
+    assert.equal(result.redirect, "/client"); assert.deepEqual(result.handoffs, []); assert.deepEqual(result.forms, []);
+    assert.equal(result.googleCalls.portal, 0); assert.deepEqual(result.googleCalls.rpcs, []); assert.equal(result.googleCalls.network, 0);
+    assert.doesNotMatch(JSON.stringify(result), /invalid-private-carrier|private-business-answers|private-backend-text|sessionId|issuedAt|expiresAt/);
+    assert.equal(result.googleCalls.sessionVerification, patch.originalHandoff?.startsWith("duplicate") ? 0 : 1);
+  }
+});
+test("a current valid mutable carrier keeps its existing path without consulting original headers", () => {
+  const result = startPage({ ...actionRerender, mutableHandoffAbsent: false, handoff: "valid", originalHandoff: "tampered", actionMarker: null, requestOrigin: "https://foreign.invalid" });
+  assert.equal(result.redirect, null); assert.equal(result.handoffs.length, 1); assert.equal(result.handoffs[0].mode, "connect");
+  assert.equal(result.googleCalls.headers, 0); assert.equal(result.googleCalls.sessionVerification, 1); assert.equal(result.googleCalls.handoff, 1);
+  assert.deepEqual(result.googleCalls.rpcs, [{ name: "get_owner_onboarding", input: { p_client: clientId } }]);
 });
