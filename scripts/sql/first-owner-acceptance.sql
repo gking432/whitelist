@@ -113,6 +113,20 @@ do $scope$ declare denied boolean:=false; label text; begin
  perform pg_temp.fo_claim('owner-a');
 end $scope$;
 reset role;
+-- The commissioned owner's legitimate client membership takes precedence
+-- over a simultaneous global profile. OAuth must resume it, never provision.
+insert into fo_fixture(key) values('dual-role-membership');
+insert into public.memberships(id,user_id,role,status)
+ values((select id from fo_fixture where key='dual-role-membership'),(select id from fo_fixture where key='existing-owner'),'platform_owner','active');
+set local role authenticated;
+select pg_temp.fo_claim('existing-owner');
+do $dual_role_resume$ declare denied boolean:=false; begin
+ if public.get_first_owner_entry() is distinct from '{"state":"existing","destination":"/client"}'::jsonb then raise exception 'Global owner hid the existing scoped workspace'; end if;
+ begin perform public.provision_first_owner(extensions.gen_random_uuid(),'{"name":"Unwanted duplicate","description":"Synthetic owner declaration only","timezone":"America/Chicago"}'); exception when insufficient_privilege then denied:=true; end;
+ if not denied then raise exception 'Dual-role owner provisioned a duplicate workspace'; end if;
+end $dual_role_resume$;
+reset role;
+delete from public.memberships where id=(select id from fo_fixture where key='dual-role-membership') and user_id=(select id from fo_fixture where key='existing-owner') and role='platform_owner';
 -- Group 7: immutable creation facts stay paused/unreviewed with zero effects.
 do $no_effects$ declare c uuid:=(select id from fo_fixture where key='created'); begin
  if not exists(select 1 from public.agent_team_settings where client_id=c and status='paused' and not scheduling_enabled and not conversations_enabled and channel_authority='{"website":"off","email":"off","sms":"off","instagram":"off","calendar":"off"}'::jsonb) or not exists(select 1 from public.business_workspace_profiles where client_id=c and profile->>'description'='Synthetic owner declaration only') then raise exception 'Creation lost declared context or conservative authority'; end if;

@@ -33,14 +33,16 @@ test("foreign, verifier-only, empty, duplicated, mixed and discontinuous cookies
 });
 
 type Scenario = { path: string; method?: string; cookies?: string; rawUrl?: string | null; forbidEnv?: boolean; missingEnv?: boolean; user?: boolean; authError?: boolean; throwAuth?: boolean; refresh?: boolean };
+const sessionCarrier = (access = "synthetic-existing-access") => `base64-${Buffer.from(JSON.stringify({ access_token: access, refresh_token: "synthetic-refresh", expires_at: 2000000000, user: { id: "synthetic-verified-user" } })).toString("base64url")}`;
+const existingCarrier = sessionCarrier(), refreshedCarrier = sessionCarrier("synthetic-refreshed-access");
 function runProxy(scenario: Scenario) {
   const program = `
- const Module=require('node:module'), original=Module._load, scenario=${JSON.stringify(scenario)}, calls={env:0,client:0,user:0};
+ const Module=require('node:module'), original=Module._load, scenario=${JSON.stringify(scenario)}, ssr=require('@supabase/ssr'), refreshedCarrier=${JSON.stringify(refreshedCarrier)}, calls={env:0,client:0,user:0};
  if(scenario.rawUrl===null) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL=scenario.rawUrl||'https://project.supabase.co';
  const mocks={
   '@/lib/env':{getSupabasePublicEnv:()=>{calls.env++;if(scenario.forbidEnv)throw new Error('Unexpected environment lookup');return scenario.missingEnv?null:{url:process.env.NEXT_PUBLIC_SUPABASE_URL,anonKey:'synthetic-public-key'};}},
   '@/lib/auth/public-review-entry':require('./lib/auth/public-review-entry.ts'),
-  '@supabase/ssr':{createServerClient:(_url,_key,options)=>{calls.client++;return{auth:{getUser:async()=>{calls.user++;if(scenario.refresh)options.cookies.setAll([{name:'sb-project-auth-token',value:'synthetic-refreshed-carrier',options:{path:'/',sameSite:'lax'}}]);if(scenario.throwAuth)throw new Error('Synthetic Auth transport failure');return{data:{user:scenario.user?{id:'synthetic-verified-user'}:null},error:scenario.authError?{code:'invalid_token'}:null};}}};}},
+  '@supabase/ssr':{...ssr,createServerClient:(_url,_key,options)=>{calls.client++;return{auth:{getUser:async()=>{calls.user++;if(scenario.refresh)options.cookies.setAll([{name:'sb-project-auth-token',value:refreshedCarrier,options:{path:'/',sameSite:'lax'}}]);if(scenario.throwAuth)throw new Error('Synthetic Auth transport failure');return{data:{user:scenario.user?{id:'synthetic-verified-user'}:null},error:scenario.authError?{code:'invalid_token'}:null};}}};}},
  };
  Module._load=function(name,...args){return mocks[name]||original.call(this,name,...args);};
  const {proxy}=require('./proxy.ts');Module._load=original;
@@ -74,27 +76,43 @@ test("explicit next/start, error and agency sign-in retain the original private 
 
 test("cookie carriers are hints only: stale/error hints go public and verified client still continues to private loaders", () => {
   for (const patch of [{}, { authError: true }, { throwAuth: true }]) {
-    const result = runProxy({ path: "/client", cookies: "sb-project-auth-token=untrusted-carrier", ...patch });
+    const result = runProxy({ path: "/client", cookies: `sb-project-auth-token=${existingCarrier}`, ...patch });
     assertPreview(result); assert.deepEqual(result.calls, { env: 1, client: 1, user: 1 });
   }
   const foreign = runProxy({ path: "/client", cookies: "sb-foreign-auth-token=carrier", forbidEnv: true }); assertPreview(foreign); assert.equal(foreign.calls.user, 0);
-  const missing = runProxy({ path: "/client", cookies: "sb-project-auth-token=carrier", missingEnv: true }); assertPreview(missing); assert.equal(missing.calls.client, 0);
-  for (const cookies of ["sb-project-auth-token=untrusted-carrier", "sb-project-auth-token.0=first; sb-project-auth-token.1=second"]) {
+  const missing = runProxy({ path: "/client", cookies: `sb-project-auth-token=${existingCarrier}`, missingEnv: true }); assertPreview(missing); assert.equal(missing.calls.client, 0);
+  const middle = Math.floor(existingCarrier.length / 2);
+  for (const cookies of [`sb-project-auth-token=${existingCarrier}`, `sb-project-auth-token.0=${existingCarrier.slice(0, middle)}; sb-project-auth-token.1=${existingCarrier.slice(middle)}`]) {
     const verified = runProxy({ path: "/client", cookies, user: true });
     assert.equal(verified.status, 200); assert.equal(verified.location, null); assert.equal(verified.next, "1"); assert.equal(verified.calls.user, 1);
   }
+  const malformed = runProxy({ path: "/client", cookies: "sb-project-auth-token=untrusted-carrier", forbidEnv: true });
+  assertPreview(malformed); assert.deepEqual(malformed.calls, { env: 0, client: 0, user: 0 }); assert.deepEqual(malformed.cookies, [{ name: "sb-project-auth-token", value: "" }]);
 });
 
 test("verified root redirect preserves refresh cookies and stays fixed same-origin and uncached", () => {
-  const result = runProxy({ path: "/?next=https://unrelated.invalid", cookies: "sb-project-auth-token=old-synthetic-carrier", user: true, refresh: true });
+  const result = runProxy({ path: "/?next=https://unrelated.invalid", cookies: `sb-project-auth-token=${existingCarrier}`, user: true, refresh: true });
   assert.equal(result.status, 307); assert.equal(result.location, "https://workstation.invalid/client"); assert.equal(result.cache, "private, no-store"); assert.equal(result.vary, "Cookie");
-  assert.deepEqual(result.cookies, [{ name: "sb-project-auth-token", value: "synthetic-refreshed-carrier" }]); assert.equal(result.calls.user, 1);
+  assert.deepEqual(result.cookies, [{ name: "sb-project-auth-token", value: refreshedCarrier }]); assert.equal(result.calls.user, 1);
 });
 
 test("POST/server actions, deeper private routes and APIs retain existing refresh and downstream guards", () => {
-  for (const scenario of [{ path: "/client", method: "POST" }, { path: "/", method: "POST" }, { path: "/login", method: "POST" }, { path: "/start" }, { path: "/client/apps" }, { path: "/api/business/context" }, { path: "/unknown" }]) {
+  for (const scenario of [{ path: "/client", method: "POST" }, { path: "/", method: "POST" }, { path: "/login", method: "POST" }, { path: "/start", method: "POST" }, { path: "/client/apps" }, { path: "/api/business/context" }, { path: "/unknown" }]) {
     const result = runProxy(scenario); assert.equal(result.status, 200); assert.equal(result.location, null); assert.equal(result.next, "1"); assert.deepEqual(result.calls, { env: 1, client: 1, user: 1 });
   }
   for (const path of ["/preview", "/preview/messages"]) assert.deepEqual(runProxy({ path, forbidEnv: true }).calls, { env: 0, client: 0, user: 0 });
   assert.equal(runProxy({ path: "/api/business/context", throwAuth: true }).threw, true);
+});
+
+test("public questions survive missing or unavailable Auth while bounded Google handlers own their verification", () => {
+  for (const method of ["GET", "HEAD"]) {
+    const result = runProxy({ path: "/start", method, rawUrl: null, forbidEnv: true });
+    assert.equal(result.next, "1"); assert.deepEqual(result.calls, { env: 0, client: 0, user: 0 });
+  }
+  const unavailable = runProxy({ path: "/start", cookies: `sb-project-auth-token=${existingCarrier}`, throwAuth: true });
+  assert.equal(unavailable.threw, undefined); assert.equal(unavailable.next, "1");
+  for (const [path, method] of [["/auth/google/start", "POST"], ["/auth/google/callback?attempt=opaque", "GET"]]) {
+    const result = runProxy({ path, method, forbidEnv: true });
+    assert.equal(result.next, "1"); assert.deepEqual(result.calls, { env: 0, client: 0, user: 0 });
+  }
 });

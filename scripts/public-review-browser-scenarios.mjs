@@ -131,20 +131,21 @@ export async function runPublicReviewBrowserScenarios({ browser, appUrl, artifac
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); await targetGeometry(page, page.getByRole("navigation", { name: "Business navigation", exact: true }).getByRole("link", { name: "Today", exact: true }));
         safe(); assert.ok(!(await context.cookies()).some((cookie) => /^sb-.*-auth-token(?:\.\d+)?$/.test(cookie.name)), "The public review must not create an authenticated session.");
       });
-      await stage(`${label}: explicit setup opens real owner sign in`, async () => {
+      await stage(`${label}: explicit setup opens public owner questions`, async () => {
         const setup = page.getByRole("link", { name: "Set up your business", exact: true }).first();
         await targetGeometry(page, setup); assert.equal(await setup.getAttribute("href"), "/start"); safe();
         // This is the only deliberate setup action in the anonymous journey.
         // Merely displaying, scrolling to or inspecting the CTA cannot opt in.
         requestGuard.permitSetup(); await setup.click();
-        await page.waitForURL((url) => url.origin === appUrl && url.pathname === "/login" && url.searchParams.get("next") === "/start", { timeout: 15000 });
-        await page.getByRole("heading", { name: "Sign in", exact: true }).waitFor();
-        assert.equal(await page.locator('input[type="email"]').inputValue(), "", "Explicit owner setup must show a real blank email form without submitting a fixture or creating a session.");
-        await page.getByRole("button", { name: "Send sign-in link", exact: true }).waitFor();
-        assert.equal(await page.locator("[data-public-review]").count(), 0, "Owner setup must leave the public preview for the real authentication boundary.");
-        assert.ok(!/AI voice|AI scheduling|AI workflows|Less busywork\. More time/i.test(await page.locator("body").innerText()), "Explicit sign-in must remain the minimal owner gate without the old voice promotion.");
-        safe(); await capture("setup-sign-in");
-        assert.ok(!(await context.cookies()).some((cookie) => /^sb-.*-auth-token(?:\.\d+)?$/.test(cookie.name)), "Visiting setup without submitting email must not create an authenticated session.");
+        await page.waitForURL((url) => url.origin === appUrl && url.pathname === "/start" && !url.search, { timeout: 15000 });
+        await page.locator('[data-guest-owner-form][data-guest-step="0"]').waitFor();
+        await page.getByRole("heading", { name: "What is your business called?", exact: true }).waitFor();
+        assert.equal(await page.getByRole("textbox", { name: "Business name", exact: true }).inputValue(), "");
+        assert.equal(await page.locator('input[type="email"],input[type="password"]').count(), 0, "Opening questions must not request a separate sign-in.");
+        assert.equal(await page.getByRole("button", { name: "Send sign-in link", exact: true }).count(), 0);
+        assert.equal(await page.locator("[data-public-review]").count(), 0, "Setup must reach the actual questions, with no sample private workspace.");
+        safe(); await capture("setup-questions");
+        assert.ok(!(await context.cookies()).some((cookie) => /^sb-.*-auth-token(?:\.\d+)?$/.test(cookie.name)), "Opening questions must not create an authenticated session.");
       });
     }
     await stage("anonymous protected APIs reveal no private data", async () => {

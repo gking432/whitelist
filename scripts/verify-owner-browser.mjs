@@ -18,7 +18,9 @@ import { runOwnerFoundationConflictHttp } from "./owner-foundation-conflict-http
 import { assertDisplayedPersonalAssistant, assertPersonalAssistantDenied, assertSavedPersonalAssistant, personalAssistantApi, personalAssistantRpc, runPersonalAssistantBrowserScenarios } from "./personal-assistant-browser-scenarios.mjs";
 import { runPublicReviewBrowserScenarios } from "./public-review-browser-scenarios.mjs";
 import { runOAuthConflictHttp } from "./oauth-conflict-http.mjs";
-import { finishInitialOwnerOnboarding, runOwnerOnboardingBrowserScenarios } from "./owner-onboarding-browser-scenarios.mjs";
+import { finishInitialOwnerOnboarding, onboardingApi, runOwnerOnboardingBrowserScenarios } from "./owner-onboarding-browser-scenarios.mjs";
+import { runGoogleOnboardingBrowserScenarios } from "./google-onboarding-browser-scenarios.mjs";
+import { googleHandoffFixtureCookie, runGoogleWorkspaceHandoffBrowserScenarios } from "./google-workspace-handoff-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLAYWRIGHT_VERSION = "1.65.1";
@@ -30,6 +32,7 @@ BROWSER_COVERAGE.push("optional private assistant preference UI, unavailable/set
 BROWSER_COVERAGE.push("anonymous clean workstation entry and real owner setup handoff, seven read-only areas, no private data or writes, and protected API denial");
 BROWSER_COVERAGE.push("production service-role OAuth RPC wire contracts, logical409 JSON, denied browser roles, stale/replay/race isolation and zero unauthorized token/job effects");
 BROWSER_COVERAGE.push("one centered onboarding question, actual saved Back/refresh/resume, unknown facts, deliberate review, private optional assistant choice and unchanged permissions on desktop and phone");
+BROWSER_COVERAGE.push("public tab-local questions and separately labelled synthetic Google navigation handoff using genuine email sessions, current actor/session binding and existing workspace actions; no Google consent proof");
 export function browserOptions(args) {
   if (args.length > 1 || args.some((arg) => !["--plan", "--preflight"].includes(arg))) throw new Error("Use no arguments, --plan, or --preflight.");
   return { plan: args[0] === "--plan", preflight: args[0] === "--preflight" };
@@ -277,7 +280,7 @@ async function startApp(env, target) {
     probe.once("error", () => reject(new Error("Owner acceptance refuses to reuse an existing app on port3000.")));
     probe.listen(3000, new URL(target.appUrl).hostname, () => probe.close(done));
   });
-  const childEnv = { ...env, NODE_ENV: "production", APP_URL: target.appUrl, NEXT_PUBLIC_APP_URL: target.appUrl, NEXT_TELEMETRY_DISABLED: "1", NORTHSTAR_DEV_AUTO_LOGIN: "false" };
+  const childEnv = { ...env, NODE_ENV: "production", APP_URL: target.appUrl, NEXT_PUBLIC_APP_URL: target.appUrl, NEXT_TELEMETRY_DISABLED: "1", NORTHSTAR_DEV_AUTO_LOGIN: "false", GOOGLE_AUTH_ENABLED: "false" };
   for (const key of Object.keys(childEnv)) if (/^(OPENAI_|ANTHROPIC_|TWILIO_|GOOGLE_(?:CLIENT|OAUTH)|MICROSOFT_(?:CLIENT|OAUTH)|HUBSPOT_(?:CLIENT|OAUTH)|STRIPE_|AI_GATEWAY_|VERCEL_AI_GATEWAY_)/.test(key)) childEnv[key] = "";
   const child = spawn(process.execPath, [join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", new URL(target.appUrl).hostname, "--port", "3000"], { cwd: root, env: childEnv, shell: false, stdio: ["ignore", "pipe", "pipe"] });
   let logs = ""; child.stdout.on("data", (data) => { logs = (logs + data).slice(-18000); }); child.stderr.on("data", (data) => { logs = (logs + data).slice(-18000); });
@@ -362,13 +365,13 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   const installed = JSON.parse(await readFile(join(dirname(target.modulePath), "package.json"), "utf8"));
   if (installed.name !== "playwright" || installed.version !== PLAYWRIGHT_VERSION) throw new Error(`Use audited Playwright ${PLAYWRIGHT_VERSION} in the explicit CI-only module path.`);
   await mkdir(target.artifacts, { recursive: true });
-  const fixture = browserFixtureIdentity(randomBytes(6).toString("hex")), checks = [], contexts = [], diagnostics = [];
-  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null, personalAssistant = null, publicReview = null, oauthConflictHttp = null, ownerOnboarding = null;
+  const fixture = browserFixtureIdentity(randomBytes(6).toString("hex")), checks = [], contexts = [], diagnostics = [], initialGoogleHandoffRecovery = [];
+  let app, browser, failure, remainingFixtures = null, workspacePersonalization = null, foundationHttp = null, personalAssistant = null, publicReview = null, oauthConflictHttp = null, ownerOnboarding = null, googleGuestOnboarding = null, googleWorkspaceHandoff = null;
   let activeStep = null, currentPhase = "preparing browser acceptance", failurePhase = null, cleanupStatus = "not_started", checkpointTail = Promise.resolve();
   const cleanupErrors = [];
   const report = (status) => ({ kind: "owner_browser_acceptance", status, updatedAt: new Date().toISOString(), playwrightVersion: PLAYWRIGHT_VERSION,
-    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp, personalAssistant, publicReview, oauthConflictHttp, ownerOnboarding,
-    limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately.", "Session proof reads only the project's cookies set by the normal email login, then verifies the exact token against the live current-session RPC; no cookie injection, session creation or token refresh is used."],
+    checks: [...checks], activeStep, phase: currentPhase, failurePhase, cleanupStatus, cleanupErrors: [...cleanupErrors], remainingFixtures, diagnostics: [...diagnostics], workspacePersonalization, foundationHttp, personalAssistant, publicReview, oauthConflictHttp, ownerOnboarding, googleGuestOnboarding, googleWorkspaceHandoff, initialGoogleHandoffRecovery: [...initialGoogleHandoffRecovery],
+    limitations: ["Synthetic queued provider transport only; no live OAuth, customer import or provider/model call.", "Workspace recommendation dates are explicitly synthetic disposable fixtures; genuine navigation activity is tested separately.", "Session proof reads only the project's cookies set by the normal email login, then verifies the exact token against the live current-session RPC; no Auth-cookie injection, session creation or token refresh is used.", "The separately labelled handoff fixture injects only a short-lived encrypted navigation cookie bound to that genuine actor/session. It is not Google identity, token exchange or consent proof."],
     ...(failure ? { error: redactBrowserFailure(failure.message, [target.anonKey, target.serviceKey]), serverLog: redactBrowserFailure(app?.logs() || "", [target.anonKey, target.serviceKey]) } : {}) });
   const checkpoint = async (status = "in_progress") => {
     if (failure) status = "failed";
@@ -389,6 +392,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     browser = await playwright.chromium.launch({ headless: true });
     await phase("public workstation: anonymous entry and owner setup handoff");
     publicReview = await runPublicReviewBrowserScenarios({ browser, appUrl: target.appUrl, artifacts: target.artifacts, phase });
+    googleGuestOnboarding = await runGoogleOnboardingBrowserScenarios({ browser, appUrl: target.appUrl, artifacts: target.artifacts, phase,
+      onProgress: async (progress) => { googleGuestOnboarding = progress; await checkpoint(); } });
     await checkpoint();
     const owners = [], sessionTokens = new Map();
     for (const owner of fixture.owners) {
@@ -420,7 +425,40 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         await screenshot(page, target, `${owner.label}-filled-create-form`);
         await page.getByRole("button", { name: "Create my business", exact: true }).click(); await page.waitForURL((url) => url.pathname === "/client/onboarding");
         created = await readCreatedOwner(admin, fixture, owner);
+        // The unchanged real provisioning UI leaves the same authoritative
+        // state as a Google create interrupted before description sync: saved
+        // raw facts and untouched progress. Seed navigation only, never Auth.
+        await phase(`${owner.label}: synthetic navigation resumes the unsynchronized saved description`);
+        const scopeKey = `${created.userId}:${created.clientId}`;
+        const initial = (await onboardingApi(context, target, scopeKey, undefined, { phase })).body;
+        assert.equal(initial.progress.revision, 0); assert.equal(initial.progress.step, "description");
+        const knowledgeBefore = await admin.from("client_knowledge_profiles").select("*").eq("partner_id", fixture.partnerId).eq("client_id", created.clientId).order("id").limit(101);
+        assert.ok(!knowledgeBefore.error && knowledgeBefore.data.length <= 100);
+        const identity = await verifyObservedOwnerSession(target, await readOwnerBrowserSession(context, target), created.userId);
+        const now = Date.now(), handoffKey = randomUUID();
+        const handoffEncryptionKey = env.SECRETS_ENCRYPTION_KEY;
+        if (typeof handoffEncryptionKey !== "string") throw new Error("The disposable handoff encryption key is required.");
+        await context.addCookies([googleHandoffFixtureCookie(target.appUrl, handoffEncryptionKey, { version: 1, attemptId: randomUUID(), draftId: randomUUID(), requestKey: handoffKey, actorId: created.userId, sessionId: identity.sessionId, issuedAt: now, expiresAt: now + 600000 })]);
+        await page.goto(`${target.appUrl}/start?google=return`);
+        const handoff = page.locator('[data-google-workspace-handoff="connect"]');
+        await handoff.getByRole("heading", { name: "Continue your setup?", exact: true }).waitFor();
+        await screenshot(page, target, `google-handoff-${owner.label}-saved-description`);
+        const resumed = page.waitForResponse(value => value.request().method() === "POST" && value.url() === `${target.appUrl}/start?google=return`, { timeout: 20000 }); void resumed.catch(() => {});
+        await handoff.getByRole("button", { name: "Continue setup", exact: true }).click();
+        assert.equal((await resumed).status(), 200); assert.equal(await (await resumed).finished(), null);
+        await page.waitForURL(url => url.pathname === "/client/onboarding");
+        await page.locator('[data-business-onboarding][data-onboarding-step="description"]').waitFor({ state: "visible" });
+        assert.deepEqual((await onboardingApi(context, target, scopeKey, undefined, { phase })).body, initial);
+        const knowledgeAfter = await admin.from("client_knowledge_profiles").select("*").eq("partner_id", fixture.partnerId).eq("client_id", created.clientId).order("id").limit(101);
+        assert.equal(knowledgeAfter.error, null); assert.deepEqual(knowledgeAfter.data, knowledgeBefore.data);
+        const skipped = await admin.from("business_owner_commands").select("id", { count: "exact", head: true }).eq("partner_id", fixture.partnerId).eq("client_id", created.clientId).eq("request_key", handoffKey);
+        assert.equal(skipped.error, null); assert.equal(skipped.count, 0);
+        assert.equal((await context.cookies(target.appUrl)).some(cookie => cookie.name === "workstation_google_onboarding_handoff"), false);
         await finishInitialOwnerOnboarding({ page, target, scopeKey: `${created.userId}:${created.clientId}`, businessName: owner.name, phase });
+        const synchronized = await admin.from("client_knowledge_profiles").select("business_description").eq("partner_id", fixture.partnerId).eq("client_id", created.clientId).single();
+        assert.equal(synchronized.error, null); assert.equal(synchronized.data?.business_description, initial.answers.description);
+        initialGoogleHandoffRecovery.push({ view: owner.label, status: "passed", savedDescriptionPreserved: true, knowledgeUnchangedByHandoff: true, handoffProgressWrites: 0, privateNextSynchronized: true, authSessionInjected: false, googleConsentProved: false });
+        await checkpoint();
         await page.goto(`${target.appUrl}/client/apps`);
         await page.getByRole("heading", { name: "Apps & connections", exact: true }).waitFor();
         created = await readCreatedOwner(admin, fixture, owner); assert.ok(observedOwnerSessionIdentity(sessionTokens.get(owner.label))?.userId === created.userId, "The browser-created workspace must belong to the observed real session actor."); await page.goto(`${target.appUrl}/start`); await page.waitForURL((url) => url.pathname === "/client"); assert.equal((await readCreatedOwner(admin, fixture, owner)).clientId, created.clientId);
@@ -469,6 +507,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       onProgress: async (progress) => { personalAssistant = progress; await checkpoint(); }, env });
     oauthConflictHttp = await runOAuthConflictHttp({ admin, fixture, owners, target, readSession: readOwnerBrowserSession, verifySession: verifyObservedOwnerSession, phase,
       onProgress: async (progress) => { oauthConflictHttp = progress; await checkpoint(); }, env });
+    googleWorkspaceHandoff = await runGoogleWorkspaceHandoffBrowserScenarios({ admin, fixture, owners, target, browser, appUrl: target.appUrl, artifacts: target.artifacts, readSession: readOwnerBrowserSession, verifySession: verifyObservedOwnerSession, screenshot, phase,
+      onProgress: async (progress) => { googleWorkspaceHandoff = progress; await checkpoint(); }, env });
     let signedOutToken;
     await step("phone: normal owner UI sign out", async () => { signedOutToken = sessionTokens.get("phone"); assert.ok(signedOutToken, "A genuine browser GoTrue session token must be observed for revocation proof."); await owners[1].page.goto(`${target.appUrl}/client/apps`); await signOutUi(owners[1].page, target); });
     await step("phone: stale signed session denied by real RPCs", async () => {
