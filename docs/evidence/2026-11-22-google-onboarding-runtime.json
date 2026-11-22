@@ -1,0 +1,661 @@
+{
+  "version": 1,
+  "recordedDate": "2026-11-22",
+  "status": "isolated_acceptance_complete_live_owner_pending",
+  "source": {
+    "repository": "gking432/whitelist",
+    "branch": "codex/v1-scenario-lab",
+    "sha": "452c86dad8a5d7742b6bf7253b71896fc265685b",
+    "url": "https://github.com/gking432/whitelist/commit/452c86dad8a5d7742b6bf7253b71896fc265685b",
+    "remoteHeadVerified": true,
+    "sourceHashes": {
+      "app/start/page.tsx": "27e84c456595eb1a1c91c77665eb99195aa5bb8babe0c249c765a879d9eb6b50",
+      "app/start/google-actions.ts": "6d3afbc1bbf22e19c9a6b60ffe5c5b6a025437807b76d9f06a99f3c9dade1800",
+      "components/onboarding/guest-owner-form.tsx": "67a9683b6427acb15fc9ea00fa8203ab970976d024fb906162915313af5e0e12",
+      "lib/auth/google-onboarding.ts": "0f558c55c845bb9b745307f86b4345bc697d6e3c7ec82f67420663f8137013f9",
+      "lib/supabase/auth-cookie-safety.ts": "54be1e5792f687d7a1808f9d0bb5d9ad55ecba0e611857551810d3a31648c6eb",
+      "lib/supabase/server.ts": "c17e114dedca01763088744f0e53141cf055e97884e75b5cffd21565534e4b06",
+      "lib/supabase/client.ts": "d61de6357358e6638c20b7fc2f7087bdaddd7de8dae13ce0c044de461e2d0e06",
+      "proxy.ts": "05992e6d08345e3b58940ec71e481767187ac637f7a6a3c3309cc489832ffa28",
+      "supabase/migrations/20261121212831_owner_onboarding_progress.sql": "ff4dd3ec75ce59d0f5563af51e79833f644b4d2e5de5e3af604bbc2797c796cb"
+    }
+  },
+  "ci": {
+    "runId": 45036358165,
+    "url": "https://github.com/gking432/whitelist/actions/runs/45036358165",
+    "allNineGatesPassed": true,
+    "jobs": [
+      {
+        "name": "desktop (macos)",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250871746
+      },
+      {
+        "name": "desktop (windows)",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250872010
+      },
+      {
+        "name": "application",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250872012
+      },
+      {
+        "name": "database",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250872107
+      },
+      {
+        "name": "containers (voice, services/voice-stream/Dockerfile)",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250872138
+      },
+      {
+        "name": "containers (jobs, deploy/jobs.Dockerfile)",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250872141
+      },
+      {
+        "name": "containers (connector-worker, deploy/connector-worker.Dockerfile)",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250872158
+      },
+      {
+        "name": "service-runtime",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250872183
+      },
+      {
+        "name": "containers (web, Dockerfile)",
+        "status": "completed",
+        "conclusion": "success",
+        "id": 137250872186
+      }
+    ],
+    "tests": {
+      "passed": 1012,
+      "failed": 0
+    },
+    "typecheck": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "database": {
+      "reviewedMigrations": 106,
+      "newSchemaInThisPackage": false,
+      "rollbackGroups": 100,
+      "groupCounts": [
+        {
+          "name": "acceptance",
+          "count": 17
+        },
+        {
+          "name": "google_calendar_acceptance",
+          "count": 9
+        },
+        {
+          "name": "money_followup_acceptance",
+          "count": 9
+        },
+        {
+          "name": "hubspot_oauth_acceptance",
+          "count": 11
+        },
+        {
+          "name": "first_owner_acceptance",
+          "count": 9
+        },
+        {
+          "name": "owner_workspace_acceptance",
+          "count": 8
+        },
+        {
+          "name": "owner_foundation_conflict_acceptance",
+          "count": 9
+        },
+        {
+          "name": "personal_assistant_acceptance",
+          "count": 9
+        },
+        {
+          "name": "oauth_conflict_acceptance",
+          "count": 8
+        },
+        {
+          "name": "owner_onboarding_acceptance",
+          "count": 11
+        }
+      ],
+      "dualRoleExistingClientAndNoDuplicateAssertion": "passed within first_owner_acceptance",
+      "actualTwoSessionCases": 18,
+      "caseGroups": [
+        {
+          "count": 6,
+          "kind": "original workflow cases"
+        },
+        {
+          "count": 2,
+          "kind": "first-owner signup races"
+        },
+        {
+          "count": 1,
+          "kind": "owner preference CAS"
+        },
+        {
+          "count": 1,
+          "kind": "private assistant CAS"
+        },
+        {
+          "count": 3,
+          "kind": "authority/approval locks"
+        },
+        {
+          "count": 1,
+          "kind": "OAuth stale snapshot"
+        },
+        {
+          "count": 4,
+          "kind": "atomic onboarding/profile interoperation"
+        }
+      ],
+      "ownerOnboardingCatalog": {
+        "kind": "owner_onboarding_catalog",
+        "table": {
+          "rls": true,
+          "name": "owner_onboarding_progress",
+          "owner": "postgres",
+          "anonRead": false,
+          "policies": 0,
+          "serviceReadWrite": true,
+          "authenticatedRead": false,
+          "authenticatedWrite": false
+        },
+        "functions": [
+          {
+            "owner": "postgres",
+            "signature": "get_business_profile_snapshot(uuid,uuid)",
+            "anonExecute": false,
+            "configuration": [
+              "search_path=\"\""
+            ],
+            "publicExecute": false,
+            "serviceExecute": true,
+            "securityDefiner": false,
+            "authenticatedExecute": false
+          },
+          {
+            "owner": "postgres",
+            "signature": "get_owner_onboarding(uuid)",
+            "anonExecute": false,
+            "configuration": [
+              "search_path=\"\""
+            ],
+            "publicExecute": false,
+            "serviceExecute": true,
+            "securityDefiner": false,
+            "authenticatedExecute": true
+          },
+          {
+            "owner": "postgres",
+            "signature": "owner_onboarding.lock_profile_actor(uuid)",
+            "anonExecute": false,
+            "configuration": [
+              "search_path=\"\""
+            ],
+            "publicExecute": false,
+            "serviceExecute": true,
+            "securityDefiner": true,
+            "authenticatedExecute": false
+          },
+          {
+            "owner": "postgres",
+            "signature": "owner_onboarding.onboarding_snapshot(uuid)",
+            "anonExecute": false,
+            "configuration": [
+              "search_path=\"\""
+            ],
+            "publicExecute": false,
+            "serviceExecute": true,
+            "securityDefiner": true,
+            "authenticatedExecute": true
+          },
+          {
+            "owner": "postgres",
+            "signature": "owner_onboarding.save_onboarding(uuid,uuid,bigint,jsonb)",
+            "anonExecute": false,
+            "configuration": [
+              "search_path=\"\""
+            ],
+            "publicExecute": false,
+            "serviceExecute": true,
+            "securityDefiner": true,
+            "authenticatedExecute": true
+          },
+          {
+            "owner": "postgres",
+            "signature": "save_business_profile(uuid,uuid,uuid,uuid,text,jsonb)",
+            "anonExecute": false,
+            "configuration": [
+              "search_path=\"\""
+            ],
+            "publicExecute": false,
+            "serviceExecute": true,
+            "securityDefiner": false,
+            "authenticatedExecute": false
+          },
+          {
+            "owner": "postgres",
+            "signature": "save_owner_onboarding(uuid,uuid,bigint,jsonb)",
+            "anonExecute": false,
+            "configuration": [
+              "search_path=\"\""
+            ],
+            "publicExecute": false,
+            "serviceExecute": true,
+            "securityDefiner": false,
+            "authenticatedExecute": true
+          }
+        ]
+      },
+      "security": "passed",
+      "restore": {
+        "passed": true,
+        "tables": 104,
+        "rowCountsRlsPoliciesAndFunctionsMatch": true
+      },
+      "releaseJourney": "passed",
+      "nativeInbound": {
+        "verified": true,
+        "externalActions": 0,
+        "nativeDeviceDistributionProved": false
+      },
+      "stackStopped": true
+    }
+  },
+  "artifact": {
+    "id": 14759664636,
+    "name": "owner-browser-evidence",
+    "zipSha256": "a7166276b90a9185e47b810b8432f28b73478c560f27157f365e73f07b47c697",
+    "digestMatchedGitHub": true,
+    "zipPath": "/tmp/partner-google-45036358165/evidence.zip",
+    "extractedDirectory": "/tmp/partner-google-45036358165/artifacts",
+    "pngCount": 92
+  },
+  "browser": {
+    "status": "passed",
+    "cleanupStatus": "complete",
+    "remainingFixtures": 0,
+    "cleanupErrors": [],
+    "diagnostics": [],
+    "failurePhase": null,
+    "originalChecks": 24,
+    "groups": {
+      "foundationHttp": 16,
+      "personalAssistant": 14,
+      "publicReview": 25,
+      "oauthConflictHttp": 7,
+      "ownerOnboarding": 16,
+      "googleGuestOnboarding": 14,
+      "googleWorkspaceHandoff": 12
+    },
+    "initialSavedDescriptionRecovery": [
+      {
+        "view": "desktop",
+        "status": "passed",
+        "savedDescriptionPreserved": true,
+        "knowledgeUnchangedByHandoff": true,
+        "handoffProgressWrites": 0,
+        "privateNextSynchronized": true,
+        "authSessionInjected": false,
+        "googleConsentProved": false
+      },
+      {
+        "view": "phone",
+        "status": "passed",
+        "savedDescriptionPreserved": true,
+        "knowledgeUnchangedByHandoff": true,
+        "handoffProgressWrites": 0,
+        "privateNextSynchronized": true,
+        "authSessionInjected": false,
+        "googleConsentProved": false
+      }
+    ],
+    "guestAuthHttp": {
+      "checks": [
+        {
+          "view": "desktop",
+          "check": "missing_origin",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 403,
+          "outcome": null,
+          "observedError": "origin_denied",
+          "canonicalOriginSupplied": false
+        },
+        {
+          "view": "desktop",
+          "check": "foreign_origin",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 403,
+          "outcome": null,
+          "observedError": "origin_denied",
+          "canonicalOriginSupplied": false
+        },
+        {
+          "view": "desktop",
+          "check": "invalid_body",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 422,
+          "outcome": null,
+          "observedError": "invalid_request",
+          "canonicalOriginSupplied": true
+        },
+        {
+          "view": "desktop",
+          "check": "extra_body",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 422,
+          "outcome": null,
+          "observedError": "invalid_request",
+          "canonicalOriginSupplied": true
+        },
+        {
+          "view": "desktop",
+          "check": "oversized_body",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 422,
+          "outcome": null,
+          "observedError": "invalid_request",
+          "canonicalOriginSupplied": true
+        },
+        {
+          "view": "desktop",
+          "check": "unavailable",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 503,
+          "outcome": null,
+          "observedError": "google_unavailable",
+          "canonicalOriginSupplied": true
+        },
+        {
+          "view": "desktop",
+          "check": "missing_attempt",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "failed",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "desktop",
+          "check": "tampered_attempt",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "failed",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "desktop",
+          "check": "unavailable_callback",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "unavailable",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "desktop",
+          "check": "unknown_query",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "failed",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "desktop",
+          "check": "duplicate_attempt",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "failed",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "phone",
+          "check": "missing_origin",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 403,
+          "outcome": null,
+          "observedError": "origin_denied",
+          "canonicalOriginSupplied": false
+        },
+        {
+          "view": "phone",
+          "check": "foreign_origin",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 403,
+          "outcome": null,
+          "observedError": "origin_denied",
+          "canonicalOriginSupplied": false
+        },
+        {
+          "view": "phone",
+          "check": "invalid_body",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 422,
+          "outcome": null,
+          "observedError": "invalid_request",
+          "canonicalOriginSupplied": true
+        },
+        {
+          "view": "phone",
+          "check": "extra_body",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 422,
+          "outcome": null,
+          "observedError": "invalid_request",
+          "canonicalOriginSupplied": true
+        },
+        {
+          "view": "phone",
+          "check": "oversized_body",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 422,
+          "outcome": null,
+          "observedError": "invalid_request",
+          "canonicalOriginSupplied": true
+        },
+        {
+          "view": "phone",
+          "check": "unavailable",
+          "method": "POST",
+          "path": "/auth/google/start",
+          "status": 503,
+          "outcome": null,
+          "observedError": "google_unavailable",
+          "canonicalOriginSupplied": true
+        },
+        {
+          "view": "phone",
+          "check": "missing_attempt",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "failed",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "phone",
+          "check": "tampered_attempt",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "failed",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "phone",
+          "check": "unavailable_callback",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "unavailable",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "phone",
+          "check": "unknown_query",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "failed",
+          "observedError": null,
+          "canonicalLocation": true
+        },
+        {
+          "view": "phone",
+          "check": "duplicate_attempt",
+          "method": "GET",
+          "path": "/auth/google/callback",
+          "status": 307,
+          "outcome": "failed",
+          "observedError": null,
+          "canonicalLocation": true
+        }
+      ],
+      "requestCount": 22,
+      "strictDenialPassed": true
+    },
+    "handoff": {
+      "version": 1,
+      "status": "passed",
+      "activeStep": null,
+      "fixtureCleanup": "complete",
+      "cleanupErrors": [],
+      "remainingMemberships": 0,
+      "remainingHandoffCookies": 0,
+      "savedPresentationRestored": true,
+      "originalOwnerStateUnchanged": true,
+      "authSessionInjected": false,
+      "googleConsentProved": false,
+      "googleCodeExchangeProved": false,
+      "providerCalls": 0,
+      "modelCalls": 0
+    },
+    "onboardingBusinessStatePreserved": true,
+    "pngCount": 92,
+    "namedGroups": 128,
+    "additionalInitialRecoveryChecks": 2,
+    "totalChecks": 130,
+    "allGroupStatusesPassed": true,
+    "visualReview": {
+      "all92IndividuallyViewed": true,
+      "allocation": {
+        "coordinatorOnboarding": 16,
+        "workerAPrivateOwner": 29,
+        "workerBPublic": 25,
+        "workerCGoogle": 22
+      },
+      "materialBlockers": []
+    }
+  },
+  "protocolEvidence": {
+    "installedSdkFixtures": true,
+    "googleProtocolGroups": 17,
+    "productionFactoryGroups": 7,
+    "productionFactoryExecutions": 55,
+    "actualPageGroups": 17,
+    "lifecycle": "actual component callbacks with injected pagehide/pageshow and deferred responses",
+    "googleIdentityOrConsentProved": false,
+    "chromeBfCacheProved": false
+  },
+  "preservedFailedRuns": [
+    {
+      "sourceSha": "2404946f3a5c5499c02e694348ded6eb25e71245",
+      "runId": 45033930425,
+      "databaseJobId": 137243364078,
+      "artifactId": 14758223964,
+      "artifactDirectory": "/tmp/partner-google-45033930425/artifacts",
+      "zipPath": "/tmp/partner-google-45033930425/evidence.zip",
+      "zipSha256": "85cb7909b8782f565dbbefd45e66a1fecc25432fd6393845ce6a54586c7525fe",
+      "nonDatabaseJobsPassed": 8,
+      "migrations": 106,
+      "rollbackGroups": 100,
+      "twoSessionCases": 18,
+      "browserFailure": "desktop: genuine anonymous private API denial; same-origin invalid_body Google start403 instead of422",
+      "cleanupStatus": "complete",
+      "remainingFixtures": 0,
+      "cleanupErrors": [],
+      "diagnostics": [],
+      "laterGates": "security/restore/release skipped; stack stopped",
+      "cause": "pinned Next16.3 NextURL normalizes loopback hostname; native Request URL retains exact original origin",
+      "refreshConcern": "unproven; primary Supabase docs allow immediate-parent recovery outside reuse interval; no refresh source change"
+    },
+    {
+      "sourceSha": "d28b7833b4aacada3c828a3638c5905fe6bf9fc5",
+      "runId": 45035385618,
+      "databaseJobId": 137247868161,
+      "artifactId": 14759358065,
+      "artifactDirectory": "/tmp/partner-google-45035385618/artifacts",
+      "zipPath": "/tmp/partner-google-45035385618/evidence.zip",
+      "zipSha256": "5b88cbad90158e271714902d7ff042740d47d9c6b3bbc60404987d789df54922",
+      "nonDatabaseJobsPassed": 8,
+      "migrations": 106,
+      "rollbackGroups": 100,
+      "twoSessionCases": 18,
+      "publicGroups": 25,
+      "guestGroups": 14,
+      "googleRouteHttpCases": 22,
+      "realEmailLoginPassed": true,
+      "browserFailure": "initial saved-description Continue setup action retired navigation cookie; Next rerender redirected /client, not intended /client/onboarding",
+      "cleanupStatus": "complete",
+      "remainingFixtures": 0,
+      "cleanupErrors": [],
+      "diagnostics": [],
+      "laterGates": "security/restore/release skipped; stack stopped",
+      "cause": "Next cookie delete marks current Server Action page revalidated and synchronizes mutable cookies before rerender; current page then loses carrier and redirects existing owner to dashboard"
+    }
+  ],
+  "supervisorReported": {
+    "googleConfiguration": "Testing-only approved client, owner audience, five identity/read-only scopes, Gmail/Calendar APIs, hosted Google enabled with nonce/email checks retained, server-only preview-branch credentials/availability flag and narrow canonical redirect rule saved",
+    "builderProbedCredentialsOrHostedData": false,
+    "deployedPublicChrome": "Exact452 public questions/blank validation viewed by supervisor; no Google identity, consent or import proved",
+    "hostedSchema": "106 previously committed and exactly catalog/preservation-checked by supervisor; this package has no migration"
+  },
+  "limits": [
+    "No real Google identity callback, consent, token refresh, connection import or provider readback is established by these fixtures.",
+    "Navigation carriers are synthesized only on the isolated loopback app and bound to genuine normal-email Auth actor/session pairs; Auth cookies and sessions are never injected.",
+    "The existing-owner action, dual-role resume, CAS, native action replay, changed-key denial and initial saved-description recovery have actual HTTP/Auth/database/browser proof. New-owner Google adoption still needs live acceptance; its action has injected repository evidence plus unchanged real provisioning/SQL gates.",
+    "Actual Chrome BFCache, native iOS/Android device/distribution and unattended hosted-worker acceptance remain unproved.",
+    "The unrelated earlier intermittent preference403 cause remains unknown; no global causal fix is claimed.",
+    "No hosted business fixtures, provider/customer/model/voice/billing actions, production merge or local Docker/Colima/install/build/server recreation were performed by the builder."
+  ],
+  "continuation": "Product package complete; final evidence-only checkpoint must pass exact CI, then one supervisor callback and stop. Supervisor owns deployed Google/owner acceptance; no new feature queue or recurring supervision."
+}
