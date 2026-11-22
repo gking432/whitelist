@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { assertGuestGoogleCallbackDenial, assertGuestGoogleStartDenial, assertGuestPrivateDenial, classifyGuestOnboardingRequest, createGuestOnboardingRequestGuard, guestDraftIdentity, runGoogleOnboardingBrowserScenarios, type GoogleOnboardingBrowserReport } from "../scripts/google-onboarding-browser-scenarios.mjs";
+import { assertGuestGoogleCallbackDenial, assertGuestGoogleStartDenial, assertGuestPrivateDenial, classifyGuestOnboardingRequest, createGuestOnboardingRequestGuard, guestDraftIdentity, inspectGuestGoogleCallbackHttp, inspectGuestGoogleStartHttp, runGoogleOnboardingBrowserScenarios, type GoogleHttpEvidence, type GoogleOnboardingBrowserReport } from "../scripts/google-onboarding-browser-scenarios.mjs";
 
 const origin = "http://127.0.0.1:3000", draftId = "11111111-1111-4111-8111-111111111111", requestKey = "22222222-2222-4222-8222-222222222222";
 const localDraft = { version: 1, draftId, requestKey, step: 1, values: { name: "Synthetic browser draft", description: "No account or business is created by these local answers.", timezone: "America/Chicago" }, expiresAt: 1800000000000 };
@@ -57,6 +57,45 @@ test("callback HTTP probes require native307, canonical fixed outcome and no bod
   for (const status of [200, 302, 303, 403, 503]) assert.throws(() => assertGuestGoogleCallbackDenial(origin, status, `${origin}/start?google=failed`, "failed", new Uint8Array()));
   for (const location of [undefined, "not-url", "https://foreign.invalid/start?google=failed", `${origin}/client?google=failed`, `${origin}/start?google=failed&token=private-token-detail`, `${origin}/start?google=failed&google=failed`, `${origin}/start?google=return`, `${origin}/start?google=failed#private-token-detail`]) assert.throws(() => assertGuestGoogleCallbackDenial(origin, 307, location, "failed", new Uint8Array()), (failure: unknown) => failure instanceof Error && !failure.message.includes("private-token-detail"));
   assert.throws(() => assertGuestGoogleCallbackDenial(origin, 307, `${origin}/start?google=failed`, "failed", new TextEncoder().encode("private-token-detail")), (failure: unknown) => failure instanceof Error && !failure.message.includes("private-token-detail"));
+});
+
+test("a failed Google start keeps its completed actual403 before the unchanged422 assertion, without reflecting private body fields", async () => {
+  const ledger: GoogleHttpEvidence = { checks: [], requestCount: 0, strictDenialPassed: false }; let attempts = 0, bodies = 0;
+  await assert.rejects(inspectGuestGoogleStartHttp(ledger, { view: "desktop", check: "invalid_body", canonicalOrigin: true }, async () => {
+    attempts++; return { status: () => 403, body: async () => { bodies++; return Buffer.from(JSON.stringify({ error: "origin_denied", token: "private-token-detail", actorId: draftId })); } };
+  }), failure => failure instanceof assert.AssertionError && failure.actual === 403 && failure.expected === 422);
+  assert.equal(attempts, 1); assert.equal(bodies, 1); assert.equal(ledger.requestCount, 1); assert.equal(ledger.strictDenialPassed, false);
+  assert.deepEqual(ledger.checks, [{ view: "desktop", check: "invalid_body", method: "POST", path: "/auth/google/start", status: 403, outcome: null, observedError: "origin_denied", canonicalOriginSupplied: true }]);
+  assert.doesNotMatch(JSON.stringify(ledger), /private-token-detail|actorId|11111111/);
+});
+test("unknown errors, malformed JSON and callback Locations retain only fixed diagnostic enums while the original strict check still fails", async () => {
+  const ledger: GoogleHttpEvidence = { checks: [], requestCount: 0, strictDenialPassed: false };
+  for (const raw of [JSON.stringify({ error: "private-token-detail", uid: draftId }), '{"error":"private-token-detail",broken', ""]) {
+    await assert.rejects(inspectGuestGoogleStartHttp(ledger, { view: "phone", check: "invalid_body", canonicalOrigin: true }, async () => ({ status: () => 422, body: async () => Buffer.from(raw) })), failure => failure instanceof Error && !failure.message.includes("private-token-detail"));
+    assert.equal(ledger.checks.at(-1)?.observedError, "unknown");
+  }
+  await assert.rejects(inspectGuestGoogleCallbackHttp(ledger, { view: "phone", check: "unknown_query", expectedOutcome: "failed", appUrl: origin }, async () => ({ status: () => 307, body: async () => Buffer.alloc(0), headers: () => ({ location: `https://foreign.invalid/start?google=return&token=private-token-detail&uid=${draftId}` }) })), failure => failure instanceof Error && !failure.message.includes("private-token-detail"));
+  assert.equal(ledger.checks.at(-1)?.outcome, "return"); assert.equal(ledger.checks.at(-1)?.canonicalLocation, false);
+  await assert.rejects(inspectGuestGoogleCallbackHttp(ledger, { view: "phone", check: "missing_attempt", expectedOutcome: "failed", appUrl: origin }, async () => ({ status: () => 403, body: async () => Buffer.from("private-token-detail"), headers: () => ({ location: `${origin}/start?google=untrusted-private-token-detail` }) })), failure => failure instanceof assert.AssertionError && failure.actual === 403 && failure.expected === 307);
+  assert.equal(ledger.checks.at(-1)?.outcome, "unknown"); assert.equal(ledger.checks.at(-1)?.status, 403); assert.equal(ledger.requestCount, 5); assert.equal(ledger.checks.length, 5);
+  assert.doesNotMatch(JSON.stringify(ledger), /private-token-detail|foreign.invalid|uid|11111111/);
+});
+test("actual attempted count includes a lost response without retrying or claiming a completed safe observation", async () => {
+  const ledger: GoogleHttpEvidence = { checks: [], requestCount: 0, strictDenialPassed: false }, original = new Error("Synthetic original body interruption"); let attempts = 0;
+  await assert.rejects(inspectGuestGoogleStartHttp(ledger, { view: "desktop", check: "unavailable", canonicalOrigin: true }, async () => { attempts++; return { status: () => 503, body: async () => { throw original; } }; }), failure => failure === original);
+  assert.equal(attempts, 1); assert.equal(ledger.requestCount, 1); assert.deepEqual(ledger.checks, []); assert.equal(ledger.strictDenialPassed, false);
+});
+test("the full strict wire pass retains22 deliberate observations and attempts across both anonymous views", async () => {
+  const ledger: GoogleHttpEvidence = { checks: [], requestCount: 0, strictDenialPassed: false };
+  for (const view of ["desktop", "phone"] as const) {
+    for (const [check, status, error] of [["missing_origin", 403, "origin_denied"], ["foreign_origin", 403, "origin_denied"], ["invalid_body", 422, "invalid_request"], ["extra_body", 422, "invalid_request"], ["oversized_body", 422, "invalid_request"], ["unavailable", 503, "google_unavailable"]] as const) await inspectGuestGoogleStartHttp(ledger, { view, check, canonicalOrigin: !["missing_origin", "foreign_origin"].includes(check) }, async () => ({ status: () => status, body: async () => Buffer.from(JSON.stringify({ error })) }));
+    for (const check of ["missing_attempt", "tampered_attempt", "unavailable_callback", "unknown_query", "duplicate_attempt"] as const) {
+      const expectedOutcome = check === "unavailable_callback" ? "unavailable" : "failed";
+      await inspectGuestGoogleCallbackHttp(ledger, { view, check, expectedOutcome, appUrl: origin }, async () => ({ status: () => 307, body: async () => Buffer.alloc(0), headers: () => ({ location: `${origin}/start?google=${expectedOutcome}` }) }));
+    }
+  }
+  assert.equal(ledger.requestCount, 22); assert.equal(ledger.checks.length, 22); assert.ok(ledger.checks.filter(check => check.method === "POST").every(check => check.observedError !== "unknown"));
+  assert.ok(ledger.checks.filter(check => check.method === "GET").every(check => check.canonicalLocation === true));
 });
 
 test("an interrupted guest page closes its context and final evidence failure cannot replace the original failure", async () => {

@@ -68,10 +68,20 @@ function boundedTransport(transport: typeof fetch): typeof fetch {
     catch { throw new Error("Sign-in transport unavailable"); }
   };
 }
+/** Next16 normalizes loopback NextURL hosts to localhost, including .url.
+ * Read the underlying standard Web Request URL without consuming its body.
+ * A missing/incompatible getter fails closed; Host/Forwarded are never used. */
+export function googleOnboardingRequestOrigin(request: Request): string | null {
+  try {
+    const getter = Object.getOwnPropertyDescriptor(Request.prototype, "url")?.get;
+    const value: unknown = getter?.call(request);
+    return typeof value === "string" ? new URL(value).origin : null;
+  } catch { return null; }
+}
 function canonicalOrigin(request: NextRequest, requireOrigin: boolean) {
   try {
     const origin = new URL(getAppUrl()).origin;
-    return request.nextUrl.origin === origin && (!requireOrigin || request.headers.get("origin") === origin) ? origin : null;
+    return googleOnboardingRequestOrigin(request) === origin && (!requireOrigin || request.headers.get("origin") === origin) ? origin : null;
   } catch { return null; }
 }
 

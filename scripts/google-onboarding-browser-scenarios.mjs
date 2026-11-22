@@ -50,6 +50,43 @@ async function readPublicJson(response, label) {
   assert.ok(bytes.length > 0 && bytes.length <= 4096, "The public route denial must have a complete bounded JSON body.");
   try { return JSON.parse(bytes.toString("utf8")); } catch { throw new Error("The public route denial must return complete JSON."); }
 }
+const observedStartErrors = ["origin_denied", "invalid_request", "google_unavailable"];
+const callbackChecks = ["missing_attempt", "tampered_attempt", "unavailable_callback", "unknown_query", "duplicate_attempt"];
+const observedCallbackOutcomes = ["failed", "expired", "unavailable", "denied", "changed", "return"];
+async function publicHttpBody(response, label) {
+  const bytes = await deadline(`${label} body`, () => response.body());
+  assert.ok(bytes.length <= 4096, "The public route response must have a complete bounded body.");
+  return bytes;
+}
+/** Keep the completed wire observation even when the unchanged strict
+ * validator rejects it. Only fixed enums/booleans/statuses enter evidence. */
+export async function inspectGuestGoogleStartHttp(ledger, probe, send) {
+  assert.ok(["desktop", "phone"].includes(probe.view) && Object.hasOwn(startDenials, probe.check) && typeof probe.canonicalOrigin === "boolean", "Only the fixed Google start evidence checks are accepted.");
+  ledger.requestCount++;
+  const response = await deadline("anonymous Google start headers", send), status = response.status();
+  const bytes = await publicHttpBody(response, "anonymous Google start");
+  let body, parsed = false;
+  try { body = JSON.parse(Buffer.from(bytes).toString("utf8")); parsed = true; } catch { /* Record only the fixed unknown enum. */ }
+  const observedError = body && typeof body === "object" && !Array.isArray(body) && observedStartErrors.includes(body.error) ? body.error : "unknown";
+  ledger.checks.push({ view: probe.view, check: probe.check, method: "POST", path: "/auth/google/start", status, outcome: null, observedError, canonicalOriginSupplied: probe.canonicalOrigin });
+  assert.ok(bytes.length > 0, "The public route denial must have a complete bounded JSON body.");
+  if (!parsed) throw new Error("The public route denial must return complete JSON.");
+  assertGuestGoogleStartDenial(probe.check, status, body);
+}
+export async function inspectGuestGoogleCallbackHttp(ledger, probe, send) {
+  assert.ok(["desktop", "phone"].includes(probe.view) && callbackChecks.includes(probe.check) && ["failed", "expired", "unavailable"].includes(probe.expectedOutcome), "Only the fixed Google callback evidence checks are accepted.");
+  ledger.requestCount++;
+  const response = await deadline("anonymous Google callback headers", send), status = response.status();
+  const bytes = await publicHttpBody(response, "anonymous Google callback"), location = response.headers().location;
+  let outcome = "unknown", canonicalLocation = false;
+  try {
+    const url = new URL(location), value = url.searchParams.get("google");
+    if (observedCallbackOutcomes.includes(value)) outcome = value;
+    canonicalLocation = url.origin === probe.appUrl && url.pathname === "/start" && !url.username && !url.password && !url.hash && [...url.searchParams.keys()].length === 1 && url.searchParams.getAll("google").length === 1 && observedCallbackOutcomes.includes(value);
+  } catch { /* An untrusted Location is never copied into the report. */ }
+  ledger.checks.push({ view: probe.view, check: probe.check, method: "GET", path: "/auth/google/callback", status, outcome, observedError: null, canonicalLocation });
+  assertGuestGoogleCallbackDenial(probe.appUrl, status, location, probe.expectedOutcome, bytes);
+}
 async function deadline(label, action, milliseconds = 15000) {
   let timer;
   try { return await Promise.race([Promise.resolve().then(action), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Guest onboarding timed out: ${label}.`)), milliseconds); })]); }
@@ -155,9 +192,8 @@ export async function runGoogleOnboardingBrowserScenarios({ browser, appUrl, art
           { check: "unavailable", origin: appUrl, data: JSON.stringify(ids) },
         ];
         for (const probe of starts) {
-          const result = await deadline("anonymous Google start headers", () => context.request.post(`${appUrl}/auth/google/start`, { headers: { "Content-Type": "application/json", ...(probe.origin ? { Origin: probe.origin } : {}) }, data: probe.data, timeout: 15000, maxRedirects: 0 }));
-          assertGuestGoogleStartDenial(probe.check, result.status(), await readPublicJson(result, "anonymous Google start"));
-          report.authHttp.requestCount++; report.authHttp.checks.push({ view: label, check: probe.check, method: "POST", path: "/auth/google/start", status: result.status(), outcome: null });
+          await inspectGuestGoogleStartHttp(report.authHttp, { view: label, check: probe.check, canonicalOrigin: probe.origin === appUrl },
+            () => context.request.post(`${appUrl}/auth/google/start`, { headers: { "Content-Type": "application/json", ...(probe.origin ? { Origin: probe.origin } : {}) }, data: probe.data, timeout: 15000, maxRedirects: 0 }));
           assert.equal((await context.cookies()).length, 0, "Denied anonymous Google start probes must not create Auth, PKCE or handoff cookies.");
         }
         const callbacks = [
@@ -168,10 +204,8 @@ export async function runGoogleOnboardingBrowserScenarios({ browser, appUrl, art
           { check: "duplicate_attempt", query: `attempt=${ids.draftId}&attempt=${ids.draftId}&code=unused`, outcome: "failed" },
         ];
         for (const probe of callbacks) {
-          const result = await deadline("anonymous Google callback headers", () => context.request.get(`${appUrl}/auth/google/callback?${probe.query}`, { timeout: 15000, maxRedirects: 0 }));
-          const bytes = await deadline("anonymous Google callback body", () => result.body());
-          assertGuestGoogleCallbackDenial(appUrl, result.status(), result.headers().location, probe.outcome, bytes);
-          report.authHttp.requestCount++; report.authHttp.checks.push({ view: label, check: probe.check, method: "GET", path: "/auth/google/callback", status: result.status(), outcome: probe.outcome });
+          await inspectGuestGoogleCallbackHttp(report.authHttp, { view: label, check: probe.check, expectedOutcome: probe.outcome, appUrl },
+            () => context.request.get(`${appUrl}/auth/google/callback?${probe.query}`, { timeout: 15000, maxRedirects: 0 }));
           assert.equal((await context.cookies()).length, 0, "Denied callback probes must leave the genuine anonymous context without Auth cookies.");
         }
         safe();

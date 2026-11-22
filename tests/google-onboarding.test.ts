@@ -205,3 +205,45 @@ test("canonical failures commit only original cookie hygiene, preserving the app
   const foreign = run({ initialActor: true, dirtyExisting: true, origin: "https://foreign.invalid" });
   assert.equal(foreign.startStatus, 403); assert.equal(foreign.startHygiene.newCalls, 0); assert.equal(foreign.startHygiene.authCookies, 0); assert.equal(foreign.startHygiene.identityPreserved, true); assert.equal(foreign.startHygiene.clean, false);
 });
+
+function originBoundary(appUrl: string, requestOrigin = appUrl, origin: string | null = appUrl) {
+  const program = `
+process.env.APP_URL=${JSON.stringify(appUrl)};process.env.GOOGLE_AUTH_ENABLED='false';
+const {NextRequest}=require('next/server'),core=require('./lib/auth/google-onboarding.ts');
+let calls=0;global.fetch=async()=>{calls++;throw new Error('Origin fixtures must never contact Auth or providers');};
+const app=${JSON.stringify(appUrl)},target=${JSON.stringify(requestOrigin)},origin=${JSON.stringify(origin)},body=JSON.stringify({draftId:'33333333-3333-4333-8333-333333333333',requestKey:'44444444-4444-4444-8444-444444444444'});
+const headers={Host:new URL(app).host,'X-Forwarded-Host':new URL(app).host,'X-Forwarded-Proto':new URL(app).protocol.slice(0,-1),'Content-Type':'application/json',...(origin===null?{}:{Origin:origin})};
+(async()=>{
+ const request=new NextRequest(target+'/auth/google/start',{method:'POST',headers,body}),before=request.bodyUsed,native=core.googleOnboardingRequestOrigin(request),after=request.bodyUsed,unconsumed=await request.text();
+ const valid=await core.handleGoogleOnboardingStart(new NextRequest(target+'/auth/google/start',{method:'POST',headers,body}));
+ const invalid=await core.handleGoogleOnboardingStart(new NextRequest(target+'/auth/google/start',{method:'POST',headers,body:'{}'}));
+ const callback=await core.handleGoogleOnboardingCallback(new NextRequest(target+'/auth/google/callback?attempt=55555555-5555-4555-8555-555555555555&code=unused',{headers}));
+ const malformed=core.googleOnboardingRequestOrigin({url:app+'/auth/google/start'});
+ process.stdout.write(JSON.stringify({native,nextOrigin:request.nextUrl.origin,before,after,bodyIntact:unconsumed===body,validStatus:valid.status,validError:(await valid.json()).error,invalidStatus:invalid.status,callbackStatus:callback.status,callbackLocation:callback.headers.get('location'),calls,malformed}));
+})().catch(()=>{process.stderr.write('Native Request origin fixture failed');process.exitCode=1;});`;
+  return JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "--eval", program], { encoding: "utf8", timeout: 15000, maxBuffer: 100000 })) as {
+    native: string; nextOrigin: string; before: boolean; after: boolean; bodyIntact: boolean; validStatus: number; validError: string; invalidStatus: number;
+    callbackStatus: number; callbackLocation: string | null; calls: number; malformed: null;
+  };
+}
+
+test("actual NextRequest loopback normalization preserves native127/IPv6 origin and leaves the POST body unread", () => {
+  for (const app of ["http://127.0.0.1:3000", "http://[::1]:3000"]) {
+    const result = originBoundary(app);
+    assert.equal(result.nextOrigin, "http://localhost:3000"); assert.equal(result.native, app);
+    assert.equal(result.before, false); assert.equal(result.after, false); assert.equal(result.bodyIntact, true); assert.equal(result.malformed, null);
+    assert.equal(result.validStatus, 503); assert.equal(result.validError, "google_unavailable"); assert.equal(result.invalidStatus, 422); assert.equal(result.calls, 0);
+    assert.equal(result.callbackStatus, 307); assert.equal(result.callbackLocation, `${app}/start?google=unavailable`);
+  }
+});
+
+test("canonical origin stays exact across aliases, ports and schemes and ignores spoofed forwarding headers", () => {
+  const app = "http://127.0.0.1:3000";
+  for (const target of ["http://localhost:3000", "http://127.0.0.1:3001", "https://127.0.0.1:3000", "http://foreign.invalid:3000"]) {
+    const result = originBoundary(app, target); assert.equal(result.validStatus, 403); assert.equal(result.validError, "origin_denied"); assert.equal(result.invalidStatus, 403);
+    assert.equal(result.callbackStatus, 403); assert.equal(result.callbackLocation, null); assert.equal(result.calls, 0);
+  }
+  for (const origin of [null, "http://localhost:3000", "http://127.0.0.1:3001", "https://127.0.0.1:3000"]) {
+    const result = originBoundary(app, app, origin); assert.equal(result.validStatus, 403); assert.equal(result.validError, "origin_denied"); assert.equal(result.invalidStatus, 403); assert.equal(result.calls, 0);
+  }
+});
