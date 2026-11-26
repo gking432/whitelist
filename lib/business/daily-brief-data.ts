@@ -58,7 +58,7 @@ export async function loadDailyBrief(
       .select("full_name")
       .eq("id", portal.user.id)
       .maybeSingle(),
-    scoped("crm_tasks", "id,title,description,priority,status,due_at", true)
+    scoped("crm_tasks", "id,title,description,priority,status,due_at,updated_at", true)
       .eq("status", "open")
       .order("due_at", { ascending: true, nullsFirst: false })
       .limit(200),

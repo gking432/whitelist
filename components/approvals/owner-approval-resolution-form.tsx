@@ -12,6 +12,9 @@ export function OwnerApprovalResolutionForm({ approvalId, onSaved, ...form }: {
   allowEdit?: boolean;
   inline?: boolean;
   approveLabel?: string;
+  compact?: boolean;
+  expanded?: boolean;
+  onDraftChange?: (value: string) => void;
   onSaved?: (message: string) => void;
 }) {
   const router = useRouter();

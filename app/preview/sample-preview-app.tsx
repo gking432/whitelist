@@ -11,13 +11,13 @@ import { SampleMonthlyReport } from "@/components/business/sample-monthly-report
 import type { PreviewAction } from "@/components/business/morning-work-queue";
 import { OWNER_AREAS } from "@/lib/business/owner-navigation";
 import {
-  applySamplePreviewAction,
+  applySamplePreviewEvent,
   createSamplePreview,
   parseSamplePreviewHistory,
   sampleConversationSnapshot,
   sampleManagerSnapshot,
   sampleTodoSnapshot,
-  type SamplePreviewAction,
+  type SamplePreviewEvent,
 } from "@/lib/business/sample-preview";
 
 const STORAGE_KEY = "meridian:sample-preview-actions:v1";
@@ -29,10 +29,10 @@ const customerSummaries: Record<string, string> = {
 };
 
 export function SamplePreviewApp({ area }: { area: string }) {
-  const [history, setHistory] = useState<SamplePreviewAction[]>([]);
+  const [history, setHistory] = useState<SamplePreviewEvent[]>([]);
   const [ready, setReady] = useState(false);
   const [resetVersion, setResetVersion] = useState(0);
-  const data = useMemo(() => history.reduce(applySamplePreviewAction, createSamplePreview()), [history]);
+  const data = useMemo(() => history.reduce(applySamplePreviewEvent, createSamplePreview()), [history]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -49,10 +49,18 @@ export function SamplePreviewApp({ area }: { area: string }) {
   }, [history, ready]);
 
   function recordAction(action: PreviewAction) {
-    setHistory((current) => current.some((item) => item.approvalId === action.approvalId)
+    setHistory((current) => current.some((item) => "approvalId" in item && item.approvalId === action.approvalId)
       ? current : [...current, action]);
   }
+  function recordCalendarEdit(appointmentId: string, slot: { start_iso: string; end_iso: string }) {
+    setHistory((current) => [...current, { kind: "calendar_edit", appointmentId, slot }]);
+  }
   function resetSample() {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+      const prefix = "meridian:morning-acknowledged:v1:public-sample-workspace-v1";
+      for (const key of Object.keys(localStorage)) if (key.startsWith(prefix)) localStorage.removeItem(key);
+    } catch { /* Browser storage may be unavailable. */ }
     setHistory([]);
     setResetVersion((value) => value + 1);
   }
@@ -61,11 +69,17 @@ export function SamplePreviewApp({ area }: { area: string }) {
     ...item,
     href: item.href.replace("/client", "/preview"),
   }));
+  const jaydenBooking = data.appointments.find((item) => item.id === "sample-jayden-confirmed");
+  const jaydenOffer = data.work.find((item) => item.id === "sample-decision-sample-jayden-booking" && item.title.startsWith("Offered"));
+  const jaydenSummary = jaydenBooking
+    ? `New inquiry. Friday appointment confirmed for ${new Intl.DateTimeFormat("en-US", { timeZone: data.timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(jaydenBooking.start_at))}.`
+    : jaydenOffer ? "New inquiry. A revised appointment time was sent; waiting for Jayden’s reply."
+    : customerSummaries["Jayden Ellis"];
   const customers = (data.connectedData?.customers ?? []).map((customer) => ({
     name: customer.name,
     email: customer.email,
     phone: customer.phone,
-    summary: customerSummaries[customer.name] ?? "Sample customer record.",
+    summary: customer.name === "Jayden Ellis" ? jaydenSummary : customerSummaries[customer.name] ?? "Sample customer record.",
   }));
   const content = area === "report" ? (
     <SampleMonthlyReport data={data} />
@@ -78,7 +92,7 @@ export function SamplePreviewApp({ area }: { area: string }) {
   ) : area === "apps" || area === "calendar" || area === "money" ? (
     <SampleSourceArea area={area} data={data} />
   ) : (
-    <DailyBrief key={resetVersion} preview data={data} onPreviewAction={ready ? recordAction : undefined} />
+    <DailyBrief key={resetVersion} preview data={data} onPreviewAction={ready ? recordAction : undefined} onPreviewAppointmentChange={ready ? recordCalendarEdit : undefined} />
   );
 
   return (

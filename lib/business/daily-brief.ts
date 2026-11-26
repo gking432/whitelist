@@ -13,6 +13,7 @@ export type BriefTask = {
   priority: string;
   status: string;
   due_at: string | null;
+  updated_at?: string;
 };
 export type BriefAppointment = {
   id: string;

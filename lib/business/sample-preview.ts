@@ -3,27 +3,49 @@ import { emptyDesignPreview } from "./design-preview.ts";
 import type { TodoSnapshot } from "./todo-types.ts";
 import type { ConversationSnapshot } from "../conversations/types.ts";
 import type { ManagerChatSnapshot } from "../agents/manager-chat.ts";
+import { overlappingAppointments } from "./morning-queue.ts";
 
 /** A fixed fictional morning keeps the calendar, queue order, and chart windows coherent. */
 export const SAMPLE_PREVIEW_AT = "2027-02-24T15:15:00.000Z";
 export type SamplePreviewAction = {
   approvalId: string;
-  resolution: "approve" | "reject";
+  resolution: "approve" | "reject" | "propose_time";
   editedContent: string;
   bookedSlot?: { start_iso: string; end_iso: string };
+  proposedSlot?: { start_iso: string; end_iso: string };
 };
+export type SampleCalendarEdit = {
+  kind: "calendar_edit";
+  appointmentId: string;
+  slot: { start_iso: string; end_iso: string };
+};
+export type SamplePreviewEvent = SamplePreviewAction | SampleCalendarEdit;
 
-export function parseSamplePreviewHistory(raw: string | null): SamplePreviewAction[] {
+function validSampleSlot(value: unknown): value is SampleCalendarEdit["slot"] {
+  if (!value || typeof value !== "object") return false;
+  const slot = value as Record<string, unknown>;
+  if (typeof slot.start_iso !== "string" || typeof slot.end_iso !== "string") return false;
+  const start = Date.parse(slot.start_iso);
+  const end = Date.parse(slot.end_iso);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start && end - start <= 86_400_000;
+}
+
+export function parseSamplePreviewHistory(raw: string | null): SamplePreviewEvent[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.slice(0, 20).filter((item): item is SamplePreviewAction => {
+    return parsed.slice(0, 60).filter((item): item is SamplePreviewEvent => {
       if (!item || typeof item !== "object") return false;
       const action = item as Record<string, unknown>;
+      if (action.kind === "calendar_edit") {
+        return typeof action.appointmentId === "string" && action.appointmentId.startsWith("sample-") && validSampleSlot(action.slot);
+      }
       return typeof action.approvalId === "string" && action.approvalId.startsWith("sample-") &&
-        (action.resolution === "approve" || action.resolution === "reject") &&
-        typeof action.editedContent === "string" && action.editedContent.length <= 2000;
+        (action.resolution === "approve" || action.resolution === "reject" || action.resolution === "propose_time") &&
+        typeof action.editedContent === "string" && action.editedContent.length <= 2000 &&
+        (action.bookedSlot === undefined || validSampleSlot(action.bookedSlot)) &&
+        (action.resolution !== "propose_time" || validSampleSlot(action.proposedSlot));
     });
   } catch {
     return [];
@@ -152,6 +174,8 @@ export function createSamplePreview(): DailyBriefData {
         proposed_payload: {
           customer_name: "Jayden Ellis",
           to: "jayden@example.invalid",
+          decision_prompt: "Jayden agreed to Friday at 2:30 PM after 2:00 PM was busy. Approve the booking and send confirmation?",
+          customer_history: "New inquiry from sample intake today. Jayden asked for a consultation and accepted the later opening after the agent checked your calendar.",
           requested_slot: { start_iso: "2027-02-26T20:00:00.000Z", end_iso: "2027-02-26T20:30:00.000Z" },
           slot: { start_iso: "2027-02-26T20:30:00.000Z", end_iso: "2027-02-26T21:00:00.000Z" },
           next_step: "Book Friday at 2:30 PM and send the drafted confirmation.",
@@ -164,7 +188,7 @@ export function createSamplePreview(): DailyBriefData {
         created_at: "2027-02-24T14:45:00.000Z",
         type: "customer_message",
         editable_content: "Hi Jamie, lovely to hear from you. I can hold Thursday at 2:00 for a 30-minute catch-up. Shall we pick up where we left off?",
-        proposed_payload: { to: "jamie@example.invalid", subject: "Next phase of your project", next_step: "Send the reviewed reply to Jamie." },
+        proposed_payload: { to: "jamie@example.invalid", subject: "Next phase of your project", decision_prompt: "Jamie wants to discuss the next phase Thursday. Approve and send the drafted reply?", customer_history: "Returning customer. Jamie’s brand project is ready for its next phase.", next_step: "Send the reviewed reply to Jamie." },
       },
       {
         id: "sample-energy-bill",
@@ -173,7 +197,7 @@ export function createSamplePreview(): DailyBriefData {
         created_at: "2027-02-24T15:00:00.000Z",
         type: "sample_bill",
         editable_content: null,
-        proposed_payload: { payee: "City Energy", amount_minor: 28416, currency: "USD", due_at: "2027-02-27", autopay: true, next_step: "Pay now or keep the scheduled autopay." },
+        proposed_payload: { payee: "City Energy", amount_minor: 28416, currency: "USD", due_at: "2027-02-27", autopay: true, decision_prompt: "City Energy · $284.16 due Saturday. Autopay is scheduled. Pay now?", next_step: "Pay now or keep the scheduled autopay." },
       },
       {
         id: "sample-task-review",
@@ -182,7 +206,7 @@ export function createSamplePreview(): DailyBriefData {
         created_at: "2027-02-24T15:05:00.000Z",
         type: "sample_task",
         editable_content: null,
-        proposed_payload: { task_id: "sample-task-brief", next_step: "Mark the review complete or keep it on your list." },
+        proposed_payload: { task_id: "sample-task-brief", decision_prompt: "Sam’s website brief is ready. Mark your review done?", next_step: "Mark the review complete or keep it on your list." },
       },
     ],
     conversations: [],
@@ -200,24 +224,34 @@ export function createSamplePreview(): DailyBriefData {
 export function applySamplePreviewAction(data: DailyBriefData, action: SamplePreviewAction): DailyBriefData {
   const approval = data.approvals.find((item) => item.id === action.approvalId);
   if (!approval) return data;
+  if (action.resolution === "propose_time" && approval.type !== "appointment_booking") return data;
+  if (action.resolution === "propose_time" && !action.editedContent.trim()) return data;
+  if (approval.type === "appointment_booking" && action.resolution !== "reject") {
+    const slot = action.resolution === "propose_time" ? action.proposedSlot : action.bookedSlot;
+    if (!validSampleSlot(slot) || overlappingAppointments(data.appointments, slot).length) return data;
+  }
   const approved = action.resolution === "approve";
+  const offered = action.resolution === "propose_time" && approval.type === "appointment_booking";
+  const chosenSlot = offered ? action.proposedSlot : action.bookedSlot;
+  const chosenTime = validSampleSlot(chosenSlot)
+    ? new Intl.DateTimeFormat("en-US", { timeZone: data.timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(chosenSlot.start_iso))
+    : "the suggested time";
   const title = approval.type === "appointment_booking"
-    ? approved ? "Booked Jayden at 2:30 PM (sample)" : "Declined Jayden’s booking (sample)"
+    ? offered ? `Offered Jayden ${chosenTime} (sample)` : approved ? `Booked Jayden at ${chosenTime} (sample)` : "Declined Jayden’s booking (sample)"
     : approval.type === "customer_message"
       ? approved ? "Approved Jamie’s reply (sample)" : "Declined Jamie’s reply (sample)"
       : approval.type === "sample_bill"
         ? approved ? "Paid the energy bill (sample)" : "Kept energy bill autopay (sample)"
         : approved ? "Completed Sam’s brief review (sample)" : "Kept Sam’s review on the list (sample)";
   const summary = approval.type === "appointment_booking"
-    ? approved ? "A 2:30 PM sample calendar booking and confirmation were recorded. No real message was sent." : "The proposed booking was dismissed. No sample calendar event was added."
+    ? offered ? `A revised ${chosenTime} sample offer was recorded as sent. No appointment was booked; Jayden’s reply is still needed.` : approved ? `A ${chosenTime} sample calendar booking and confirmation were recorded. No real message was sent.` : "The proposed booking was dismissed. No sample calendar event was added."
     : approval.type === "customer_message"
       ? approved ? "The reviewed reply was recorded in the sample conversation. No real email was sent." : "The drafted reply was dismissed. No email was sent."
       : approval.type === "sample_bill"
         ? approved ? "The sample bill is marked paid; the scheduled sample autopay was cleared. No payment was made." : "The sample autopay remains scheduled. No payment was made."
         : approved ? "The sample owner task was marked complete." : "The sample owner task remains open.";
   const generatedAt = new Date(Date.parse(data.generatedAt) + 60_000).toISOString();
-  const booked = approved && approval.type === "appointment_booking" && action.bookedSlot &&
-    Date.parse(action.bookedSlot.end_iso) > Date.parse(action.bookedSlot.start_iso)
+  const booked = approved && approval.type === "appointment_booking" && validSampleSlot(action.bookedSlot)
     ? {
         id: "sample-jayden-confirmed",
         title: "Consultation with Jayden",
@@ -227,7 +261,7 @@ export function applySamplePreviewAction(data: DailyBriefData, action: SamplePre
         sourceAccount: "Sample calendar",
       }
     : null;
-  const sent = approved && ["appointment_booking", "customer_message"].includes(approval.type ?? "") && action.editedContent.trim();
+  const sent = (approved && ["appointment_booking", "customer_message"].includes(approval.type ?? "") || offered) && action.editedContent.trim();
   const recipient = approval.type === "appointment_booking" ? "jayden@example.invalid" : "jamie@example.invalid";
   const nextTasks = approved && approval.type === "sample_task"
     ? data.tasks.filter((task) => task.id !== approval.proposed_payload?.task_id)
@@ -256,7 +290,7 @@ export function applySamplePreviewAction(data: DailyBriefData, action: SamplePre
       ] : data.connectedData.appointments,
       messages: sent ? [
         ...data.connectedData.messages,
-        { id: `sample-sent-${approval.id}`, connectionId: "sample-mail", threadId: approval.id, subject: approval.type === "appointment_booking" ? "Friday consultation confirmed" : "Next phase of your project", from: "studio@example.invalid", preview: action.editedContent.trim(), receivedAt: generatedAt, unread: false, inbox: false, account: "Sample mail", href: null, messageCount: 1, provider: "google_workspace", direction: "outbound" },
+        { id: `sample-sent-${approval.id}`, connectionId: "sample-mail", threadId: approval.id, subject: offered ? "A new time for Friday" : approval.type === "appointment_booking" ? "Friday consultation confirmed" : "Next phase of your project", from: "studio@example.invalid", preview: action.editedContent.trim(), receivedAt: generatedAt, unread: false, inbox: false, account: "Sample mail", href: null, messageCount: 1, provider: "google_workspace", direction: "outbound" },
       ] : data.connectedData.messages,
       payments: approved && approval.type === "sample_bill" ? [
         ...(data.connectedData.payments ?? []),
@@ -264,6 +298,29 @@ export function applySamplePreviewAction(data: DailyBriefData, action: SamplePre
       ] : data.connectedData.payments,
     } : data.connectedData,
   };
+}
+
+/** Move a fictional appointment while keeping the Today pane and Calendar section in sync. */
+export function applySampleCalendarEdit(data: DailyBriefData, edit: SampleCalendarEdit): DailyBriefData {
+  if (!validSampleSlot(edit.slot)) return data;
+  const appointment = data.appointments.find((item) => item.id === edit.appointmentId);
+  if (!appointment || !appointment.id.startsWith("sample-")) return data;
+  if (appointment.start_at === edit.slot.start_iso && appointment.end_at === edit.slot.end_iso) return data;
+  return {
+    ...data,
+    appointments: data.appointments.map((item) => item.id === edit.appointmentId
+      ? { ...item, start_at: edit.slot.start_iso, end_at: edit.slot.end_iso } : item),
+    connectedData: data.connectedData ? {
+      ...data.connectedData,
+      appointments: data.connectedData.appointments.map((item) => item.id === edit.appointmentId
+        ? { ...item, startAt: edit.slot.start_iso, endAt: edit.slot.end_iso } : item),
+    } : data.connectedData,
+  };
+}
+
+export function applySamplePreviewEvent(data: DailyBriefData, event: SamplePreviewEvent): DailyBriefData {
+  if ("approvalId" in event) return applySamplePreviewAction(data, event);
+  return applySampleCalendarEdit(data, event);
 }
 
 export function sampleTodoSnapshot(data: DailyBriefData): TodoSnapshot {
@@ -294,6 +351,12 @@ export function sampleTodoSnapshot(data: DailyBriefData): TodoSnapshot {
 }
 
 export function sampleConversationSnapshot(data: DailyBriefData): ConversationSnapshot {
+  const jaydenConfirmed = data.appointments.find((item) => item.id === "sample-jayden-confirmed");
+  const jaydenConfirmedTime = jaydenConfirmed
+    ? new Intl.DateTimeFormat("en-US", { timeZone: data.timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(jaydenConfirmed.start_at))
+    : null;
+  const jaydenOffer = data.work.find((item) => item.id === "sample-decision-sample-jayden-booking" && item.title.startsWith("Offered"));
+  const jaydenWaitingApproval = data.approvals.some((item) => item.id === "sample-jayden-booking");
   const common = {
     partner_id: "sample",
     client_id: "sample",
@@ -308,7 +371,7 @@ export function sampleConversationSnapshot(data: DailyBriefData): ConversationSn
   };
   return {
     conversations: [
-      { ...common, id: "sample-conversation-jayden", contact_id: "sample-contact-jayden", state: data.approvals.some((item) => item.id === "sample-jayden-booking") ? "waiting_approval" : "closed", agent_key: "scheduling", summary: "Jayden requested Friday at 2:00 PM and agreed to 2:30 PM after the agent found a conflict.", next_action: data.approvals.some((item) => item.id === "sample-jayden-booking") ? "Approve the 2:30 PM booking and confirmation" : "Booking decision recorded", updated_at: "2027-02-24T14:36:00.000Z" },
+      { ...common, id: "sample-conversation-jayden", contact_id: "sample-contact-jayden", state: jaydenWaitingApproval ? "waiting_approval" : jaydenOffer ? "open" : "closed", agent_key: "scheduling", summary: jaydenConfirmedTime ? `Jayden requested Friday at 2:00 PM. The appointment was confirmed for ${jaydenConfirmedTime}.` : jaydenOffer ? jaydenOffer.summary : "Jayden requested Friday at 2:00 PM and agreed to 2:30 PM after the agent found a conflict.", next_action: jaydenWaitingApproval ? "Approve the 2:30 PM booking and confirmation" : jaydenOffer ? "Await Jayden’s reply to the revised time" : "Booking decision recorded", updated_at: jaydenOffer?.updated_at ?? "2027-02-24T14:36:00.000Z" },
       { ...common, id: "sample-conversation-jamie", contact_id: "sample-contact-jamie", state: data.approvals.some((item) => item.id === "sample-jamie-reply") ? "waiting_approval" : "closed", agent_key: "customer", summary: "Jamie wants to talk through the next phase of the brand project.", next_action: data.approvals.some((item) => item.id === "sample-jamie-reply") ? "Review the drafted reply" : "Reply decision recorded", updated_at: "2027-02-24T14:45:00.000Z" },
       { ...common, id: "sample-conversation-sam", contact_id: "sample-contact-sam", state: "open", agent_key: "customer", summary: "Sam sent a website brief for a new project.", next_action: "Review Sam’s brief", updated_at: "2027-02-23T18:00:00.000Z" },
     ],

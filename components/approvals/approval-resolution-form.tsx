@@ -15,6 +15,9 @@ type ApprovalResolutionFormProps = {
   allowEdit?: boolean;
   inline?: boolean;
   approveLabel?: string;
+  compact?: boolean;
+  expanded?: boolean;
+  onDraftChange?: (value: string) => void;
 };
 
 export function ApprovalResolutionForm({
@@ -24,6 +27,9 @@ export function ApprovalResolutionForm({
   allowEdit = true,
   inline = false,
   approveLabel = "Approve",
+  compact = false,
+  expanded = true,
+  onDraftChange,
 }: ApprovalResolutionFormProps) {
   const formId = useId();
   const [state, formAction, isPending] = useActionState(
@@ -43,7 +49,7 @@ export function ApprovalResolutionForm({
   }
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} className={compact ? "space-y-3" : "space-y-4"}>
       {state.status === "error" && state.message ? (
         <div
           role="alert"
@@ -54,13 +60,14 @@ export function ApprovalResolutionForm({
       ) : null}
 
       {editableContent !== null ? (
-        <div>
+        <div hidden={compact && !expanded}>
           <Label htmlFor={`${formId}-content`}>Message content</Label>
           <Textarea
             id={`${formId}-content`}
             name="edited_content"
             className="mt-1.5"
             defaultValue={editableContent}
+            onChange={(event) => onDraftChange?.(event.target.value)}
             readOnly={!allowEdit}
             rows={4}
           />
@@ -80,13 +87,14 @@ export function ApprovalResolutionForm({
         />
       </div> : null}
 
-      <p className="rounded-md border bg-secondary/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+      <p className={compact ? "text-xs leading-5 text-slate-500" : "rounded-md border bg-secondary/40 px-3 py-2 text-xs leading-5 text-muted-foreground"}>
         {consequence}
       </p>
 
       <div className="flex flex-wrap gap-2">
         <Button
           type="submit"
+          data-primary-action
           name="resolution"
           value="approve"
           disabled={isPending}
