@@ -4,6 +4,7 @@ import { reconcileMoneySources } from "../money/source-reconciliation.ts";
 import type { BusinessRecord, BusinessSnapshot } from "./types.ts";
 import type { BusinessContextSnapshot } from "./context-contract.ts";
 import type { WorkspacePersonalization } from "./workspace-preferences-contract.ts";
+import type { FocusRow } from "./focus-brief.ts";
 
 export type BriefTask = {
   id: string;
@@ -23,11 +24,17 @@ export type BriefAppointment = {
   sourceAccount?: string;
   allDay?: boolean;
 };
+export type SampleMetric = "leads" | "payments" | "outbound_email" | "sales" | "outbound_calls";
+export type SampleMetricPoint = { at: string; amount: number };
 export type DailyBriefData = {
   personalization?: WorkspacePersonalization;
   workspace: BusinessSnapshot;
   businessContext?: BusinessContextSnapshot;
   connectedData?: ConnectedData;
+  /** Fictional preview-only values. Never mixed into real workspace totals. */
+  sampleMetrics?: Record<SampleMetric, SampleMetricPoint[]>;
+  /** Curated sample morning flow; production always derives its own work. */
+  previewQueueRows?: FocusRow[];
   displayName: string | null;
   timeZone: string;
   generatedAt: string;

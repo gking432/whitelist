@@ -68,6 +68,9 @@ export function ConversationInbox({
   const selected = conversations.find(
     (conversation) => conversation.id === snapshot.selectedId,
   );
+  const selectedMessages = selected
+    ? snapshot.messages.filter((message) => message.conversation_id === selected.id)
+    : [];
   const disabled = busy || !snapshot.canWrite;
 
   async function refresh(id: string | null = snapshot.selectedId) {
@@ -244,7 +247,8 @@ export function ConversationInbox({
                   onClick={() => {
                     setReply("");
                     setNotice("");
-                    void refresh(conversation.id);
+                    if (preview) setSnapshot((current) => ({ ...current, selectedId: conversation.id }));
+                    else void refresh(conversation.id);
                   }}
                   className={`block w-full px-2 py-4 text-left ${selected?.id === conversation.id ? "bg-slate-50" : "hover:bg-slate-50/50"}`}
                 >
@@ -352,7 +356,7 @@ export function ConversationInbox({
                   className="max-h-[55dvh] space-y-5 overflow-y-auto py-6"
                   aria-label="Message history"
                 >
-                  {snapshot.messages.map((message) => (
+                  {selectedMessages.map((message) => (
                     <li
                       key={message.id}
                       className={`max-w-[95%] ${message.direction === "outbound" ? "ml-auto" : ""}`}

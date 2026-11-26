@@ -16,7 +16,7 @@ import { RecordEditor } from "./record-editor";
 import { RecordDetail } from "./record-detail";
 import { ConnectedDataRefresh } from "./connected-data-refresh";
 import { FocusBriefCard } from "./focus-brief-card";
-import { MorningWorkQueue } from "./morning-work-queue";
+import { MorningWorkQueue, type PreviewAction } from "./morning-work-queue";
 import { MorningMetricCard } from "./morning-metric-card";
 import { HandledForYouCard } from "./handled-for-you-card";
 import { buildFocusBrief, type FocusRow } from "@/lib/business/focus-brief";
@@ -40,9 +40,11 @@ function dateLabel(date: string, today: string) {
 export function DailyBrief({
   data,
   preview = false,
+  onPreviewAction,
 }: {
   data: DailyBriefData;
   preview?: boolean;
+  onPreviewAction?: (action: PreviewAction) => void;
 }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
@@ -63,7 +65,7 @@ export function DailyBrief({
   const busy = preview || saving || refreshing;
   const brief = buildDailyBrief(data);
   const focus = buildFocusBrief(data, Number.POSITIVE_INFINITY);
-  const inlineApprovals = !preview && data.canResolveApprovals ? data.approvals : [];
+  const inlineApprovals = preview || data.canResolveApprovals ? data.approvals : [];
   const hasInlineApprovals = inlineApprovals.length > 0;
   const sections = orderDailySections(focus.sections, data.personalization?.preferences)
     .map((section) => hasInlineApprovals && section.key === "attention" ? {
@@ -78,7 +80,9 @@ export function DailyBrief({
   }
   const recommendation = recommendWorkspaceFocus(focus.sections, data.personalization?.activity ?? []);
   if (preview && focus.link)
-    focus.link = { ...focus.link, href: "/preview/apps" };
+    focus.link = { ...focus.link, href: focus.link.href === "/client/todo"
+      ? "/preview/todo" : focus.link.href === "/client/apps"
+        ? "/preview/apps" : "/preview" };
   const workspace = data.workspace;
   const selected = workspace.records.find((record) => record.id === selectedId);
   const hour = Number(
@@ -97,7 +101,7 @@ export function DailyBrief({
     day: "numeric",
   }).format(new Date(data.generatedAt));
   const visibleGoals = allGoals ? brief.goals : brief.goals.slice(0, 5);
-  const queueRows = orderMorningQueueRows([
+  const queueRows = orderMorningQueueRows(preview && data.previewQueueRows ? data.previewQueueRows : [
     ...sections.flatMap((section) => section.rows),
     ...brief.actions.map((action): FocusRow => ({
       key: "action:" + action.id,
@@ -221,7 +225,7 @@ export function DailyBrief({
       <div className="mt-6 grid items-start gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
         <div className="order-1 min-w-0 lg:order-none"><FocusBriefCard brief={focus} upcoming={brief.upcoming} today={brief.today} timeZone={validTimeZone(data.timeZone)} /></div>
         <div className="order-3 min-w-0 lg:order-none"><MorningMetricCard key={data.workspace.workspaceScopeKey} data={data} preview={preview} /></div>
-        <div className="order-2 min-w-0 lg:order-none"><MorningWorkQueue key={data.workspace.workspaceScopeKey} approvals={inlineApprovals} appointments={data.appointments} timeZone={validTimeZone(data.timeZone)} rows={queueRows} scopeKey={data.workspace.workspaceScopeKey} now={data.generatedAt} onOpenRecord={setSelectedId} moreDecisionCount={hasInlineApprovals ? Math.max(0, data.counts.approvals - inlineApprovals.length) : 0} preview={preview} /></div>
+        <div className="order-2 min-w-0 lg:order-none"><MorningWorkQueue key={data.workspace.workspaceScopeKey} approvals={inlineApprovals} appointments={data.appointments} timeZone={validTimeZone(data.timeZone)} rows={queueRows} scopeKey={data.workspace.workspaceScopeKey} now={data.generatedAt} onOpenRecord={setSelectedId} moreDecisionCount={hasInlineApprovals ? Math.max(0, data.counts.approvals - inlineApprovals.length) : 0} preview={preview} onPreviewAction={onPreviewAction} /></div>
         <div className="order-4 min-w-0 lg:order-none"><HandledForYouCard data={data} preview={preview} /></div>
       </div>
       <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:items-center">
@@ -232,7 +236,7 @@ export function DailyBrief({
         >
           Talk to your manager
         </Link>
-        {data.connectedData?.invoices?.length || data.connectedData?.payments?.length ? <Link href={preview ? "/preview/apps" : "/client/money"} className="hover:text-slate-800">Open money records</Link> : null}
+        {data.connectedData?.invoices?.length || data.connectedData?.payments?.length ? <Link href={preview ? "/preview/money" : "/client/money"} className="hover:text-slate-800">Open money records</Link> : null}
         <Link
           href={preview ? "/preview/todo" : "/client/todo"}
           className="hover:text-slate-800"

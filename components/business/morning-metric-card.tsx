@@ -57,8 +57,17 @@ export function MorningMetricCard({ data, preview = false }: { data: DailyBriefD
   let description = "Connect a source to see this metric.";
   let available = false;
   let points: { at: string | null; amount: number }[] = [];
+  const samplePoints = preview ? data.sampleMetrics?.[metric] : undefined;
 
-  if (metric === "leads" && leadSource) {
+  if (samplePoints) {
+    available = true;
+    points = samplePoints.filter((item) => inRange(item.at));
+    const total = points.reduce((sum, item) => sum + item.amount, 0);
+    value = metric === "sales"
+      ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(total)
+      : new Intl.NumberFormat("en-US").format(total);
+    description = `Sample ${metrics.find((item) => item.key === metric)?.label.toLowerCase() ?? "activity"} · ${days} days`;
+  } else if (metric === "leads" && leadSource) {
     available = true;
     value = String(leads.length);
     description = `Leads in the available connected records · ${days} days`;
@@ -90,7 +99,7 @@ export function MorningMetricCard({ data, preview = false }: { data: DailyBriefD
   const max = Math.max(1, ...buckets);
   const detailHref = metric === "payments" && paymentSource ? (preview ? "/preview/money" : "/client/money") : (preview ? "/preview/apps" : "/client/apps");
   const detailLabel = metric === "payments" && paymentSource ? "Open Money" : "Explore connections";
-  const partial = !!(connected?.limited || connected?.errors.length || connected?.apps.some((app) =>
+  const partial = !preview && !!(connected?.limited || connected?.errors.length || connected?.apps.some((app) =>
     active(app.status) && (app.stale || app.error || app.streams?.some((stream) => stream.status !== "fresh" || stream.partial))));
   return (
     <section aria-label="Business metric" className="min-w-0 rounded-[22px] border border-[#e6ebf2] bg-white px-6 py-5 shadow-[0_10px_30px_-26px_rgba(27,45,80,.45)] sm:px-7 sm:py-6">

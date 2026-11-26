@@ -7,6 +7,7 @@ import { useRef } from "react";
 import { OWNER_AREAS } from "@/lib/business/owner-navigation";
 import type { WorkspaceNavItem } from "@/components/layout/workspace-navigation";
 import { WorkspaceActivityTracker } from "./workspace-activity-tracker";
+import { PreviewCustomerSearch, type PreviewCustomer } from "./preview-customer-search";
 
 const navigationIcons = { Today: House, Messages: MessageSquare, "To-do": ListTodo, Calendar: CalendarDays, Money: Landmark, Manager: Bot, Apps: PlugZap };
 const departmentLabels: Record<string, string> = {
@@ -18,9 +19,9 @@ const departmentLabels: Record<string, string> = {
   "/client/apps": "Integrations",
 };
 const focusStyle = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2";
-export function DailyBriefShell({ children, brandName, clientName, email, navigation, banner, accountActions, preview = false }: {
+export function DailyBriefShell({ children, brandName, clientName, email, navigation, banner, accountActions, preview = false, previewCustomers = [] }: {
   children: React.ReactNode; brandName: string; clientName: string; email: string; navigation: WorkspaceNavItem[];
-  banner?: React.ReactNode; accountActions?: React.ReactNode; preview?: boolean;
+  banner?: React.ReactNode; accountActions?: React.ReactNode; preview?: boolean; previewCustomers?: PreviewCustomer[];
 }) {
   const pathname = usePathname();
   const menu = useRef<HTMLDetailsElement>(null);
@@ -32,7 +33,7 @@ export function DailyBriefShell({ children, brandName, clientName, email, naviga
   const other = navigation.filter((item) => !mainPaths.has(item.href));
   const navigationLabel = (item: WorkspaceNavItem) => departmentLabels[item.href] ?? item.label;
   const canSearchCustomers = !preview && other.some((item) => item.href === "/client/business/customers");
-  const customerSearch = canSearchCustomers ? (
+  const customerSearch = preview && previewCustomers.length ? <PreviewCustomerSearch customers={previewCustomers} /> : canSearchCustomers ? (
     <form action="/client/business/customers" role="search" className="relative mx-3 pt-3">
       <input type="search" name="search" aria-label="Find a customer" placeholder="Find a customer"
         maxLength={120} className={`h-10 w-full rounded-lg border border-slate-200 pl-2.5 pr-9 text-sm ${focusStyle}`} />

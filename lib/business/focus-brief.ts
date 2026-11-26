@@ -14,7 +14,7 @@ export type FocusRow = {
   title: string;
   detail: string;
   label: string;
-  kind: "attention" | "appointment" | "action" | "goal" | "invoice";
+  kind: "attention" | "appointment" | "action" | "goal" | "invoice" | "report";
   href?: string;
   recordId?: string;
 };
