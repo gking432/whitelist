@@ -13,6 +13,8 @@ type ApprovalResolutionFormProps = {
   editableContent: string | null;
   consequence: string;
   allowEdit?: boolean;
+  inline?: boolean;
+  approveLabel?: string;
 };
 
 export function ApprovalResolutionForm({
@@ -20,6 +22,8 @@ export function ApprovalResolutionForm({
   editableContent,
   consequence,
   allowEdit = true,
+  inline = false,
+  approveLabel = "Approve",
 }: ApprovalResolutionFormProps) {
   const formId = useId();
   const [state, formAction, isPending] = useActionState(
@@ -61,12 +65,12 @@ export function ApprovalResolutionForm({
             rows={4}
           />
           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-            {allowEdit ? "Use “Edit & approve” to approve your edited version above." : "Review this exact source-backed proposal. To change its content, reject it and prepare a fresh review."}
+            {allowEdit ? (inline ? "You can edit the draft before approving." : "Use “Edit & approve” to approve your edited version above.") : "Review this exact source-backed proposal. To change its content, reject it and prepare a fresh review."}
           </p>
         </div>
       ) : null}
 
-      <div>
+      {!inline ? <div>
         <Label htmlFor={`${formId}-note`}>Resolution note (optional)</Label>
         <Input
           id={`${formId}-note`}
@@ -74,7 +78,7 @@ export function ApprovalResolutionForm({
           className="mt-1.5"
           placeholder="Reason or context for this decision"
         />
-      </div>
+      </div> : null}
 
       <p className="rounded-md border bg-secondary/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
         {consequence}
@@ -87,9 +91,9 @@ export function ApprovalResolutionForm({
           value="approve"
           disabled={isPending}
         >
-          Approve
+          {isPending && inline ? "Saving decision…" : approveLabel}
         </Button>
-        {editableContent !== null && allowEdit ? (
+        {editableContent !== null && allowEdit && !inline ? (
           <Button
             type="submit"
             name="resolution"

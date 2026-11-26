@@ -11,18 +11,20 @@ export default async function BusinessAreaPage({
   searchParams,
 }: {
   params: Promise<{ area: string }>;
-  searchParams: Promise<{ record?: string }>;
+  searchParams: Promise<{ record?: string; search?: string }>;
 }) {
   const [{ area }, query] = await Promise.all([params, searchParams]);
   if (!BUSINESS_AREAS.includes(area as BusinessArea)) notFound();
   const portal = await loadClientPortal();
   if (portal.kind !== "ok") return null;
   if (!canReadBusinessWorkspace(portal.access)) redirect("/client");
+  const search = area === "customers" && typeof query.search === "string" ? query.search.trim().slice(0, 120) : "";
   return (
     <BusinessWorkspace
-      key={area}
+      key={JSON.stringify([area, search])}
       area={area as BusinessArea}
       initialRecordId={query.record}
+      initialSearch={search}
       initialSnapshot={await loadBusinessSnapshot(portal)}
     />
   );

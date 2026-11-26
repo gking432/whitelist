@@ -87,7 +87,7 @@ export function mapConnectedData(apps: ConnectedApp[], rows: ImportedRow[], gene
     if (row.object_type === "lead" && provider === "generic_inbound_webhook" && d.status !== "deleted") {
       leads.push({ id: row.id, connectionId: app.id, externalId: row.external_object_id, nativeId: row.native_object_id,
         account, provider, title: str(d.title).slice(0, 300) || "Intake submission", status: str(d.status) || "unknown",
-        receivedAt: timestamp(d.received_at) ?? timestamp(row.external_updated_at), href: null,
+        receivedAt: timestamp(d.received_at), href: null,
         preview: (str(d.description) || str(d.message)).slice(0, 1200) });
     }
     if (provider === "stripe" && row.object_type === "invoice") {

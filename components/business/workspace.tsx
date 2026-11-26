@@ -133,18 +133,20 @@ export async function requestBusinessProfileSave(command: BusinessProfileSaveCom
 }
 
 export function BusinessWorkspace({
-  initialSnapshot, area = "home", initialRecordId,
-}: { initialSnapshot: BusinessSnapshot; area?: BusinessArea; initialRecordId?: string }) {
-  return <BusinessWorkspaceSession key={initialSnapshot.workspaceScopeKey} initialSnapshot={initialSnapshot} area={area} initialRecordId={initialRecordId} />;
+  initialSnapshot, area = "home", initialRecordId, initialSearch = "",
+}: { initialSnapshot: BusinessSnapshot; area?: BusinessArea; initialRecordId?: string; initialSearch?: string }) {
+  return <BusinessWorkspaceSession key={initialSnapshot.workspaceScopeKey} initialSnapshot={initialSnapshot} area={area} initialRecordId={initialRecordId} initialSearch={initialSearch} />;
 }
 function BusinessWorkspaceSession({
   initialSnapshot,
   area = "home",
   initialRecordId,
+  initialSearch,
 }: {
   initialSnapshot: BusinessSnapshot;
   area?: BusinessArea;
   initialRecordId?: string;
+  initialSearch: string;
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [profileSource, setProfileSource] = useState({ profile: initialSnapshot.profile, revision: initialSnapshot.profileRevision });
@@ -165,7 +167,7 @@ function BusinessWorkspaceSession({
   } | null>(null);
   const editorRequestKey = useRef<string | null>(null);
   const [contactForm, setContactForm] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialSearch);
   const [status, setStatus] = useState("active");
   const [kind, setKind] = useState<RecordKind>(areaKinds[area]?.[0] ?? "job");
   const selected = snapshot.records.find((r) => r.id === selectedId);

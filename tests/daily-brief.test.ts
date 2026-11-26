@@ -417,6 +417,25 @@ test("the rendered calm brief shows a real upcoming booking and omits empty or g
   assert.doesNotMatch(html[1], /data-upcoming-appointment|Coming up|Your connected work will appear here/);
 });
 
+test("the blue docket keeps next week out of Later this week", () => {
+  const snapshot = data();
+  const sunday = { id: "sunday", title: "Sunday booking", start_at: "2026-11-01T20:00:00Z", end_at: "2026-11-01T21:00:00Z", status: "booked" };
+  const monday = { id: "monday", title: "Monday booking", start_at: "2026-11-02T20:00:00Z", end_at: "2026-11-02T21:00:00Z", status: "booked" };
+  const render = (state: DailyBriefData) => {
+    const props = { brief: buildFocusBrief(state), upcoming: buildDailyBrief(state).upcoming, today: localDate(state.generatedAt, state.timeZone), timeZone: state.timeZone };
+    const code = "const React=require('react');const {renderToStaticMarkup}=require('react-dom/server');const {FocusBriefCard}=require('./components/business/focus-brief-card.tsx');console.log(renderToStaticMarkup(React.createElement(FocusBriefCard," + JSON.stringify(props) + ")));";
+    return execFileSync(resolve("node_modules/.bin/tsx"), ["-e", code], { encoding: "utf8", timeout: 15000 });
+  };
+  snapshot.appointments = [sunday, monday];
+  const withSunday = render(snapshot);
+  assert.match(withSunday, /Sunday booking/);
+  assert.doesNotMatch(withSunday, /Monday booking/);
+
+  snapshot.appointments = [monday];
+  const afterWeek = render(snapshot);
+  assert.match(afterWeek, /Later this week.*Nothing else scheduled this week.*Next appointment.*Monday booking/s);
+});
+
 test("ISO all-day events use business-local dates for both today's list and future context", () => {
   const snapshot = data();
   snapshot.appointments = [

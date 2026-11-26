@@ -160,13 +160,6 @@ export function PortalShell({
             group: "Your business",
           },
           {
-            label: "Approvals",
-            href: "/client/business/approvals",
-            section: "approvals",
-            icon: "approvals",
-            group: "Your business",
-          },
-          {
             label: "Customers",
             href: "/client/business/customers",
             section: "contacts",
@@ -195,7 +188,7 @@ export function PortalShell({
             group: "Business areas",
           },
           {
-            label: "Operations",
+            label: "Business operations",
             href: "/client/business/operations",
             section: "tasks",
             icon: "operations",

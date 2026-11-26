@@ -69,7 +69,7 @@ export async function loadDailyBrief(
       .order("start_at")
       .limit(200),
     portal.access.visibleClientSections.includes("approvals")
-      ? scoped("approval_items", "id,title,summary,created_at", true)
+      ? scoped("approval_items", "id,title,summary,created_at,type,editable_content,proposed_payload", true)
           .eq("status", "pending")
           .order("created_at")
           .limit(50)
@@ -129,6 +129,9 @@ export async function loadDailyBrief(
       ...connectedData.appointments.map(a=>({ id:`imported:${a.id}`, title:a.title, start_at:a.startAt, end_at:a.endAt,
         status:a.status ?? "unknown", sourceHref:a.href || "/client/calendar", sourceAccount:a.account, allDay:a.allDay })),
     ],
+    canResolveApprovals:
+      portal.access.canResolveApprovals &&
+      (!portal.access.isImpersonating || portal.access.impersonationMode === "sandbox_full"),
     approvals: (approvals.data as unknown as DailyBriefData["approvals"]) || [],
     conversations:
       (conversations.data as unknown as DailyBriefData["conversations"]) || [],

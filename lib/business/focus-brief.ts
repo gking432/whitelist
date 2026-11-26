@@ -47,7 +47,7 @@ function appointmentDay(value: string, allDay: boolean, timeZone: string): strin
   return allDay && /^\d{4}-\d{2}-\d{2}$/.test(value) ? calendarDate : localDate(value, timeZone) || null;
 }
 
-export function buildFocusBrief(data: DailyBriefData): FocusBrief {
+export function buildFocusBrief(data: DailyBriefData, sectionLimit = 4): FocusBrief {
   const brief = buildDailyBrief(data);
   const timeZone = validTimeZone(data.timeZone);
   const connected =
@@ -402,8 +402,8 @@ export function buildFocusBrief(data: DailyBriefData): FocusBrief {
     })
     .map((section) => ({
       ...section,
-      rows: section.rows.slice(0, 4),
-      remaining: Math.max(0, section.rows.length - 4),
+      rows: section.rows.slice(0, sectionLimit),
+      remaining: Math.max(0, section.rows.length - sectionLimit),
     }));
   return {
     state,

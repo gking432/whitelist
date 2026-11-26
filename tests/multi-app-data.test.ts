@@ -68,3 +68,12 @@ test("intake preview is bounded and allowlisted while unsafe source links, unkno
   assert.equal(JSON.stringify(result).includes("private-contact"), false);
   assert.equal(JSON.stringify(result).includes("private-internal-note"), false);
 });
+
+test("an intake update without a submission timestamp is not dated as a new lead", () => {
+  const result = mapConnectedData([app("form", "generic_inbound_webhook")], [
+    row("new", "form", "lead", { title: "New inquiry", status: "new", received_at: "2026-11-01T12:00:00Z" }),
+    row("updated", "form", "lead", { title: "Earlier inquiry updated", status: "new", received_at: null }, { external_updated_at: now }),
+  ], now);
+  assert.equal(result.leads?.find((lead) => lead.externalId === "new")?.receivedAt, "2026-11-01T12:00:00Z");
+  assert.equal(result.leads?.find((lead) => lead.externalId === "updated")?.receivedAt, null);
+});

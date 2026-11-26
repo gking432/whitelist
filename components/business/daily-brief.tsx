@@ -8,6 +8,7 @@ import {
   buildDailyBrief,
   goalProgress,
   safeSourceUrl,
+  validTimeZone,
   type DailyBriefData,
 } from "@/lib/business/daily-brief";
 import type { BusinessRecord, RecordKind } from "@/lib/business/types";
@@ -15,8 +16,11 @@ import { RecordEditor } from "./record-editor";
 import { RecordDetail } from "./record-detail";
 import { ConnectedDataRefresh } from "./connected-data-refresh";
 import { FocusBriefCard } from "./focus-brief-card";
-import { DailyWorkSections } from "./daily-work-sections";
-import { buildFocusBrief } from "@/lib/business/focus-brief";
+import { MorningWorkQueue } from "./morning-work-queue";
+import { MorningMetricCard } from "./morning-metric-card";
+import { HandledForYouCard } from "./handled-for-you-card";
+import { buildFocusBrief, type FocusRow } from "@/lib/business/focus-brief";
+import { orderMorningQueueRows } from "@/lib/business/morning-queue";
 import { orderDailySections, recommendWorkspaceFocus } from "@/lib/business/workspace-preferences";
 import { WorkspacePreferencesPanel } from "./workspace-preferences-panel";
 
@@ -58,8 +62,20 @@ export function DailyBrief({
   const addMenu = useRef<HTMLDetailsElement>(null);
   const busy = preview || saving || refreshing;
   const brief = buildDailyBrief(data);
-  const focus = buildFocusBrief(data);
-  const sections = orderDailySections(focus.sections, data.personalization?.preferences);
+  const focus = buildFocusBrief(data, Number.POSITIVE_INFINITY);
+  const inlineApprovals = !preview && data.canResolveApprovals ? data.approvals : [];
+  const hasInlineApprovals = inlineApprovals.length > 0;
+  const sections = orderDailySections(focus.sections, data.personalization?.preferences)
+    .map((section) => hasInlineApprovals && section.key === "attention" ? {
+      ...section,
+      rows: section.rows.filter((row) => !row.key.startsWith("approval:")),
+      links: section.links?.filter((link) => link.href !== "/client/business/approvals"),
+    } : section)
+    .filter((section) => section.rows.length || section.links?.length);
+  if (hasInlineApprovals && focus.link?.href === "/client/business/approvals") {
+    focus.link = null;
+    focus.rows = focus.rows.filter((row) => !row.key.startsWith("approval:"));
+  }
   const recommendation = recommendWorkspaceFocus(focus.sections, data.personalization?.activity ?? []);
   if (preview && focus.link)
     focus.link = { ...focus.link, href: "/preview/apps" };
@@ -81,6 +97,32 @@ export function DailyBrief({
     day: "numeric",
   }).format(new Date(data.generatedAt));
   const visibleGoals = allGoals ? brief.goals : brief.goals.slice(0, 5);
+  const queueRows = orderMorningQueueRows([
+    ...sections.flatMap((section) => section.rows),
+    ...brief.actions.map((action): FocusRow => ({
+      key: "action:" + action.id,
+      title: action.title,
+      detail: action.description || (action.dueDate ? "Due " + action.dueDate : "Saved action"),
+      label: action.status === "blocked" ? "Blocked" : "To-do",
+      kind: "action",
+      ...(action.source === "workspace" ? { recordId: action.id } : { href: "/client/todo" }),
+    })),
+    ...brief.upcoming.filter((item) => item.id.startsWith("appointment:") && item.date > brief.today).map((item): FocusRow => ({
+      key: item.id,
+      title: item.title,
+      detail: item.label + " · " + item.date,
+      label: "Upcoming",
+      kind: "appointment",
+      href: item.href,
+    })),
+  ], {
+    today: brief.today,
+    timeZone: validTimeZone(data.timeZone),
+    actions: brief.actions,
+    appointments: data.appointments,
+    connectedInvoices: data.connectedData?.invoices ?? [],
+    savedInvoices: workspace.records.filter((record) => record.kind === "invoice"),
+  });
 
   function openEditor(kind: RecordKind, record?: BusinessRecord) {
     if (addMenu.current) addMenu.current.open = false;
@@ -175,13 +217,14 @@ export function DailyBrief({
         </div>
       </div>
 
-      <div className="mt-3">
-        <FocusBriefCard
-          brief={focus}
-          greeting={`${greeting}${data.displayName ? `, ${data.displayName}` : ""}.`}
-        />
+      <h1 className="mt-5 text-[28px] font-semibold leading-tight tracking-[-0.045em] text-slate-950 sm:text-[34px]">{greeting}{data.displayName ? ", " + data.displayName : ""}.</h1>
+      <div className="mt-6 grid items-start gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
+        <div className="order-1 min-w-0 lg:order-none"><FocusBriefCard brief={focus} upcoming={brief.upcoming} today={brief.today} timeZone={validTimeZone(data.timeZone)} /></div>
+        <div className="order-3 min-w-0 lg:order-none"><MorningMetricCard key={data.workspace.workspaceScopeKey} data={data} preview={preview} /></div>
+        <div className="order-2 min-w-0 lg:order-none"><MorningWorkQueue key={data.workspace.workspaceScopeKey} approvals={inlineApprovals} appointments={data.appointments} timeZone={validTimeZone(data.timeZone)} rows={queueRows} scopeKey={data.workspace.workspaceScopeKey} now={data.generatedAt} onOpenRecord={setSelectedId} moreDecisionCount={hasInlineApprovals ? Math.max(0, data.counts.approvals - inlineApprovals.length) : 0} preview={preview} /></div>
+        <div className="order-4 min-w-0 lg:order-none"><HandledForYouCard data={data} preview={preview} /></div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:items-center">
+      <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:items-center">
         {!preview ? <Link href="/client/customer-work" className="hover:text-slate-800">Customer work</Link> : null}
         <Link
           href={preview ? "/preview/manager" : "/client/manager"}
@@ -197,10 +240,6 @@ export function DailyBrief({
           Open To-do
         </Link>
       </div>
-      <DailyWorkSections
-        sections={sections}
-        onOpenRecord={setSelectedId}
-      />
       {data.errors.length ? (
         <details className="mt-6 text-xs text-amber-800">
           <summary className="min-h-11 cursor-pointer py-3">What couldn’t be checked</summary>

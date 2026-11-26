@@ -33,11 +33,15 @@ export type DailyBriefData = {
   generatedAt: string;
   tasks: BriefTask[];
   appointments: BriefAppointment[];
+  canResolveApprovals?: boolean;
   approvals: {
     id: string;
     title: string;
     summary: string;
     created_at: string;
+    type?: string;
+    editable_content?: string | null;
+    proposed_payload?: Record<string, unknown> | null;
   }[];
   conversations: {
     id: string;
