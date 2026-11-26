@@ -1,0 +1,12 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { BrowserCiEnvironment, OwnerBrowserTarget, readOwnerBrowserSession, verifyObservedOwnerSession } from "./verify-owner-browser.mjs";
+export type OAuthWireResponse = { status: number; text(): Promise<string> };
+export type OAuthWireExpectation = { status: number; code?: string; begin?: boolean };
+export type OAuthWireResult = { status: number; body: Record<string, unknown> | null };
+export type OAuthHttpOwner = { label: "desktop" | "phone"; userId: string; clientId: string; membershipId: string; receiptId: string; marker: string; page: object; context: Parameters<typeof readOwnerBrowserSession>[0] & { request: { post(url: string, options: { headers: Record<string, string>; data: unknown; timeout: number }): Promise<{ status(): number; text(): Promise<string> }> } } };
+export type OAuthHttpScope = { fixture: { prefix: string; partnerId: string }; owners: OAuthHttpOwner[]; target: Pick<OwnerBrowserTarget, "appUrl" | "supabaseUrl" | "anonKey" | "serviceKey">; env: BrowserCiEnvironment };
+export type OAuthConflictHttpReport = { version: 1; status: "in_progress" | "passed" | "failed"; activeStep: string | null; checks: { key: string; status: "passed" | "failed" }[]; fixtureCleanup: "not_started" | "running" | "complete" | "failed"; cleanupRemaining: Record<string, number> | null; wire: { begin: string; finish: string; conflict: string; deletedAttempt: string; consume: string }; serviceRoleOnly: boolean; originalOwnerStateUnchanged: boolean; providerRequests: 0; modelCalls: 0; limitations: string[] };
+export function assertOAuthConflictHttpScope(options: OAuthHttpScope): void;
+export function readOAuthWireResponse(action: () => Promise<OAuthWireResponse>, expected: OAuthWireExpectation): Promise<OAuthWireResult>;
+export function collectOAuthConsumeRace(actions: (() => Promise<{ status: number; body: { id: string }[] }>)[]): Promise<{ status: number; body: { id: string }[] }[]>;
+export function runOAuthConflictHttp(options: OAuthHttpScope & { admin: SupabaseClient; readSession: typeof readOwnerBrowserSession; verifySession: typeof verifyObservedOwnerSession; phase?(label: string): Promise<void>; onProgress?(report: OAuthConflictHttpReport): Promise<void>; request?: typeof fetch }): Promise<OAuthConflictHttpReport>;

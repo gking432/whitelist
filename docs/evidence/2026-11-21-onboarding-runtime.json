@@ -1,0 +1,344 @@
+{
+  "version": 1,
+  "kind": "focused_owner_onboarding_runtime",
+  "verifiedAt": "2026-11-21",
+  "source": {
+    "repository": "gking432/whitelist",
+    "branch": "codex/v1-scenario-lab",
+    "sha": "280d0ecbdff7f51d1d2968bb1285ffe0e9431e1b",
+    "remoteMatched": true,
+    "workflowRun": 44955325558,
+    "workflowUrl": "https://github.com/gking432/whitelist/actions/runs/44955325558",
+    "jobs": [
+      {
+        "id": 137002168809,
+        "name": "containers (jobs, deploy/jobs.Dockerfile)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 137002168986,
+        "name": "application",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 137002169003,
+        "name": "containers (web, Dockerfile)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 137002169022,
+        "name": "desktop (windows)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 137002169044,
+        "name": "database",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 137002169045,
+        "name": "desktop (macos)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 137002169145,
+        "name": "containers (voice, services/voice-stream/Dockerfile)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 137002169180,
+        "name": "containers (connector-worker, deploy/connector-worker.Dockerfile)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 137002169190,
+        "name": "service-runtime",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "artifact": {
+    "id": 14726803830,
+    "sha256": "0e96d03d0fa0552545cdccc22f6a51f4f8e8ffe78b69bc081c56cec55fa4619d",
+    "githubDigestMatched": true,
+    "localPath": "/tmp/partner-onboarding-44955325558",
+    "pngCount": 70,
+    "individuallyReviewed": 70,
+    "reviewAllocation": {
+      "coordinatorDesktopOnboarding": 8,
+      "executionPublic": 25,
+      "businessPrivate": 22,
+      "ownerPhoneAndAssistant": 15
+    },
+    "materialVisualBlockers": []
+  },
+  "sourceChecks": {
+    "tests": 931,
+    "failures": 0,
+    "typecheck": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "reactReview": "passed"
+  },
+  "database": {
+    "reviewedMigrations": 106,
+    "migration": "20261121212831_owner_onboarding_progress.sql",
+    "migrationSha256": "ff4dd3ec75ce59d0f5563af51e79833f644b4d2e5de5e3af604bbc2797c796cb",
+    "rollbackGroups": 100,
+    "newOnboardingRollbackGroups": 11,
+    "actualTwoSessionCases": 18,
+    "newOnboardingCases": 4,
+    "catalog": {
+      "kind": "owner_onboarding_catalog",
+      "table": {
+        "rls": true,
+        "name": "owner_onboarding_progress",
+        "owner": "postgres",
+        "anonRead": false,
+        "policies": 0,
+        "serviceReadWrite": true,
+        "authenticatedRead": false,
+        "authenticatedWrite": false
+      },
+      "functions": [
+        {
+          "owner": "postgres",
+          "signature": "get_business_profile_snapshot(uuid,uuid)",
+          "anonExecute": false,
+          "configuration": [
+            "search_path=\"\""
+          ],
+          "publicExecute": false,
+          "serviceExecute": true,
+          "securityDefiner": false,
+          "authenticatedExecute": false
+        },
+        {
+          "owner": "postgres",
+          "signature": "get_owner_onboarding(uuid)",
+          "anonExecute": false,
+          "configuration": [
+            "search_path=\"\""
+          ],
+          "publicExecute": false,
+          "serviceExecute": true,
+          "securityDefiner": false,
+          "authenticatedExecute": true
+        },
+        {
+          "owner": "postgres",
+          "signature": "owner_onboarding.lock_profile_actor(uuid)",
+          "anonExecute": false,
+          "configuration": [
+            "search_path=\"\""
+          ],
+          "publicExecute": false,
+          "serviceExecute": true,
+          "securityDefiner": true,
+          "authenticatedExecute": false
+        },
+        {
+          "owner": "postgres",
+          "signature": "owner_onboarding.onboarding_snapshot(uuid)",
+          "anonExecute": false,
+          "configuration": [
+            "search_path=\"\""
+          ],
+          "publicExecute": false,
+          "serviceExecute": true,
+          "securityDefiner": true,
+          "authenticatedExecute": true
+        },
+        {
+          "owner": "postgres",
+          "signature": "owner_onboarding.save_onboarding(uuid,uuid,bigint,jsonb)",
+          "anonExecute": false,
+          "configuration": [
+            "search_path=\"\""
+          ],
+          "publicExecute": false,
+          "serviceExecute": true,
+          "securityDefiner": true,
+          "authenticatedExecute": true
+        },
+        {
+          "owner": "postgres",
+          "signature": "save_business_profile(uuid,uuid,uuid,uuid,text,jsonb)",
+          "anonExecute": false,
+          "configuration": [
+            "search_path=\"\""
+          ],
+          "publicExecute": false,
+          "serviceExecute": true,
+          "securityDefiner": false,
+          "authenticatedExecute": false
+        },
+        {
+          "owner": "postgres",
+          "signature": "save_owner_onboarding(uuid,uuid,bigint,jsonb)",
+          "anonExecute": false,
+          "configuration": [
+            "search_path=\"\""
+          ],
+          "publicExecute": false,
+          "serviceExecute": true,
+          "securityDefiner": false,
+          "authenticatedExecute": true
+        }
+      ]
+    },
+    "newCases": [
+      "existing context business holder can commit its actor FK while onboarding waits",
+      "legacy full profile winner rejects stale partial description",
+      "two owners share one profile token with separate private progress",
+      "actual preference holder releases actor before full-save business lock"
+    ],
+    "authTableGrantsAdded": false,
+    "broadDefinerAdded": false,
+    "fixtureCleanup": "complete"
+  },
+  "browser": {
+    "genuineEmailLogin": true,
+    "cookieInjection": false,
+    "sessionRefreshShortcut": false,
+    "originalUiStages": 24,
+    "newOnboardingGroups": 16,
+    "publicGroups": 25,
+    "foundationHttpGroups": 16,
+    "personalAssistantGroups": 14,
+    "oauthHttpGroups": 7,
+    "savedBackRefreshResumeAndMenu": true,
+    "explicitFactsReview": true,
+    "unknownsRetained": true,
+    "permissionsUnchanged": true,
+    "queryCannotClaimConnection": true,
+    "businessStatePreserved": true,
+    "cleanupStatus": "complete",
+    "remainingFixtures": 0,
+    "cleanupErrors": [],
+    "diagnostics": [],
+    "failurePhase": null,
+    "assistantLayoutFlags": {
+      "desktopOnboardingEditUnobscured": true,
+      "phoneContentClearance": true,
+      "phoneMoneyUnobscured": true,
+      "phoneTabScrollReset": true
+    },
+    "originalOAuthOwnerStateUnchanged": true,
+    "oauthTemporaryTableRemainingCounts": 0,
+    "sourceCanonicalRows": 18,
+    "ownerManagerSourcesMatch": true,
+    "sourceSandboxAndPaused": true,
+    "externalNetworkRequests": 0,
+    "modelCalls": 0,
+    "providerWrites": 0
+  },
+  "recovery": {
+    "security": "passed",
+    "restore": {
+      "tables": 104,
+      "rowCounts": "matched",
+      "rls": "matched",
+      "functions": "matched"
+    },
+    "releaseJourney": "passed",
+    "nativeInbound": {
+      "verified": true,
+      "externalActions": 0
+    },
+    "finalStackStop": "passed"
+  },
+  "supersededCheckpoint": {
+    "sha": "3e799cb2ab5d24f4ef5a70c901dee0806ac61a41",
+    "run": 44954737758,
+    "status": "cancelled_by_workflow_concurrency_after_new_source_push",
+    "notAccepted": true,
+    "passedBeforeCancellation": {
+      "nonDatabaseJobs": 8,
+      "reviewedMigrations": 106,
+      "rollbackGroups": 100,
+      "twoSessionCases": 18,
+      "newOnboardingGroups": 16
+    },
+    "artifact": 14726814761,
+    "sha256": "8559fcb857af5e77811ac525b298c9672e12c6e2da10cc027781384ce33d5049",
+    "localPath": "/tmp/partner-onboarding-44954737758",
+    "cleanupNotAccepted": true
+  },
+  "limits": [
+    "Isolated synthetic CI data and genuine disposable owner sign-in; not hosted operator commissioning or live provider consent/readback.",
+    "Hosted106 was applied and its catalog/preservation verified by supervisor only; post-upgrade live health, actual owner106 wizard use, provider consent/import and worker acceptance remain separate gates.",
+    "Original intermittent preference403 did not recur; its original cause remains unknown.",
+    "Older context-command/preference lock ordering remains a separate recorded finding; this package is not a global lock-domain repair.",
+    "No agent/chat connection, permission grant, worker heartbeat, production readiness, paid model, voice or billing acceptance is implied."
+  ],
+  "continuation": "No feature work. Complete the final documentation-only GitHub checkpoint and exact CI verification, send one coherent supervisor callback and STOP. Supervisor alone owns remaining live verification and the owner HTTPS link. Preserve unrelated docs44/gtm/output/sites.",
+  "supervisorIndependentAcceptance": {
+    "acceptedProductSource": "280d0ecbdff7f51d1d2968bb1285ffe0e9431e1b",
+    "exactWorkflowRun": 44955325558,
+    "allNineGates": "passed",
+    "remoteAndGithubRunMatched": true,
+    "artifactDigestVerified": true,
+    "localArtifactFilesByteMatched": true,
+    "parsedBrowserAndHttpGroups": 102,
+    "individuallyViewedCurrentPngs": 8,
+    "layoutMatchesOwnerRequest": true,
+    "independentMigrationStaticReview": "passed",
+    "atomicUpgradeRunnerReview": "passed"
+  },
+  "hostedSupervisorReceipt": {
+    "performedBy": "supervisor only; builder did not access or mutate hosted services",
+    "registryVersions": 106,
+    "currentMigration": "20261121212831_owner_onboarding_progress",
+    "originalMigrationVersionPreserved": true,
+    "prior105RegistryHistoryUnchanged": true,
+    "preservedOriginalPublicAndAuthSnapshotTables": 104,
+    "originalSnapshotRowsUnchanged": true,
+    "oldFunctionCatalogUnchanged": true,
+    "publicTableRlsAndAclUnchanged": true,
+    "authTableAclAndSchemaGrantsUnchanged": true,
+    "newFunctionBodiesExactlyComparedToReviewedSourceBeforeCommit": 7,
+    "newFunctionOwnersModesSearchPathsAndAclsVerified": true,
+    "newProgressTable": {
+      "private": true,
+      "rls": true,
+      "rows": 0
+    },
+    "businessProviderModelOrApprovalWritesByUpgrade": 0,
+    "migrationSha256": "ff4dd3ec75ce59d0f5563af51e79833f644b4d2e5de5e3af604bbc2797c796cb",
+    "preUpgradeBackup": {
+      "migrationCount": 105,
+      "tableDataEntries": 141,
+      "archiveSha256": "87fdb753cefbfa910eefed997bf7e699978396463a5e9956c80ebf8bb8415ef9",
+      "archiveHashVerified": true,
+      "archiveListVerified": true,
+      "fullSqlDecodeVerified": true,
+      "actualRestoreRehearsal": false,
+      "storage": "private ignored storage; archive contents, credentials and access details excluded"
+    },
+    "deployment": {
+      "id": "dpl_8k24tFmwcxxVpfM1tMuEJo7bPVQy",
+      "state": "READY",
+      "exactProductSource": "280d0ecbdff7f51d1d2968bb1285ffe0e9431e1b"
+    },
+    "postUpgradeLiveHealthAndMcpVerification": "finishing with supervisor; not yet accepted by this receipt",
+    "liveProviderConsentOrImportsAccepted": false,
+    "workerAcceptance": false,
+    "committedAtUtcMinute": "2026-11-21T22:22Z",
+    "actualHostedOwner106WizardUseAccepted": false
+  },
+  "evidencePublication": {
+    "kind": "final documentation-only checkpoint",
+    "productChanges": false,
+    "requiredAction": "Commit and push only these two evidence files, verify that exact final CI, then report its SHA/run/artifact in the completion callback. Do not make another update merely to insert this checkpoint own SHA."
+  }
+}

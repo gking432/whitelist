@@ -1,0 +1,242 @@
+{
+  "sourceSha": "141813b947255b6b70542c92bd8034b1b5b62fb7",
+  "runId": 44914656219,
+  "runUrl": "https://github.com/gking432/whitelist/actions/runs/44914656219",
+  "databaseJobId": 136877563793,
+  "artifactId": 14710914950,
+  "artifactDirectory": "/tmp/partner-personal-assistant-44914656219",
+  "sourceChecks": {
+    "tests": 797,
+    "failures": 0,
+    "typecheck": "passed",
+    "lint": "passed"
+  },
+  "ci": {
+    "allNineSucceeded": true,
+    "migrations": 104,
+    "rollbackGroups": 81,
+    "realTwoSessionCases": 13,
+    "restoreTables": 103,
+    "security": "passed",
+    "release": "passed",
+    "nativeInboundExternalActions": 0,
+    "finalStackStop": "passed"
+  },
+  "catalog": {
+    "kind": "personal_assistant_catalog",
+    "table": {
+      "name": "owner_personal_assistant_preferences",
+      "owner": "postgres",
+      "rls": true,
+      "policies": 0,
+      "anonRead": false,
+      "authenticatedRead": false,
+      "authenticatedWrite": false,
+      "serviceReadWrite": true
+    },
+    "functions": [
+      {
+        "signature": "get_owner_personal_assistant(uuid)",
+        "owner": "postgres",
+        "securityDefiner": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": true,
+        "serviceExecute": true
+      },
+      {
+        "signature": "owner_onboarding.personal_assistant(uuid)",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": true,
+        "serviceExecute": true
+      },
+      {
+        "signature": "owner_onboarding.save_personal_assistant(uuid,uuid,bigint,jsonb)",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": true,
+        "serviceExecute": true
+      },
+      {
+        "signature": "save_owner_personal_assistant(uuid,uuid,bigint,jsonb)",
+        "owner": "postgres",
+        "securityDefiner": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "anonExecute": false,
+        "authenticatedExecute": true,
+        "serviceExecute": true
+      }
+    ]
+  },
+  "browser": {
+    "status": "passed",
+    "originalUiStages": 24,
+    "foundationHttpGroups": 16,
+    "personalAssistant": {
+      "version": 1,
+      "status": "passed",
+      "activeStep": null,
+      "checks": [
+        {
+          "key": "desktop: optional scoped preference without setup effects",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: skip save reload and explicit assistant choices",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: actual compare-and-swap exact replay and stale tab denial",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: private table and private schema unavailable to browser JWT",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: viewer and revoked membership cannot read or save",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: explicit final choice retained for re-login",
+          "status": "passed"
+        },
+        {
+          "key": "phone: optional scoped preference without setup effects",
+          "status": "passed"
+        },
+        {
+          "key": "phone: skip save reload and explicit assistant choices",
+          "status": "passed"
+        },
+        {
+          "key": "phone: actual compare-and-swap exact replay and stale tab denial",
+          "status": "passed"
+        },
+        {
+          "key": "phone: private table and private schema unavailable to browser JWT",
+          "status": "passed"
+        },
+        {
+          "key": "phone: viewer and revoked membership cannot read or save",
+          "status": "passed"
+        },
+        {
+          "key": "phone: explicit final choice retained for re-login",
+          "status": "passed"
+        },
+        {
+          "key": "shared business membership keeps each actor's private choice separate",
+          "status": "passed"
+        },
+        {
+          "key": "preferences leave authority connections queues and model accounting unchanged",
+          "status": "passed"
+        }
+      ],
+      "fixtureCleanup": "complete",
+      "retainedPreferencesForRelogin": true,
+      "modelCalls": false,
+      "providerWrites": false,
+      "phoneContentClearance": true,
+      "phoneMoneyUnobscured": true,
+      "phoneTabScrollReset": true,
+      "owners": [
+        {
+          "label": "desktop",
+          "preferences": {
+            "answer": "yes",
+            "assistant": "muse",
+            "revision": 6
+          }
+        },
+        {
+          "label": "phone",
+          "preferences": {
+            "answer": "yes",
+            "assistant": "grok",
+            "revision": 6
+          }
+        }
+      ],
+      "limitations": [
+        "Preferences and unavailable/setup-needed launchers only; no assistant conversation, OAuth connection, voice, model or billing operation.",
+        "Private-schema HTTP rejection proves the schema is not exposed; public wrappers are exercised with the genuine signed-in user's JWT.",
+        "The call-surface collision check uses a labelled presentation-only DOM fixture, not a live call.",
+        "Temporary membership/role fixtures are cleaned here; primary private preferences remain for re-login and are removed by the runner's exact business/user cleanup."
+      ]
+    },
+    "cleanupStatus": "complete",
+    "remainingFixtures": 0,
+    "cleanupErrors": [],
+    "diagnostics": [],
+    "failurePhase": null,
+    "reviewedPngCount": 29,
+    "normalEmailCookieAndCurrentSessionRpc": true,
+    "distinctReloginAndSwitchSessionProof": true,
+    "displayedPrivateChoiceAfterReloginAndSwitch": true
+  },
+  "sourceFixtures": {
+    "queuedJobs": 66,
+    "canonicalRows": 18,
+    "externalNetworkRequests": 0,
+    "ownerManagerSourcesMatch": true,
+    "sandboxAndStoppedAuthorityPreserved": true
+  },
+  "priorAttempt": {
+    "sourceSha": "2d7e6da54191175348edc68b132431e9b97f246e",
+    "runId": 44912878637,
+    "artifactId": 14710477456,
+    "functionalAllNineSucceeded": true,
+    "visualAcceptance": "failed",
+    "finding": "Phone floating launcher obscured payment/refund values and preference controls. Scrolling recovered them, but this was not visually accepted.",
+    "correction": "Dedicated mobile dock outside scrolling business content; actual rectangle/five-point hit tests and active-tab scroll reset now required."
+  },
+  "limits": [
+    "Actual isolated PostgreSQL/Auth/API/browser evidence; not hosted deployment or live provider acceptance.",
+    "Selection is a private preference, not OAuth, agent connectivity, embedded conversation or working chat.",
+    "No new paid model, provider, voice, billing or campaign operation. Existing accounting is daily tokens, not implemented subscription dollar caps.",
+    "Future MCP access and genuine in-workstation conversation require separate verification and owner authorization.",
+    "Source transport, accounts and layout-call DOM collision fixture are synthetic; no illustrative quote/follow-up customer history was seeded.",
+    "The earlier unrelated phone preference403 did not recur; no causal repair or healing is claimed.",
+    "Owner personal review, hosted authorized connections/background sync and a real proposal-to-approved-provider-receipt journey remain separate live gates."
+  ],
+  "evidenceCheckpoint": {
+    "sourceSha": "b23cc37ad4348ad6ba499da52f805267df5f5cff",
+    "runId": 44915834051,
+    "runUrl": "https://github.com/gking432/whitelist/actions/runs/44915834051",
+    "firstAttempt": {
+      "databaseJobId": 136881121175,
+      "otherEightJobs": "passed",
+      "database": "image-registry failure before migrations",
+      "diagnostic": "Data limit exceeded",
+      "sqlAndBrowserRan": false
+    },
+    "targetedDatabaseRerun": {
+      "databaseJobId": 136882551428,
+      "status": "passed",
+      "allNineSucceeded": true,
+      "artifactId": 14711654262,
+      "artifactDirectory": "/tmp/partner-personal-assistant-44915834051",
+      "sourcePinsTimeoutsAndAssertionsUnchanged": true
+    },
+    "interpretation": "Infrastructure recovery only; original failure retained. Application implementation and inspected visual evidence are the source run recorded above."
+  }
+}

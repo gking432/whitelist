@@ -200,7 +200,7 @@ export default async function ClientReportsPage({ params }: PageProps) {
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => (
-          <Card key={card.label} className="shadow-none">
+          <Card key={card.label}>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 {card.label}
@@ -240,7 +240,7 @@ export default async function ClientReportsPage({ params }: PageProps) {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[40rem] text-left text-sm">
-              <thead className="border-b bg-secondary/40 text-xs text-muted-foreground">
+              <thead className="border-b text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-4 py-3 font-medium">Runs</th>

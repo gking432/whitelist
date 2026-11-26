@@ -1,0 +1,208 @@
+{
+  "sourceSha": "2cd35c46ca14f3f1d54708ba78318c00f02e962f",
+  "runId": 44449757765,
+  "runUrl": "https://github.com/gking432/whitelist/actions/runs/44449757765",
+  "databaseJobId": 135310528590,
+  "artifactId": 14494997242,
+  "sourceChecks": {
+    "unitTests": 771,
+    "failures": 0,
+    "typecheck": "passed",
+    "lint": "passed"
+  },
+  "ci": {
+    "requiredJobs": 9,
+    "allSucceeded": true,
+    "migrations": 103,
+    "rollbackGroups": 72,
+    "realTwoSessionCases": 12,
+    "restoreTables": 102,
+    "nativeInboundExternalActions": 0
+  },
+  "catalog": {
+    "kind": "owner_foundation_catalog",
+    "trigger": {
+      "name": "guard_approval_authority_decision",
+      "enabled": "O",
+      "function": "owner_onboarding.guard_approval_authority_decision()"
+    },
+    "functions": [
+      {
+        "owner": "postgres",
+        "signature": "apply_business_context_command(uuid,uuid,uuid,jsonb)",
+        "anonExecute": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "serviceExecute": true,
+        "securityDefiner": false,
+        "authenticatedExecute": false
+      },
+      {
+        "owner": "postgres",
+        "signature": "enqueue_approved_action()",
+        "anonExecute": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "serviceExecute": true,
+        "securityDefiner": true,
+        "authenticatedExecute": false
+      },
+      {
+        "owner": "postgres",
+        "signature": "guard_approval_resolution()",
+        "anonExecute": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "serviceExecute": true,
+        "securityDefiner": false,
+        "authenticatedExecute": false
+      },
+      {
+        "owner": "postgres",
+        "signature": "guard_invoice_followup_approval()",
+        "anonExecute": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "serviceExecute": true,
+        "securityDefiner": false,
+        "authenticatedExecute": false
+      },
+      {
+        "owner": "postgres",
+        "signature": "owner_onboarding.guard_approval_authority_decision()",
+        "anonExecute": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "serviceExecute": true,
+        "securityDefiner": true,
+        "authenticatedExecute": false
+      },
+      {
+        "owner": "postgres",
+        "signature": "stamp_approval_authority()",
+        "anonExecute": false,
+        "configuration": [
+          "search_path=\"\""
+        ],
+        "publicExecute": false,
+        "serviceExecute": true,
+        "securityDefiner": false,
+        "authenticatedExecute": false
+      }
+    ]
+  },
+  "browser": {
+    "status": "passed",
+    "uiStages": 24,
+    "foundationHttp": {
+      "version": 1,
+      "status": "passed",
+      "activeStep": null,
+      "checks": [
+        {
+          "key": "desktop: genuine session and scoped foundation",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: reviewed context receipt and stale source",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: authority compare and swap and exact receipt",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: consumed approval API decisions and conflict",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: current membership role denies approval",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: owner decision UI consumes JSON route",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: valid native proposal rejects stale authority",
+          "status": "passed"
+        },
+        {
+          "key": "desktop: restore full profile and stopped authority",
+          "status": "passed"
+        },
+        {
+          "key": "phone: genuine session and scoped foundation",
+          "status": "passed"
+        },
+        {
+          "key": "phone: reviewed context receipt and stale source",
+          "status": "passed"
+        },
+        {
+          "key": "phone: authority compare and swap and exact receipt",
+          "status": "passed"
+        },
+        {
+          "key": "phone: consumed approval API decisions and conflict",
+          "status": "passed"
+        },
+        {
+          "key": "phone: current membership role denies approval",
+          "status": "passed"
+        },
+        {
+          "key": "phone: owner decision UI consumes JSON route",
+          "status": "passed"
+        },
+        {
+          "key": "phone: valid native proposal rejects stale authority",
+          "status": "passed"
+        },
+        {
+          "key": "phone: restore full profile and stopped authority",
+          "status": "passed"
+        }
+      ],
+      "fixtureCleanup": "complete",
+      "providerWrites": false,
+      "limitations": [
+        "Synthetic disposable fixtures and genuine owner sessions only; no live provider or model request.",
+        "App approval races use HTTP200/409; a raw pending-filter PATCH returning no rows is a different boundary."
+      ]
+    },
+    "cleanupStatus": "complete",
+    "remainingFixtures": 0,
+    "cleanupErrors": [],
+    "diagnostics": [],
+    "failurePhase": null,
+    "reviewedPngCount": 22,
+    "normalEmailLoginAndObservedCookieRpc": true,
+    "distinctReloginAndSwitchedSession": true
+  },
+  "sourceTransport": {
+    "queuedJobs": 66,
+    "canonicalRecords": 18,
+    "externalNetworkRequests": 0,
+    "ownerManagerSourcesMatch": true,
+    "sandboxAndPausedAuthorityPreserved": true
+  },
+  "limits": [
+    "Disposable actual PostgreSQL/Auth/browser acceptance only; not hosted project acceptance.",
+    "Provider transport, recommendation dates and test source data are synthetic; no live OAuth/provider/model/customer action.",
+    "One explicit disposable conversations_enabled prerequisite was restored; production APIs are not claimed to enable it.",
+    "The prior phone403 did not recur; no causal repair is claimed.",
+    "Unrelated intake/lifecycle/calendar/rebooking/money-preparer/HubSpot/OAuth/config semantic40001 domains remain parked.",
+    "All workers returned/stopped; recurring supervision remains off; callback then stop for owner review."
+  ]
+}

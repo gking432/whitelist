@@ -65,7 +65,9 @@ schema_paths = []
 
 [db.seed]
 # If enabled, seeds the database after migrations during a db reset.
-enabled = true
+# Inspection-account seeds are opt-in. CI builds its own isolated fixtures and
+# must not start with the ordinary workspace rows in seed.sql.
+enabled = false
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
 sql_paths = ["./seed.sql"]
@@ -102,6 +104,8 @@ openai_api_key = "env(OPENAI_API_KEY)"
 
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
+# The lockfile installs CLI 2.107.0. Before 2.108 this section is named inbucket;
+# migrate it together with an intentional CLI upgrade, never setup-cli latest.
 [inbucket]
 enabled = true
 # Port to use for the email testing server web interface.

@@ -2,6 +2,10 @@ import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 
 import { requireAuthenticatedUser } from "@/lib/auth/session";
+import {
+  DEFAULT_BRAND_COLORS,
+  normalizeBrandColor,
+} from "@/lib/branding";
 import type { ClientBusinessRecord } from "@/lib/clients/constants";
 import {
   isAccessError,
@@ -9,9 +13,15 @@ import {
 } from "@/lib/permissions/access";
 import type { AccessContext } from "@/lib/permissions/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { notifyContextFailure, type ContextDiagnosticObserver } from "../auth/context-diagnostics.ts";
 
 export type PortalBranding = {
   partnerName: string;
+  productName: string;
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
   supportLabel: string;
   supportEmail: string | null;
   supportPhone: string | null;
@@ -31,15 +41,16 @@ export type ClientPortal =
 
 // Memoized per request; the portal layout and pages share one access check.
 // The client scope always comes from the signed-in user's membership.
-export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
-  const user = await requireAuthenticatedUser("/client");
+export const loadClientPortal = cache(async (observer?: ContextDiagnosticObserver): Promise<ClientPortal> => {
+  const user = await requireAuthenticatedUser("/client", observer);
 
   let access: AccessContext;
 
   try {
-    access = await requirePrimaryClientAccess(user.id);
+    access = await requirePrimaryClientAccess(user.id, undefined, observer);
   } catch (error) {
     if (isAccessError(error)) {
+      notifyContextFailure(observer, "portal_access", error.code === "ACCESS_DENIED" ? "denied" : "unavailable", error, error.status);
       return error.code === "ACCESS_DENIED"
         ? { kind: "denied" }
         : { kind: "unavailable" };
@@ -51,6 +62,7 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
   const supabase = await createSupabaseServerClient();
 
   if (!supabase || !access.clientId || !access.partnerId) {
+    notifyContextFailure(observer, "configuration", "unavailable");
     return { kind: "unavailable" };
   }
 
@@ -59,7 +71,11 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
       .from("client_businesses")
       .select("*")
       .eq("id", access.clientId)
-      .maybeSingle(),
+      .maybeSingle()
+      .then((result) => result, (error: unknown) => {
+        notifyContextFailure(observer, "portal_client", "unavailable", error);
+        throw error;
+      }),
     supabase
       .from("partners")
       .select("name, support_email, support_phone")
@@ -67,12 +83,15 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
       .maybeSingle(),
     supabase
       .from("partner_branding")
-      .select("support_label, report_footer_text")
+      .select(
+        "product_name, logo_url, primary_color, secondary_color, accent_color, support_label, report_footer_text",
+      )
       .eq("partner_id", access.partnerId)
       .maybeSingle(),
   ]);
 
   if (clientResult.error || !clientResult.data) {
+    notifyContextFailure(observer, "portal_client", clientResult.error ? "unavailable" : "denied", clientResult.error, clientResult.status);
     return { kind: "unavailable" };
   }
 
@@ -86,6 +105,22 @@ export const loadClientPortal = cache(async (): Promise<ClientPortal> => {
     client: clientResult.data as ClientBusinessRecord,
     branding: {
       partnerName: partner?.name ?? "Your service partner",
+      productName:
+        branding?.product_name ??
+        `${partner?.name ?? "Your service partner"} CRM`,
+      logoUrl: branding?.logo_url ?? null,
+      primaryColor: normalizeBrandColor(
+        branding?.primary_color,
+        DEFAULT_BRAND_COLORS.primary,
+      ),
+      secondaryColor: normalizeBrandColor(
+        branding?.secondary_color,
+        DEFAULT_BRAND_COLORS.secondary,
+      ),
+      accentColor: normalizeBrandColor(
+        branding?.accent_color,
+        DEFAULT_BRAND_COLORS.accent,
+      ),
       supportLabel: branding?.support_label ?? partner?.name ?? "Support",
       supportEmail: partner?.support_email ?? null,
       supportPhone: partner?.support_phone ?? null,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,13 +12,26 @@ type ApprovalResolutionFormProps = {
   action: (previousState: FormState, formData: FormData) => Promise<FormState>;
   editableContent: string | null;
   consequence: string;
+  allowEdit?: boolean;
+  inline?: boolean;
+  approveLabel?: string;
+  compact?: boolean;
+  expanded?: boolean;
+  onDraftChange?: (value: string) => void;
 };
 
 export function ApprovalResolutionForm({
   action,
   editableContent,
   consequence,
+  allowEdit = true,
+  inline = false,
+  approveLabel = "Approve",
+  compact = false,
+  expanded = true,
+  onDraftChange,
 }: ApprovalResolutionFormProps) {
+  const formId = useId();
   const [state, formAction, isPending] = useActionState(
     action,
     initialFormState,
@@ -36,7 +49,7 @@ export function ApprovalResolutionForm({
   }
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} className={compact ? "space-y-3" : "space-y-4"}>
       {state.status === "error" && state.message ? (
         <div
           role="alert"
@@ -47,45 +60,48 @@ export function ApprovalResolutionForm({
       ) : null}
 
       {editableContent !== null ? (
-        <div>
-          <Label htmlFor="edited_content">Message content</Label>
+        <div hidden={compact && !expanded}>
+          <Label htmlFor={`${formId}-content`}>Message content</Label>
           <Textarea
-            id="edited_content"
+            id={`${formId}-content`}
             name="edited_content"
             className="mt-1.5"
             defaultValue={editableContent}
+            onChange={(event) => onDraftChange?.(event.target.value)}
+            readOnly={!allowEdit}
             rows={4}
           />
           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-            Use “Edit &amp; approve” to approve your edited version above.
+            {allowEdit ? (inline ? "You can edit the draft before approving." : "Use “Edit & approve” to approve your edited version above.") : "Review this exact source-backed proposal. To change its content, reject it and prepare a fresh review."}
           </p>
         </div>
       ) : null}
 
-      <div>
-        <Label htmlFor="note">Resolution note (optional)</Label>
+      {!inline ? <div>
+        <Label htmlFor={`${formId}-note`}>Resolution note (optional)</Label>
         <Input
-          id="note"
+          id={`${formId}-note`}
           name="note"
           className="mt-1.5"
           placeholder="Reason or context for this decision"
         />
-      </div>
+      </div> : null}
 
-      <p className="rounded-md border bg-secondary/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+      <p className={compact ? "text-xs leading-5 text-slate-500" : "rounded-md border bg-secondary/40 px-3 py-2 text-xs leading-5 text-muted-foreground"}>
         {consequence}
       </p>
 
       <div className="flex flex-wrap gap-2">
         <Button
           type="submit"
+          data-primary-action
           name="resolution"
           value="approve"
           disabled={isPending}
         >
-          Approve
+          {isPending && inline ? "Saving decision…" : approveLabel}
         </Button>
-        {editableContent !== null ? (
+        {editableContent !== null && allowEdit && !inline ? (
           <Button
             type="submit"
             name="resolution"

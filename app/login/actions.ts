@@ -12,7 +12,7 @@ export async function requestLoginLink(
   const emailValue = formData.get("email");
   const email =
     typeof emailValue === "string" ? emailValue.trim().toLowerCase() : "";
-  const nextPath = toSafeNextPath(formData.get("next"));
+  const nextPath = toSafeNextPath(formData.get("next"), "/start");
 
   if (!email || !email.includes("@")) {
     return {
@@ -30,13 +30,14 @@ export async function requestLoginLink(
     };
   }
 
-  const callbackUrl = new URL("/auth/callback", getAppUrl());
+  const callbackUrl = new URL("/auth/confirm", getAppUrl());
   callbackUrl.searchParams.set("next", nextPath);
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
       emailRedirectTo: callbackUrl.toString(),
+      shouldCreateUser: true,
     },
   });
 

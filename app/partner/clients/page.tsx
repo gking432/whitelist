@@ -96,6 +96,8 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
     .from("client_businesses")
     .select("*")
     .eq("partner_id", partnerId)
+    .eq("account_kind", "managed_client")
+    .eq("is_test_account", false)
     .order("name", { ascending: true });
 
   clientsQuery = statusFilter
@@ -143,7 +145,7 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
       <div className="space-y-6">
         <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Client businesses</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Client businesses</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Manage the businesses operating under this partner organization.
             </p>
@@ -170,10 +172,10 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
                 key={filter.label}
                 href={href}
                 className={cn(
-                  "rounded-md border px-3 py-1.5 text-xs font-medium transition",
+                  "rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
                   isActive
                     ? "border-primary bg-primary text-primary-foreground"
-                    : "bg-background text-muted-foreground hover:bg-secondary",
+                    : "bg-card text-muted-foreground hover:bg-secondary",
                 )}
               >
                 {filter.label}
@@ -184,7 +186,7 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
 
         {clients.length === 0 ? (
           <section className="flex min-h-72 flex-col items-center justify-center rounded-lg border bg-card px-6 py-12 text-center">
-            <div className="flex size-11 items-center justify-center rounded-md bg-secondary text-primary">
+            <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <UsersRound className="size-5" aria-hidden="true" />
             </div>
             <h2 className="mt-4 font-semibold">
@@ -210,7 +212,7 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
           <section className="overflow-hidden rounded-lg border bg-card">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[64rem] text-left text-sm">
-                <thead className="border-b bg-secondary/40 text-xs text-muted-foreground">
+                <thead className="border-b text-[11px] uppercase tracking-wider text-muted-foreground">
                   <tr>
                     <th className="px-5 py-3 font-medium">Client</th>
                     <th className="px-4 py-3 font-medium">Status</th>

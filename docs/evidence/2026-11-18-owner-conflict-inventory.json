@@ -1,0 +1,2268 @@
+{
+  "baseline_head": "eea134b3a4d9d17df7017d0ef5b3ae3ac671cdf6",
+  "evidence": "Source-resolved static inventory only; no DB/provider/hosted calls. Sorted committed migrations resolve full input-type signatures, retaining CREATE OR REPLACE ACLs; obsolete bodies excluded.",
+  "owner_resolution": "No ALTER FUNCTION OWNER statements exist in committed migrations. Functions retain creation migration-executor ownership on replacement. Actual pg_proc.proowner must be asserted in isolated CI; no live/catalog ownership claim.",
+  "grant_resolution": "Source EXECUTE ACL from explicit GRANT/REVOKE, schema-wide grants, default service_role EXECUTE and literal-name pg_proc ACL loops. All remaining public semantic raisers are service_role-only directly; authenticated approval table operations invoke trigger guards under preserved RLS. No new grants proposed.",
+  "counts": {
+    "effective_function_signatures": 194,
+    "explicit_semantic_40001_function_signatures": 29,
+    "explicit_semantic_40001_raises": 126,
+    "private_raises_already_public_wrapped": 3,
+    "remaining_public_raises": 123,
+    "proposed_literal_foundation_functions": 4,
+    "proposed_literal_foundation_raises": 12
+  },
+  "implemented_prior": [
+    "public.provision_first_owner(uuid,jsonb)",
+    "public.save_owner_workspace_preferences(uuid,uuid,bigint,jsonb)"
+  ],
+  "transient_policy": {
+    "explicit_semantic_raise": "Translate only approved deterministic RAISE literals to PT409; expected refresh/review, not automatic transaction replay.",
+    "backend_40001": "True backend serialization failure is NOT reclassified by new foundation proposal; caller must keep unexpected/server-failure treatment. Existing two prior public wrappers broadly catch40001 are documented separately, not changed here.",
+    "backend_40P01": "Deadlock remains backend failure; no catch/translation proposed.",
+    "source_scan": "No explicit40P01/deadlock_detected raises/catches in baseline migrations; true backend conditions can occur independently of textual literals."
+  },
+  "scope_and_stop": "Prior stop checkpoint preserved historically; fresh human resume authorizes ONLY the current context/authority/approval foundation. All unrelated domains remain parked.",
+  "unfinished_risks": [
+    "New generic approval authority guard is source-proposed in this resumed scope, not yet isolated SQL/HTTP/lock-order proof. Actual catalog owners/ACLs are reported only when CI executes.",
+    "Authenticated status=pending conditional PATCH race loser is HTTP200 with zero rows; owner JSON/API may expose an application409. Do not claim raw PostgREST409 for zero-row PATCH.",
+    "Default P0001 guard_approval_resolution/guard_external_action_edit history conflicts require explicit per-clause policy decision; not a global P0001 replacement.",
+    "Earlier private3 raises are already wrapped by two public owner RPCs. Public source-prep/lifecycle semantic raises remain PostgREST14 pilot blockers outside approved scope.",
+    "Static metadata cannot prove actual deployed owner/ACL/search_path; isolated CI must inspect pg_proc, policies and actual HTTP behavior."
+  ],
+  "foundation_callers": [
+    {
+      "file": "app/api/business/context/route.ts",
+      "line": 44,
+      "role": "fresh authenticated owner browser; server calls service_role apply_business_context_command after same-origin+workspace-write checks"
+    },
+    {
+      "file": "lib/approvals/resolve.ts",
+      "line": 121,
+      "role": "authenticated user Supabase client; approval_items pending-filter UPDATE under RLS, dispatch/audit only after success"
+    },
+    {
+      "file": "app/client/approvals/actions.ts",
+      "line": 53,
+      "role": "owner server action using same authenticated client"
+    },
+    {
+      "file": "app/partner/clients/[clientId]/approvals/actions.ts",
+      "line": 46,
+      "role": "partner server action using same scoped resolver"
+    }
+  ],
+  "rls": [
+    {
+      "table": "public.approval_items",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20260702100200_goal_8_approvals.sql",
+        "line": 54
+      },
+      "policies": [
+        {
+          "name": "approval_items_select_accessible",
+          "table": "public.approval_items",
+          "sql": "create policy approval_items_select_accessible on public.approval_items for select to authenticated\nusing (public.current_user_has_platform_role() or public.current_user_has_partner_role(partner_id)\n  or (public.current_user_client_sections(client_id,array['approvals','action-center'])\n    and (public.current_user_has_client_role(client_id,array['client_owner','client_manager']::public.membership_role[]) or assigned_to=auth.uid())));",
+          "source": {
+            "file": "supabase/migrations/20260904110000_beta_security_boundaries.sql",
+            "line": 178
+          }
+        },
+        {
+          "name": "approval_items_update_resolvers",
+          "table": "public.approval_items",
+          "sql": "create policy approval_items_update_resolvers on public.approval_items for update to authenticated\nusing ((public.current_user_client_permission(client_id,'resolve_approvals')\n  and (public.current_user_has_client_role(client_id,array['client_owner','client_manager']::public.membership_role[]) or assigned_to=auth.uid()))\n  or public.current_user_agency_operator(partner_id,client_id))\nwith check ((public.current_user_client_permission(client_id,'resolve_approvals')\n  and (public.current_user_has_client_role(client_id,array['client_owner','client_manager']::public.membership_role[]) or assigned_to=auth.uid()))\n  or public.current_user_agency_operator(partner_id,client_id));",
+          "source": {
+            "file": "supabase/migrations/20260904110000_beta_security_boundaries.sql",
+            "line": 184
+          }
+        }
+      ]
+    },
+    {
+      "table": "public.action_jobs",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20260705150000_action_jobs.sql",
+        "line": 31
+      },
+      "policies": [
+        {
+          "name": "action_jobs_select_scoped",
+          "table": "public.action_jobs",
+          "sql": "create policy \"action_jobs_select_scoped\"\non public.action_jobs\nfor select\nto authenticated\nusing (\n  public.current_user_has_platform_role()\n  or public.current_user_has_partner_role(partner_id)\n  or public.current_user_has_partner_client_role(partner_id, client_id)\n);",
+          "source": {
+            "file": "supabase/migrations/20260705150000_action_jobs.sql",
+            "line": 35
+          }
+        }
+      ]
+    },
+    {
+      "table": "public.business_owner_commands",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20261117030202_reviewed_business_authority.sql",
+        "line": 21
+      },
+      "policies": []
+    },
+    {
+      "table": "public.business_context_reviews",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20261117030202_reviewed_business_authority.sql",
+        "line": 20
+      },
+      "policies": []
+    },
+    {
+      "table": "public.integration_connections",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20260702100000_goal_4_integration_foundation.sql",
+        "line": 118
+      },
+      "policies": [
+        {
+          "name": "integration_connections_select_accessible",
+          "table": "public.integration_connections",
+          "sql": "create policy \"integration_connections_select_accessible\"\non public.integration_connections\nfor select\nto authenticated\nusing (\n  public.current_user_has_platform_role()\n  or public.current_user_has_partner_role(partner_id)\n  or public.current_user_has_client_role(client_id)\n);",
+          "source": {
+            "file": "supabase/migrations/20260702100000_goal_4_integration_foundation.sql",
+            "line": 128
+          }
+        },
+        {
+          "name": "integration_connections_insert_authorized",
+          "table": "public.integration_connections",
+          "sql": "create policy \"integration_connections_insert_authorized\"\non public.integration_connections\nfor insert\nto authenticated\nwith check (\n  public.current_user_has_platform_role(array[\n    'platform_owner',\n    'platform_admin'\n  ]::public.membership_role[])\n  or public.current_user_has_partner_role(partner_id, array[\n    'partner_owner',\n    'partner_admin',\n    'partner_implementer'\n  ]::public.membership_role[])\n);",
+          "source": {
+            "file": "supabase/migrations/20260702100000_goal_4_integration_foundation.sql",
+            "line": 138
+          }
+        },
+        {
+          "name": "integration_connections_update_authorized",
+          "table": "public.integration_connections",
+          "sql": "create policy \"integration_connections_update_authorized\"\non public.integration_connections\nfor update\nto authenticated\nusing (\n  public.current_user_has_platform_role(array[\n    'platform_owner',\n    'platform_admin'\n  ]::public.membership_role[])\n  or public.current_user_has_partner_role(partner_id, array[\n    'partner_owner',\n    'partner_admin',\n    'partner_implementer'\n  ]::public.membership_role[])\n)\nwith check (\n  public.current_user_has_platform_role(array[\n    'platform_owner',\n    'platform_admin'\n  ]::public.membership_role[])\n  or public.current_user_has_partner_role(partner_id, array[\n    'partner_owner',\n    'partner_admin',\n    'partner_implementer'\n  ]::public.membership_role[])\n);",
+          "source": {
+            "file": "supabase/migrations/20260702100000_goal_4_integration_foundation.sql",
+            "line": 154
+          }
+        }
+      ]
+    },
+    {
+      "table": "public.integration_canonical_records",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20260811111000_canonical_integration_records.sql",
+        "line": 40
+      },
+      "policies": [
+        {
+          "name": "integration_canonical_records_select_scoped",
+          "table": "public.integration_canonical_records",
+          "sql": "create policy \"integration_canonical_records_select_scoped\"\non public.integration_canonical_records for select to authenticated\nusing (\n  public.current_user_has_platform_role()\n  or public.current_user_has_partner_role(partner_id)\n  or public.current_user_has_client_role(client_id, array[\n    'client_owner', 'client_manager'\n  ]::public.membership_role[])\n);",
+          "source": {
+            "file": "supabase/migrations/20260811111000_canonical_integration_records.sql",
+            "line": 42
+          }
+        }
+      ]
+    },
+    {
+      "table": "public.business_agent_activation",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20261009014610_business_agent_activation.sql",
+        "line": 15
+      },
+      "policies": []
+    },
+    {
+      "table": "public.booking_change_offers",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+        "line": 26
+      },
+      "policies": []
+    },
+    {
+      "table": "public.owner_workspace_preferences",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20261118051339_owner_workspace_preferences.sql",
+        "line": 18
+      },
+      "policies": []
+    },
+    {
+      "table": "public.owner_workspace_activity",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20261118051339_owner_workspace_preferences.sql",
+        "line": 19
+      },
+      "policies": []
+    },
+    {
+      "table": "public.agent_team_settings",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20261003144749_agent_team_execution.sql",
+        "line": 49
+      },
+      "note": "Dynamic table loop enables RLS; direct authenticated SELECT only under scoped owner policy; service_role operational writes."
+    },
+    {
+      "table": "public.business_workspace_profiles",
+      "enabled": true,
+      "source": {
+        "file": "supabase/migrations/20261003033634_business_workspace.sql",
+        "line": 40
+      },
+      "note": "Dynamic table loop enables RLS, authenticated SELECT through business_owner_read, service_role writes."
+    }
+  ],
+  "functions": [
+    {
+      "signature": "owner_onboarding.provision(uuid,jsonb)",
+      "name": "owner_onboarding.provision",
+      "arguments": "p_key uuid,p_business jsonb",
+      "source": {
+        "file": "supabase/migrations/20261118034811_first_owner_workspace.sql",
+        "line": 123
+      },
+      "security": "definer",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 145,
+          "raise": "raise exception 'This account already created a workspace. Open its existing business instead of creating another' using errcode='40001';",
+          "condition_excerpt": "if not found then raise exception 'This sign-in session ended. Sign in again' using errcode='42501'; end if;\n perform owner_onboarding.verified_actor(); -- Recheck current user eligibility after waiting for actor/session locks.\n select * into prior from public.first_owner_workspaces where user_id=actor;\n if prior.user_id is not null then\n  if prior.business is distinct from business then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118034811_first_owner_workspace.sql",
+          "line": 173
+        },
+        {
+          "file": "supabase/migrations/20261118034811_first_owner_workspace.sql",
+          "line": 174
+        }
+      ],
+      "overloads": [
+        "owner_onboarding.provision(uuid,jsonb)"
+      ],
+      "status": "already_translated_public_boundary",
+      "domain": "first_owner_preferences",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [
+        {
+          "signature": "public.provision_first_owner(uuid,jsonb)",
+          "source": {
+            "file": "supabase/migrations/20261118170156_owner_rpc_conflict_response.sql",
+            "line": 16
+          }
+        }
+      ],
+      "trigger_bindings": [],
+      "actual_transport": "SQL helper/private call; inspect effective_sql_callers for PostgREST boundary",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "owner_onboarding.save_workspace_preferences(uuid,uuid,bigint,jsonb)",
+      "name": "owner_onboarding.save_workspace_preferences",
+      "arguments": "p_client uuid,p_key uuid,p_revision bigint,p_settings jsonb",
+      "source": {
+        "file": "supabase/migrations/20261118051339_owner_workspace_preferences.sql",
+        "line": 58
+      },
+      "security": "definer",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 84,
+          "raise": "raise exception 'This save key was already used for different preferences' using errcode='40001';",
+          "condition_excerpt": "select c.partner_id into strict partner from public.client_businesses c where id=p_client for share;\n perform owner_onboarding.workspace_actor(p_client); -- Portal/status may have changed while the client lock waited.\n select * into saved from public.owner_workspace_preferences where user_id=actor and client_id=p_client for update;\n if saved.request_key=p_key then\n  if saved.settings is distinct from settings then"
+        },
+        {
+          "line": 87,
+          "raise": "raise exception 'Your preferences changed elsewhere. Reload them before saving' using errcode='40001';",
+          "condition_excerpt": "if saved.request_key=p_key then\n  if saved.settings is distinct from settings then raise exception 'This save key was already used for different preferences' using errcode='40001'; end if;\n  return owner_onboarding.workspace_preferences(p_client);\n end if;\n if coalesce(saved.revision,0)<>p_revision then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118051339_owner_workspace_preferences.sql",
+          "line": 92
+        },
+        {
+          "file": "supabase/migrations/20261118051339_owner_workspace_preferences.sql",
+          "line": 93
+        }
+      ],
+      "overloads": [
+        "owner_onboarding.save_workspace_preferences(uuid,uuid,bigint,jsonb)"
+      ],
+      "status": "already_translated_public_boundary",
+      "domain": "first_owner_preferences",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [
+        {
+          "signature": "public.save_owner_workspace_preferences(uuid,uuid,bigint,jsonb)",
+          "source": {
+            "file": "supabase/migrations/20261118170156_owner_rpc_conflict_response.sql",
+            "line": 6
+          }
+        }
+      ],
+      "trigger_bindings": [],
+      "actual_transport": "SQL helper/private call; inspect effective_sql_callers for PostgREST boundary",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.adopt_owner_intake_record(uuid,uuid,uuid,jsonb)",
+      "name": "public.adopt_owner_intake_record",
+      "arguments": "\n p_partner uuid, p_client uuid, p_actor uuid, p_command jsonb\n",
+      "source": {
+        "file": "supabase/migrations/20261117043720_owner_intake_adoption.sql",
+        "line": 3
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 45,
+          "raise": "raise exception 'Request key reused for another decision' using errcode='40001';",
+          "condition_excerpt": "select * into saved from public.business_owner_commands\n  where partner_id=p_partner and client_id=p_client and request_key=v_request_key;\n if saved.id is not null then\n  if saved.actor_id is distinct from p_actor or saved.command is distinct from p_command then"
+        },
+        {
+          "line": 58,
+          "raise": "raise exception 'Resume and verify this form source first' using errcode='40001';",
+          "condition_excerpt": "select provider_key into provider from public.integration_providers where id=c.provider_id;\n if c.id is null or provider is distinct from 'generic_inbound_webhook'\n  or c.status is distinct from 'connected' or c.runtime_mode='paused'\n  or coalesce(c.config->>'workspace_view_only','false')<>'true' then"
+        },
+        {
+          "line": 62,
+          "raise": "raise exception 'Resolve conflicting form source changes first' using errcode='40001';",
+          "condition_excerpt": "raise exception 'Resume and verify this form source first' using errcode='40001';\n end if;\n if exists(select 1 from public.integration_sync_states where partner_id=p_partner and client_id=p_client\n  and connection_id=c.id and stream_key='lead' and (last_error is not null or status='failing')) then"
+        },
+        {
+          "line": 68,
+          "raise": "raise exception 'Inquiry changed; review its current source' using errcode='40001';",
+          "condition_excerpt": "select * into r from public.integration_canonical_records where id=(p_command->>'recordId')::uuid\n  and connection_id=c.id and partner_id=p_partner and client_id=p_client and object_type='lead' for update;\n if r.id is null or r.external_object_id is distinct from p_command->>'externalId'\n  or r.updated_at is distinct from source_version then"
+        },
+        {
+          "line": 73,
+          "raise": "raise exception 'This source is no longer an eligible form inquiry' using errcode='40001';",
+          "condition_excerpt": "end if;\n if jsonb_typeof(r.canonical_data) is distinct from 'object' or r.canonical_data->>'deleted'='true'\n  or coalesce(r.canonical_data->>'status','') not in ('new','updated')\n  or (r.canonical_data ? 'provider' and r.canonical_data->>'provider' is distinct from 'generic_inbound_webhook') then"
+        },
+        {
+          "line": 78,
+          "raise": "raise exception 'Inquiry already added to shared work; refresh the source view' using errcode='40001';",
+          "condition_excerpt": "end if;\n if r.native_object_id is not null or exists(select 1 from public.integration_object_links\n  where partner_id=p_partner and client_id=p_client and connection_id=c.id\n  and object_type='lead' and external_object_id=r.external_object_id) then"
+        },
+        {
+          "line": 90,
+          "raise": "raise exception 'Selected customer changed; choose again' using errcode='40001';",
+          "condition_excerpt": "select * into selected from public.crm_contacts where id=(choice->>'id')::uuid\n   and partner_id=p_partner and client_id=p_client for update;\n  if selected.id is null or (choice->>'expectedUpdatedAt') is null\n   or selected.updated_at is distinct from (choice->>'expectedUpdatedAt')::timestamptz then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117043720_owner_intake_adoption.sql",
+          "line": 133
+        },
+        {
+          "file": "supabase/migrations/20261117043720_owner_intake_adoption.sql",
+          "line": 134
+        }
+      ],
+      "overloads": [
+        "public.adopt_owner_intake_record(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "intake",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/connections/intake-adoption.ts",
+          "line": 151,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.apply_booking_lifecycle_command(uuid,uuid,uuid,jsonb)",
+      "name": "public.apply_booking_lifecycle_command",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117133444_customer_journey_lifecycle.sql",
+        "line": 517
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 533,
+          "raise": "raise exception 'Request key changed' using errcode='40001';",
+          "condition_excerpt": "perform 1 from public.client_businesses where id=p_client and partner_id=p_partner for update;\n if not found then raise exception 'Business unavailable'; end if;\n select * into prior from public.business_owner_commands commands where commands.partner_id=p_partner and commands.client_id=p_client and commands.request_key=request_id;\n if prior.id is not null then\n  if prior.actor_id is distinct from p_actor or prior.command is distinct from p_command then"
+        },
+        {
+          "line": 540,
+          "raise": "raise exception 'The saved booking changed; review its current source' using errcode='40001';",
+          "condition_excerpt": "select * into a from public.approval_items where id::text=p_command->>'targetId' and partner_id=p_partner and client_id=p_client and type='appointment_booking' for update;\n select * into j from public.action_jobs where approval_id=a.id and partner_id=p_partner and client_id=p_client and kind='calendar.book' and status='succeeded' for update;\n select * into n from public.crm_appointments where approval_id=a.id and partner_id=p_partner and client_id=p_client for update;\n if a.id is null or j.id is null or n.id is null or n.updated_at is distinct from (p_command->>'expectedRevision')::timestamptz then"
+        },
+        {
+          "line": 547,
+          "raise": "raise exception 'This appointment is no longer eligible for cancellation' using errcode='40001';",
+          "condition_excerpt": "-- original approval lead when that scoped lead still belongs to this customer.\n select l.id into linked_lead from public.crm_leads l where l.id=coalesce(n.lead_id,(a.proposed_payload->>'lead_id')::uuid)\n  and l.partner_id=p_partner and l.client_id=p_client and l.contact_id=n.contact_id;\n if action='request_cancellation' then\n  if n.status not in ('booked','proposed') then"
+        },
+        {
+          "line": 565,
+          "raise": "raise exception 'Review the stopped or changed booking before confirming' using errcode='40001';",
+          "condition_excerpt": "end if;\n   message:='Cancellation request saved for the source calendar. Old follow-ups are stopped; the external appointment has not been cancelled.'; state:='requested';\n  end if;\n elsif action='recover_confirmation' then\n  if n.status<>'booked' or n.start_at<=now() or j.booking_followup_phase='stopped' then"
+        },
+        {
+          "line": 569,
+          "raise": "raise exception 'Review the stopped or changed booking before a reminder' using errcode='40001';",
+          "condition_excerpt": "if n.status<>'booked' or n.start_at<=now() or j.booking_followup_phase='stopped' then raise exception 'Review the stopped or changed booking before confirming' using errcode='40001'; end if;\n  update public.action_jobs set confirmation_due_at=now(),confirmation_attempts=0 where id=j.id;\n  message:='Confirmation recovery saved. A current source-backed proposal will be prepared for your review; nothing was sent.'; state:='waiting';\n elsif action='prepare_reminder' then\n  if n.status<>'booked' or n.start_at<=now() or j.booking_followup_phase='stopped' then"
+        },
+        {
+          "line": 584,
+          "raise": "raise exception 'A recorded cancelled or completed appointment is required for rebooking' using errcode='40001';",
+          "condition_excerpt": "and public.reconcile_source_booking_cancellation(p_partner,p_client,a.id,p_actor) then\n   select * into n from public.crm_appointments where id=n.id and partner_id=p_partner and client_id=p_client;\n  end if;\n  if n.status not in ('completed','cancelled') or (n.status='completed' and (n.lifecycle_completed_at is null or n.lifecycle_completed_at>now() or n.end_at>now())) then"
+        },
+        {
+          "line": 599,
+          "raise": "raise exception 'Review current source identity and qualification before rebooking' using errcode='40001';",
+          "condition_excerpt": "or r.updated_at is distinct from (original_work.input->>'source_updated_at')::timestamptz\n    or customer.updated_at is distinct from (original_work.input->>'contact_updated_at')::timestamptz\n    or lead.updated_at is distinct from (original_work.input->>'lead_updated_at')::timestamptz\n    or original_work.input->>'identity_confirmed' is distinct from 'true' or original_work.input->>'booking_requested' is distinct from 'true' then"
+        },
+        {
+          "line": 602,
+          "raise": "raise exception 'The adopted inquiry needs current owner review: %',coalesce(source_check->>'reason','Source eligibility unavailable') using errcode='40001';",
+          "condition_excerpt": "or original_work.input->>'identity_confirmed' is distinct from 'true' or original_work.input->>'booking_requested' is distinct from 'true' then\n    raise exception 'Review current source identity and qualification before rebooking' using errcode='40001';\n   end if;\n   source_check:=public.intake_inquiry_source_check(original_work.id,true,false);\n   if source_check->>'allowed' is distinct from 'true' then"
+        },
+        {
+          "line": 605,
+          "raise": "raise exception 'Current reviewed context and enabled scheduling authority are required for new rebooking work' using errcode='40001';",
+          "condition_excerpt": "rce_check:=public.intake_inquiry_source_check(original_work.id,true,false);\n   if source_check->>'allowed' is distinct from 'true' then raise exception 'The adopted inquiry needs current owner review: %',coalesce(source_check->>'reason','Source eligibility unavailable') using errcode='40001'; end if;\n   select * into settings from public.agent_team_settings where partner_id=p_partner and client_id=p_client;\n   if not public.business_channel_can_draft(p_partner,p_client,'calendar',null) or not exists(select 1 from public.business_agent_activation activation where activation.partner_id=p_partner and activation.client_id=p_client and activation.status='active' and activation.bookings) then"
+        },
+        {
+          "line": 608,
+          "raise": "raise exception 'Another active appointment exists; review it before rebooking' using errcode='40001';",
+          "condition_excerpt": "if not public.business_channel_can_draft(p_partner,p_client,'calendar',null) or not exists(select 1 from public.business_agent_activation activation where activation.partner_id=p_partner and activation.client_id=p_client and activation.status='active' and activation.bookings) then\n    raise exception 'Current reviewed context and enabled scheduling authority are required for new rebooking work' using errcode='40001';\n   end if;\n   if exists(select 1 from public.crm_appointments where partner_id=p_partner and client_id=p_client and contact_id=customer.id and id<>n.id and status in ('booked','proposed') and end_at>now()) then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117133444_customer_journey_lifecycle.sql",
+          "line": 762
+        }
+      ],
+      "overloads": [
+        "public.apply_booking_lifecycle_command(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "Owner JSON API app/api/business/customer-journey/route.ts:31; authenticated fresh-owner context, actual RPC runs service_role via admin client. Generic lifecycle command selection; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/business/customer-journey-commands.ts",
+        "line": 41,
+        "transport": "Owner JSON API app/api/business/customer-journey/route.ts:31; authenticated fresh-owner context, actual RPC runs service_role via admin client. Generic lifecycle command selection; domain parked."
+      }
+    },
+    {
+      "signature": "public.apply_business_activation(uuid,uuid,integer,jsonb,text)",
+      "name": "public.apply_business_activation",
+      "arguments": "p_partner uuid,p_client uuid,p_revision integer,p_choices jsonb,p_widget_key text",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 263
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 293,
+          "raise": "raise exception 'Choose the exact current business account' using errcode='40001';",
+          "condition_excerpt": "-- explicit save is the separate owner decision to enable the chosen work.\n if plan.workspace_connection_id is not null then\n  select c.*,p.provider_key into conn from public.integration_connections c join public.integration_providers p on p.id=c.provider_id\n   where c.id=plan.workspace_connection_id and c.partner_id=p_partner and c.client_id=p_client and p.provider_key=plan.workspace_provider for update of c;\n  if conn.id is null then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261009014610_business_agent_activation.sql",
+          "line": 107
+        },
+        {
+          "file": "supabase/migrations/20261009014610_business_agent_activation.sql",
+          "line": 108
+        }
+      ],
+      "overloads": [
+        "public.apply_business_activation(uuid,uuid,integer,jsonb,text)"
+      ],
+      "status": "parked",
+      "domain": "context_authority",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/activation/service.ts",
+          "line": 91,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [
+        {
+          "signature": "public.finish_activation_oauth(uuid,text,text,text,text,boolean,boolean)",
+          "source": {
+            "file": "supabase/migrations/20261009014610_business_agent_activation.sql",
+            "line": 132
+          }
+        }
+      ],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.apply_business_context_command(uuid,uuid,uuid,jsonb)",
+      "name": "public.apply_business_context_command",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117030202_reviewed_business_authority.sql",
+        "line": 183
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 197,
+          "raise": "raise exception 'Request key reused with changed command' using errcode='40001';",
+          "condition_excerpt": "request_id:=(p_command->>'key')::uuid;\n if request_id is null then raise exception 'Missing request key' using errcode='22023'; end if;\n select * into saved from public.business_owner_commands where partner_id=p_partner and client_id=p_client and request_key=request_id;\n if found then\n  if saved.command<>p_command or saved.actor_id<>p_actor then"
+        },
+        {
+          "line": 207,
+          "raise": "raise exception 'Business context changed' using errcode='40001';",
+          "condition_excerpt": "if action='review_context' then\n  select * into profile from public.business_workspace_profiles where partner_id=p_partner and client_id=p_client for update;\n  perform 1 from public.client_knowledge_profiles where partner_id=p_partner and client_id=p_client for update;\n  if profile.client_id is null or profile.updated_at is distinct from (p_command->>'expectedContextRevision')::timestamptz then"
+        },
+        {
+          "line": 227,
+          "raise": "raise exception 'Owner authority changed' using errcode='40001';",
+          "condition_excerpt": "on conflict(client_id) do update set profile_revision=excluded.profile_revision,actor_id=excluded.actor_id,reviewed_at=now();\n  message:='Business context review saved. Unknown facts remain explicit; authority is unchanged.';\n else\n  if settings.authority_revision is distinct from (p_command->>'expectedRevision')::integer then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117030202_reviewed_business_authority.sql",
+          "line": 449
+        }
+      ],
+      "overloads": [
+        "public.apply_business_context_command(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "proposed_foundation_literal_only",
+      "domain": "context_authority",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/business/context-command-service.ts",
+          "line": 20,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.begin_hubspot_oauth(uuid,uuid,uuid,uuid,text,text,text[],timestamp with time zone)",
+      "name": "public.begin_hubspot_oauth",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_connection uuid,p_cookie_hash text,p_encrypted_verifier text,p_permissions text[],p_expires_at timestamptz",
+      "source": {
+        "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+        "line": 19
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 29,
+          "raise": "raise exception 'Reconnect the current selected HubSpot permissions' using errcode='40001';",
+          "condition_excerpt": "select id into strict provider from public.integration_providers where provider_key='hubspot' and is_active;\n if p_connection is not null then\n  select * into strict c from public.integration_connections where id=p_connection and partner_id=p_partner and client_id=p_client and provider_id=provider for update;\n  if c.config->>'hubspot_owner_crm' is distinct from 'true' then raise exception 'Reconnect the existing owner HubSpot account'; end if;\n  if not (array(select jsonb_array_elements_text(coalesce(c.config->'hubspot_selected_permissions','[]'::jsonb)))<@p_permissions) then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+          "line": 361
+        }
+      ],
+      "overloads": [
+        "public.begin_hubspot_oauth(uuid,uuid,uuid,uuid,text,text,text[],timestamp with time zone)"
+      ],
+      "status": "parked",
+      "domain": "hubspot_oauth_configuration",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/connections/hubspot-oauth.ts",
+          "line": 72,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.configure_hubspot(uuid,uuid,uuid,text,boolean,boolean)",
+      "name": "public.configure_hubspot",
+      "arguments": "p_partner uuid,p_client uuid,p_connection uuid,p_expected_revision text,p_selected boolean,p_enabled boolean",
+      "source": {
+        "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+        "line": 217
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 225,
+          "raise": "raise exception 'Refresh the exact account settings before saving' using errcode='40001';",
+          "condition_excerpt": "elements_text(coalesce(c.config->'hubspot_selected_permissions','[]'::jsonb));\n if c.config->>'hubspot_owner_crm' is distinct from 'true' or not exists(select 1 from public.integration_providers where id=c.provider_id and provider_key='hubspot') or c.config->>'hubspot_config_revision' is distinct from p_expected_revision or c.status<>'connected' or c.credential_status<>'configured' or c.runtime_mode='paused' or nullif(c.external_account_id,'') is null or p_selected is null or p_enabled is null or (p_enabled and (not p_selected or cardinality(coalesce(rights,'{}'))=0 or not public.hubspot_scopes_allow(array(select jsonb_array_elements_text(c.config->'hubspot_verified_scopes')),rights))) then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+          "line": 361
+        }
+      ],
+      "overloads": [
+        "public.configure_hubspot(uuid,uuid,uuid,text,boolean,boolean)"
+      ],
+      "status": "parked",
+      "domain": "hubspot_oauth_configuration",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "app/api/connections/route.ts",
+          "line": 89,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.enqueue_approved_action()",
+      "name": "public.enqueue_approved_action",
+      "arguments": "",
+      "source": {
+        "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+        "line": 316
+      },
+      "security": "definer",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 322,
+          "raise": "raise exception 'The reviewed invoice financial template cannot be edited' using errcode='40001';",
+          "condition_excerpt": "declare action_kind text; action_payload jsonb; bound_appointment uuid; check_result jsonb;\nbegin\n if new.status not in ('approved','edited_and_approved') then return new; end if;\n if new.proposed_payload ? 'invoice_followup_version' then\n  if new.resolved_content is distinct from new.editable_content then"
+        },
+        {
+          "line": 324,
+          "raise": "raise exception '%',check_result->>'reason' using errcode='40001';",
+          "condition_excerpt": "if new.status not in ('approved','edited_and_approved') then return new; end if;\n if new.proposed_payload ? 'invoice_followup_version' then\n  if new.resolved_content is distinct from new.editable_content then raise exception 'The reviewed invoice financial template cannot be edited' using errcode='40001'; end if;\n  check_result:=public.invoice_followup_action_check(new.partner_id,new.client_id,new.id);\n  if check_result->>'allowed' is distinct from 'true' then"
+        },
+        {
+          "line": 338,
+          "raise": "raise exception 'The exact appointment is unavailable' using errcode='40001';",
+          "condition_excerpt": "-- conversation lock after this approval row. Final send checks independently\n  -- reject approved outstanding changes; do not lock sibling proposals here.\n  select n.id into bound_appointment from public.crm_appointments n where n.id::text=new.proposed_payload->>'appointment_id'\n   and n.partner_id=new.partner_id and n.client_id=new.client_id and n.approval_id::text=new.proposed_payload->>'booking_approval_id' for update;\n  if bound_appointment is null then"
+        },
+        {
+          "line": 339,
+          "raise": "raise exception 'The appointment change expired; prepare a fresh review' using errcode='40001';",
+          "condition_excerpt": "-- reject approved outstanding changes; do not lock sibling proposals here.\n  select n.id into bound_appointment from public.crm_appointments n where n.id::text=new.proposed_payload->>'appointment_id'\n   and n.partner_id=new.partner_id and n.client_id=new.client_id and n.approval_id::text=new.proposed_payload->>'booking_approval_id' for update;\n  if bound_appointment is null then raise exception 'The exact appointment is unavailable' using errcode='40001'; end if;\n  if new.expires_at is null or new.expires_at<=now() then"
+        },
+        {
+          "line": 341,
+          "raise": "raise exception '%',check_result->>'reason' using errcode='40001';",
+          "condition_excerpt": "and n.partner_id=new.partner_id and n.client_id=new.client_id and n.approval_id::text=new.proposed_payload->>'booking_approval_id' for update;\n  if bound_appointment is null then raise exception 'The exact appointment is unavailable' using errcode='40001'; end if;\n  if new.expires_at is null or new.expires_at<=now() then raise exception 'The appointment change expired; prepare a fresh review' using errcode='40001'; end if;\n  check_result:=public.calendar_mutation_source_check(new.partner_id,new.client_id,new.proposed_payload,true);\n  if check_result->>'allowed' is distinct from 'true' then"
+        },
+        {
+          "line": 350,
+          "raise": "raise exception 'The saved owner CRM review is unavailable or expired' using errcode='40001';",
+          "condition_excerpt": "t.'\n   where id::text=new.proposed_payload->>'booking_action_job_id' and approval_id::text=new.proposed_payload->>'booking_approval_id'\n    and partner_id=new.partner_id and client_id=new.client_id and kind='calendar.book' and status='succeeded';\n elsif new.type='crm_change' and new.proposed_payload->'crm_gateway_version'='1'::jsonb then\n  if new.expires_at is null or new.expires_at<=now() or not exists(select 1 from public.business_owner_commands receipt where receipt.id::text=new.proposed_payload->>'owner_command_id' and receipt.partner_id=new.partner_id and receipt.client_id=new.client_id and receipt.command->'pin'=new.proposed_payload and receipt.result->>'approvalId'=new.id::text) then"
+        },
+        {
+          "line": 352,
+          "raise": "raise exception '%',check_result->>'reason' using errcode='40001';",
+          "condition_excerpt": "e='crm_change' and new.proposed_payload->'crm_gateway_version'='1'::jsonb then\n  if new.expires_at is null or new.expires_at<=now() or not exists(select 1 from public.business_owner_commands receipt where receipt.id::text=new.proposed_payload->>'owner_command_id' and receipt.partner_id=new.partner_id and receipt.client_id=new.client_id and receipt.command->'pin'=new.proposed_payload and receipt.result->>'approvalId'=new.id::text) then raise exception 'The saved owner CRM review is unavailable or expired' using errcode='40001'; end if;\n  check_result:=public.crm_gateway_source_check(new.partner_id,new.client_id,new.proposed_payload);\n  if check_result->>'allowed' is distinct from 'true' then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 1416
+        },
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 1418
+        }
+      ],
+      "overloads": [
+        "public.enqueue_approved_action()"
+      ],
+      "status": "proposed_foundation_literal_only",
+      "domain": "approval",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [
+        {
+          "name": "enqueue_approved_action",
+          "table": "public.approval_items",
+          "events": "after update",
+          "function": "public.enqueue_approved_action",
+          "source": {
+            "file": "supabase/migrations/20260904120000_beta_action_outbox.sql",
+            "line": 55
+          }
+        }
+      ],
+      "actual_transport": "authenticated approval_items INSERT/PATCH under RLS, or server service_role INSERT/PATCH; trigger execute grants do not prevent trigger invocation",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.finish_google_permission_upgrade(uuid,text,text,text,text,text[],text[])",
+      "name": "public.finish_google_permission_upgrade",
+      "arguments": "p_attempt uuid,p_encrypted text,p_last_four text,p_account_id text,p_account_name text,p_verified_scopes text[],p_selected_permissions text[]",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 19
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 26,
+          "raise": "raise exception 'Business unavailable' using errcode='40001';",
+          "condition_excerpt": "permission text; old_scopes text[]; expected_permissions text[]:='{}'; old_permissions jsonb; permissions jsonb;\nbegin\n select * into strict a from public.business_connection_oauth_attempts where id=p_attempt;\n perform 1 from public.client_businesses where id=a.client_id and partner_id=a.partner_id and status='active' for update;\n if not found then"
+        },
+        {
+          "line": 37,
+          "raise": "raise exception 'Google permission attempt, exact account or saved access changed' using errcode='40001';",
+          "condition_excerpt": "nnection_updated_at or secret.updated_at is distinct from a.expected_secret_updated_at or\n  nullif(a.expected_account_id,'') is null or c.external_account_id is distinct from a.expected_account_id or p_account_id is distinct from a.expected_account_id or nullif(p_account_name,'') is null or\n  nullif(p_encrypted,'') is null or p_last_four is null or p_verified_scopes is null or array_position(p_verified_scopes,null) is not null or p_selected_permissions is null or\n  a.requested_permissions is null or cardinality(a.requested_permissions) not between 1 and 2 or not (a.requested_permissions<@array['calendar.write','email.send']) or array_position(a.requested_permissions,null) is not null then"
+        },
+        {
+          "line": 48,
+          "raise": "raise exception 'Selected permissions differ from the explicit owner request and actual retained grants' using errcode='40001';",
+          "condition_excerpt": "foreach permission in array array['calendar.write','email.send'] loop\n  if public.google_upgrade_scope_allows(p_verified_scopes,permission) and (permission=any(a.requested_permissions) or\n   ((old_permissions->>(case when permission='calendar.write' then 'calendar_write' else 'email_send' end))='true' and public.google_upgrade_scope_allows(old_scopes,permission))) then expected_permissions:=array_append(expected_permissions,permission); end if;\n end loop;\n if p_selected_permissions is distinct from expected_permissions then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+          "line": 57
+        },
+        {
+          "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+          "line": 59
+        }
+      ],
+      "overloads": [
+        "public.finish_google_permission_upgrade(uuid,text,text,text,text,text[],text[])"
+      ],
+      "status": "parked",
+      "domain": "hubspot_oauth_configuration",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/connections/oauth.ts",
+          "line": 99,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.finish_hubspot_oauth(uuid,text,text,text,text,text[],text[],timestamp with time zone,uuid)",
+      "name": "public.finish_hubspot_oauth",
+      "arguments": "p_attempt uuid,p_encrypted text,p_last_four text,p_account_id text,p_account_name text,p_verified_scopes text[],p_permissions text[],p_expires_at timestamptz,p_grant_revision uuid",
+      "source": {
+        "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+        "line": 44
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 50,
+          "raise": "raise exception 'Business unavailable' using errcode='40001';",
+          "condition_excerpt": "declare a public.business_connection_oauth_attempts; c public.integration_connections; secret public.integration_secrets;\nbegin\n select * into strict a from public.business_connection_oauth_attempts where id=p_attempt;\n perform 1 from public.client_businesses where id=a.client_id and partner_id=a.partner_id and status='active' for update;\n if not found then"
+        },
+        {
+          "line": 54,
+          "raise": "raise exception 'HubSpot attempt, verified account, grants or saved access changed' using errcode='40001';",
+          "condition_excerpt": "ect 1 from public.integration_providers where id=c.provider_id and provider_key='hubspot') or c.updated_at is distinct from a.expected_connection_updated_at or secret.updated_at is distinct from a.expected_secret_updated_at or c.external_account_id is distinct from a.expected_account_id or (a.expected_account_id is not null and a.expected_account_id is distinct from p_account_id) or coalesce(p_account_id,'')!~'^[0-9]+$' or nullif(p_account_name,'') is null or nullif(p_encrypted,'') is null or p_last_four is null or p_grant_revision is null or p_expires_at<=now() or p_permissions is distinct from a.requested_permissions or not public.hubspot_scopes_allow(p_verified_scopes,p_permissions) then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+          "line": 361
+        }
+      ],
+      "overloads": [
+        "public.finish_hubspot_oauth(uuid,text,text,text,text,text[],text[],timestamp with time zone,uuid)"
+      ],
+      "status": "parked",
+      "domain": "hubspot_oauth_configuration",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/connections/hubspot-oauth.ts",
+          "line": 124,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.finish_readonly_workspace_oauth(uuid,text,text,text,text)",
+      "name": "public.finish_readonly_workspace_oauth",
+      "arguments": "p_attempt uuid,p_encrypted text,p_last_four text,p_account_id text,p_account_name text",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 63
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 75,
+          "raise": "raise exception 'Connection changed' using errcode='40001';",
+          "condition_excerpt": "er_id=c.partner_id and client_id=c.client_id and secret_kind='provider_credentials' for update;\n select provider_key into provider from public.integration_providers where id=c.provider_id;\n if a.consumed_at is null or a.expires_at<now() or provider<>a.provider_key or provider not in ('google_workspace','microsoft_365') then raise exception 'Authorization expired or provider changed'; end if;\n if c.config->>'workspace_view_only' is distinct from 'true' or a.purpose is distinct from 'read_only' or c.updated_at is distinct from a.expected_connection_updated_at or secret.updated_at is distinct from a.expected_secret_updated_at or c.external_account_id is distinct from a.expected_account_id then"
+        },
+        {
+          "line": 78,
+          "raise": "raise exception 'Reconnect the existing selected Google permissions' using errcode='40001';",
+          "condition_excerpt": "if c.config->>'workspace_view_only' is distinct from 'true' or a.purpose is distinct from 'read_only' or c.updated_at is distinct from a.expected_connection_updated_at or secret.updated_at is distinct from a.expected_secret_updated_at or c.external_account_id is distinct from a.expected_account_id then raise exception 'Connection changed' using errcode='40001'; end if;\n -- An older read-only attempt cannot silently downgrade a completed explicit\n -- upgrade. Normal reconnect of an upgraded account uses permission_upgrade.\n if provider='google_workspace' and (c.config->'google_action_permissions'->>'calendar_write'='true' or c.config->'google_action_permissions'->>'email_send'='true') then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261104025603_readonly_workspace_connections.sql",
+          "line": 64
+        },
+        {
+          "file": "supabase/migrations/20261117033546_multi_application_workspace.sql",
+          "line": 221
+        }
+      ],
+      "overloads": [
+        "public.finish_readonly_workspace_oauth(uuid,text,text,text,text)"
+      ],
+      "status": "parked",
+      "domain": "hubspot_oauth_configuration",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/connections/oauth.ts",
+          "line": 302,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.guard_approval_resolution()",
+      "name": "public.guard_approval_resolution",
+      "arguments": "",
+      "source": {
+        "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+        "line": 1357
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117133444_customer_journey_lifecycle.sql",
+          "line": 762
+        }
+      ],
+      "overloads": [
+        "public.guard_approval_resolution()"
+      ],
+      "status": "approval_default_conflict_policy_requires_root_decision",
+      "domain": "approval",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [
+        {
+          "name": "guard_approval_resolution",
+          "table": "public.approval_items",
+          "events": "before update",
+          "function": "public.guard_approval_resolution",
+          "source": {
+            "file": "supabase/migrations/20260904120000_beta_action_outbox.sql",
+            "line": 34
+          }
+        }
+      ],
+      "actual_transport": "authenticated approval_items INSERT/PATCH under RLS, or server service_role INSERT/PATCH; trigger execute grants do not prevent trigger invocation",
+      "default_approval_raises": [
+        "Resolved approvals are immutable",
+        "Only approval resolution fields may change",
+        "A human resolution is required",
+        "Resolution actor does not match authenticated user",
+        "Reject and prepare a fresh exact appointment change instead",
+        "Edited content is required"
+      ]
+    },
+    {
+      "signature": "public.guard_external_action_edit()",
+      "name": "public.guard_external_action_edit",
+      "arguments": "",
+      "source": {
+        "file": "supabase/migrations/20260904200000_embedded_app_connections.sql",
+        "line": 94
+      },
+      "security": "invoker",
+      "search_path": "public",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "public",
+        "service_role"
+      ],
+      "explicit_semantic_40001": [],
+      "acl_evidence": [],
+      "overloads": [
+        "public.guard_external_action_edit()"
+      ],
+      "status": "approval_default_conflict_policy_requires_root_decision",
+      "domain": "approval",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [
+        {
+          "name": "guard_external_action_edit",
+          "table": "public.approval_items",
+          "events": "before update",
+          "function": "public.guard_external_action_edit",
+          "source": {
+            "file": "supabase/migrations/20260904200000_embedded_app_connections.sql",
+            "line": 98
+          }
+        }
+      ],
+      "actual_transport": "authenticated approval_items INSERT/PATCH under RLS, or server service_role INSERT/PATCH; trigger execute grants do not prevent trigger invocation",
+      "default_approval_raises": [
+        "Reject and prepare a new external action to change its fields"
+      ]
+    },
+    {
+      "signature": "public.guard_hubspot_approval()",
+      "name": "public.guard_hubspot_approval",
+      "arguments": "",
+      "source": {
+        "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+        "line": 302
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 310,
+          "raise": "raise exception '%',verdict->>'reason' using errcode='40001';",
+          "condition_excerpt": "if tg_op='UPDATE' and new.status='edited_and_approved' then raise exception 'Reject and prepare a fresh exact CRM change'; end if;\n -- Authenticated owner resolution uses the private definer enqueue for privileged source checks.\n if tg_op='INSERT' then\n  verdict:=public.crm_gateway_source_check(new.partner_id,new.client_id,new.proposed_payload);\n  if verdict->>'allowed' is distinct from 'true' then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+          "line": 361
+        }
+      ],
+      "overloads": [
+        "public.guard_hubspot_approval()"
+      ],
+      "status": "parked",
+      "domain": "approval",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [
+        {
+          "name": "guard_hubspot_approval",
+          "table": "public.approval_items",
+          "events": "before insert or update",
+          "function": "public.guard_hubspot_approval",
+          "source": {
+            "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+            "line": 313
+          }
+        }
+      ],
+      "actual_transport": "authenticated approval_items INSERT/PATCH under RLS, or server service_role INSERT/PATCH; trigger execute grants do not prevent trigger invocation",
+      "default_approval_raises": [
+        "Reject and prepare a fresh exact CRM change"
+      ]
+    },
+    {
+      "signature": "public.guard_invoice_followup_approval()",
+      "name": "public.guard_invoice_followup_approval",
+      "arguments": "",
+      "source": {
+        "file": "supabase/migrations/20261118020030_invoice_followup_review.sql",
+        "line": 130
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 134,
+          "raise": "raise exception 'Review the exact source-backed invoice template; its financial content cannot be edited' using errcode='40001';",
+          "condition_excerpt": "declare safety jsonb;\nbegin\n if old.proposed_payload->'invoice_followup_version'='1'::jsonb and new.status in ('approved','edited_and_approved') and old.status='pending' then\n  if new.resolved_content is distinct from old.editable_content then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118020030_invoice_followup_review.sql",
+          "line": 193
+        }
+      ],
+      "overloads": [
+        "public.guard_invoice_followup_approval()"
+      ],
+      "status": "proposed_foundation_literal_only",
+      "domain": "approval",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [
+        {
+          "name": "guard_invoice_followup_approval",
+          "table": "public.approval_items",
+          "events": "before update of status",
+          "function": "public.guard_invoice_followup_approval",
+          "source": {
+            "file": "supabase/migrations/20261118020030_invoice_followup_review.sql",
+            "line": 139
+          }
+        }
+      ],
+      "actual_transport": "authenticated approval_items INSERT/PATCH under RLS, or server service_role INSERT/PATCH; trigger execute grants do not prevent trigger invocation",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.prepare_calendar_mutation(uuid,uuid,uuid,jsonb)",
+      "name": "public.prepare_calendar_mutation",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 773
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 785,
+          "raise": "raise exception 'Request key changed' using errcode='40001';",
+          "condition_excerpt": "perform 1 from public.client_businesses where id=p_client and partner_id=p_partner for update;\n if not found then raise exception 'Business unavailable'; end if;\n select * into prior from public.business_owner_commands c where c.partner_id=p_partner and c.client_id=p_client and c.request_key=request_id;\n if prior.id is not null then\n  if prior.actor_id is distinct from p_actor or coalesce(prior.command->'owner_request',prior.command) is distinct from public_request then"
+        },
+        {
+          "line": 789,
+          "raise": "raise exception 'The exact original booking is unavailable' using errcode='40001';",
+          "condition_excerpt": "if prior.actor_id is distinct from p_actor or coalesce(prior.command->'owner_request',prior.command) is distinct from public_request then raise exception 'Request key changed' using errcode='40001'; end if;\n  return prior.result||jsonb_build_object('replayed',true);\n end if;\n select * into origin from public.approval_items where id=(p_command->>'targetId')::uuid and partner_id=p_partner and client_id=p_client and type='appointment_booking' for update;\n if origin.id is null or payload->>'booking_approval_id' is distinct from origin.id::text or nullif(p_command->>'expectedRevision','') is null then"
+        },
+        {
+          "line": 800,
+          "raise": "raise exception 'Choose an exact current actor-bound replacement offer' using errcode='40001';",
+          "condition_excerpt": "public.booking_change_offers o where o.id=(p_command->>'offerId')::uuid and o.partner_id=p_partner and o.client_id=p_client and o.actor_id=p_actor and o.booking_approval_id=origin.id for update;\n  if offer.id is null or offer.expires_at<=now() or offer.consumed_by_approval is not null or offer.revision is distinct from p_command->>'expectedRevision'\n   or payload->>'mutation' is distinct from 'reschedule' or (offer.payload-array['mutation','new_slot']) is distinct from (payload-array['mutation','new_slot'])\n   or not exists(select 1 from jsonb_array_elements(offer.slots) selected where selected=p_command->'slot')\n   or payload->'new_slot' is distinct from ((p_command->'slot')-'label') then"
+        },
+        {
+          "line": 803,
+          "raise": "raise exception '%',verdict->>'reason' using errcode='40001';",
+          "condition_excerpt": "or not exists(select 1 from jsonb_array_elements(offer.slots) selected where selected=p_command->'slot')\n   or payload->'new_slot' is distinct from ((p_command->'slot')-'label') then raise exception 'Choose an exact current actor-bound replacement offer' using errcode='40001'; end if;\n end if;\n verdict:=public.calendar_mutation_source_check(p_partner,p_client,payload,false);\n if verdict->>'allowed' is distinct from 'true' then"
+        },
+        {
+          "line": 819,
+          "raise": "raise exception 'Review the existing or uncertain calendar decision first' using errcode='40001';",
+          "condition_excerpt": "(a.status='pending' and a.expires_at>now() and (a.proposed_payload->>'appointment_updated_at')::timestamptz=native.updated_at)\n   or exists(select 1 from public.action_jobs j where j.partner_id=p_partner and j.client_id=p_client and j.approval_id=a.id and not public.calendar_change_source_resolved(p_partner,p_client,j.id) and (\n    j.status in ('processing','provider_pending','uncertain') or (j.status='failed' and nullif(j.external_ref,'') is not null)\n    or ((a.proposed_payload->>'appointment_updated_at')::timestamptz=native.updated_at and j.status in ('pending','succeeded')))))) then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 513
+        }
+      ],
+      "overloads": [
+        "public.prepare_calendar_mutation(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/scheduling/calendar-change-proposals.ts",
+          "line": 67,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.prepare_hubspot_change(uuid,uuid,uuid,jsonb)",
+      "name": "public.prepare_hubspot_change",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+        "line": 252
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 261,
+          "raise": "raise exception 'Request key changed' using errcode='40001';",
+          "condition_excerpt": "perform 1 from public.client_businesses where id=p_client and partner_id=p_partner for update;\n if not found then raise exception 'Business unavailable'; end if;\n select * into prior from public.business_owner_commands where partner_id=p_partner and client_id=p_client and request_key=(request->>'key')::uuid;\n if prior.id is not null then\n  if prior.actor_id is distinct from p_actor or prior.command->'owner_request' is distinct from request then"
+        },
+        {
+          "line": 267,
+          "raise": "raise exception 'The reviewed CRM request changed' using errcode='40001';",
+          "condition_excerpt": "inct from request->>'expectedRevision' or pin->>'source_run_id' is distinct from request->>'sourceRunId' or (pin->>'source_run_id' is not null and not exists(select 1 from public.workflow_runs where id::text=pin->>'source_run_id' and partner_id=p_partner and client_id=p_client)) or\n  (pin->>'operation'='contact.create' and (request->'newIdentityConfirmed' is distinct from 'true'::jsonb or pin->'properties' is distinct from request->'properties')) or\n  (pin->>'operation'='note.create' and (request->>'recordId' is distinct from pin->>'source_record_id' or request->>'expectedSourceRevision' is distinct from pin->>'source_updated_at' or request->>'note' is distinct from pin->>'note_body')) then"
+        },
+        {
+          "line": 269,
+          "raise": "raise exception '%',verdict->>'reason' using errcode='40001';",
+          "condition_excerpt": ":text=pin->>'source_run_id' and partner_id=p_partner and client_id=p_client)) or\n  (pin->>'operation'='contact.create' and (request->'newIdentityConfirmed' is distinct from 'true'::jsonb or pin->'properties' is distinct from request->'properties')) or\n  (pin->>'operation'='note.create' and (request->>'recordId' is distinct from pin->>'source_record_id' or request->>'expectedSourceRevision' is distinct from pin->>'source_updated_at' or request->>'note' is distinct from pin->>'note_body')) then raise exception 'The reviewed CRM request changed' using errcode='40001'; end if;\n verdict:=public.crm_gateway_source_check(p_partner,p_client,pin);\n if verdict->>'allowed' is distinct from 'true' then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118030334_hubspot_customer_system.sql",
+          "line": 361
+        }
+      ],
+      "overloads": [
+        "public.prepare_hubspot_change(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "hubspot_oauth_configuration",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/crm/gateway-service.ts",
+          "line": 82,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.prepare_invoice_followup(uuid,uuid,uuid,jsonb)",
+      "name": "public.prepare_invoice_followup",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261118020030_invoice_followup_review.sql",
+        "line": 83
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 91,
+          "raise": "raise exception 'Business or request unavailable' using errcode='40001';",
+          "condition_excerpt": "or public_request->>'action' not in ('prepare_invoice_followup','handoff_invoice_followup') or public_request-array['action','key','targetId','connectionId','expectedRevision','recipientConversationId','expectedRecipientRevision','identityConfirmed','outreachPermissionConfirmed','note']<>'{}'::jsonb or nullif(public_request->>'expectedRevision','') is null or length(coalesce(public_request->>'note',''))>2000 then raise exception 'Invalid invoice review command' using errcode='22023'; end if;\n request_id:=(public_request->>'key')::uuid;\n perform 1 from public.client_businesses where id=p_client and partner_id=p_partner and status='active' for update;\n if not found or request_id is null then"
+        },
+        {
+          "line": 94,
+          "raise": "raise exception 'This key belongs to a different invoice decision' using errcode='40001';",
+          "condition_excerpt": "perform 1 from public.client_businesses where id=p_client and partner_id=p_partner and status='active' for update;\n if not found or request_id is null then raise exception 'Business or request unavailable' using errcode='40001'; end if;\n select * into prior from public.business_owner_commands c where c.partner_id=p_partner and c.client_id=p_client and c.request_key=request_id;\n if prior.id is not null then\n  if prior.actor_id is distinct from p_actor or prior.command->'owner_request' is distinct from public_request then"
+        },
+        {
+          "line": 99,
+          "raise": "raise exception 'Exact Stripe invoice unavailable' using errcode='40001';",
+          "condition_excerpt": "return prior.result||jsonb_build_object('replayed',true);\n end if;\n select * into account from public.integration_connections where id=(public_request->>'connectionId')::uuid and partner_id=p_partner and client_id=p_client for update;\n select * into src from public.integration_canonical_records where id=(public_request->>'targetId')::uuid and connection_id=account.id and partner_id=p_partner and client_id=p_client and object_type='invoice' for update;\n if src.id is null or not exists(select 1 from public.integration_providers where id=account.provider_id and provider_key='stripe') then"
+        },
+        {
+          "line": 102,
+          "raise": "raise exception 'The exact source review changed' using errcode='40001';",
+          "condition_excerpt": "and object_type='invoice' for update;\n if src.id is null or not exists(select 1 from public.integration_providers where id=account.provider_id and provider_key='stripe') then raise exception 'Exact Stripe invoice unavailable' using errcode='40001'; end if;\n select t.id into task_id from public.crm_tasks t where t.partner_id=p_partner and t.client_id=p_client and t.source_invoice_record_id=src.id for update;\n if public_request->>'action'='handoff_invoice_followup' then\n  if src.updated_at is distinct from (p_command->>'expectedSourceUpdatedAt')::timestamptz or public_request ?| array['recipientConversationId','expectedRecipientRevision','identityConfirmed','outreachPermissionConfirmed'] then"
+        },
+        {
+          "line": 113,
+          "raise": "raise exception 'Review the existing invoice reminder and its action outcome. Do not prepare a duplicate send' using errcode='40001';",
+          "condition_excerpt": "ontacts where id=(pin->>'contact_id')::uuid and partner_id=p_partner and client_id=p_client for update;\n  if exists(select 1 from public.approval_items a where a.partner_id=p_partner and a.client_id=p_client and a.proposed_payload->>'invoice_followup_version'='1' and a.proposed_payload->>'stripe_account_id'=account.external_account_id and a.proposed_payload->>'invoice_id'=src.external_object_id and\n   (a.status not in ('rejected','expired') or exists(select 1 from public.action_jobs j where j.approval_id=a.id and j.partner_id=p_partner and j.client_id=p_client and (j.status in ('processing','provider_pending','uncertain','succeeded','failed','pending') or j.external_ref is not null)))) then"
+        },
+        {
+          "line": 123,
+          "raise": "raise exception '%',check_result->>'reason' using errcode='40001';",
+          "condition_excerpt": "result:=jsonb_build_object('id',receipt_id,'sourceRecordId',src.id,'taskId',task_id,'approvalId',proposal_id,'replayed',false,'message',case when proposal_id is null then 'Source-linked invoice review task saved. No customer message was prepared or sent.' else 'Invoice email prepared in Approvals for your review. Nothing was sent.' end);\n insert into public.business_owner_commands(id,partner_id,client_id,actor_id,request_key,command,result) values(receipt_id,p_partner,p_client,p_actor,request_id,p_command,result);\n if proposal_id is not null then\n  check_result:=public.invoice_followup_action_check(p_partner,p_client,proposal_id);\n  if check_result->>'allowed' is distinct from 'true' then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118020030_invoice_followup_review.sql",
+          "line": 193
+        }
+      ],
+      "overloads": [
+        "public.prepare_invoice_followup(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "money",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/money/service.ts",
+          "line": 117,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.progress_owner_intake_inquiry(uuid,uuid,uuid,jsonb)",
+      "name": "public.progress_owner_intake_inquiry",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117133444_customer_journey_lifecycle.sql",
+        "line": 148
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 164,
+          "raise": "raise exception 'Request key reused with changed command' using errcode='40001';",
+          "condition_excerpt": "-- Exact replay before any current-source/eligibility check, including after\n -- the source was updated or disconnected following a successful command.\n select b.* into receipt from public.business_owner_commands b where b.partner_id=p_partner and b.client_id=p_client and b.request_key=v_request_key;\n if found then\n  if receipt.actor_id<>p_actor or receipt.command<>p_command then"
+        },
+        {
+          "line": 170,
+          "raise": "raise exception 'Scheduling decision changed' using errcode='40001';",
+          "condition_excerpt": "end if;\n if p_command->>'action'='select_intake_slot' then\n  select * into w from public.agent_work_items where id=(p_command->>'workId')::uuid and partner_id=p_partner and client_id=p_client for update;\n  if w.id is null or w.kind<>'booking_request' or w.input->>'origin'<>'owner_intake' or w.approval_id is not null or w.status not in ('waiting_approval','blocked') or w.revision is distinct from (p_command->>'expectedWorkRevision')::integer then"
+        },
+        {
+          "line": 172,
+          "raise": "raise exception 'Inquiry or authority changed' using errcode='40001';",
+          "condition_excerpt": "select * into w from public.agent_work_items where id=(p_command->>'workId')::uuid and partner_id=p_partner and client_id=p_client for update;\n  if w.id is null or w.kind<>'booking_request' or w.input->>'origin'<>'owner_intake' or w.approval_id is not null or w.status not in ('waiting_approval','blocked') or w.revision is distinct from (p_command->>'expectedWorkRevision')::integer then\n   raise exception 'Scheduling decision changed' using errcode='40001'; end if;\n  check_result:=public.intake_inquiry_source_check(w.id,false);\n  if not coalesce((check_result->>'allowed')::boolean,false) then"
+        },
+        {
+          "line": 176,
+          "raise": "raise exception 'Choose fresh saved availability' using errcode='40001';",
+          "condition_excerpt": "if not coalesce((check_result->>'allowed')::boolean,false) then raise exception 'Inquiry or authority changed' using errcode='40001'; end if;\n  offer:=w.result->'offer'; selection:=(p_command->>'slot')::integer;\n  if selection is null or selection not between 1 and 3 or jsonb_typeof(offer->'slots') is distinct from 'array'\n   or nullif(offer->>'expires_at','') is null or nullif(offer->>'checked_at','') is null\n   or (offer->>'expires_at')::timestamptz<=now() or (offer->>'checked_at')::timestamptz>now()+interval '5 minutes' then"
+        },
+        {
+          "line": 178,
+          "raise": "raise exception 'The offered time expired' using errcode='40001';",
+          "condition_excerpt": "if selection is null or selection not between 1 and 3 or jsonb_typeof(offer->'slots') is distinct from 'array'\n   or nullif(offer->>'expires_at','') is null or nullif(offer->>'checked_at','') is null\n   or (offer->>'expires_at')::timestamptz<=now() or (offer->>'checked_at')::timestamptz>now()+interval '5 minutes' then raise exception 'Choose fresh saved availability' using errcode='40001'; end if;\n  slot:=offer->'slots'->(selection-1);\n  if slot is null or (slot->>'start_iso')::timestamptz<=now() then"
+        },
+        {
+          "line": 182,
+          "raise": "raise exception 'Scheduling decision changed' using errcode='40001';",
+          "condition_excerpt": "if slot is null or (slot->>'start_iso')::timestamptz<=now() then raise exception 'The offered time expired' using errcode='40001'; end if;\n  update public.agent_work_items set input=input||jsonb_build_object('slot',slot,'selection_index',selection,'provider',offer->'provider','calendar_connection_id',offer->'calendar_connection_id','timezone',offer->'timezone'),\n   result=result||jsonb_build_object('phase','selected_slot'),status='queued',summary='Selected time saved. Scheduling will recheck availability before preparing owner approval.',next_run_at=now(),claim_token=null,lease_until=null,revision=revision+1,updated_at=now()\n   where id=w.id and revision=w.revision;\n  if not found then"
+        },
+        {
+          "line": 192,
+          "raise": "raise exception 'Restore the intake source first' using errcode='40001';",
+          "condition_excerpt": "stinct from 'boolean' or jsonb_typeof(qualification->'bookingRequested') is distinct from 'boolean' then raise exception 'Invalid qualification' using errcode='22023'; end if;\n  q_service:=btrim(qualification->>'service'); q_preference:=btrim(qualification->>'preference');\n  select * into c from public.integration_connections where id=(p_command->>'connectionId')::uuid and partner_id=p_partner and client_id=p_client for update;\n  select provider_key into provider from public.integration_providers where id=c.provider_id;\n  if c.id is null or provider<>'generic_inbound_webhook' or c.status<>'connected' or c.runtime_mode='paused' or c.config->>'workspace_view_only' is distinct from 'true' then"
+        },
+        {
+          "line": 193,
+          "raise": "raise exception 'Intake source needs reconciliation' using errcode='40001';",
+          "condition_excerpt": "blic.integration_connections where id=(p_command->>'connectionId')::uuid and partner_id=p_partner and client_id=p_client for update;\n  select provider_key into provider from public.integration_providers where id=c.provider_id;\n  if c.id is null or provider<>'generic_inbound_webhook' or c.status<>'connected' or c.runtime_mode='paused' or c.config->>'workspace_view_only' is distinct from 'true' then raise exception 'Restore the intake source first' using errcode='40001'; end if;\n  if exists(select 1 from public.integration_sync_states where connection_id=c.id and partner_id=p_partner and client_id=p_client and stream_key='lead' and (status='failing' or nullif(last_error,'') is not null)) then"
+        },
+        {
+          "line": 195,
+          "raise": "raise exception 'Inquiry source changed or is deleted' using errcode='40001';",
+          "condition_excerpt": "stream_key='lead' and (status='failing' or nullif(last_error,'') is not null)) then raise exception 'Intake source needs reconciliation' using errcode='40001'; end if;\n  select * into r from public.integration_canonical_records where id=(p_command->>'recordId')::uuid and connection_id=c.id and partner_id=p_partner and client_id=p_client and object_type='lead' and external_object_id=p_command->>'externalId' for update;\n  if r.id is null or jsonb_typeof(r.canonical_data) is distinct from 'object' or r.canonical_data->>'deleted'='true' or coalesce(r.canonical_data->>'status','') not in ('new','updated') or r.updated_at is distinct from (p_command->>'expectedSourceUpdatedAt')::timestamptz then"
+        },
+        {
+          "line": 201,
+          "raise": "raise exception 'Adopted customer or source identity changed' using errcode='40001';",
+          "condition_excerpt": "into link from public.integration_object_links where connection_id=c.id and partner_id=p_partner and client_id=p_client and object_type='lead' and external_object_id=r.external_object_id for update;\n  review_task:=(link.metadata->>'task_id')::uuid;\n  if l.id is null or person.id is null or link.id is null or link.native_object_id is distinct from l.id::text or link.metadata->>'source_record_id' is distinct from r.id::text or link.metadata->>'contact_id' is distinct from person.id::text or review_task is null or\n    l.updated_at is distinct from (p_command->>'expectedLeadUpdatedAt')::timestamptz or person.updated_at is distinct from (p_command->>'expectedContactUpdatedAt')::timestamptz then"
+        },
+        {
+          "line": 202,
+          "raise": "raise exception 'Review the recorded booking or closed lead before requesting more work' using errcode='40001';",
+          "condition_excerpt": "' and external_object_id=r.external_object_id for update;\n  review_task:=(link.metadata->>'task_id')::uuid;\n  if l.id is null or person.id is null or link.id is null or link.native_object_id is distinct from l.id::text or link.metadata->>'source_record_id' is distinct from r.id::text or link.metadata->>'contact_id' is distinct from person.id::text or review_task is null or\n    l.updated_at is distinct from (p_command->>'expectedLeadUpdatedAt')::timestamptz or person.updated_at is distinct from (p_command->>'expectedContactUpdatedAt')::timestamptz then raise exception 'Adopted customer or source identity changed' using errcode='40001'; end if;\n  if l.status in ('scheduled','won','lost') then"
+        },
+        {
+          "line": 203,
+          "raise": "raise exception 'The customer is suppressed' using errcode='40001';",
+          "condition_excerpt": ">>'contact_id' is distinct from person.id::text or review_task is null or\n    l.updated_at is distinct from (p_command->>'expectedLeadUpdatedAt')::timestamptz or person.updated_at is distinct from (p_command->>'expectedContactUpdatedAt')::timestamptz then raise exception 'Adopted customer or source identity changed' using errcode='40001'; end if;\n  if l.status in ('scheduled','won','lost') then raise exception 'Review the recorded booking or closed lead before requesting more work' using errcode='40001'; end if;\n  if exists(select 1 from unnest(person.tags) t where lower(regexp_replace(btrim(t),'[[:space:]-]+','_','g')) in ('do_not_contact','opt_out','opted_out','unsubscribed','stop')) then"
+        },
+        {
+          "line": 205,
+          "raise": "raise exception 'The shared review task is unavailable' using errcode='40001';",
+          "condition_excerpt": "en raise exception 'Adopted customer or source identity changed' using errcode='40001'; end if;\n  if l.status in ('scheduled','won','lost') then raise exception 'Review the recorded booking or closed lead before requesting more work' using errcode='40001'; end if;\n  if exists(select 1 from unnest(person.tags) t where lower(regexp_replace(btrim(t),'[[:space:]-]+','_','g')) in ('do_not_contact','opt_out','opted_out','unsubscribed','stop')) then raise exception 'The customer is suppressed' using errcode='40001'; end if;\n  perform 1 from public.crm_tasks where id=review_task and partner_id=p_partner and client_id=p_client and lead_id=l.id and contact_id=person.id for update;\n  if not found then"
+        },
+        {
+          "line": 207,
+          "raise": "raise exception 'Owner authority changed' using errcode='40001';",
+          "condition_excerpt": "t where lower(regexp_replace(btrim(t),'[[:space:]-]+','_','g')) in ('do_not_contact','opt_out','opted_out','unsubscribed','stop')) then raise exception 'The customer is suppressed' using errcode='40001'; end if;\n  perform 1 from public.crm_tasks where id=review_task and partner_id=p_partner and client_id=p_client and lead_id=l.id and contact_id=person.id for update;\n  if not found then raise exception 'The shared review task is unavailable' using errcode='40001'; end if;\n  select * into s from public.agent_team_settings where partner_id=p_partner and client_id=p_client for update;\n  if coalesce(s.authority_revision,0) is distinct from (p_command->>'expectedAuthorityRevision')::integer then"
+        },
+        {
+          "line": 212,
+          "raise": "raise exception 'Existing booking action needs its recorded outcome or lifecycle decision; do not duplicate it' using errcode='40001';",
+          "condition_excerpt": "fication must first account for older work. Never reset or\n  -- replace a provider operation already processing, accepted or uncertain.\n  for old_work in select * from public.agent_work_items where partner_id=p_partner and client_id=p_client and kind='booking_request' and input->>'origin'='owner_intake' and input->>'intake_record_id'=r.id::text order by created_at desc for update loop\n   if old_work.status='completed' or exists(select 1 from public.action_jobs j where j.partner_id=p_partner and j.client_id=p_client and j.approval_id=old_work.approval_id and (j.status in ('processing','provider_pending','uncertain','succeeded') or (j.status='failed' and j.external_ref is not null))) then"
+        },
+        {
+          "line": 217,
+          "raise": "raise exception 'Existing action cannot be safely replaced' using errcode='40001';",
+          "condition_excerpt": "end if;\n   if old_work.status<>'cancelled' then\n    update public.action_jobs j set status='cancelled',outcome_detail='Superseded by an explicit owner inquiry review.',last_error=null where j.partner_id=p_partner and j.client_id=p_client and j.approval_id=old_work.approval_id\n      and (j.status in ('pending','dry_run','skipped') or (j.status='failed' and j.external_ref is null));\n    if exists(select 1 from public.action_jobs j where j.partner_id=p_partner and j.client_id=p_client and j.approval_id=old_work.approval_id and j.status not in ('cancelled','pending','failed','dry_run','skipped')) then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117133444_customer_journey_lifecycle.sql",
+          "line": 251
+        }
+      ],
+      "overloads": [
+        "public.progress_owner_intake_inquiry(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "intake",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/connections/intake-progression.ts",
+          "line": 129,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.propose_customer_rebooking(uuid,uuid,jsonb)",
+      "name": "public.propose_customer_rebooking",
+      "arguments": "p_work uuid,p_claim uuid,p_metadata jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 228
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 234,
+          "raise": "raise exception 'Inquiry scheduling changed' using errcode='40001';",
+          "condition_excerpt": "declare w public.agent_work_items; check_result jsonb; chosen jsonb; approval uuid; payload jsonb; selection integer; account public.integration_connections; provider text;\nbegin\n select * into strict w from public.agent_work_items where id=p_work for update;\n check_result:=public.customer_rebooking_scheduling_check(p_work,p_claim);\n if not coalesce((check_result->>'allowed')::boolean,false) or w.approval_id is not null then"
+        },
+        {
+          "line": 238,
+          "raise": "raise exception 'The selected slot or calendar changed' using errcode='40001';",
+          "condition_excerpt": "end if;\n selection:=(w.input->>'selection_index')::integer;\n if selection not between 1 and 3 or jsonb_typeof(w.result->'offer'->'slots')<>'array' then raise exception 'Choose a saved offered slot first' using errcode='22023'; end if;\n chosen:=w.result->'offer'->'slots'->(selection-1);\n if chosen is null or chosen is distinct from w.input->'slot' or chosen is distinct from p_metadata->'slot' or (chosen->>'start_iso')::timestamptz<=now() or p_metadata->>'provider' is distinct from w.result->'offer'->>'provider' or p_metadata->>'calendar_connection_id' is distinct from w.result->'offer'->>'calendar_connection_id' or p_metadata->>'timezone' is distinct from w.result->'offer'->>'timezone' then"
+        },
+        {
+          "line": 239,
+          "raise": "raise exception 'Proposal identity or authority changed' using errcode='40001';",
+          "condition_excerpt": "iso')::timestamptz<=now() or p_metadata->>'provider' is distinct from w.result->'offer'->>'provider' or p_metadata->>'calendar_connection_id' is distinct from w.result->'offer'->>'calendar_connection_id' or p_metadata->>'timezone' is distinct from w.result->'offer'->>'timezone' then raise exception 'The selected slot or calendar changed' using errcode='40001'; end if;\n if (p_metadata->>'authority_revision')::integer is distinct from (w.input->>'authority_revision')::integer or p_metadata->>'customer_rebooking_work_id' is distinct from w.id::text or p_metadata->>'lead_id' is distinct from w.source_lead_id::text or p_metadata->>'contact_id' is distinct from check_result->'contact'->>'id' then"
+        },
+        {
+          "line": 241,
+          "raise": "raise exception 'Internal calendar unavailable' using errcode='40001';",
+          "condition_excerpt": "ut->>'authority_revision')::integer or p_metadata->>'customer_rebooking_work_id' is distinct from w.id::text or p_metadata->>'lead_id' is distinct from w.source_lead_id::text or p_metadata->>'contact_id' is distinct from check_result->'contact'->>'id' then raise exception 'Proposal identity or authority changed' using errcode='40001'; end if;\n if w.result->'offer'->>'provider'='northstar_internal' then\n  if w.result->'offer'->>'calendar_connection_id' is not null or not exists(select 1 from public.client_businesses b where b.partner_id=w.partner_id and b.id=w.client_id and b.status='active' and b.default_runtime_mode='live' and b.crm_operating_mode in ('primary_crm','mirror','assist')) then"
+        },
+        {
+          "line": 245,
+          "raise": "raise exception 'Calendar account changed or is read only' using errcode='40001';",
+          "condition_excerpt": "rimary_crm','mirror','assist')) then raise exception 'Internal calendar unavailable' using errcode='40001'; end if;\n else\n  select * into account from public.integration_connections where id=(w.result->'offer'->>'calendar_connection_id')::uuid and partner_id=w.partner_id and client_id=w.client_id;\n  select provider_key into provider from public.integration_providers where id=account.provider_id;\n  if account.id is null or provider is distinct from w.result->'offer'->>'provider' or account.status<>'connected' or account.runtime_mode<>'live' or (account.config->>'workspace_view_only'='true' and not (provider='google_workspace' and public.google_config_can_act(account.config,'calendar'))) then"
+        },
+        {
+          "line": 258,
+          "raise": "raise exception 'Scheduling claim lost' using errcode='40001';",
+          "condition_excerpt": "checked again before booking. This owner selection was not sent to the customer. Confirmation requires a separate reviewed action in the original thread.',payload,least(now()+interval '24 hours',(chosen->>'start_iso')::timestamptz)) returning id into approval;\n update public.agent_work_items set approval_id=approval,status='waiting_approval',summary='The selected appointment is awaiting owner approval. Nothing is held or booked.',result=result||jsonb_build_object('phase','booking_approval','booking_approval_id',approval),claim_token=null,lease_until=null,revision=revision+1,updated_at=now() where id=w.id and claim_token=p_claim and status='running' and lease_until>now();\n if not found then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 641
+        }
+      ],
+      "overloads": [
+        "public.propose_customer_rebooking(uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=conversation; no browser direct EXECUTE; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 196,
+        "transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=conversation; no browser direct EXECUTE; domain parked."
+      }
+    },
+    {
+      "signature": "public.propose_intake_booking(uuid,uuid,jsonb)",
+      "name": "public.propose_intake_booking",
+      "arguments": "p_work uuid,p_claim uuid,p_metadata jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 168
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 174,
+          "raise": "raise exception 'Inquiry scheduling changed' using errcode='40001';",
+          "condition_excerpt": "declare w public.agent_work_items; check_result jsonb; chosen jsonb; approval uuid; payload jsonb; selection integer; account public.integration_connections; provider text;\nbegin\n select * into strict w from public.agent_work_items where id=p_work for update;\n check_result:=public.intake_scheduling_check(p_work,p_claim);\n if not coalesce((check_result->>'allowed')::boolean,false) or w.approval_id is not null then"
+        },
+        {
+          "line": 178,
+          "raise": "raise exception 'The selected slot or calendar changed' using errcode='40001';",
+          "condition_excerpt": "end if;\n selection:=(w.input->>'selection_index')::integer;\n if selection not between 1 and 3 or jsonb_typeof(w.result->'offer'->'slots')<>'array' then raise exception 'Choose a saved offered slot first' using errcode='22023'; end if;\n chosen:=w.result->'offer'->'slots'->(selection-1);\n if chosen is null or chosen is distinct from w.input->'slot' or chosen is distinct from p_metadata->'slot' or (chosen->>'start_iso')::timestamptz<=now() or p_metadata->>'provider' is distinct from w.result->'offer'->>'provider' or p_metadata->>'calendar_connection_id' is distinct from w.result->'offer'->>'calendar_connection_id' or p_metadata->>'timezone' is distinct from w.result->'offer'->>'timezone' then"
+        },
+        {
+          "line": 179,
+          "raise": "raise exception 'Proposal identity or authority changed' using errcode='40001';",
+          "condition_excerpt": "en->>'start_iso')::timestamptz<=now() or p_metadata->>'provider' is distinct from w.result->'offer'->>'provider' or p_metadata->>'calendar_connection_id' is distinct from w.result->'offer'->>'calendar_connection_id' or p_metadata->>'timezone' is distinct from w.result->'offer'->>'timezone' then raise exception 'The selected slot or calendar changed' using errcode='40001'; end if;\n if (p_metadata->>'authority_revision')::integer is distinct from (w.input->>'authority_revision')::integer or p_metadata->>'intake_work_id' is distinct from w.id::text or p_metadata->>'lead_id' is distinct from w.source_lead_id::text or p_metadata->>'contact_id' is distinct from check_result->'contact'->>'id' then"
+        },
+        {
+          "line": 181,
+          "raise": "raise exception 'Internal calendar unavailable' using errcode='40001';",
+          "condition_excerpt": "from (w.input->>'authority_revision')::integer or p_metadata->>'intake_work_id' is distinct from w.id::text or p_metadata->>'lead_id' is distinct from w.source_lead_id::text or p_metadata->>'contact_id' is distinct from check_result->'contact'->>'id' then raise exception 'Proposal identity or authority changed' using errcode='40001'; end if;\n if w.result->'offer'->>'provider'='northstar_internal' then\n  if w.result->'offer'->>'calendar_connection_id' is not null or not exists(select 1 from public.client_businesses b where b.partner_id=w.partner_id and b.id=w.client_id and b.status='active' and b.default_runtime_mode='live' and b.crm_operating_mode in ('primary_crm','mirror','assist')) then"
+        },
+        {
+          "line": 185,
+          "raise": "raise exception 'Calendar account changed or is read only' using errcode='40001';",
+          "condition_excerpt": "rimary_crm','mirror','assist')) then raise exception 'Internal calendar unavailable' using errcode='40001'; end if;\n else\n  select * into account from public.integration_connections where id=(w.result->'offer'->>'calendar_connection_id')::uuid and partner_id=w.partner_id and client_id=w.client_id;\n  select provider_key into provider from public.integration_providers where id=account.provider_id;\n  if account.id is null or provider is distinct from w.result->'offer'->>'provider' or account.status<>'connected' or account.runtime_mode<>'live' or (account.config->>'workspace_view_only'='true' and not (provider='google_workspace' and public.google_config_can_act(account.config,'calendar'))) then"
+        },
+        {
+          "line": 197,
+          "raise": "raise exception 'Scheduling claim lost' using errcode='40001';",
+          "condition_excerpt": "),\n  'Owner selected '||(chosen->>'label')||'. Availability will be checked again before booking. A form does not provide a confirmation delivery channel.',payload,least(now()+interval '24 hours',(chosen->>'start_iso')::timestamptz)) returning id into approval;\n update public.agent_work_items set approval_id=approval,status='waiting_approval',summary='The selected appointment is awaiting owner approval. Nothing is held or booked.',result=result||jsonb_build_object('phase','booking_approval','booking_approval_id',approval),claim_token=null,lease_until=null,revision=revision+1,updated_at=now() where id=w.id and claim_token=p_claim and status='running' and lease_until>now();\n if not found then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117133444_customer_journey_lifecycle.sql",
+          "line": 251
+        }
+      ],
+      "overloads": [
+        "public.propose_intake_booking(uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "intake",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=intake; no browser direct EXECUTE; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 196,
+        "transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=intake; no browser direct EXECUTE; domain parked."
+      }
+    },
+    {
+      "signature": "public.provision_first_owner(uuid,jsonb)",
+      "name": "public.provision_first_owner",
+      "arguments": "p_key uuid,p_business jsonb",
+      "source": {
+        "file": "supabase/migrations/20261118170156_owner_rpc_conflict_response.sql",
+        "line": 16
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "explicit_semantic_40001": [],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118170156_owner_rpc_conflict_response.sql",
+          "line": 22
+        },
+        {
+          "file": "supabase/migrations/20261118170156_owner_rpc_conflict_response.sql",
+          "line": 23
+        }
+      ],
+      "overloads": [
+        "public.provision_first_owner(uuid,jsonb)"
+      ],
+      "status": "already_translated_public_boundary",
+      "domain": "first_owner_preferences",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/auth/first-owner.ts",
+          "line": 23,
+          "role": "authenticated scoped user or service_role; see source"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.reconcile_calendar_change(uuid,uuid,uuid,jsonb)",
+      "name": "public.reconcile_calendar_change",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 550
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 562,
+          "raise": "raise exception 'Business unavailable' using errcode='40001';",
+          "condition_excerpt": "or (public_request ? 'acceptReviewedSource' and public_request->'acceptReviewedSource' is distinct from 'true'::jsonb)\n  or nullif(public_request->>'expectedRevision','') is null or length(public_request->>'expectedRevision')>1500 then raise exception 'Invalid source reconciliation command' using errcode='22023'; end if;\n request_id:=(public_request->>'key')::uuid; if request_id is null then raise exception 'A durable request key is required' using errcode='22023'; end if;\n perform 1 from public.client_businesses where id=p_client and partner_id=p_partner for update;\n if not found then"
+        },
+        {
+          "line": 565,
+          "raise": "raise exception 'Request key changed' using errcode='40001';",
+          "condition_excerpt": "perform 1 from public.client_businesses where id=p_client and partner_id=p_partner for update;\n if not found then raise exception 'Business unavailable' using errcode='40001'; end if;\n select * into prior from public.business_owner_commands c where c.partner_id=p_partner and c.client_id=p_client and c.request_key=request_id;\n if prior.id is not null then\n  if prior.actor_id is distinct from p_actor or prior.command->'owner_request' is distinct from public_request then"
+        },
+        {
+          "line": 580,
+          "raise": "raise exception 'The exact saved action, source or customer changed' using errcode='40001';",
+          "condition_excerpt": "in','provider_pending') or a.id is null or a.type is distinct from 'appointment_change' or a.status not in ('approved','edited_and_approved')\n  or j.payload is distinct from a.proposed_payload or j.kind is distinct from 'calendar.'||(a.proposed_payload->>'mutation') or origin.id is null or n.id is null or customer.id is null\n  or j.updated_at is distinct from (p_command->>'expectedJobUpdatedAt')::timestamptz or n.updated_at is distinct from (p_command->>'expectedAppointmentUpdatedAt')::timestamptz\n  or customer.updated_at is distinct from (p_command->>'expectedContactUpdatedAt')::timestamptz or account.updated_at is distinct from (p_command->>'expectedConnectionUpdatedAt')::timestamptz then"
+        },
+        {
+          "line": 581,
+          "raise": "raise exception 'This saved action requires fresh explicit review before accepting another current native state' using errcode='40001';",
+          "condition_excerpt": "rigin.id is null or n.id is null or customer.id is null\n  or j.updated_at is distinct from (p_command->>'expectedJobUpdatedAt')::timestamptz or n.updated_at is distinct from (p_command->>'expectedAppointmentUpdatedAt')::timestamptz\n  or customer.updated_at is distinct from (p_command->>'expectedContactUpdatedAt')::timestamptz or account.updated_at is distinct from (p_command->>'expectedConnectionUpdatedAt')::timestamptz then raise exception 'The exact saved action, source or customer changed' using errcode='40001'; end if;\n if public.calendar_reconciliation_valid(p_partner,p_client,j.id,j.calendar_reconciliation) and public_request->'acceptReviewedSource' is distinct from 'true'::jsonb then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+          "line": 625
+        }
+      ],
+      "overloads": [
+        "public.reconcile_calendar_change(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/scheduling/calendar-reconciliation.ts",
+          "line": 134,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.record_selected_workspace_check(uuid,uuid,integer,uuid,timestamp with time zone,timestamp with time zone,text,boolean,boolean)",
+      "name": "public.record_selected_workspace_check",
+      "arguments": "p_partner uuid,p_client uuid,p_revision integer,p_connection uuid,p_expected_connection_updated_at timestamptz,p_expected_secret_updated_at timestamptz,p_account_id text,p_email boolean,p_calendar boolean",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 345
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 350,
+          "raise": "raise exception 'Business unavailable' using errcode='40001';",
+          "condition_excerpt": "declare plan public.business_agent_activation; c public.integration_connections; secret public.integration_secrets; provider text; healthy boolean; scopes text[]; email_ok boolean:=p_email; calendar_ok boolean:=p_calendar;\nbegin\n perform 1 from public.client_businesses where id=p_client and partner_id=p_partner for update;\n if not found then"
+        },
+        {
+          "line": 352,
+          "raise": "raise exception 'Selected activation changed' using errcode='40001';",
+          "condition_excerpt": "begin\n perform 1 from public.client_businesses where id=p_client and partner_id=p_partner for update;\n if not found then raise exception 'Business unavailable' using errcode='40001'; end if;\n select * into plan from public.business_agent_activation where partner_id=p_partner and client_id=p_client and revision=p_revision and workspace_connection_id=p_connection for update;\n if plan.client_id is null then"
+        },
+        {
+          "line": 357,
+          "raise": "raise exception 'The exact selected account changed during its read-only check' using errcode='40001';",
+          "condition_excerpt": "ection and partner_id=p_partner and client_id=p_client for update;\n select * into secret from public.integration_secrets where connection_id=c.id and partner_id=p_partner and client_id=p_client and secret_kind='provider_credentials' for update;\n select provider_key into provider from public.integration_providers where id=c.provider_id;\n if c.id is null or secret.id is null or provider is distinct from plan.workspace_provider or c.updated_at is distinct from p_expected_connection_updated_at or secret.updated_at is distinct from p_expected_secret_updated_at or\n  c.external_account_id is distinct from p_account_id or nullif(p_account_id,'') is null or p_email is null or p_calendar is null then"
+        },
+        {
+          "line": 359,
+          "raise": "raise exception 'Imported accounts require separate explicit action permissions' using errcode='40001';",
+          "condition_excerpt": "select provider_key into provider from public.integration_providers where id=c.provider_id;\n if c.id is null or secret.id is null or provider is distinct from plan.workspace_provider or c.updated_at is distinct from p_expected_connection_updated_at or secret.updated_at is distinct from p_expected_secret_updated_at or\n  c.external_account_id is distinct from p_account_id or nullif(p_account_id,'') is null or p_email is null or p_calendar is null then raise exception 'The exact selected account changed during its read-only check' using errcode='40001'; end if;\n if c.config->>'workspace_view_only'='true' then\n  if provider<>'google_workspace' then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+          "line": 369
+        },
+        {
+          "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+          "line": 370
+        }
+      ],
+      "overloads": [
+        "public.record_selected_workspace_check(uuid,uuid,integer,uuid,timestamp with time zone,timestamp with time zone,text,boolean,boolean)"
+      ],
+      "status": "parked",
+      "domain": "context_authority",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/activation/service.ts",
+          "line": 158,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.review_customer_rebooking(uuid,uuid,uuid,jsonb)",
+      "name": "public.review_customer_rebooking",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+        "line": 1025
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 1039,
+          "raise": "raise exception 'Request key changed' using errcode='40001';",
+          "condition_excerpt": "request_id:=(p_command->>'key')::uuid;\n if request_id is null then raise exception 'Missing request key' using errcode='22023'; end if;\n select commands.* into prior from public.business_owner_commands commands where commands.partner_id=p_partner and commands.client_id=p_client and commands.request_key=request_id;\n if prior.id is not null then\n  if prior.actor_id is distinct from p_actor or prior.command is distinct from p_command then"
+        },
+        {
+          "line": 1048,
+          "raise": "raise exception 'Review the recorded terminal booking and receipt' using errcode='40001';",
+          "condition_excerpt": "ed' using errcode='22023'; end if;\n select * into a from public.approval_items where id=(p_command->>'bookingApprovalId')::uuid and partner_id=p_partner and client_id=p_client and type='appointment_booking' for update;\n select * into n from public.crm_appointments where approval_id=a.id and partner_id=p_partner and client_id=p_client for update;\n if a.id is null or n.id is null or n.updated_at is distinct from (p_command->>'expectedAppointmentUpdatedAt')::timestamptz or not exists(select 1 from public.action_jobs j where j.approval_id=a.id and j.partner_id=p_partner and j.client_id=p_client and j.kind='calendar.book' and j.status='succeeded' and nullif(j.external_ref,'') is not null) then"
+        },
+        {
+          "line": 1054,
+          "raise": "raise exception 'A recorded completed service or exactly proved external cancellation is required before rebooking' using errcode='40001';",
+          "condition_excerpt": "-- cancellation reconciliation. This performs no source-calendar mutation.\n if n.status='booked' and a.proposed_payload->>'provider'<>'northstar_internal' and public.reconcile_source_booking_cancellation(p_partner,p_client,a.id,p_actor) then\n  select * into n from public.crm_appointments where id=n.id and approval_id=a.id and partner_id=p_partner and client_id=p_client;\n end if;\n if not public.booking_terminal_rebooking_proof(p_partner,p_client,a.id,n.id) then"
+        },
+        {
+          "line": 1063,
+          "raise": "raise exception 'The original adopted source identity changed or is unavailable' using errcode='40001';",
+          "condition_excerpt": "al_id' for update;\n  if original_work.id is null or original_work.input->>'origin' is distinct from 'owner_intake' or c.id is null or provider is distinct from 'generic_inbound_webhook' or c.status<>'connected' or c.runtime_mode='paused' or c.config->>'workspace_view_only' is distinct from 'true' or r.id is null or r.id::text is distinct from p_command->>'sourceRecordId' or c.id::text is distinct from p_command->>'sourceConnectionId' or r.external_object_id is distinct from p_command->>'externalId' or r.updated_at is distinct from (p_command->>'expectedSourceUpdatedAt')::timestamptz or p_command->>'conversationId' is not null or p_command->>'expectedConversationRevision' is not null then"
+        },
+        {
+          "line": 1064,
+          "raise": "raise exception 'Reconcile the current source inquiry before rebooking' using errcode='40001';",
+          "condition_excerpt": "d->>'expectedConversationRevision' is not null then\n   raise exception 'The original adopted source identity changed or is unavailable' using errcode='40001'; end if;\n  if jsonb_typeof(r.canonical_data) is distinct from 'object' or (r.canonical_data ? 'provider' and r.canonical_data->>'provider' is distinct from 'generic_inbound_webhook') or r.canonical_data->>'deleted'='true' or coalesce(r.canonical_data->>'status','') not in ('new','updated') or exists(select 1 from public.integration_sync_states sync where sync.connection_id=c.id and sync.partner_id=p_partner and sync.client_id=p_client and sync.stream_key='lead' and (sync.status='failing' or nullif(sync.last_error,'') is not null)) then"
+        },
+        {
+          "line": 1068,
+          "raise": "raise exception 'The adopted source and exact customer link changed' using errcode='40001';",
+          "condition_excerpt": "s where id=original_work.source_lead_id and partner_id=p_partner and client_id=p_client for update;\n  select * into person from public.crm_contacts where id=l.contact_id and partner_id=p_partner and client_id=p_client for update;\n  select * into link from public.integration_object_links where connection_id=c.id and partner_id=p_partner and client_id=p_client and object_type='lead' and external_object_id=r.external_object_id for update;\n  if link.id is null or r.native_object_id is distinct from l.id::text or link.native_object_id is distinct from l.id::text or link.metadata->>'source_record_id' is distinct from r.id::text or link.metadata->>'contact_id' is distinct from person.id::text then"
+        },
+        {
+          "line": 1078,
+          "raise": "raise exception 'Resume and review the exact verified customer thread' using errcode='40001';",
+          "condition_excerpt": "p_client for update;\n  select * into person from public.crm_contacts where id=l.contact_id and partner_id=p_partner and client_id=p_client for update;\n  if cv.id is null or cv.id::text is distinct from p_command->>'conversationId' or cv.revision is distinct from (p_command->>'expectedConversationRevision')::integer or cv.contact_id is distinct from person.id or (cv.lead_id is not null and cv.lead_id<>l.id) or cv.identity_status<>'owner_verified' or cv.mode<>'agent' or cv.opted_out or cv.state='closed' or p_command->>'sourceRecordId' is not null or p_command->>'sourceConnectionId' is not null or p_command->>'externalId' is not null or p_command->>'expectedSourceUpdatedAt' is not null then"
+        },
+        {
+          "line": 1079,
+          "raise": "raise exception 'Restore the original customer source first' using errcode='40001';",
+          "condition_excerpt": "d is not null and cv.lead_id<>l.id) or cv.identity_status<>'owner_verified' or cv.mode<>'agent' or cv.opted_out or cv.state='closed' or p_command->>'sourceRecordId' is not null or p_command->>'sourceConnectionId' is not null or p_command->>'externalId' is not null or p_command->>'expectedSourceUpdatedAt' is not null then\n   raise exception 'Resume and review the exact verified customer thread' using errcode='40001'; end if;\n  if cv.connection_id is not null and not exists(select 1 from public.integration_connections account where account.id=cv.connection_id and account.partner_id=p_partner and account.client_id=p_client and account.status='connected' and account.runtime_mode<>'paused') then"
+        },
+        {
+          "line": 1082,
+          "raise": "raise exception 'The current exact lead or customer changed' using errcode='40001';",
+          "condition_excerpt": "d if;\n  pins:=jsonb_build_object('origin',origin,'conversation_id',cv.id,'conversation_revision',cv.revision,'source_connection_id',cv.connection_id);\n end if;\n if l.id is null or person.id is null or person.id is distinct from n.contact_id or (n.lead_id is not null and n.lead_id<>l.id) or (a.proposed_payload->>'contact_id' is not null and a.proposed_payload->>'contact_id'<>person.id::text) or (a.proposed_payload->>'lead_id' is not null and a.proposed_payload->>'lead_id'<>l.id::text) or l.updated_at is distinct from (p_command->>'expectedLeadUpdatedAt')::timestamptz or person.updated_at is distinct from (p_command->>'expectedContactUpdatedAt')::timestamptz or l.status in ('won','lost') then"
+        },
+        {
+          "line": 1083,
+          "raise": "raise exception 'Customer suppression or human handling needs review' using errcode='40001';",
+          "condition_excerpt": "datedAt')::timestamptz or person.updated_at is distinct from (p_command->>'expectedContactUpdatedAt')::timestamptz or l.status in ('won','lost') then raise exception 'The current exact lead or customer changed' using errcode='40001'; end if;\n if exists(select 1 from unnest(person.tags) t where lower(regexp_replace(btrim(t),'[[:space:]-]+','_','g')) in ('do_not_contact','opt_out','opted_out','unsubscribed','stop')) or exists(select 1 from public.business_conversations linked where linked.partner_id=p_partner and linked.client_id=p_client and linked.contact_id=person.id and linked.identity_status='owner_verified' and (linked.opted_out or (linked.mode='human' and linked.state<>'closed'))) then"
+        },
+        {
+          "line": 1088,
+          "raise": "raise exception 'The customer activity changed during review' using errcode='40001';",
+          "condition_excerpt": "tion='inbound' and comm.status='received'\n  union all select msg.id,msg.created_at from public.business_conversation_messages msg join public.business_conversations linked on linked.id=msg.conversation_id and linked.partner_id=msg.partner_id and linked.client_id=msg.client_id where linked.partner_id=p_partner and linked.client_id=p_client and linked.contact_id=person.id and linked.identity_status='owner_verified' and msg.direction='inbound' and msg.status='received'\n ) activity order by activity.created_at desc,activity.id desc limit 1;\n if activity_id::text is distinct from p_command->>'expectedActivityId' or activity_at is distinct from (p_command->>'expectedActivityAt')::timestamptz then"
+        },
+        {
+          "line": 1089,
+          "raise": "raise exception 'Another active booking needs review' using errcode='40001';",
+          "condition_excerpt": "d.client_id=p_client and linked.contact_id=person.id and linked.identity_status='owner_verified' and msg.direction='inbound' and msg.status='received'\n ) activity order by activity.created_at desc,activity.id desc limit 1;\n if activity_id::text is distinct from p_command->>'expectedActivityId' or activity_at is distinct from (p_command->>'expectedActivityAt')::timestamptz then raise exception 'The customer activity changed during review' using errcode='40001'; end if;\n if exists(select 1 from public.crm_appointments other where other.partner_id=p_partner and other.client_id=p_client and other.contact_id=person.id and other.id<>n.id and other.status in ('booked','proposed','confirmed')) then"
+        },
+        {
+          "line": 1091,
+          "raise": "raise exception 'Authority changed during review' using errcode='40001';",
+          "condition_excerpt": "_at is distinct from (p_command->>'expectedActivityAt')::timestamptz then raise exception 'The customer activity changed during review' using errcode='40001'; end if;\n if exists(select 1 from public.crm_appointments other where other.partner_id=p_partner and other.client_id=p_client and other.contact_id=person.id and other.id<>n.id and other.status in ('booked','proposed','confirmed')) then raise exception 'Another active booking needs review' using errcode='40001'; end if;\n select * into s from public.agent_team_settings where partner_id=p_partner and client_id=p_client for update;\n if coalesce(s.authority_revision,0) is distinct from (p_command->>'expectedAuthorityRevision')::integer then"
+        },
+        {
+          "line": 1095,
+          "raise": "raise exception 'Existing rebooking action must be reconciled before replacement' using errcode='40001';",
+          "condition_excerpt": "errcode='40001'; end if;\n -- Retire only unsent attempts for this exact prior booking. Original success\n -- and every accepted/uncertain provider action retain their history.\n for w in select * from public.agent_work_items work where work.partner_id=p_partner and work.client_id=p_client and work.kind='booking_request' and work.input->>'rebooking_origin_approval_id'=a.id::text order by work.created_at for update loop\n  if w.status='completed' or exists(select 1 from public.action_jobs j where j.approval_id=w.approval_id and j.partner_id=p_partner and j.client_id=p_client and (j.status in ('processing','provider_pending','uncertain','succeeded') or nullif(j.external_ref,'') is not null)) then"
+        },
+        {
+          "line": 1097,
+          "raise": "raise exception 'The previous action cannot be safely replaced' using errcode='40001';",
+          "condition_excerpt": "'provider_pending','uncertain','succeeded') or nullif(j.external_ref,'') is not null)) then raise exception 'Existing rebooking action must be reconciled before replacement' using errcode='40001'; end if;\n  update public.action_jobs j set status='cancelled',outcome_detail='Superseded by a fresh explicit owner instruction review.',last_error=null where j.approval_id=w.approval_id and j.partner_id=p_partner and j.client_id=p_client and (j.status in ('pending','dry_run','skipped') or (j.status='failed' and j.external_ref is null));\n  if exists(select 1 from public.action_jobs j where j.approval_id=w.approval_id and j.partner_id=p_partner and j.client_id=p_client and j.status<>'cancelled') then"
+        },
+        {
+          "line": 1103,
+          "raise": "raise exception 'Shared inquiry review task unavailable' using errcode='40001';",
+          "condition_excerpt": "update public.agent_work_items set status='cancelled',claim_token=null,lease_until=null,summary='Superseded by fresh owner review; no accepted provider effect was undone.',revision=revision+1,updated_at=now() where id=w.id and status<>'cancelled';\n end loop;\n if origin='owner_intake' then\n  perform 1 from public.crm_tasks where id=review_task and partner_id=p_partner and client_id=p_client and lead_id=l.id and contact_id=person.id for update;\n  if not found then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 1212
+        }
+      ],
+      "overloads": [
+        "public.review_customer_rebooking(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "Owner JSON customer-journey API; service_role admin RPC after fresh-owner scope/write checks. Also lib/scheduling/customer-rebooking.ts:111 dynamic repository selection; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/business/customer-journey-commands.ts",
+        "line": 67,
+        "transport": "Owner JSON customer-journey API; service_role admin RPC after fresh-owner scope/write checks. Also lib/scheduling/customer-rebooking.ts:111 dynamic repository selection; domain parked."
+      }
+    },
+    {
+      "signature": "public.save_calendar_change_handoff(uuid,uuid,uuid,jsonb)",
+      "name": "public.save_calendar_change_handoff",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+        "line": 481
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 493,
+          "raise": "raise exception 'Request key changed' using errcode='40001';",
+          "condition_excerpt": "perform 1 from public.client_businesses where id=p_client and partner_id=p_partner for update;\n if not found then raise exception 'Business unavailable'; end if;\n select * into prior from public.business_owner_commands c where c.partner_id=p_partner and c.client_id=p_client and c.request_key=request_id;\n if prior.id is not null then\n  if prior.actor_id is distinct from p_actor or coalesce(prior.command->'owner_request',prior.command) is distinct from public_request then"
+        },
+        {
+          "line": 501,
+          "raise": "raise exception 'The exact saved appointment changed; review it before requesting source-app cancellation' using errcode='40001';",
+          "condition_excerpt": "ere c.id=(origin.proposed_payload->>'conversation_id')::uuid and c.partner_id=p_partner and c.client_id=p_client for update; end if;\n select * into native from public.crm_appointments where approval_id=origin.id and partner_id=p_partner and client_id=p_client for update;\n select * into receipt from public.action_jobs where approval_id=origin.id and partner_id=p_partner and client_id=p_client and kind='calendar.book' and status='succeeded' for update;\n if origin.id is null or native.id is null or receipt.id is null or nullif(receipt.external_ref,'') is null or native.updated_at is distinct from (p_command->>'expectedRevision')::timestamptz\n  or native.status not in ('proposed','booked') then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 513
+        }
+      ],
+      "overloads": [
+        "public.save_calendar_change_handoff(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "Owner JSON customer-journey API; service_role admin RPC after fresh-owner scope/write checks; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/business/customer-journey-commands.ts",
+        "line": 77,
+        "transport": "Owner JSON customer-journey API; service_role admin RPC after fresh-owner scope/write checks; domain parked."
+      }
+    },
+    {
+      "signature": "public.save_calendar_mutation_offer(uuid,uuid,uuid,jsonb)",
+      "name": "public.save_calendar_mutation_offer",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_offer jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+        "line": 251
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 265,
+          "raise": "raise exception '%',verdict->>'reason' using errcode='40001';",
+          "condition_excerpt": "or (p_offer->>'expiresAt')::timestamptz<=now() or (p_offer->>'expiresAt')::timestamptz>now()+interval '15 minutes'\n  or jsonb_typeof(p_offer->'slots') is distinct from 'array' or jsonb_array_length(p_offer->'slots') not between 1 and 3\n  or p_offer->'payload'->>'booking_approval_id' is distinct from origin.id::text then raise exception 'The calendar offer is expired or unbound' using errcode='22023'; end if;\n verdict:=public.calendar_mutation_source_check(p_partner,p_client,p_offer->'payload',false);\n if verdict->>'allowed' is distinct from 'true' then"
+        },
+        {
+          "line": 270,
+          "raise": "raise exception '%',verdict->>'reason' using errcode='40001';",
+          "condition_excerpt": "for selected in select value from jsonb_array_elements(p_offer->'slots') loop\n  if jsonb_typeof(selected) is distinct from 'object' or selected-array['start_iso','end_iso','label']<>'{}'::jsonb or nullif(selected->>'label','') is null or length(selected->>'label')>500 then raise exception 'Invalid replacement slot' using errcode='22023'; end if;\n  current_payload:=((p_offer->'payload')-'new_slot')||jsonb_build_object('mutation','reschedule','new_slot',selected-'label');\n  verdict:=public.calendar_mutation_source_check(p_partner,p_client,current_payload,false);\n  if verdict->>'allowed' is distinct from 'true' then"
+        },
+        {
+          "line": 273,
+          "raise": "raise exception 'Offer key changed' using errcode='40001';",
+          "condition_excerpt": "verdict:=public.calendar_mutation_source_check(p_partner,p_client,current_payload,false);\n  if verdict->>'allowed' is distinct from 'true' then raise exception '%',verdict->>'reason' using errcode='40001'; end if;\n end loop;\n if exists(select 1 from public.booking_change_offers o where o.id=offer_id) then\n  if not exists(select 1 from public.booking_change_offers o where o.id=offer_id and o.partner_id=p_partner and o.client_id=p_client and o.actor_id=p_actor and o.booking_approval_id=origin.id and o.revision=p_offer->>'revision' and o.slots=p_offer->'slots' and o.payload=p_offer->'payload' and o.expires_at=(p_offer->>'expiresAt')::timestamptz) then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 513
+        }
+      ],
+      "overloads": [
+        "public.save_calendar_mutation_offer(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "lib/scheduling/calendar-change-proposals.ts",
+          "line": 50,
+          "role": "service_role via server PostgREST"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.save_customer_rebooking_offer(uuid,uuid,jsonb)",
+      "name": "public.save_customer_rebooking_offer",
+      "arguments": "p_work uuid,p_claim uuid,p_offer jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 202
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 208,
+          "raise": "raise exception 'Inquiry scheduling changed' using errcode='40001';",
+          "condition_excerpt": "declare w public.agent_work_items; check_result jsonb; s jsonb; checked timestamptz; expires timestamptz; account public.integration_connections; provider text;\nbegin\n select * into strict w from public.agent_work_items where id=p_work for update;\n check_result:=public.customer_rebooking_scheduling_check(p_work,p_claim);\n if not coalesce((check_result->>'allowed')::boolean,false) or w.approval_id is not null then"
+        },
+        {
+          "line": 211,
+          "raise": "raise exception 'Availability expired' using errcode='40001';",
+          "condition_excerpt": "if;\n if jsonb_typeof(p_offer) is distinct from 'object' or jsonb_typeof(p_offer->'slots') is distinct from 'array' or jsonb_array_length(p_offer->'slots') not between 1 and 3 or nullif(p_offer->>'timezone','') is null or length(p_offer->>'timezone')>100 or p_offer->>'provider' not in ('northstar_internal','google_calendar','google_workspace','microsoft_365') then raise exception 'Invalid availability offer' using errcode='22023'; end if;\n checked:=(p_offer->>'checked_at')::timestamptz; expires:=(p_offer->>'expires_at')::timestamptz;\n if checked is null or expires is null or checked>now()+interval '5 minutes' or expires<=now() or expires<=checked or expires>checked+interval '15 minutes' then"
+        },
+        {
+          "line": 223,
+          "raise": "raise exception 'Scheduling claim lost' using errcode='40001';",
+          "condition_excerpt": "<>'connected' or account.runtime_mode<>'live' or (account.config->>'workspace_view_only'='true' and not (provider='google_workspace' and public.google_config_can_act(account.config,'calendar'))) then raise exception 'Calendar account unavailable or read only' using errcode='22023'; end if;\n end if;\n update public.agent_work_items set status='waiting_approval',summary='Choose an offered appointment time. Nothing is held or booked.',result=result||jsonb_build_object('phase','choose_slot','offer',p_offer),claim_token=null,lease_until=null,revision=revision+1,next_run_at=expires,updated_at=now() where id=w.id and claim_token=p_claim and status='running' and lease_until>now();\n if not found then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 641
+        }
+      ],
+      "overloads": [
+        "public.save_customer_rebooking_offer(uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=conversation; no browser direct EXECUTE; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 195,
+        "transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=conversation; no browser direct EXECUTE; domain parked."
+      }
+    },
+    {
+      "signature": "public.save_intake_scheduling_offer(uuid,uuid,jsonb)",
+      "name": "public.save_intake_scheduling_offer",
+      "arguments": "p_work uuid,p_claim uuid,p_offer jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117225829_google_permissions_calendar_reconciliation.sql",
+        "line": 142
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 148,
+          "raise": "raise exception 'Inquiry scheduling changed' using errcode='40001';",
+          "condition_excerpt": "declare w public.agent_work_items; check_result jsonb; s jsonb; checked timestamptz; expires timestamptz; account public.integration_connections; provider text;\nbegin\n select * into strict w from public.agent_work_items where id=p_work for update;\n check_result:=public.intake_scheduling_check(p_work,p_claim);\n if not coalesce((check_result->>'allowed')::boolean,false) or w.approval_id is not null then"
+        },
+        {
+          "line": 151,
+          "raise": "raise exception 'Availability expired' using errcode='40001';",
+          "condition_excerpt": "if;\n if jsonb_typeof(p_offer) is distinct from 'object' or jsonb_typeof(p_offer->'slots') is distinct from 'array' or jsonb_array_length(p_offer->'slots') not between 1 and 3 or nullif(p_offer->>'timezone','') is null or length(p_offer->>'timezone')>100 or p_offer->>'provider' not in ('northstar_internal','google_calendar','google_workspace','microsoft_365') then raise exception 'Invalid availability offer' using errcode='22023'; end if;\n checked:=(p_offer->>'checked_at')::timestamptz; expires:=(p_offer->>'expires_at')::timestamptz;\n if checked is null or expires is null or checked>now()+interval '5 minutes' or expires<=now() or expires<=checked or expires>checked+interval '15 minutes' then"
+        },
+        {
+          "line": 163,
+          "raise": "raise exception 'Scheduling claim lost' using errcode='40001';",
+          "condition_excerpt": "<>'connected' or account.runtime_mode<>'live' or (account.config->>'workspace_view_only'='true' and not (provider='google_workspace' and public.google_config_can_act(account.config,'calendar'))) then raise exception 'Calendar account unavailable or read only' using errcode='22023'; end if;\n end if;\n update public.agent_work_items set status='waiting_approval',summary='Choose an offered appointment time. Nothing is held or booked.',result=result||jsonb_build_object('phase','choose_slot','offer',p_offer),claim_token=null,lease_until=null,revision=revision+1,next_run_at=expires,updated_at=now() where id=w.id and claim_token=p_claim and status='running' and lease_until>now();\n if not found then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117133444_customer_journey_lifecycle.sql",
+          "line": 251
+        }
+      ],
+      "overloads": [
+        "public.save_intake_scheduling_offer(uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "intake",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=intake; no browser direct EXECUTE; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 195,
+        "transport": "Existing background claimed booking_request worker; service_role admin RPC selected by path=intake; no browser direct EXECUTE; domain parked."
+      }
+    },
+    {
+      "signature": "public.save_owner_workspace_preferences(uuid,uuid,bigint,jsonb)",
+      "name": "public.save_owner_workspace_preferences",
+      "arguments": "p_client uuid,p_key uuid,p_revision bigint,p_settings jsonb",
+      "source": {
+        "file": "supabase/migrations/20261118170156_owner_rpc_conflict_response.sql",
+        "line": 6
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "explicit_semantic_40001": [],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261118170156_owner_rpc_conflict_response.sql",
+          "line": 12
+        },
+        {
+          "file": "supabase/migrations/20261118170156_owner_rpc_conflict_response.sql",
+          "line": 13
+        }
+      ],
+      "overloads": [
+        "public.save_owner_workspace_preferences(uuid,uuid,bigint,jsonb)"
+      ],
+      "status": "already_translated_public_boundary",
+      "domain": "first_owner_preferences",
+      "direct_literal_rpc_callers": [
+        {
+          "file": "app/api/business/workspace-preferences/route.ts",
+          "line": 55,
+          "role": "authenticated scoped user or service_role; see source"
+        }
+      ],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "PostgREST RPC via listed caller(s)",
+      "default_approval_raises": []
+    },
+    {
+      "signature": "public.select_customer_rebooking_slot(uuid,uuid,uuid,jsonb)",
+      "name": "public.select_customer_rebooking_slot",
+      "arguments": "p_partner uuid,p_client uuid,p_actor uuid,p_command jsonb",
+      "source": {
+        "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+        "line": 614
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 624,
+          "raise": "raise exception 'Request key changed' using errcode='40001';",
+          "condition_excerpt": "request_id:=(p_command->>'key')::uuid;\n if request_id is null then raise exception 'Missing request key' using errcode='22023'; end if;\n select commands.* into prior from public.business_owner_commands commands where commands.partner_id=p_partner and commands.client_id=p_client and commands.request_key=request_id;\n if prior.id is not null then\n  if prior.actor_id is distinct from p_actor or prior.command is distinct from p_command then"
+        },
+        {
+          "line": 629,
+          "raise": "raise exception 'The scheduling decision changed' using errcode='40001';",
+          "condition_excerpt": "return prior.result||jsonb_build_object('replayed',true);\n end if;\n if p_command->>'action' is distinct from 'select_intake_slot' or p_command-array['action','key','workId','expectedWorkRevision','slot','owner_request']<>'{}'::jsonb then raise exception 'Invalid selected-slot command' using errcode='22023'; end if;\n select * into w from public.agent_work_items where id=(p_command->>'workId')::uuid and partner_id=p_partner and client_id=p_client for update;\n if w.id is null or w.input->>'origin'<>'owner_conversation' or w.approval_id is not null or w.status not in ('waiting_approval','blocked') or w.revision is distinct from (p_command->>'expectedWorkRevision')::integer then"
+        },
+        {
+          "line": 631,
+          "raise": "raise exception 'Customer source or authority changed' using errcode='40001';",
+          "condition_excerpt": "','slot','owner_request']<>'{}'::jsonb then raise exception 'Invalid selected-slot command' using errcode='22023'; end if;\n select * into w from public.agent_work_items where id=(p_command->>'workId')::uuid and partner_id=p_partner and client_id=p_client for update;\n if w.id is null or w.input->>'origin'<>'owner_conversation' or w.approval_id is not null or w.status not in ('waiting_approval','blocked') or w.revision is distinct from (p_command->>'expectedWorkRevision')::integer then raise exception 'The scheduling decision changed' using errcode='40001'; end if;\n check_result:=public.customer_rebooking_source_check(w.id,false,true);\n if check_result->>'allowed' is distinct from 'true' then"
+        },
+        {
+          "line": 633,
+          "raise": "raise exception 'Choose fresh saved availability' using errcode='40001';",
+          "condition_excerpt": "t from (p_command->>'expectedWorkRevision')::integer then raise exception 'The scheduling decision changed' using errcode='40001'; end if;\n check_result:=public.customer_rebooking_source_check(w.id,false,true);\n if check_result->>'allowed' is distinct from 'true' then raise exception 'Customer source or authority changed' using errcode='40001'; end if;\n offer:=w.result->'offer'; selection:=(p_command->>'slot')::integer;\n if selection is null or selection not between 1 and 3 or jsonb_typeof(offer->'slots') is distinct from 'array' or (offer->>'expires_at')::timestamptz is null or (offer->>'expires_at')::timestamptz<=now() or (offer->>'checked_at')::timestamptz>now()+interval '5 minutes' then"
+        },
+        {
+          "line": 635,
+          "raise": "raise exception 'The offered time expired' using errcode='40001';",
+          "condition_excerpt": "if check_result->>'allowed' is distinct from 'true' then raise exception 'Customer source or authority changed' using errcode='40001'; end if;\n offer:=w.result->'offer'; selection:=(p_command->>'slot')::integer;\n if selection is null or selection not between 1 and 3 or jsonb_typeof(offer->'slots') is distinct from 'array' or (offer->>'expires_at')::timestamptz is null or (offer->>'expires_at')::timestamptz<=now() or (offer->>'checked_at')::timestamptz>now()+interval '5 minutes' then raise exception 'Choose fresh saved availability' using errcode='40001'; end if;\n slot:=offer->'slots'->(selection-1);\n if slot is null or (slot->>'start_iso')::timestamptz<=now() then"
+        },
+        {
+          "line": 637,
+          "raise": "raise exception 'Scheduling decision changed' using errcode='40001';",
+          "condition_excerpt": "f slot is null or (slot->>'start_iso')::timestamptz<=now() then raise exception 'The offered time expired' using errcode='40001'; end if;\n update public.agent_work_items set input=input||jsonb_build_object('slot',slot,'selection_index',selection,'provider',offer->'provider','calendar_connection_id',offer->'calendar_connection_id','timezone',offer->'timezone'),result=result||jsonb_build_object('phase','selected_slot'),status='queued',summary='Owner selected a saved time. Scheduling will recheck before booking approval; nothing was sent or booked.',next_run_at=now(),claim_token=null,lease_until=null,revision=revision+1,updated_at=now() where id=w.id and revision=w.revision;\n if not found then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+          "line": 641
+        }
+      ],
+      "overloads": [
+        "public.select_customer_rebooking_slot(uuid,uuid,uuid,jsonb)"
+      ],
+      "status": "parked",
+      "domain": "calendar_rebooking",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [],
+      "actual_transport": "Owner JSON customer-journey API; service_role admin RPC selected by owner_conversation origin; also lib/scheduling/customer-rebooking.ts:111; domain parked.",
+      "default_approval_raises": [],
+      "dynamic_rpc_caller": {
+        "file": "lib/business/customer-journey-commands.ts",
+        "line": 121,
+        "transport": "Owner JSON customer-journey API; service_role admin RPC selected by owner_conversation origin; also lib/scheduling/customer-rebooking.ts:111; domain parked."
+      }
+    },
+    {
+      "signature": "public.stamp_approval_authority()",
+      "name": "public.stamp_approval_authority",
+      "arguments": "",
+      "source": {
+        "file": "supabase/migrations/20261117214644_approved_calendar_changes.sql",
+        "line": 1343
+      },
+      "security": "invoker",
+      "search_path": "''",
+      "owner": "migration executor (no explicit ALTER OWNER found; actual catalog owner not queried)",
+      "execute_roles": [
+        "service_role"
+      ],
+      "explicit_semantic_40001": [
+        {
+          "line": 1350,
+          "raise": "raise exception 'Authority changed during preparation' using errcode='40001';",
+          "condition_excerpt": "begin\n select authority_revision into current_revision from public.agent_team_settings where partner_id=new.partner_id and client_id=new.client_id;\n if current_revision is not null and new.type in ('customer_message','appointment_booking','appointment_change','external_action') then\n  if new.proposed_payload ? 'authority_revision' and (new.proposed_payload->>'authority_revision')::integer<>current_revision then"
+        }
+      ],
+      "acl_evidence": [
+        {
+          "file": "supabase/migrations/20261117030202_reviewed_business_authority.sql",
+          "line": 449
+        }
+      ],
+      "overloads": [
+        "public.stamp_approval_authority()"
+      ],
+      "status": "proposed_foundation_literal_only",
+      "domain": "context_authority",
+      "direct_literal_rpc_callers": [],
+      "effective_sql_callers": [],
+      "trigger_bindings": [
+        {
+          "name": "stamp_approval_authority",
+          "table": "public.approval_items",
+          "events": "before insert",
+          "function": "public.stamp_approval_authority",
+          "source": {
+            "file": "supabase/migrations/20261117030202_reviewed_business_authority.sql",
+            "line": 179
+          }
+        }
+      ],
+      "actual_transport": "authenticated approval_items INSERT/PATCH under RLS, or server service_role INSERT/PATCH; trigger execute grants do not prevent trigger invocation",
+      "default_approval_raises": []
+    }
+  ],
+  "primary_sources": [
+    "https://supabase.com/kb/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b",
+    "https://docs.postgrest.org/en/v14/references/errors.html#raise-errors-with-http-status-codes",
+    "https://raw.githubusercontent.com/supabase/cli/v2.107.0/apps/cli-go/pkg/config/templates/Dockerfile"
+  ],
+  "resume_review": {
+    "baseline_head": "eb3fb374332204d6664cfbd8646b0fafae7d7f5d",
+    "scope": "Fresh authorized foundation only. Proposal adds private stale-authority decision trigger with business KEY SHARE NOWAIT then settings SHARE NOWAIT; no migration execution by worker.",
+    "catalog_proof": "Pending isolated CI; new owner_foundation_catalog tagged report emits actual owners, modes, configurations, ACLs and enabled trigger.",
+    "resolved_missing_literal_callers": [
+      {
+        "signature": "public.propose_customer_rebooking(uuid,uuid,jsonb)",
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 196,
+        "role": "service_role"
+      },
+      {
+        "signature": "public.propose_intake_booking(uuid,uuid,jsonb)",
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 196,
+        "role": "service_role"
+      },
+      {
+        "signature": "public.save_customer_rebooking_offer(uuid,uuid,jsonb)",
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 195,
+        "role": "service_role"
+      },
+      {
+        "signature": "public.save_intake_scheduling_offer(uuid,uuid,jsonb)",
+        "file": "lib/agents/inquiry-progression.ts",
+        "line": 195,
+        "role": "service_role"
+      }
+    ]
+  }
+}

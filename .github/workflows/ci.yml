@@ -1,0 +1,153 @@
+name: Production gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://build-check.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: build_check_anon_key_longer_than_twenty_characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify the lockfile Supabase toolchain
+        run: node scripts/ci-bootstrap-customer-journey-db.mjs --check-toolchain
+      - name: Start the pinned Supabase stack with all migrations
+        run: node scripts/ci-bootstrap-customer-journey-db.mjs --start
+      - name: Bootstrap a named disposable customer journey database
+        run: node scripts/ci-bootstrap-customer-journey-db.mjs
+      - name: Verify customer journey rollback and concurrent database behavior
+        run: node scripts/verify-customer-journey-db.mjs --concurrency
+      - name: Build owner journey with actual disposable Auth configuration
+        run: npm run build
+      - name: Install the pinned owner browser toolchain on the disposable runner
+        run: |
+          npm install --prefix "$RUNNER_TEMP/owner-browser" --no-save --ignore-scripts --package-lock=false playwright@1.65.1
+          "$RUNNER_TEMP/owner-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify authenticated owner desktop and phone journeys
+        env:
+          OWNER_BROWSER_CONFIRMATION: owner-browser-disposable
+          OWNER_BROWSER_APP_URL: http://127.0.0.1:3000
+          OWNER_BROWSER_PLAYWRIGHT_MODULE: ${{ runner.temp }}/owner-browser/node_modules/playwright/index.mjs
+          OWNER_BROWSER_ARTIFACTS: ${{ runner.temp }}/owner-browser-evidence
+        run: node scripts/verify-owner-browser.mjs
+      - name: Preserve synthetic owner browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-browser-evidence
+          path: ${{ runner.temp }}/owner-browser-evidence
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Verify security against a disposable schema with synthetic fixtures
+        run: npm run verify:security
+      - run: npm run verify:restore
+      - name: Build and verify the complete release journey
+        run: |
+          npm run build
+          npm run verify:release-journey
+          npm run verify:native-inbound
+      - if: always()
+        run: ./node_modules/.bin/supabase stop --no-backup
+
+  containers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: web
+            dockerfile: Dockerfile
+          - name: jobs
+            dockerfile: deploy/jobs.Dockerfile
+          - name: voice
+            dockerfile: services/voice-stream/Dockerfile
+          - name: connector-worker
+            dockerfile: deploy/connector-worker.Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.name }} image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=https://build-check.supabase.co \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=build_check_anon_key_longer_than_twenty_characters \
+            -f "${{ matrix.dockerfile }}" \
+            -t "northstar-${{ matrix.name }}:${{ github.sha }}" \
+            .
+
+  service-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify connector-worker deployment configuration
+        env:
+          CONNECTOR_WORKER_ENV_FILE: .env.example
+          CONNECTOR_WORKSPACE_PATH: ${{ github.workspace }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          bash -n deploy/release-connector-worker.sh
+          docker compose -f docker-compose.connector-worker.yml config >/dev/null
+      - run: npm run verify:service-images
+
+  desktop-bundles:
+    name: desktop (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-15
+            build: desktop:dist:mac
+          - platform: windows
+            runner: windows-latest
+            build: desktop:dist:win
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      DESKTOP_APP_URL: "https://desktop-build.example.com"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ${{ matrix.build }}
+      - run: npm run verify:desktop-bundle

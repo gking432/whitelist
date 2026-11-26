@@ -1,0 +1,149 @@
+name: Production release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full commit SHA from main to release
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY PRODUCTION
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_sha }}
+      - name: Validate production intent and release commit
+        id: release
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          REQUESTED_SHA: ${{ inputs.release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "DEPLOY PRODUCTION"
+          test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$REQUESTED_SHA" origin/main
+          echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:release-topology
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  deploy-hosted-services:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: ${{ vars.HOSTED_APP_URL }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+      RENDER_APP_DEPLOY_HOOK_URL: ${{ secrets.RENDER_APP_DEPLOY_HOOK_URL }}
+      RENDER_JOBS_DEPLOY_HOOK_URL: ${{ secrets.RENDER_JOBS_DEPLOY_HOOK_URL }}
+      RENDER_VOICE_DEPLOY_HOOK_URL: ${{ secrets.RENDER_VOICE_DEPLOY_HOOK_URL }}
+      HOSTED_APP_URL: ${{ vars.HOSTED_APP_URL }}
+      HOSTED_VOICE_URL: ${{ vars.HOSTED_VOICE_URL }}
+      EXPECTED_RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+      RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+      HOSTED_VERIFY_TIMEOUT_MS: "1200000"
+      HOSTED_VERIFY_INTERVAL_MS: "15000"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Verify production environment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_ID
+            RENDER_APP_DEPLOY_HOOK_URL RENDER_JOBS_DEPLOY_HOOK_URL
+            RENDER_VOICE_DEPLOY_HOOK_URL HOSTED_APP_URL HOSTED_VOICE_URL
+          )
+          for name in "${required[@]}"; do
+            test -n "${!name:-}" || { echo "::error::$name is not configured in the production environment"; exit 1; }
+          done
+      - run: npm ci
+      - name: Preview and apply production migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_ID"
+          supabase db push --dry-run
+          supabase db push
+          supabase migration list --linked
+      - name: Deploy the exact release to Render
+        run: node scripts/trigger-render-deploys.mjs
+  deploy-connector-worker:
+    needs: [validate, deploy-hosted-services]
+    runs-on: [self-hosted, linux, connector-worker]
+    timeout-minutes: 20
+    environment:
+      name: production
+    env:
+      RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+      CONNECTOR_WORKSPACE_PATH: ${{ vars.CONNECTOR_WORKSPACE_PATH }}
+      CONNECTOR_WORKER_ENV_FILE: ${{ vars.CONNECTOR_WORKER_ENV_FILE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
+      - name: Deploy the exact release to the isolated connector worker
+        run: bash deploy/release-connector-worker.sh
+
+  verify:
+    needs: [validate, deploy-hosted-services, deploy-connector-worker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+      url: ${{ vars.HOSTED_APP_URL }}
+    env:
+      HOSTED_APP_URL: ${{ vars.HOSTED_APP_URL }}
+      HOSTED_VOICE_URL: ${{ vars.HOSTED_VOICE_URL }}
+      EXPECTED_RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+      HOSTED_VERIFY_TIMEOUT_MS: "1200000"
+      HOSTED_VERIFY_INTERVAL_MS: "15000"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Wait for and verify the complete public release
+        run: npm run verify:hosted

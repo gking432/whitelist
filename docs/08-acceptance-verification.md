@@ -77,7 +77,8 @@ Outbound webhook:
 1. HTTPS URL accepted.
 2. HTTP URL rejected.
 3. local/private network URL rejected in production mode.
-4. signing secret not returned to browser.
+4. signing secret is shown once to the authorized creator, stored encrypted,
+   and never returned by later reads.
 5. failed delivery logs status and error.
 6. retry requires permission.
 7. retry creates new attempt.
@@ -103,7 +104,8 @@ Workflow run:
 Approval:
 
 1. high-risk/customer-facing workflow creates approval item.
-2. approval appears in partner queue.
+2. approval appears read-only in the managed-client partner workspace for
+   troubleshooting; only authorized client staff receive resolution controls.
 3. client user sees approval only if client portal/permission allows.
 4. approve updates approval state and audit log.
 5. edit-and-approve stores edited content.
@@ -205,4 +207,3 @@ The app should block:
 - client access when client portal is disabled.
 - workflow run for paused/disabled workflow.
 - use of missing or invalid secrets.
-
