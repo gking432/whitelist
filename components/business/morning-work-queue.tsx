@@ -18,10 +18,12 @@ import { localDate, safeSourceUrl, type BriefTask, type DailyBriefData } from "@
 import type { FocusRow } from "@/lib/business/focus-brief";
 import { orderMorningApprovals, overlappingAppointments } from "@/lib/business/morning-queue";
 import { InlineWeekCalendar, type Slot } from "./inline-week-calendar";
+import { LeadFollowUpBatch } from "./lead-followup-batch";
+import { splitLeadFollowUps } from "@/lib/business/lead-followups";
 
 type Approval = DailyBriefData["approvals"][number];
 type Appointment = DailyBriefData["appointments"][number];
-type Entry = { kind: "approval"; key: string; approval: Approval } | { kind: "row"; key: string; row: FocusRow };
+type Entry = { kind: "approval"; key: string; approval: Approval } | { kind: "row"; key: string; row: FocusRow } | { kind: "followups"; key: string; approvals: Approval[] };
 type Density = "1" | "3" | "all";
 export type PreviewAction = {
   approvalId: string;
@@ -277,8 +279,8 @@ function RecordRow({ row, preview, task, saving, error, onOpenRecord, onComplete
   </article>;
 }
 
-export function MorningWorkQueue({ approvals, appointments, timeZone, customers = [], tasks = [], canWriteTasks = false, rows, scopeKey, now, onOpenRecord, preview = false, moreDecisionCount = 0, onPreviewAction, onRescheduleAppointment, onCalendarOpenChange }: {
-  approvals: Approval[]; appointments: Appointment[]; timeZone: string; customers?: ConnectedCustomer[]; tasks?: BriefTask[]; canWriteTasks?: boolean; rows: FocusRow[]; scopeKey: string; now: string;
+export function MorningWorkQueue({ approvals, appointments, timeZone, customers = [], tasks = [], canWriteTasks = false, rows, scopeKey, now, onOpenRecord, preview = false, moreDecisionCount = 0, outbound, onPreviewAction, onRescheduleAppointment, onCalendarOpenChange }: {
+  approvals: Approval[]; outbound?: DailyBriefData["outbound"]; appointments: Appointment[]; timeZone: string; customers?: ConnectedCustomer[]; tasks?: BriefTask[]; canWriteTasks?: boolean; rows: FocusRow[]; scopeKey: string; now: string;
   onOpenRecord: (id: string) => void; preview?: boolean; moreDecisionCount?: number; onPreviewAction?: (action: PreviewAction) => void;
   onRescheduleAppointment?: (appointmentId: string, slot: Slot) => void;
   onCalendarOpenChange?: (open: boolean) => void;
@@ -362,8 +364,11 @@ export function MorningWorkQueue({ approvals, appointments, timeZone, customers 
   const representedTaskKeys = new Set(approvals.flatMap((approval) =>
     approval.type === "sample_task" && typeof approval.proposed_payload?.task_id === "string"
       ? ["action:" + approval.proposed_payload.task_id] : []));
-  const decisionEntries: Entry[] = orderMorningApprovals(approvals.filter((item) => !receipts[item.id]), now)
+  // Background sales follow-ups are one decision with many drafts, not many separate cards.
+  const { followUps, other: individualApprovals } = splitLeadFollowUps(approvals.filter((item) => !receipts[item.id]));
+  const decisionEntries: Entry[] = orderMorningApprovals(individualApprovals, now)
     .map((approval) => ({ kind: "approval" as const, key: "approval:" + approval.id, approval }));
+  const followUpEntries: Entry[] = followUps.length ? [{ kind: "followups", key: "followups", approvals: followUps }] : [];
   const informationalEntries: Entry[] = rows
     .filter((row) => !approvalKeys.has(row.key) && !representedTaskKeys.has(row.key) && !acknowledgedRows.includes(row.key) &&
       !completedTaskIds.some((id) => row.key === "action:" + id))
@@ -375,6 +380,7 @@ export function MorningWorkQueue({ approvals, appointments, timeZone, customers 
   const insertAt = lowerDecisionIndex < 0 ? decisionEntries.length : lowerDecisionIndex;
   const entries: Entry[] = [
     ...decisionEntries.slice(0, insertAt),
+    ...followUpEntries,
     ...overdueEntries,
     ...decisionEntries.slice(insertAt),
     ...informationalEntries.filter((entry) => !overdueEntries.includes(entry)),
@@ -397,7 +403,9 @@ export function MorningWorkQueue({ approvals, appointments, timeZone, customers 
     </div>
     {moreDecisionCount > 0 ? <Link href={preview ? "/preview" : "/client/approvals"} className="mx-5 mb-3 inline-flex min-h-10 items-center text-xs font-semibold text-blue-700 hover:underline sm:mx-6">{moreDecisionCount} more {moreDecisionCount === 1 ? "decision" : "decisions"} in Approvals</Link> : null}
     {latestReceipt ? <p role="status" className="mx-5 mb-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 sm:mx-6">{latestReceipt}</p> : null}
-    {visible.length ? <div className="border-t border-slate-100">{visible.map((entry) => entry.kind === "approval" ?
+    {visible.length ? <div className="border-t border-slate-100">{visible.map((entry) => entry.kind === "followups" ?
+      <LeadFollowUpBatch key={entry.key} approvals={entry.approvals} now={now} preview={preview} outbound={outbound} onPreviewAction={onPreviewAction} onDone={(message) => setReceipts((current) => ({ ...current, ["followups:" + Date.now()]: message }))} /> :
+      entry.kind === "approval" ?
       <ApprovalRow key={entry.key} approval={entry.approval} appointments={appointments} timeZone={timeZone} customers={customers} open={openKey === entry.key} calendarOpen={calendarKey === entry.key} onToggleCalendar={() => toggleCalendar(entry.key)} onToggle={() => setOpenKey((current) => current === entry.key ? null : entry.key)} preview={preview} onPreviewAction={onPreviewAction} onRescheduleAppointment={onRescheduleAppointment} onSaved={(message) => { setReceipts((current) => ({ ...current, [entry.approval.id]: message })); setOpenKey(null); closeCalendar(); requestAnimationFrame(() => queue.current?.querySelector<HTMLButtonElement>("[data-primary-action], [data-record-action]")?.focus()); }} /> :
       <RecordRow key={entry.key} row={entry.row} preview={preview} task={canWriteTasks && !preview ? tasks.find((task) => entry.row.key === "action:" + task.id && task.status === "open" && !!task.updated_at) ?? null : null} saving={savingTaskId !== null} error={taskErrors[entry.row.key.slice("action:".length)] || null} onOpenRecord={onOpenRecord} onCompleteTask={() => { const task = tasks.find((item) => entry.row.key === "action:" + item.id); if (task) void completeTask(task); }} onAcknowledge={() => acknowledge(entry.key)} />)}</div> :
       <p className="border-t border-slate-100 px-6 py-8 text-sm text-slate-500">You’re caught up in the records available here.</p>}

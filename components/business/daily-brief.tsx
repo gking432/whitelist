@@ -228,7 +228,7 @@ export function DailyBrief({
       <div className="mt-6 grid items-start gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
         <div className="order-1 min-w-0 lg:order-none"><FocusBriefCard brief={focus} upcoming={brief.upcoming} today={brief.today} timeZone={validTimeZone(data.timeZone)} /></div>
         <div className="order-3 min-w-0 lg:order-none"><MorningMetricCard key={data.workspace.workspaceScopeKey} data={data} preview={preview} /></div>
-        <div className={"order-2 min-w-0 lg:order-none " + (calendarExpanded ? "lg:col-span-2" : "")}><MorningWorkQueue key={data.workspace.workspaceScopeKey} approvals={inlineApprovals} appointments={data.appointments} tasks={data.tasks} canWriteTasks={data.workspace.canWrite && !preview} customers={data.connectedData?.customers ?? []} timeZone={validTimeZone(data.timeZone)} rows={queueRows} scopeKey={data.workspace.workspaceScopeKey} now={data.generatedAt} onOpenRecord={setSelectedId} moreDecisionCount={hasInlineApprovals ? Math.max(0, data.counts.approvals - inlineApprovals.length) : 0} preview={preview} onPreviewAction={onPreviewAction} onRescheduleAppointment={onPreviewAppointmentChange} onCalendarOpenChange={setCalendarExpanded} /></div>
+        <div className={"order-2 min-w-0 lg:order-none " + (calendarExpanded ? "lg:col-span-2" : "")}><MorningWorkQueue key={data.workspace.workspaceScopeKey} approvals={inlineApprovals} appointments={data.appointments} tasks={data.tasks} canWriteTasks={data.workspace.canWrite && !preview} customers={data.connectedData?.customers ?? []} timeZone={validTimeZone(data.timeZone)} rows={queueRows} scopeKey={data.workspace.workspaceScopeKey} now={data.generatedAt} onOpenRecord={setSelectedId} moreDecisionCount={hasInlineApprovals ? Math.max(0, data.counts.approvals - inlineApprovals.length) : 0} outbound={data.outbound} preview={preview} onPreviewAction={onPreviewAction} onRescheduleAppointment={onPreviewAppointmentChange} onCalendarOpenChange={setCalendarExpanded} /></div>
         <div className="order-4 min-w-0 lg:order-none"><HandledForYouCard data={data} preview={preview} /></div>
       </div>
       <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 [&_a]:inline-flex [&_a]:min-h-11 [&_a]:items-center">
@@ -237,7 +237,7 @@ export function DailyBrief({
           href={preview ? "/preview/manager" : "/client/manager"}
           className="hover:text-slate-800"
         >
-          Talk to your manager
+          Ask your agents
         </Link>
         {data.connectedData?.invoices?.length || data.connectedData?.payments?.length ? <Link href={preview ? "/preview/money" : "/client/money"} className="hover:text-slate-800">Open money records</Link> : null}
         <Link

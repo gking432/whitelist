@@ -6,6 +6,7 @@ import { loadBusinessSnapshot } from "./data";
 import { canReadBusinessWorkspace, canWriteBusinessWorkspace } from "./access";
 import { readBusinessContext } from "./context-data";
 import { loadWorkspacePersonalization } from "./workspace-preferences-data";
+import { outboundReadiness, withLeadFollowUpContext } from "./lead-followup-context";
 import {
   addDays,
   localDate,
@@ -109,6 +110,8 @@ export async function loadDailyBrief(
       "Agent activity could not be fully loaded.",
   ].filter((e): e is string => typeof e === "string" && !!e);
   const name = person.data?.full_name?.trim();
+  const briefApprovals = await withLeadFollowUpContext(admin, { partnerId, clientId },
+    (approvals.data as unknown as DailyBriefData["approvals"]) || [], timeZone);
   return {
     personalization,
     workspace: sharedContext.data ? { ...workspace, profile: sharedContext.data.profile } : workspace,
@@ -132,7 +135,8 @@ export async function loadDailyBrief(
     canResolveApprovals:
       portal.access.canResolveApprovals &&
       (!portal.access.isImpersonating || portal.access.impersonationMode === "sandbox_full"),
-    approvals: (approvals.data as unknown as DailyBriefData["approvals"]) || [],
+    approvals: briefApprovals,
+    outbound: await outboundReadiness(admin, { partnerId, clientId }, briefApprovals),
     conversations:
       (conversations.data as unknown as DailyBriefData["conversations"]) || [],
     work: [

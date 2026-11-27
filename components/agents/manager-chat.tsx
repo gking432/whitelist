@@ -164,7 +164,7 @@ export function BusinessManagerChat({
   const canSend = snapshot.canWrite && (active || isDirectManagerControl(draft));
   return (
     <div className="flex min-h-[65dvh] flex-col">
-      <OwnerAreaHeader title="Manager">
+      <OwnerAreaHeader title="Agents">
         <button
           type="button"
           onClick={() => { pending.current = null; void refresh(); void refreshControls(); }}

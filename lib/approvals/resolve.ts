@@ -12,6 +12,7 @@ import type { AccessContext } from "@/lib/permissions/types";
 export type ApprovalResolution = "approve" | "edit_and_approve" | "reject";
 export type ApprovalResolutionResult = FormState & {
   httpStatus: 200 | 403 | 404 | 409 | 422 | 503;
+  delivery?: "sent" | "not_sent" | "uncertain";
 };
 
 export type ResolveApprovalInput = {
@@ -233,6 +234,7 @@ export async function resolveApprovalItem(
   return {
     status: "success",
     httpStatus: 200,
+    ...(delivery ? { delivery: delivery.delivered ? "sent" as const : delivery.status === "uncertain" ? "uncertain" as const : "not_sent" as const } : {}),
     message:
       nextStatus === "rejected"
         ? crmGateway ? "HubSpot proposal rejected." : "Approval rejected. The workflow run was cancelled."

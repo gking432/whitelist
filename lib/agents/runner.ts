@@ -290,7 +290,10 @@ async function followLead(admin: SupabaseClient, work: WorkItem) {
         action.data.status,
         action.data.attempt_count,
       );
-      await finishWork(admin, work, state.status, state.summary, {
+      // Say why an approved follow-up did not go out, not only that it did not.
+      const summary = (action.data.status === "skipped" || action.data.status === "dry_run") && action.data.outcome_detail
+        ? `Approved but not sent. ${action.data.outcome_detail}` : state.summary;
+      await finishWork(admin, work, state.status, summary, {
         action_id: action.data.id,
         external_ref: action.data.external_ref,
         action_status: action.data.status,

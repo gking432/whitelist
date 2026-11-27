@@ -9,7 +9,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readManagerChat } from "@/lib/agents/manager-chat";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: { absolute: "Manager" } };
+export const metadata = { title: { absolute: "Agents" } };
 
 export default async function BusinessManagerPage() {
   const portal = await loadClientPortal();

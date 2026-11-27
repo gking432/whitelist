@@ -1,3 +1,4 @@
+import { splitLeadFollowUps } from "./lead-followups.ts";
 import type { ConnectedApp, ConnectedData } from "../connections/types.ts";
 import { knownCurrency, minorAmount } from "../connections/money.ts";
 import { reconcileMoneySources } from "../money/source-reconciliation.ts";
@@ -74,6 +75,12 @@ export type DailyBriefData = {
   };
   errors: string[];
   limited: boolean;
+  /**
+   * Whether an approved message on each channel can actually go out right now,
+   * checked with the same account and authority rules delivery uses. Absent in
+   * the sample, where nothing is sent.
+   */
+  outbound?: Partial<Record<"email" | "sms", { ready: boolean; reason: string }>>;
 };
 export type DailyAction = {
   id: string;
@@ -368,8 +375,9 @@ export function buildDailyBrief(data: DailyBriefData) {
     upcoming,
     news,
     completedToday,
+    // Drafted sales follow-ups are read and sent together, so they count as one decision.
     decisions:
-      data.counts.approvals +
+      Math.max(0, data.counts.approvals - Math.max(0, splitLeadFollowUps(data.approvals).followUps.length - 1)) +
       records.filter((r) => r.status === "needs_approval").length,
     urgentCount:
       actions.filter(urgent).length +

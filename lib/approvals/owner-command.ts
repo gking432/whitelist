@@ -14,6 +14,8 @@ export const OwnerApprovalResultSchema = z.object({
   httpStatus: z.union([z.literal(200), z.literal(400), z.literal(403), z.literal(404), z.literal(409), z.literal(413), z.literal(422), z.literal(503)]),
   message: z.string().trim().min(1).max(4000),
   fieldErrors: z.record(z.string().max(80), z.string().max(1000)).refine(errors => Object.keys(errors).length <= 20).optional(),
+  /** What happened to the customer-facing action, so a screen never calls a skipped send "sent". */
+  delivery: z.enum(["sent", "not_sent", "uncertain"]).optional(),
 }).strict().refine(result => result.status === "success" ? result.httpStatus === 200 : result.httpStatus !== 200);
 export type OwnerApprovalResult = z.infer<typeof OwnerApprovalResultSchema>;
 

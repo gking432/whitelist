@@ -2,6 +2,23 @@
 
 Written November 27, 2026 by the incoming product, design and engineering lead. This is based on the `codex/v1-scenario-lab` branch (gking432/whitelist PR #2). I ran the app against a local Supabase with all 106 migrations, created new owners through the real sign-up screens, and drove each screen in a browser. I also read the code behind every owner area.
 
+## 0. v1 definition (owner direction, November 27)
+
+**Meridian v1 is a single-pane operating hub for solo entrepreneurs: "do your job from one screen."** A solo owner uses about ten apps every day. Meridian collapses them into one pane.
+
+- **The owner works in the pane.** Agents operate the other apps in the background: CRM, email, calendar, billing, marketing.
+- **The owner's step is read, then approve.** Workflows can be long; agents do almost all of the steps.
+- **The CRM is infrastructure, not a screen.** Customer context appears inside the decision that needs it. The owner should never have to open the CRM.
+- **Background agents create the work.** Example: sales and marketing agents draft emails to warm and recycled leads, and the owner reads and sends them from the pane.
+- **The owner can still open their usual apps,** but never has to.
+- **Full autonomy is optional for v1.** Low-stakes tasks may become fully autonomous later. The single pane comes first.
+
+This sharpens the rest of the document. Where earlier sections disagree, this section wins:
+- Today *is* the product.
+- Department pages are optional "full views".
+- Agents and Apps are "behind the scenes".
+- Agent output arrives in the pane as decisions, grouped when there are many of the same kind.
+
 ## 1. Verdict
 
 Meridian's foundation is better engineered than its product. The data layer is careful: tenancy, row-level security, idempotent commands, durable action jobs, approval immutability, delivery receipts and 1,000+ tests. Most early products don't have that, and it is the right base for an agent that acts on a business's behalf.
@@ -46,7 +63,7 @@ The biggest risk isn't missing code. It's **scope sprawl**: about 90 routes cove
 3. **Agent drafts could only be approved on another page.** Pending drafts in a conversation now show Approve & send / Edit / Decline inline.
 4. **Two "Messages" page titles stacked on one screen** (synced email above the actual inbox). The inbox now comes first, and read-only email is a labeled subsection.
 5. **Two vocabularies for the same places.** The signed-in nav said Communications / Operations / Scheduling / Finance / Management / Integrations. Page titles and the sample said Messages / To-do / Calendar / Money / Manager / Apps. Both now use the page names.
-6. **Customers was hidden under "More tools"** even though a single customer view is central to the vision. It's now a primary area, with a sample view that brings one customer's decisions, conversation, appointments, tasks, money and agent work together.
+6. **Customers.** I first promoted Customers to the main navigation. I reversed that after the v1 definition (§0): the CRM stays in the background. Customer context now appears inside each decision, and customer search opens a one-customer view (sample: `/preview/customers`). Customers is no longer a destination in the navigation.
 7. **Onboarding asked the same question twice** ("What does your business do?" in sign-up and again in onboarding). It also spent two of seven steps on a "personal AI assistant" with options the screen itself said weren't available. Onboarding is now 5 steps, the repeated question says it was saved and can be edited, and sign-up suggests the device timezone instead of asking the owner to type an IANA name.
 
 ## 5. Critique as a business owner
@@ -82,7 +99,7 @@ The biggest risk isn't missing code. It's **scope sprawl**: about 90 routes cove
 - **Stream (center).** A live, prioritized feed of *things that need the owner* (decisions) and, collapsed below, *things that happened* (receipts). Every card has the same anatomy: what happened, the essential facts, the proposed action, its consequence, and **Approve · Edit · Delegate · Decline**. Cards update as the world changes (a customer replies, a slot gets taken) instead of going stale.
 - **Context (right pane).** Selecting any card, message, event or invoice opens the customer or job behind it: conversation, appointments, money, open work and what agents did. Context comes from selection, not from more panels on the page.
 - **Command (everywhere).** One input to search, ask ("who owes me money?") or instruct ("move Jayden to Monday and let him know"). Results are cards in the same stream, so asking and approving work the same way.
-- **Departments (left rail)** remain for owners who want to browse: Messages, Customers, Calendar, Money, Work, Marketing, Team. Each department page is the same stream filtered to that department, plus its own record view (inbox, calendar grid, invoice list).
+- **Full views (quiet, secondary)** remain for owners who want to browse: Messages, Calendar, Money, To-do. Each is the same records in a familiar layout (inbox, calendar grid, invoice list). Agents and Apps sit under "Behind the scenes". There is no CRM screen in the navigation.
 
 A first-time owner sees Today with three cards and a search box. A complex business sees the same layout with more cards, filters, staff and delegated authority. The concept doesn't change as the business grows.
 
@@ -119,13 +136,14 @@ New businesses start at **Ask me** for messages and bookings and **Draft** for m
 2. Gmail two-way: read, reply, draft and send from the thread. Add an email adapter for `conversation.send`.
 3. Business phone number via Twilio: SMS two-way, missed-call text-back, call log, voicemail transcription.
 4. Website chat (done) and a website form intake.
-5. Agents on by default at "Ask me": customer service drafts replies, scheduling proposes slots.
-6. Done ledger and failure-to-decision routing.
-7. Onboarding ends with Gmail and calendar connected, a number provisioned, and the first real card on Today.
+5. Agents on by default at "Ask me": customer service drafts replies, scheduling proposes slots, and the sales agent drafts warm-lead follow-ups. The follow-up loop and its grouped card exist today. It needs an Anthropic key, a connected sending account and email set to "ask me first".
+6. **Recycled leads and past customers.** The sales agent only considers *open* leads (new, contacted, qualified, quoted). Lost leads and past customers, the "recycled" list, are never picked up. Add a re-engagement pass with its own pacing: at most one touch per person per N weeks, never anyone who opted out, and replies routed back into the pane.
+7. Done ledger and failure-to-decision routing. Unsent approved actions currently return to Today as separate "Agent blocked" rows; group them and give each a one-tap fix.
+8. Onboarding ends with Gmail and calendar connected, a number provisioned, and the first real card on Today.
 
 **Phase 2: Scheduling and money (3 weeks).** Real calendar book, reschedule and cancel from cards and the calendar grid (reuse the sample's inline calendar). Stripe: invoices, payment links, overdue reminders with approval, and payments reconciled to customers. Optional QuickBooks sync.
 
-**Phase 3: Work and team (3 weeks).** Jobs and projects linked to customers, staff accounts, assignment and delegation from any card ("Delegate to Marco"), and a staff mobile view.
+**Phase 3: Marketing in the background (3 weeks).** Review requests after completed jobs, a monthly newsletter drafted from real work, and seasonal win-back emails. Each arrives in the pane as one grouped "read, then send" decision, never as a campaign tool the owner has to operate. (Staff, assignment and delegation come after v1, since v1 is for solo owners.)
 
 **Phase 4: Growth and autonomy (ongoing).** Review requests, simple campaigns, earned-autonomy suggestions, weekly owner review, and more providers (Outlook, Square, Jobber, HubSpot) based on customer demand.
 
@@ -134,7 +152,15 @@ New businesses start at **Ask me** for messages and bookings and **Draft** for m
 ## 9. Decisions made in this session
 
 - **Owner-authored replies skip agent authority** (`lib/agents/person-authored.ts`). Authority delegates to agents; it shouldn't silence the owner. Safety checks on the conversation itself still apply.
-- **Customers is a primary area.** Primary nav is Today, Messages, Customers, To-do, Calendar, Money, Manager, Apps. I expect "Manager" to become a global command bar and "Apps" to move into settings in a later pass.
+- **The sidebar is one pane plus quiet secondary links.** It has three groups:
+  - **Today** — the pane.
+  - **Full views** — Messages, Calendar, Money, To-do.
+  - **Behind the scenes** — Agents (formerly "Manager"), Apps.
+
+  This replaces my earlier "Customers is a primary area" call. The CRM is reached only through customer search and the context inside decisions.
+- **Agent outreach arrives as one grouped decision.** Drafted follow-ups to quiet leads appear as one card: "Follow up with N warm leads". It shows why each lead was chosen and what they asked before, with an editable draft for each, Send / Skip per lead, and Send all. The docket counts the group as one decision. Every send is still its own approval and delivery receipt.
+- **The pane never invites an approval that will silently fail.** Before showing Send, Today checks the same account and permission rules that delivery runs. If nothing can go out (for example, no business email connected), the card says so, keeps the drafts, and offers "Connect email to send".
+- **"Sent" means sent.** Approvals now report a delivery outcome (sent / not sent / uncertain), and screens only say "Sent" for a confirmed delivery.
 - **One vocabulary:** navigation labels equal page titles.
 - **The personal-assistant onboarding questions are out of the first-run path.** The data and settings stay, so saved progress is unaffected.
 - **Not done yet, deliberately:** I didn't remove the partner, control or CRM surfaces in this pass. That's a product-scope call you should confirm (§5, "Remove").

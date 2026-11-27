@@ -64,12 +64,13 @@ test("task status changes require an optimistic concurrency token and reject bro
     false,
   );
 });
-test("eight owner areas keep stable navigation while self-contained mobile and CRM views retain their layouts", () => {
+test("one pane with optional full views keeps stable navigation; keep stable navigation while self-contained mobile and CRM views retain their layouts", () => {
   assert.deepEqual(
     OWNER_AREAS.map((area) => area.label),
-    ["Today", "Messages", "Customers", "To-do", "Calendar", "Money", "Manager", "Apps"],
+    ["Today", "Messages", "Calendar", "Money", "To-do", "Agents", "Apps"],
   );
-  assert.equal(new Set(OWNER_AREAS.map((area) => area.href)).size, 8);
+  assert.equal(new Set(OWNER_AREAS.map((area) => area.href)).size, 7);
+  assert.deepEqual(OWNER_AREAS.filter((area) => area.tier === "pane").map((area) => area.label), ["Today"]);
   for (const path of ["/client", "/client/todo", "/client/apps", "/client/calendar", "/client/money", "/client/business/business", "/client/business/approvals", "/client/onboarding"])
     assert.equal(isOwnerArea(path), true, path);
   for (const path of ["/client/mobile", "/client/crm", "/client/crm/contacts", "/partner", "/control", "/client-other", "https://external.invalid/client"])
@@ -77,7 +78,7 @@ test("eight owner areas keep stable navigation while self-contained mobile and C
   // Navigation remains a permission-filtered view; settings/schedule access
   // must not be invented for an owner with a smaller allowed section set.
   const allowed = new Set(["action-center", "automations", "tasks"]);
-  assert.deepEqual(OWNER_AREAS.filter((area) => allowed.has(area.section)).map((area) => area.label), ["Today", "Messages", "To-do", "Manager"]);
+  assert.deepEqual(OWNER_AREAS.filter((area) => allowed.has(area.section)).map((area) => area.label), ["Today", "Messages", "To-do", "Agents"]);
   assert.equal(isOwnerArea("/client/conversations"), true);
   assert.equal(isOwnerArea("/client/crm"), false);
 });

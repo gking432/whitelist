@@ -4,6 +4,7 @@ import type { TodoSnapshot } from "./todo-types.ts";
 import type { ConversationSnapshot } from "../conversations/types.ts";
 import type { ManagerChatSnapshot } from "../agents/manager-chat.ts";
 import { overlappingAppointments } from "./morning-queue.ts";
+import { isLeadFollowUp, leadFollowUpContext } from "./lead-followups.ts";
 
 /** A fixed fictional morning keeps the calendar, queue order, and chart windows coherent. */
 export const SAMPLE_PREVIEW_AT = "2027-02-24T15:15:00.000Z";
@@ -73,6 +74,21 @@ const lastMonthKey = lastMonth.toISOString().slice(0, 7);
 const lastMonthSales = sampleMetrics.sales
   .filter((point) => point.at.startsWith(lastMonthKey))
   .reduce((total, point) => total + point.amount, 0);
+
+function sampleFollowUp(id: string, name: string, to: string, stage: string, lastContactAt: string, subject: string, body: string, reason: string, history: string) {
+  return {
+    id,
+    title: `Follow up: ${name}`,
+    summary: "Sales follow-up prepared from the current CRM record. Review before sending.",
+    created_at: "2027-02-24T13:55:00.000Z",
+    type: "customer_message",
+    editable_content: body,
+    proposed_payload: {
+      channel: "email", to, subject, draft_source: "ai_generated", agent_work_id: `${id}-work`, customer_name: name,
+      lead_context: { name, stage, last_contact_at: lastContactAt, reason, history },
+    },
+  };
+}
 
 /** Static presentation records only. This module does not read accounts or call APIs. */
 export function createSamplePreview(): DailyBriefData {
@@ -190,6 +206,28 @@ export function createSamplePreview(): DailyBriefData {
         editable_content: "Hi Jamie, lovely to hear from you. I can hold Thursday at 2:00 for a 30-minute catch-up. Shall we pick up where we left off?",
         proposed_payload: { to: "jamie@example.invalid", subject: "Next phase of your project", decision_prompt: "Jamie wants to discuss the next phase Thursday. Approve and send the drafted reply?", customer_history: "Returning customer. Jamie’s brand project is ready for its next phase.", next_step: "Send the reviewed reply to Jamie." },
       },
+      // Background sales work: the agent found quiet leads in the CRM and drafted
+      // one personal follow-up each. They surface together as one decision.
+      sampleFollowUp("sample-followup-priya", "Priya Shah", "priya@example.invalid", "quoted", "2026-12-16T17:00:00.000Z",
+        "Your logo refresh quote",
+        "Hi Priya, I hope the new year is off to a good start. You mentioned picking the logo refresh back up after the holidays. Is now a better time? I’m happy to walk through the quote again or adjust the scope to fit what you need first.",
+        "She said to check back after the holidays; that was 10 weeks ago.",
+        "Asked for a logo refresh quote in December. Quote sent for $2,400; no reply since."),
+      sampleFollowUp("sample-followup-marcus", "Marcus Lee", "marcus@example.invalid", "contacted", "2026-11-20T18:00:00.000Z",
+        "Website for the second Lee & Co. location",
+        "Hi Marcus, I was thinking about Lee & Co. this week. Last fall you were planning a site for the second location. Did that project move forward? If it’s still on your list, I’d be glad to share a couple of ideas from similar bakery sites.",
+        "Planned to open a second location in spring; a site would be needed before then.",
+        "Asked about a website for a second bakery location in November. One call; no proposal requested yet."),
+      sampleFollowUp("sample-followup-elena", "Elena Ruiz", "elena@example.invalid", "past customer", "2026-06-12T16:00:00.000Z",
+        "Packaging for this year’s line",
+        "Hi Elena, it’s been a while since we wrapped your brand project. You mentioned packaging might be next once the new line was ready. Is that coming up this year? I’d love to help keep everything consistent with the brand we built.",
+        "Past client who said packaging was likely next; 8 months since the project ended.",
+        "Brand identity project completed last June. Paid on time; mentioned packaging for the next product line."),
+      sampleFollowUp("sample-followup-tom", "Tom Becker", "tom@example.invalid", "new", "2027-01-19T15:00:00.000Z",
+        "Social media templates",
+        "Hi Tom, thanks again for reaching out in January about social media templates. Are you still looking for help with those? If so, a short call this week or next would be enough for me to understand what you need.",
+        "Filled out the contact form 5 weeks ago and never booked a call.",
+        "Website form inquiry about a set of social media templates for his fitness studio."),
       {
         id: "sample-energy-bill",
         title: "Energy bill is due in three days",
@@ -214,9 +252,10 @@ export function createSamplePreview(): DailyBriefData {
       { id: "sample-work-invoice-followup", title: "Followed up on overdue invoice", status: "completed", summary: "The agent sent Rivera Workshop a friendly reminder about INV-1042. The $1,250 invoice is still unpaid.", updated_at: "2027-02-24T13:40:00.000Z" },
       { id: "sample-work-jayden", title: "Found a time that works for Jayden", status: "completed", summary: "The agent checked Friday’s calendar, proposed 2:30 PM, and saved a confirmation draft for your approval.", updated_at: "2027-02-24T14:36:00.000Z" },
       { id: "sample-work-leads", title: "Sorted new inquiries", status: "completed", summary: "Two recent inquiries were matched with customer records and added to your morning flow.", updated_at: "2027-02-24T14:05:00.000Z" },
+      { id: "sample-work-warm-leads", title: "Drafted follow-ups for 4 quiet leads", status: "completed", summary: "The sales agent checked 31 open leads and past customers, picked 4 with a clear next step, and wrote a personal email for each. They are waiting for you to read.", updated_at: "2027-02-24T13:55:00.000Z" },
     ],
     teamStatus: "active",
-    counts: { tasks: 2, approvals: 4, conversations: 0, blockedWork: 0 },
+    counts: { tasks: 2, approvals: 8, conversations: 0, blockedWork: 0 },
   };
 }
 
@@ -236,14 +275,19 @@ export function applySamplePreviewAction(data: DailyBriefData, action: SamplePre
   const chosenTime = validSampleSlot(chosenSlot)
     ? new Intl.DateTimeFormat("en-US", { timeZone: data.timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(chosenSlot.start_iso))
     : "the suggested time";
-  const title = approval.type === "appointment_booking"
+  const followUp = isLeadFollowUp(approval) ? leadFollowUpContext(approval) : null;
+  const title = followUp
+    ? approved ? `Sent follow-up to ${followUp.name} (sample)` : `Skipped follow-up to ${followUp.name} (sample)`
+    : approval.type === "appointment_booking"
     ? offered ? `Offered Jayden ${chosenTime} (sample)` : approved ? `Booked Jayden at ${chosenTime} (sample)` : "Declined Jayden’s booking (sample)"
     : approval.type === "customer_message"
       ? approved ? "Approved Jamie’s reply (sample)" : "Declined Jamie’s reply (sample)"
       : approval.type === "sample_bill"
         ? approved ? "Paid the energy bill (sample)" : "Kept energy bill autopay (sample)"
         : approved ? "Completed Sam’s brief review (sample)" : "Kept Sam’s review on the list (sample)";
-  const summary = approval.type === "appointment_booking"
+  const summary = followUp
+    ? approved ? `The reviewed email to ${followUp.name} was recorded as sent and logged on their record. No real email was sent.` : "The drafted follow-up was dismissed. No email was sent."
+    : approval.type === "appointment_booking"
     ? offered ? `A revised ${chosenTime} sample offer was recorded as sent. No appointment was booked; Jayden’s reply is still needed.` : approved ? `A ${chosenTime} sample calendar booking and confirmation were recorded. No real message was sent.` : "The proposed booking was dismissed. No sample calendar event was added."
     : approval.type === "customer_message"
       ? approved ? "The reviewed reply was recorded in the sample conversation. No real email was sent." : "The drafted reply was dismissed. No email was sent."
@@ -262,7 +306,7 @@ export function applySamplePreviewAction(data: DailyBriefData, action: SamplePre
       }
     : null;
   const sent = (approved && ["appointment_booking", "customer_message"].includes(approval.type ?? "") || offered) && action.editedContent.trim();
-  const recipient = approval.type === "appointment_booking" ? "jayden@example.invalid" : "jamie@example.invalid";
+  const recipient = followUp?.to ?? (approval.type === "appointment_booking" ? "jayden@example.invalid" : "jamie@example.invalid");
   const nextTasks = approved && approval.type === "sample_task"
     ? data.tasks.filter((task) => task.id !== approval.proposed_payload?.task_id)
     : data.tasks;
@@ -290,7 +334,7 @@ export function applySamplePreviewAction(data: DailyBriefData, action: SamplePre
       ] : data.connectedData.appointments,
       messages: sent ? [
         ...data.connectedData.messages,
-        { id: `sample-sent-${approval.id}`, connectionId: "sample-mail", threadId: approval.id, subject: offered ? "A new time for Friday" : approval.type === "appointment_booking" ? "Friday consultation confirmed" : "Next phase of your project", from: "studio@example.invalid", preview: action.editedContent.trim(), receivedAt: generatedAt, unread: false, inbox: false, account: "Sample mail", href: null, messageCount: 1, provider: "google_workspace", direction: "outbound" },
+        { id: `sample-sent-${approval.id}`, connectionId: "sample-mail", threadId: approval.id, subject: followUp?.subject ?? (offered ? "A new time for Friday" : approval.type === "appointment_booking" ? "Friday consultation confirmed" : "Next phase of your project"), from: "studio@example.invalid", preview: action.editedContent.trim(), receivedAt: generatedAt, unread: false, inbox: false, account: "Sample mail", href: null, messageCount: 1, provider: "google_workspace", direction: "outbound" },
       ] : data.connectedData.messages,
       payments: approved && approval.type === "sample_bill" ? [
         ...(data.connectedData.payments ?? []),
@@ -380,7 +424,7 @@ export function sampleConversationSnapshot(data: DailyBriefData): ConversationSn
       { id: "sample-message-jayden-agent", conversation_id: "sample-conversation-jayden", direction: "outbound", body: "Let me check the calendar and confirm shortly.", status: "sent", approval_id: null, metadata: {}, created_at: "2027-02-24T14:34:00.000Z" },
       { id: "sample-message-jamie", conversation_id: "sample-conversation-jamie", direction: "inbound", body: "I’d love to talk through the next phase. Do you have time Thursday afternoon?", status: "received", approval_id: null, metadata: {}, created_at: "2027-02-24T14:12:00.000Z" },
       { id: "sample-message-sam", conversation_id: "sample-conversation-sam", direction: "inbound", body: "I’ve sent the website brief over. Let me know what you think when you’ve had a chance to read it.", status: "received", approval_id: null, metadata: {}, created_at: "2027-02-23T18:00:00.000Z" },
-      ...data.connectedData!.messages.filter((item) => item.id.startsWith("sample-sent-")).map((item) => ({ id: item.id, conversation_id: item.threadId === "sample-jayden-booking" ? "sample-conversation-jayden" : "sample-conversation-jamie", direction: "outbound" as const, body: item.preview, status: "sent", approval_id: null, metadata: {}, created_at: item.receivedAt ?? data.generatedAt })),
+      ...data.connectedData!.messages.filter((item) => item.id === "sample-sent-sample-jayden-booking" || item.id === "sample-sent-sample-jamie-reply").map((item) => ({ id: item.id, conversation_id: item.threadId === "sample-jayden-booking" ? "sample-conversation-jayden" : "sample-conversation-jamie", direction: "outbound" as const, body: item.preview, status: "sent", approval_id: null, metadata: {}, created_at: item.receivedAt ?? data.generatedAt })),
     ],
     contacts: [
       { id: "sample-contact-jayden", first_name: "Jayden", last_name: "Ellis", email: "jayden@example.invalid", phone: null },

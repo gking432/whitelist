@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useId, useState } from "react";
 import { Search, X } from "lucide-react";
 
@@ -52,6 +53,7 @@ export function PreviewCustomerSearch({ customers }: { customers: PreviewCustome
               {selected.summary ? <p className="mt-2">{selected.summary}</p> : null}
               {selected.email ? <p className="mt-2 break-all">{selected.email}</p> : null}
               {selected.phone ? <p className="mt-1">{selected.phone}</p> : null}
+              <Link href="/preview/customers" onClick={() => { setSelected(null); setQuery(""); }} className="mt-3 inline-flex text-xs font-semibold text-blue-700 hover:underline">Everything about {selected.name.split(/\s+/)[0]}</Link>
               <p className="mt-2 text-[11px] text-slate-400">Sample customer</p>
             </div>
           ) : matches.length ? matches.map((customer) => (

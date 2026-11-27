@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { Bot, CalendarDays, ChevronDown, House, Landmark, ListTodo, MessageSquare, PlugZap, Search, UsersRound } from "lucide-react";
+import { Bot, CalendarDays, ChevronDown, House, Landmark, ListTodo, MessageSquare, PlugZap, Search } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
-import { OWNER_AREAS, previewAreaHref } from "@/lib/business/owner-navigation";
+import { OWNER_AREA_TIER_LABELS, OWNER_AREAS, previewAreaHref, type OwnerAreaTier } from "@/lib/business/owner-navigation";
 import type { WorkspaceNavItem } from "@/components/layout/workspace-navigation";
 import { WorkspaceActivityTracker } from "./workspace-activity-tracker";
 import { PreviewCustomerSearch, type PreviewCustomer } from "./preview-customer-search";
 
-const navigationIcons = { Today: House, Messages: MessageSquare, Customers: UsersRound, "To-do": ListTodo, Calendar: CalendarDays, Money: Landmark, Manager: Bot, Apps: PlugZap };
+const navigationIcons = { Today: House, Messages: MessageSquare, "To-do": ListTodo, Calendar: CalendarDays, Money: Landmark, Agents: Bot, Apps: PlugZap };
 const focusStyle = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2";
 export function DailyBriefShell({ children, brandName, clientName, email, navigation, banner, accountActions, preview = false, previewCustomers = [] }: {
   children: React.ReactNode; brandName: string; clientName: string; email: string; navigation: WorkspaceNavItem[];
@@ -35,7 +35,12 @@ export function DailyBriefShell({ children, brandName, clientName, email, naviga
       </button>
     </form>
   ) : null;
-  const phoneItems = primary.filter((item) => ["Today", "Messages", "Customers", "Calendar"].includes(item.label));
+  const tierOf = (item: WorkspaceNavItem): OwnerAreaTier | undefined =>
+    OWNER_AREAS.find((area) => (preview ? previewAreaHref(area.href) : area.href) === item.href)?.tier;
+  const paneItems = primary.filter((item) => tierOf(item) === "pane");
+  const secondaryGroups = (["full_view", "behind_the_scenes"] as const).map((tier) => ({ tier, items: primary.filter((item) => tierOf(item) === tier) }))
+    .filter((group) => group.items.length);
+  const phoneItems = primary.filter((item) => ["Today", "Messages", "Calendar"].includes(item.label));
   const moreItems = primary.filter((item) => !phoneItems.includes(item));
   const active = (item: WorkspaceNavItem) => item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
   const closeMenu = () => { if (menu.current) menu.current.open = false; };
@@ -53,11 +58,23 @@ export function DailyBriefShell({ children, brandName, clientName, email, naviga
           </Link>
           {customerSearch}
           <div className="min-h-0 flex-1 overflow-y-auto">
-          <nav aria-label="Business navigation" className="mt-7 space-y-1">
-            {primary.map((item) => {
-              const Icon = navigationIcons[item.label as keyof typeof navigationIcons] ?? House;
-              return <Link key={item.href} href={item.href} aria-current={active(item) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm ${active(item) ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"} ${focusStyle}`}><Icon aria-hidden="true" className="size-[18px] shrink-0" />{navigationLabel(item)}</Link>;
-            })}
+          <nav aria-label="Business navigation" className="mt-7">
+            {/* The pane is where the work happens; everything else is a quieter way in. */}
+            <div className="space-y-1">
+              {paneItems.map((item) => {
+                const Icon = navigationIcons[item.label as keyof typeof navigationIcons] ?? House;
+                return <Link key={item.href} href={item.href} aria-current={active(item) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm ${active(item) ? "bg-blue-50 font-semibold text-blue-800" : "font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900"} ${focusStyle}`}><Icon aria-hidden="true" className="size-[18px] shrink-0" />{navigationLabel(item)}</Link>;
+              })}
+            </div>
+            {secondaryGroups.map((group) => <div key={group.tier} className="mt-6">
+              <p className="px-3 text-[11px] font-medium uppercase tracking-wider text-slate-400">{OWNER_AREA_TIER_LABELS[group.tier]}</p>
+              <div className="mt-1.5 space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = navigationIcons[item.label as keyof typeof navigationIcons] ?? House;
+                  return <Link key={item.href} href={item.href} aria-current={active(item) ? "page" : undefined} className={`flex min-h-9 items-center gap-3 rounded-lg px-3 py-1.5 text-[13px] ${active(item) ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"} ${focusStyle}`}><Icon aria-hidden="true" className="size-4 shrink-0" />{navigationLabel(item)}</Link>;
+                })}
+              </div>
+            </div>)}
           </nav>
           {other.length ? <details className="mt-4 border-t border-slate-100 pt-3"><summary className={`flex min-h-11 cursor-pointer list-none items-center justify-between rounded-lg px-3 text-sm text-slate-500 hover:bg-slate-50 ${focusStyle}`}>More tools<ChevronDown aria-hidden="true" className="size-4" /></summary><nav aria-label="More business tools" className="mt-1 max-h-[28dvh] space-y-1 overflow-y-auto">{other.map((item) => <Link key={item.href} href={item.href} aria-current={active(item) ? "page" : undefined} className={`flex min-h-11 items-center rounded-lg px-3 text-sm ${active(item) ? "bg-blue-50 font-medium text-blue-800" : "text-slate-500 hover:bg-slate-50"} ${focusStyle}`}>{navigationLabel(item)}</Link>)}</nav></details> : null}
           </div>
