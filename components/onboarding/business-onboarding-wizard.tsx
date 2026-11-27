@@ -14,7 +14,10 @@ const quiet = "inline-flex min-h-11 items-center justify-center rounded-lg px-3 
 const choice = "flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-5 py-3 text-left text-base focus-within:ring-2 focus-within:ring-blue-600";
 const externalAssistants = ["muse", "chatgpt_dot", "grok", "other"] as const;
 const factLabels: Record<string, string> = { description: "What your business does", industry: "Business type", goals: "Goals", services: "Services", audience: "Customers", tone: "Voice", hours: "Hours", policies: "Policies", currency: "Currency", website: "Website" };
-const positions: Record<OnboardingStep, number> = { description: 1, connections: 2, assistant: 3, assistant_choice: 4, review: 5, permissions: 6, done: 7 };
+// The personal-assistant questions stay reachable for saved progress but are not part of the
+// first-run path: they offered integrations that do not exist yet.
+const positions: Record<OnboardingStep, number> = { description: 1, connections: 2, assistant: 2, assistant_choice: 2, review: 3, permissions: 4, done: 5 };
+const TOTAL_STEPS = 5;
 const questions: Record<OnboardingStep, string> = { description: "What does your business do?", connections: "Would you like to connect your apps?", assistant: "Do you use a personal AI assistant?", assistant_choice: "Which assistant do you use?", review: "Does this look right?", permissions: "Keep your current permissions?", done: "Your workspace is yours." };
 const emptyAssistant: PersonalAssistantSettings = { answer: "unanswered", assistant: null };
 
@@ -113,7 +116,7 @@ function WizardSession({ scopeKey, businessName, connectionNotice }: { scopeKey:
     await operation(async signal => {
       if (!snapshot) return;
       if (step === "description") await save({ action: "answer", field: "description", value: description.trim(), expectedProfileRevision: snapshot.profileRevision }, signal);
-      else if (step === "connections") await save({ action: "navigate", step: "assistant" }, signal);
+      else if (step === "connections") await save({ action: "navigate", step: "review" }, signal);
       else if (step === "assistant") { if (assistantDraft.answer === "yes") await save({ action: "navigate", step: "assistant_choice" }, signal); else if (assistantDraft.answer === "no") await saveAssistant(assistantDraft, signal); }
       else if (step === "assistant_choice") await saveAssistant(assistantDraft, signal);
       else if (step === "review") {
@@ -130,8 +133,8 @@ function WizardSession({ scopeKey, businessName, connectionNotice }: { scopeKey:
   const known = context?.facts.filter(fact => fact.state !== "unknown") ?? [], conflicts = known.some(fact => fact.state === "conflict");
   const descriptionValid = snapshot && OnboardingRequestSchema.safeParse({ action: "answer", key: "00000000-0000-4000-8000-000000000000", revision: snapshot.progress.revision, field: "description", value: description.trim(), expectedProfileRevision: snapshot.profileRevision }).success;
   const nextDisabled = blocked || step === "description" && !descriptionValid || step === "connections" && !connections || step === "assistant" && (!assistant || !["yes", "no"].includes(assistantDraft.answer)) || step === "assistant_choice" && (!assistant || !assistantDraft.assistant || assistantDraft.assistant === "workstation") || step === "review" && (!context || !context.canWrite || conflicts || known.length > 0 && !confirmed) || step === "permissions" && !permissionChoice;
-  const back: Partial<Record<OnboardingStep, OnboardingStep>> = { connections: "description", assistant: "connections", assistant_choice: "assistant", review: assistant?.preferences.answer === "yes" ? "assistant_choice" : "assistant", permissions: "review", done: "permissions" };
-  const help = step === "description" ? `A sentence or two about ${businessName} is enough. You can add services, hours and policies later.`
+  const back: Partial<Record<OnboardingStep, OnboardingStep>> = { connections: "description", assistant: "connections", assistant_choice: "assistant", review: "connections", permissions: "review", done: "permissions" };
+  const help = step === "description" ? (snapshot?.answers.description ? `We saved this when you created ${businessName}. Edit it or continue.` : `A sentence or two about ${businessName} is enough. You can add services, hours and policies later.`)
     : step === "connections" ? "Optional. Read access brings your existing information together. It does not let assistants send or change anything."
       : step === "assistant" ? "Optional. This is your private preference."
         : step === "assistant_choice" ? "These integrations are not available here yet. Saving a preference does not connect an assistant."
@@ -139,7 +142,7 @@ function WizardSession({ scopeKey, businessName, connectionNotice }: { scopeKey:
             : step === "permissions" ? "Connecting apps and finishing these questions never enables assistants or changes existing pauses."
               : "Your answers are saved. Your current permissions are unchanged.";
   return <div data-business-onboarding data-onboarding-step={step}>
-    <QuestionScreen question={denied ? "Business access changed." : questions[step]} step={positions[step]} total={7} help={denied ? "Sign in again before continuing." : help} pending={busy || loading} nextDisabled={!!nextDisabled} nextLabel={step === "description" ? "Next" : step === "review" && known.length ? "Confirm known facts" : step === "permissions" ? "Finish setup" : step === "done" ? "Open workspace" : "Next"} onNext={step === "done" ? () => router.push("/client") : () => void next()} onBack={snapshot && back[step] && !reloadRequired ? () => void navigate(back[step]!) : undefined} onSkip={snapshot && !reloadRequired && !denied && !["permissions", "done"].includes(step) ? () => void skip() : undefined} error={error} notice={notice}>
+    <QuestionScreen question={denied ? "Business access changed." : questions[step]} step={positions[step]} total={TOTAL_STEPS} help={denied ? "Sign in again before continuing." : help} pending={busy || loading} nextDisabled={!!nextDisabled} nextLabel={step === "description" ? "Next" : step === "review" && known.length ? "Confirm known facts" : step === "permissions" ? "Finish setup" : step === "done" ? "Open workspace" : "Next"} onNext={step === "done" ? () => router.push("/client") : () => void next()} onBack={snapshot && back[step] && !reloadRequired ? () => void navigate(back[step]!) : undefined} onSkip={snapshot && !reloadRequired && !denied && !["permissions", "done"].includes(step) ? () => void skip() : undefined} error={error} notice={notice}>
       {denied ? <Link href="/login?next=%2Fclient%2Fonboarding" className={quiet} prefetch={false}>Sign in</Link> : !snapshot ? <p role="status" className="text-center text-sm text-slate-500">{loading ? "Loading your saved setup…" : "Saved setup is unavailable."}</p> : <>
         {step === "connections" && connectionNotice ? <p role="status" data-onboarding-connection-notice className="mb-5 text-center text-sm leading-7 text-slate-500">{connectionNotice}</p> : null}
         {step === "description" ? <div><label htmlFor={`${id}-description`} className="sr-only">Business description</label><textarea id={`${id}-description`} value={description} onChange={event => { dirtyDescription.current = true; setDescription(event.target.value); }} maxLength={3000} disabled={blocked} rows={5} autoComplete="off" placeholder="We help…" className="w-full resize-y rounded-2xl border border-slate-200 bg-white p-5 text-lg leading-8 text-slate-800 outline-none placeholder:text-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:opacity-50" /><p className="mt-2 text-right text-xs text-slate-400">{description.length}/3000</p></div> : null}

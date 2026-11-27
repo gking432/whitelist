@@ -35,14 +35,22 @@ export default async function MessagesPage({
   return (
     <>
       <ConnectedDataRefresh />
-      <SyncedMessages data={connected} timeZone={portal.client.timezone} />
-      <ConnectedIntakeRecords data={connected} timeZone={portal.client.timezone} canAdopt={canWriteBusinessWorkspace(portal.access) && !portal.access.isImpersonating} />
       {conversations.conversations.length ? (
-        <ConversationInbox
-          initialSnapshot={conversations}
-          timeZone={portal.client.timezone}
-        />
-      ) : null}
+        <>
+          {/* Conversations the business can answer from here come first. */}
+          <ConversationInbox
+            initialSnapshot={conversations}
+            timeZone={portal.client.timezone}
+          />
+          <ConnectedIntakeRecords data={connected} timeZone={portal.client.timezone} canAdopt={canWriteBusinessWorkspace(portal.access) && !portal.access.isImpersonating} />
+          {connected.messages.length ? <SyncedMessages secondary data={connected} timeZone={portal.client.timezone} /> : null}
+        </>
+      ) : (
+        <>
+          <SyncedMessages data={connected} timeZone={portal.client.timezone} />
+          <ConnectedIntakeRecords data={connected} timeZone={portal.client.timezone} canAdopt={canWriteBusinessWorkspace(portal.access) && !portal.access.isImpersonating} />
+        </>
+      )}
     </>
   );
 }

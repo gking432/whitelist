@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAIConfigured } from "@/lib/ai/provider";
 import type { AgentScope, WorkStatus } from "./types";
+import { MANAGER_CHAT_COMMANDS, managerCommandLabel } from "./manager-command-labels";
 
 export type ManagerAssignment = {
   id: string;
@@ -55,6 +56,9 @@ export async function readManagerChat(
       .select("id,command,result,created_at")
       .eq("partner_id", scope.partnerId)
       .eq("client_id", scope.clientId)
+      // The table also records onboarding, intake, booking and money commands;
+      // only commands issued from this conversation belong in the chat history.
+      .in("command->>action", [...MANAGER_CHAT_COMMANDS])
       .order("created_at", { ascending: false })
       .limit(51),
   ]);
@@ -96,9 +100,7 @@ export async function readManagerChat(
         assignments: byParent.get(row.id) ?? [],
       })), ...(commands.data ?? []).slice(0, 50).map((row): ManagerMessage => ({
         id: row.id,
-        request: row.command.action === "manager_control"
-          ? String(row.command.command)
-          : row.command.action === "review_context" ? "Review business context" : `Set ${String(row.command.channel)} authority to ${String(row.command.mode)}`,
+        request: managerCommandLabel(row.command),
         status: "completed",
         summary: String(row.result.message),
         createdAt: row.created_at,

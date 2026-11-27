@@ -4,9 +4,12 @@ import { safeSourceUrl, validTimeZone } from "@/lib/business/daily-brief";
 export function SyncedMessages({
   data,
   timeZone,
+  secondary = false,
 }: {
   data: ConnectedData;
   timeZone: string;
+  /** Shown below the live inbox: a subsection, not a second page title. */
+  secondary?: boolean;
 }) {
   const format = (v: string | null) =>
     v && Number.isFinite(Date.parse(v))
@@ -19,14 +22,17 @@ export function SyncedMessages({
         }).format(new Date(v))
       : "";
   return (
-    <section aria-labelledby="synced-email-title" className="mb-12">
+    <section aria-labelledby="synced-email-title" className={secondary ? "mt-12 border-t border-slate-200 pt-8" : "mb-12"}>
       <div className="flex items-center justify-between gap-4">
-        <h1
-          id="synced-email-title"
-          className="text-2xl font-medium tracking-tight"
-        >
-          Messages
-        </h1>
+        {secondary ? (
+          <h2 id="synced-email-title" className="text-base font-semibold tracking-tight">
+            Connected email · read only
+          </h2>
+        ) : (
+          <h1 id="synced-email-title" className="text-2xl font-medium tracking-tight">
+            Messages
+          </h1>
+        )}
         <Link href="/client/apps" className="text-xs text-slate-500">
           Connections ↗
         </Link>

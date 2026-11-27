@@ -14,12 +14,22 @@ import {
 } from "@/lib/conversations/inbox-view";
 import { validTimeZone } from "@/lib/business/daily-brief";
 import { CustomerJourneyDisclosure } from "@/components/business/customer-journey";
+import { OwnerApprovalResolutionForm } from "@/components/approvals/owner-approval-resolution-form";
 import {
   OwnerAreaHeader,
   ownerButton,
   ownerInput,
   ownerQuietButton,
 } from "@/components/business/owner-ui";
+
+const MESSAGE_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft · waiting for approval",
+  sent: "Sent",
+  skipped: "Not sent",
+  failed: "Failed to send",
+  uncertain: "Delivery unconfirmed",
+  received: "Received",
+};
 
 export function ConversationInbox({
   initialSnapshot,
@@ -377,7 +387,9 @@ export function ConversationInbox({
                           }).format(new Date(message.created_at))}
                         </span>
                         {message.direction === "outbound" ? (
-                          <span>{message.status}</span>
+                          <span className={message.status === "skipped" || message.status === "failed" ? "font-medium text-amber-700" : undefined}>
+                            {MESSAGE_STATUS_LABELS[message.status] ?? message.status}
+                          </span>
                         ) : null}
                       </div>
                       <p
@@ -385,13 +397,21 @@ export function ConversationInbox({
                       >
                         {message.body}
                       </p>
-                      {message.approval_id && message.status === "draft" ? (
-                        <Link
-                          href="/client/approvals"
-                          className="mt-2 inline-block text-xs text-slate-600 underline"
-                        >
-                          Review reply
-                        </Link>
+                      {message.approval_id && message.status === "draft" && !preview ? (
+                        // Decide where the context is: the owner reads the thread
+                        // and approves, edits or declines the drafted reply here.
+                        <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+                          <OwnerApprovalResolutionForm
+                            approvalId={message.approval_id}
+                            editableContent={message.body}
+                            consequence="Sends this reply on the customer’s original channel."
+                            allowEdit
+                            inline
+                            compact
+                            approveLabel="Approve & send"
+                            onSaved={(result) => { setNotice(result); void refresh(selected.id); }}
+                          />
+                        </div>
                       ) : null}
                     </li>
                   ))}
@@ -422,13 +442,13 @@ export function ConversationInbox({
                     />
                     <div className="mt-3 flex items-center justify-between gap-3">
                       <span className="text-[11px] text-slate-500">
-                        Replies are prepared for your approval.
+                        Sends on the customer’s original channel. The result appears here.
                       </span>
                       <button
                         className={ownerButton}
                         disabled={disabled || !reply.trim()}
                       >
-                        Prepare reply
+                        Send reply
                       </button>
                     </div>
                   </form>

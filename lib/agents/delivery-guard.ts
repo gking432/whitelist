@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ActionJobRecord } from "../jobs/record";
 import { checkFollowup } from "./store";
+import { isPersonAuthoredReply } from "./person-authored";
 import { authorityChannel, readEffectiveAuthority, readInternalBookingAuthority } from "./authority";
 
 /** Applies to approved actions even when they were created before a stop. */
@@ -14,6 +15,11 @@ export async function authorityDeliveryBlock(
   const revision = job.payload.authority_revision;
   if (revision !== undefined && (!Number.isInteger(revision) || Number(revision) < 0))
     return "Invalid owner authority revision. Prepare a fresh action.";
+  // Channel authority delegates work to agents. A reply a person wrote and a
+  // person approved is the business speaking for itself, so agent authority and
+  // team pauses do not apply. Opt-outs, conversation freshness and connection
+  // checks still run in the conversation guard and the channel adapter.
+  if (isPersonAuthoredReply(job)) return null;
   if (!channel) {
     // Existing connector actions retain their own capability checks. A saved
     // global pause still stops outgoing work; collecting inbound stays separate.
@@ -75,3 +81,4 @@ export async function agentDeliveryBlock(
   const check = await checkFollowup(admin, work.id);
   return check.allowed ? null : check.reason;
 }
+

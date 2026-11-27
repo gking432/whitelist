@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { OWNER_AREAS } from "@/lib/business/owner-navigation";
+import { OWNER_AREAS, previewAreaHref } from "@/lib/business/owner-navigation";
 import { SamplePreviewApp } from "../sample-preview-app";
 
 export const metadata = {
@@ -15,7 +15,7 @@ export default async function DesignPreviewPage({
   const { area = [] } = await params;
   if (
     area.length > 1 ||
-    (area[0] && area[0] !== "report" && !OWNER_AREAS.some((item) => item.href === `/client/${area[0]}`))
+    (area[0] && area[0] !== "report" && !OWNER_AREAS.some((item) => previewAreaHref(item.href) === `/preview/${area[0]}`))
   ) notFound();
   return <SamplePreviewApp area={area[0] || "today"} />;
 }

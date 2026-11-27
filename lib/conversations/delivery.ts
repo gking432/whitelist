@@ -169,7 +169,7 @@ export async function deliverWebsiteReply(
     delivered: true,
     externalRef: job.approval_id,
     detail:
-      "Approved reply is available in the customer’s website conversation. This does not establish that it has been read.",
+      "Sent to the customer’s website chat. This channel does not report whether it was read.",
   };
   await recordConversationDelivery(admin, job, outcome);
   return outcome;

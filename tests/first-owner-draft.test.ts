@@ -49,3 +49,11 @@ test("question validation reuses real provision requirements and routes returned
   assert.deepEqual(firstOwnerDraftErrors({ ...draft, values: { name: "Owner business", description: "A real owner supplied description.", timezone: "America/Chicago" } }), {});
   assert.equal(firstOwnerErrorStep(firstOwnerDraftErrors({ ...draft, values: { name: "Owner business", description: "A real owner supplied description.", timezone: "Invented/Place" } })), 2);
 });
+
+test("a new draft suggests the device timezone and ignores malformed values", () => {
+  const scope = "00000000-0000-4000-8000-000000000001", key = "00000000-0000-4000-8000-000000000002";
+  assert.equal(newFirstOwnerDraft(scope, key, Date.now(), "America/Chicago").values.timezone, "America/Chicago");
+  assert.equal(newFirstOwnerDraft(scope, key, Date.now(), "America/Argentina/Buenos_Aires").values.timezone, "America/Argentina/Buenos_Aires");
+  assert.equal(newFirstOwnerDraft(scope, key, Date.now(), "not a zone").values.timezone, "");
+  assert.equal(newFirstOwnerDraft(scope, key).values.timezone, "");
+});

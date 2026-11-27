@@ -11,6 +11,8 @@ import {
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readConversations } from "@/lib/conversations/store";
 import { processAgentWork } from "@/lib/agents/runner";
+import { resolveApprovalItem } from "@/lib/approvals/resolve";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 const Mutation = z.discriminatedUnion("action", [
   z
@@ -141,13 +143,24 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 },
       );
+    // An owner who writes a reply has already made the decision. Approving it in
+    // the same request keeps the audit record and the guarded delivery path, but
+    // the owner is never sent to a second screen to approve their own words.
+    let message = input.action === "reply" ? "Reply prepared. Review and approve it in Approvals." : "Conversation updated.";
+    const access = ctx.portal.access;
+    if (input.action === "reply" && typeof result.data === "string" && access.canResolveApprovals && !access.isImpersonating) {
+      const supabase = await createSupabaseServerClient();
+      const resolved = supabase
+        ? await resolveApprovalItem({ supabase, access, approvalId: result.data, clientId: scope.clientId, resolution: "approve" })
+        : null;
+      message = resolved?.status === "success"
+        ? resolved.message || "Reply sent."
+        : "Reply saved as a draft. It could not be sent yet; review it in Approvals.";
+    }
     after(() => processAgentWork(admin, 2, scope));
     return NextResponse.json(
       {
-        message:
-          input.action === "reply"
-            ? "Reply prepared. Review and approve it in Approvals."
-            : "Conversation updated.",
+        message,
         snapshot: await readConversations(admin, scope, true, input.id),
       },
       { headers: { "Cache-Control": "no-store" } },

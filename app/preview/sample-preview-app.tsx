@@ -9,7 +9,8 @@ import { BusinessManagerChat } from "@/components/agents/manager-chat";
 import { SampleSourceArea } from "@/components/business/sample-source-area";
 import { SampleMonthlyReport } from "@/components/business/sample-monthly-report";
 import type { PreviewAction } from "@/components/business/morning-work-queue";
-import { OWNER_AREAS } from "@/lib/business/owner-navigation";
+import { OWNER_AREAS, previewAreaHref } from "@/lib/business/owner-navigation";
+import { SampleCustomers } from "@/components/business/sample-customers";
 import {
   applySamplePreviewEvent,
   createSamplePreview,
@@ -67,7 +68,7 @@ export function SamplePreviewApp({ area }: { area: string }) {
 
   const navigation = OWNER_AREAS.map((item) => ({
     ...item,
-    href: item.href.replace("/client", "/preview"),
+    href: previewAreaHref(item.href),
   }));
   const jaydenBooking = data.appointments.find((item) => item.id === "sample-jayden-confirmed");
   const jaydenOffer = data.work.find((item) => item.id === "sample-decision-sample-jayden-booking" && item.title.startsWith("Offered"));
@@ -83,6 +84,9 @@ export function SamplePreviewApp({ area }: { area: string }) {
   }));
   const content = area === "report" ? (
     <SampleMonthlyReport data={data} />
+  ) : area === "customers" ? (
+    <SampleCustomers key={history.length} data={data} conversations={sampleConversationSnapshot(data)}
+      summaries={Object.fromEntries(customers.map((customer) => [customer.name, customer.summary]))} />
   ) : area === "messages" ? (
     <ConversationInbox key={history.length} preview timeZone={data.timeZone} initialSnapshot={sampleConversationSnapshot(data)} />
   ) : area === "todo" ? (

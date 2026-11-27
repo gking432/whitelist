@@ -1,23 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { Bot, CalendarDays, ChevronDown, House, Landmark, ListTodo, MessageSquare, PlugZap, Search } from "lucide-react";
+import { Bot, CalendarDays, ChevronDown, House, Landmark, ListTodo, MessageSquare, PlugZap, Search, UsersRound } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useRef } from "react";
-import { OWNER_AREAS } from "@/lib/business/owner-navigation";
+import { OWNER_AREAS, previewAreaHref } from "@/lib/business/owner-navigation";
 import type { WorkspaceNavItem } from "@/components/layout/workspace-navigation";
 import { WorkspaceActivityTracker } from "./workspace-activity-tracker";
 import { PreviewCustomerSearch, type PreviewCustomer } from "./preview-customer-search";
 
-const navigationIcons = { Today: House, Messages: MessageSquare, "To-do": ListTodo, Calendar: CalendarDays, Money: Landmark, Manager: Bot, Apps: PlugZap };
-const departmentLabels: Record<string, string> = {
-  "/client/messages": "Communications",
-  "/client/todo": "Operations",
-  "/client/calendar": "Scheduling",
-  "/client/money": "Finance",
-  "/client/manager": "Management",
-  "/client/apps": "Integrations",
-};
+const navigationIcons = { Today: House, Messages: MessageSquare, Customers: UsersRound, "To-do": ListTodo, Calendar: CalendarDays, Money: Landmark, Manager: Bot, Apps: PlugZap };
 const focusStyle = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2";
 export function DailyBriefShell({ children, brandName, clientName, email, navigation, banner, accountActions, preview = false, previewCustomers = [] }: {
   children: React.ReactNode; brandName: string; clientName: string; email: string; navigation: WorkspaceNavItem[];
@@ -27,12 +19,13 @@ export function DailyBriefShell({ children, brandName, clientName, email, naviga
   const menu = useRef<HTMLDetailsElement>(null);
   const home = preview ? "/preview" : "/client";
   const businessName = clientName.trim() || (preview ? "Business workspace" : "Your business");
-  const mainPaths = new Set<string>(OWNER_AREAS.map((area) => preview ? area.href.replace("/client", "/preview") : area.href));
+  const mainPaths = new Set<string>(OWNER_AREAS.map((area) => preview ? previewAreaHref(area.href) : area.href));
   // The caller has already filtered every item against this user's sections.
-  const primary = OWNER_AREAS.flatMap((area) => { const item = navigation.find((candidate) => candidate.href === (preview ? area.href.replace("/client", "/preview") : area.href)); return item ? [item] : []; });
+  const primary = OWNER_AREAS.flatMap((area) => { const item = navigation.find((candidate) => candidate.href === (preview ? previewAreaHref(area.href) : area.href)); return item ? [item] : []; });
   const other = navigation.filter((item) => !mainPaths.has(item.href));
-  const navigationLabel = (item: WorkspaceNavItem) => departmentLabels[item.href] ?? item.label;
-  const canSearchCustomers = !preview && other.some((item) => item.href === "/client/business/customers");
+  // Navigation uses the same names as page titles so owners never translate between two vocabularies.
+  const navigationLabel = (item: WorkspaceNavItem) => item.label;
+  const canSearchCustomers = !preview && navigation.some((item) => item.href === "/client/business/customers");
   const customerSearch = preview && previewCustomers.length ? <PreviewCustomerSearch customers={previewCustomers} /> : canSearchCustomers ? (
     <form action="/client/business/customers" role="search" className="relative mx-3 pt-3">
       <input type="search" name="search" aria-label="Find a customer" placeholder="Find a customer"
@@ -42,7 +35,7 @@ export function DailyBriefShell({ children, brandName, clientName, email, naviga
       </button>
     </form>
   ) : null;
-  const phoneItems = primary.filter((item) => ["Today", "Messages", "To-do", "Calendar"].includes(item.label));
+  const phoneItems = primary.filter((item) => ["Today", "Messages", "Customers", "Calendar"].includes(item.label));
   const moreItems = primary.filter((item) => !phoneItems.includes(item));
   const active = (item: WorkspaceNavItem) => item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
   const closeMenu = () => { if (menu.current) menu.current.open = false; };

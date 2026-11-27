@@ -11,8 +11,10 @@ const exactKeys = (value: Record<string, unknown>, keys: string[]) => Object.key
 export function firstOwnerDraftKey(scopeKey: string): string | null {
   return firstOwnerUuid(scopeKey) ? `workstation:first-owner:v1:${scopeKey}` : null;
 }
-export function newFirstOwnerDraft(scopeKey: string, requestKey: string, now = Date.now()): FirstOwnerDraft {
-  return { version: 1, scopeKey, requestKey, step: 0, values: { name: "", description: "", timezone: "" }, expiresAt: now + FIRST_OWNER_DRAFT_TTL_MS };
+export function newFirstOwnerDraft(scopeKey: string, requestKey: string, now = Date.now(), detectedTimezone = ""): FirstOwnerDraft {
+  // The device timezone is a suggestion the owner sees and can change before creating the business.
+  const timezone = /^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+$/.test(detectedTimezone) ? detectedTimezone.slice(0, 100) : "";
+  return { version: 1, scopeKey, requestKey, step: 0, values: { name: "", description: "", timezone }, expiresAt: now + FIRST_OWNER_DRAFT_TTL_MS };
 }
 /** Partial answers are local drafts, never supplied business facts. */
 export function parseFirstOwnerDraft(raw: string | null, scopeKey: string, now = Date.now()): FirstOwnerDraft | null {

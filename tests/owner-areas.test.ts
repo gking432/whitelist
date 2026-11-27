@@ -64,12 +64,12 @@ test("task status changes require an optimistic concurrency token and reject bro
     false,
   );
 });
-test("seven owner areas keep stable navigation while self-contained mobile and CRM views retain their layouts", () => {
+test("eight owner areas keep stable navigation while self-contained mobile and CRM views retain their layouts", () => {
   assert.deepEqual(
     OWNER_AREAS.map((area) => area.label),
-    ["Today", "Messages", "To-do", "Calendar", "Money", "Manager", "Apps"],
+    ["Today", "Messages", "Customers", "To-do", "Calendar", "Money", "Manager", "Apps"],
   );
-  assert.equal(new Set(OWNER_AREAS.map((area) => area.href)).size, 7);
+  assert.equal(new Set(OWNER_AREAS.map((area) => area.href)).size, 8);
   for (const path of ["/client", "/client/todo", "/client/apps", "/client/calendar", "/client/money", "/client/business/business", "/client/business/approvals", "/client/onboarding"])
     assert.equal(isOwnerArea(path), true, path);
   for (const path of ["/client/mobile", "/client/crm", "/client/crm/contacts", "/partner", "/control", "/client-other", "https://external.invalid/client"])

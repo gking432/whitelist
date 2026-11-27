@@ -17,7 +17,7 @@ export function FirstOwnerForm({ requestKey, draftScopeKey }: { requestKey: stri
 }
 
 function FirstOwnerQuestions({ requestKey, draftScopeKey }: { requestKey: string; draftScopeKey: string }) {
-  const [draft, setDraft] = useState<FirstOwnerDraft>(() => readFirstOwnerDraft(draftStorage(), draftScopeKey) ?? newFirstOwnerDraft(draftScopeKey, requestKey));
+  const [draft, setDraft] = useState<FirstOwnerDraft>(() => readFirstOwnerDraft(draftStorage(), draftScopeKey) ?? newFirstOwnerDraft(draftScopeKey, requestKey, Date.now(), deviceTimezone()));
   const [localError, setLocalError] = useState("");
   const [edited, setEdited] = useState(false), [kept, setKept] = useState<boolean | null>(null);
   function keep(next: FirstOwnerDraft) { setDraft(next); setKept(writeFirstOwnerDraft(draftStorage(), next)); }
@@ -54,4 +54,8 @@ function FirstOwnerQuestions({ requestKey, draftScopeKey }: { requestKey: string
       {error ? <span id="first-owner-error" className="sr-only">{error}</span> : null}
     </QuestionScreen>
   </form>;
+}
+
+function deviceTimezone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone ?? ""; } catch { return ""; }
 }
